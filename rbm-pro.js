@@ -2906,16 +2906,35 @@ function saveAbsensiToFirebase() {
     var data = window._absensiViewData;
     if (data === undefined) data = {};
     var isJadwal = (typeof activeAbsensiMode !== 'undefined' && activeAbsensiMode === 'jadwal');
-    RBMStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees));
-    RBMStorage.setItem(getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA'), JSON.stringify(data));
+    var keyEmployees = getRbmStorageKey('RBM_EMPLOYEES');
+    var keyData = getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA');
     var msg = document.getElementById('absensi-save-feedback');
-    if (msg) {
-        msg.textContent = 'Data tersimpan.';
-        msg.style.color = '#16a34a';
-        setTimeout(function() { msg.textContent = ''; }, 3000);
-    } else {
-        alert('Data tersimpan.');
+    function showSuccess() {
+        if (msg) {
+            msg.textContent = 'Data tersimpan.';
+            msg.style.color = '#16a34a';
+            setTimeout(function() { msg.textContent = ''; }, 3000);
+        } else {
+            alert('Data tersimpan.');
+        }
     }
+    function showError() {
+        if (msg) {
+            msg.textContent = 'Gagal menyimpan. Cek koneksi internet.';
+            msg.style.color = '#dc2626';
+        } else {
+            alert('Gagal menyimpan. Cek koneksi internet.');
+        }
+    }
+    if (msg) msg.textContent = 'Menyimpan...';
+    var p1 = RBMStorage.setItem(keyEmployees, JSON.stringify(employees));
+    var p2 = RBMStorage.setItem(keyData, JSON.stringify(data));
+    Promise.all([p1, p2]).then(function() {
+        showSuccess();
+    }).catch(function(err) {
+        console.warn('saveAbsensiToFirebase failed', err);
+        showError();
+    });
 }
 
 function renderRekapAbsensiReport() {

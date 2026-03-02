@@ -137,7 +137,7 @@
     setItem: function(key, value) {
       if (!key || key.indexOf('RBM_') !== 0) {
         try { localStorage.setItem(key, value); } catch (e) { console.warn('setItem failed', key, e); }
-        return;
+        return Promise.resolve();
       }
       var path = keyToPath(key);
       if (this._useFirebase && this._db) {
@@ -147,10 +147,7 @@
         } catch (e) { toSet = value; }
         this._cache[path] = toSet;
         var refPath = 'rbm_pro/' + path.replace(/\//g, '/');
-        this._db.ref(refPath).set(toSet).catch(function(err) {
-          console.warn('RBM Storage: set failed', key, err);
-        });
-        return;
+        return this._db.ref(refPath).set(toSet);
       }
       try {
         _origSetItem.call(localStorage, key, value);
@@ -161,6 +158,7 @@
           alert('Gagal menyimpan.');
         }
       }
+      return Promise.resolve();
     }
   };
 
