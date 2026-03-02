@@ -87,7 +87,8 @@
     <div class="filter-row">
       <button class="btn btn-secondary" onclick="openJadwalModal()" style="background: #0d6efd; color: white; border-color: #0d6efd;">Save / Print Jadwal</button>
       <button type="button" id="absensi-toggle-cols-btn" class="absensi-toggle-col-btn" onclick="toggleAbsensiExtraCols(this)" title="Sembunyikan Jabatan, Join Date, Sisa Cuti" style="margin-left: 8px;">&#128065;</button>
-      <span style="font-size: 11px; color: #64748b; align-self: center; margin-left: 8px;">Perubahan tersimpan otomatis (Firebase / penyimpanan aktif)</span>
+      <button type="button" class="btn btn-primary" onclick="saveAbsensiToFirebase()" style="margin-left: 8px;">Simpan</button>
+      <span id="absensi-save-feedback" style="font-size: 12px; margin-left: 8px;"></span>
     </div>
     
     <div id="legend-absensi" style="margin-bottom: 10px; font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap;">

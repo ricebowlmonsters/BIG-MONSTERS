@@ -2633,6 +2633,7 @@ function updateJadwalLegend() {
 let activeAbsensiMode = 'absensi';
 
 function syncAbsensiPeriodAndRefresh() {
+    window._absensiViewData = undefined; // agar periode baru di-load dari Firebase
     switchAbsensiTab(activeAbsensiMode);
 }
 
@@ -2651,6 +2652,7 @@ function switchAbsensiTab(mode) {
     document.getElementById('tab-content-bonus').style.display = 'none';
 
     if (mode === 'absensi' || mode === 'jadwal') {
+        window._absensiViewData = undefined; // load data yang sesuai mode (Absensi vs Jadwal)
         document.getElementById('tab-content-input').style.display = 'block';
         renderAbsensiTable(mode);
     } else if (mode === 'laporan') {
@@ -2696,7 +2698,10 @@ function renderAbsensiTable(mode) {
     // Determine Codes and Headers (jadwal: ikut daftar shift dari Pengaturan Jadwal & Absensi)
     const rekapHeaders = isJadwal ? (typeof getJadwalCodesList === 'function' ? getJadwalCodesList().filter(function(c) { return c !== ''; }) : ['P','M','S','Off','PH','AL','DP']) : ['H','R','O','S','I','A','DP','PH','AL'];
     const dataKey = getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA');
-    const storedData = safeParse(RBMStorage.getItem(dataKey), {});
+    if (window._absensiViewData === undefined) {
+        window._absensiViewData = safeParse(RBMStorage.getItem(dataKey), {});
+    }
+    const storedData = window._absensiViewData;
 
     const extraColsVisible = RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_EXTRA_COLS')) !== '0';
     const table = document.getElementById('absensi_table');
@@ -2737,10 +2742,12 @@ function renderAbsensiTable(mode) {
         toggleBtn.innerHTML = '&#128065;';
     }
 
-    // 2. Load Data
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    // 2. Load Data (in-memory; simpan ke Firebase hanya saat klik Simpan)
+    if (window._absensiViewEmployees === undefined || !Array.isArray(window._absensiViewEmployees)) {
+        window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    }
+    const employees = window._absensiViewEmployees;
     if (employees.length === 0) {
-        // Default data jika kosong
         employees.push({id: 1, name: "Budi", jabatan: "Kitchen", joinDate: "2023-01-01", sisaAL:12, sisaDP:0, sisaPH:0});
         employees.push({id: 2, name: "Siti", jabatan: "Server", joinDate: "2023-02-15", sisaAL:12, sisaDP:0, sisaPH:0});
     }
@@ -2807,9 +2814,6 @@ function renderAbsensiTable(mode) {
         tr.innerHTML = html;
         tbody.appendChild(tr);
     });
-    
-    // Simpan employees ke local storage jika baru inisialisasi
-    RBMStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees));
 }
 
 function toggleAbsensiExtraCols(btn) {
@@ -2850,42 +2854,68 @@ function cycleAbsensiStatus(cell, key) {
         }
     }
 
-    // Save to temp object in memory (will be saved to storage on 'Simpan')
-    const dataKey = getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA');
-    let data = safeParse(RBMStorage.getItem(dataKey), {});
-    data[key] = next;
-    RBMStorage.setItem(dataKey, JSON.stringify(data));
+    // Simpan di memori saja; akan tersimpan ke Firebase saat user klik tombol Simpan
+    if (window._absensiViewData === undefined) {
+        window._absensiViewData = safeParse(RBMStorage.getItem(getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA')), {});
+    }
+    window._absensiViewData[key] = next;
 }
 
 function updateEmployee(index, field, value) {
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    if (window._absensiViewEmployees === undefined || !Array.isArray(window._absensiViewEmployees)) {
+        window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    }
+    const employees = window._absensiViewEmployees;
     if (employees[index]) {
         employees[index][field] = value;
-        RBMStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees));
     }
+    renderAbsensiTable();
 }
 
 function addEmployeeRow() {
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    if (window._absensiViewEmployees === undefined || !Array.isArray(window._absensiViewEmployees)) {
+        window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    }
+    const employees = window._absensiViewEmployees;
     const newId = employees.length > 0 ? Math.max(...employees.map(e => e.id || 0)) + 1 : 1;
     employees.push({ id: newId, name: "Nama Baru", jabatan: "-", email: "", joinDate: "", sisaAL:0, sisaDP:0, sisaPH:0 });
-    RBMStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees));
     renderAbsensiTable();
 }
 
 function removeEmployee(index) {
     if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data karyawan.'); return; }
     if(!confirm("Hapus karyawan ini?")) return;
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-    employees.splice(index, 1);
-    RBMStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees));
+    if (window._absensiViewEmployees === undefined || !Array.isArray(window._absensiViewEmployees)) {
+        window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    }
+    window._absensiViewEmployees.splice(index, 1);
     renderAbsensiTable();
 }
 
 function saveAbsensiData() {
-    // Data sudah tersimpan otomatis ke Firebase/penyimpanan aktif saat klik cell (cycleAbsensiStatus), edit input (updateEmployee), tambah/hapus karyawan.
-    // Tombol Simpan Perubahan dihapus; fungsi ini tetap ada jika dipanggil dari kode lain.
     renderAbsensiTable();
+}
+
+/** Simpan data Absensi & Jadwal (karyawan + status per tanggal) ke Firebase. Panggil saat user klik tombol Simpan. */
+function saveAbsensiToFirebase() {
+    var employees = window._absensiViewEmployees;
+    if (!employees || !Array.isArray(employees)) {
+        alert('Tidak ada data karyawan untuk disimpan.');
+        return;
+    }
+    var data = window._absensiViewData;
+    if (data === undefined) data = {};
+    var isJadwal = (typeof activeAbsensiMode !== 'undefined' && activeAbsensiMode === 'jadwal');
+    RBMStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees));
+    RBMStorage.setItem(getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA'), JSON.stringify(data));
+    var msg = document.getElementById('absensi-save-feedback');
+    if (msg) {
+        msg.textContent = 'Data tersimpan.';
+        msg.style.color = '#16a34a';
+        setTimeout(function() { msg.textContent = ''; }, 3000);
+    } else {
+        alert('Data tersimpan.');
+    }
 }
 
 function renderRekapAbsensiReport() {
@@ -6823,6 +6853,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl) {
   if (typeof loadRekapAbsensiGPS !== 'undefined') window.loadRekapAbsensiGPS = loadRekapAbsensiGPS;
   if (typeof createPembukuanRows !== 'undefined') window.createPembukuanRows = createPembukuanRows;
   if (typeof saveAbsensiData !== 'undefined') window.saveAbsensiData = saveAbsensiData;
+  if (typeof saveAbsensiToFirebase !== 'undefined') window.saveAbsensiToFirebase = saveAbsensiToFirebase;
   if (typeof switchAbsensiTab !== 'undefined') window.switchAbsensiTab = switchAbsensiTab;
   if (typeof syncAbsensiPeriodAndRefresh !== 'undefined') window.syncAbsensiPeriodAndRefresh = syncAbsensiPeriodAndRefresh;
   if (typeof submitPettyCashData !== 'undefined') window.submitPettyCashData = submitPettyCashData;
