@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Kasir - Rice Bowl Monster</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container desktop-layout">
+    <header class="app-header">
+      <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" title="Buka/Tutup Menu">&#10094;</button>
+      <h1 class="page-title" id="main-page-title">Selamat Datang</h1>
+
+      <!-- [BARU] Info User & Lokasi di Kanan Header -->
+      <div style="margin-left: auto; text-align: right; line-height: 1.3;">
+        <div id="header-user-name" style="font-weight: 700; font-size: 14px; color: #374151;"></div>
+        <div id="header-location" style="font-size: 11px; color: #6b7280; font-weight: 500;"></div>
+      </div>
+    </header>
+
+    <div class="main-wrapper">
+      <aside class="left-sidebar">
+        <nav class="main-menu">
+          <div class="menu-header">Menu Utama</div>
+          <ul>
+            <li><a href="kasir.html" class="menu-link"><span style="font-size: 16px;">🖥️</span><span class="menu-text">Kasir / Menu</span></a></li>
+            <li><a href="orders.html" class="menu-link"><span style="font-size: 16px;">🧾</span><span class="menu-text">Pesanan Masuk</span></a></li>
+            <li><a href="manage-menu.html" class="menu-link"><span style="font-size: 16px;">🍔</span><span class="menu-text">Kelola Menu</span></a></li>
+            <li><a href="input-point.html" class="menu-link"><span style="font-size: 16px;">💰</span><span class="menu-text">Input Point</span></a></li>
+            <li><a href="revenue-report.html" class="menu-link"><span style="font-size: 16px;">📈</span><span class="menu-text">Laporan Pendapatan</span></a></li>
+            <li><a href="claim-vcr.html" class="menu-link"><span style="font-size: 16px;">🎫</span><span class="menu-text">Validasi Voucher</span></a></li>
+            <li><a href="qr_generator.html" class="menu-link"><span style="font-size: 16px;">🔲</span><span class="menu-text">QR Meja</span></a></li>
+            <li><a href="promo-settings.html" class="menu-link"><span style="font-size: 16px;">🏷️</span><span class="menu-text">Promo & Diskon</span></a></li>
+            <li><a href="manage-rewards.html" class="menu-link"><span style="font-size: 16px;">🎁</span><span class="menu-text">Kelola Hadiah</span></a></li>
+            <li><a href="customer-settings.html" class="menu-link"><span style="font-size: 16px;">📱</span><span class="menu-text">Web Customer</span></a></li>
+
+            <li><a href="storage-viewer.html" class="menu-link"><span style="font-size: 16px;">💾</span><span class="menu-text">Data & Penyimpanan</span></a></li>
+            <li><a href="settings.html" class="menu-link"><span style="font-size: 16px;">⚙️</span><span class="menu-text">Pengaturan</span></a></li>
+
+            <li><a href="rbm-absensi.html" class="menu-link"><span style="font-size: 16px;">📅</span><span class="menu-text">Absensi & Jadwal</span></a></li>
+            <li><a href="rbm-reservasi.html" class="menu-link"><span style="font-size: 16px;">🕐</span><span class="menu-text">Reservasi</span></a></li>
+            <li><a href="rbm-stok-barang.html" class="menu-link"><span style="font-size: 16px;">📊</span><span class="menu-text">Stok Barang</span></a></li>
+            <li><a href="rbm-absensi-gps.html" class="menu-link"><span style="font-size: 16px;">📍</span><span class="menu-text">Absensi GPS</span></a></li>
+
+            <li><a href="rbm-lihat-petty-cash.html" class="menu-link"><span style="font-size: 16px;">💵</span><span class="menu-text">Lihat Petty Cash</span></a></li>
+            <li><a href="rbm-lihat-pembukuan.html" class="menu-link"><span style="font-size: 16px;">📒</span><span class="menu-text">Pembukuan</span></a></li>
+            <li><a href="rbm-lihat-inventaris.html" class="menu-link"><span style="font-size: 16px;">📋</span><span class="menu-text">Lihat Inventaris</span></a></li>
+            <li><a href="rbm-rekap-absensi-gps.html" class="menu-link"><span style="font-size: 16px;">📍</span><span class="menu-text">Rekap Absensi GPS</span></a></li>
+            <li id="menu-absensi-gps-manual" style="display:none;"><a href="rbm-absensi-gps-manual.html" class="menu-link"><span style="font-size: 16px;">📤</span><span class="menu-text">Input Absensi Manual (Dev)</span></a></li>
+          </ul>
+        </nav>
+        <div class="sidebar-footer">
+          <a href="login.html" class="menu-link" style="background: #fee2e2; color: #dc2626;" title="Logout">
+            <span>🔐</span><span class="menu-text">Logout</span>
+          </a>
+        </div>
+      </aside>
+
+      <main class="content-frame">
+        <iframe name="content-iframe" id="content-iframe" src="about:blank" frameborder="0"></iframe>
+        <div id="welcome-message">
+          <div class="welcome-icon">👋</div>
+          <h2>Selamat Datang, <span id="user-name">User</span>!</h2>
+          <p>Pilih menu di sebelah kiri untuk memulai.</p>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script src="custom-ui.js"></script>
+  <script src="firebase-storage.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // Load user data
+    function loadUserData() {
+      const userData = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+      
+      // Update user name
+      const userNameEl = document.getElementById('user-name');
+      if (userNameEl) {
+        userNameEl.textContent = userData.nama || 'User';
+      }
+      
+      // Bagian untuk update statistik poin dan voucher sudah dihapus
+    }
+
+    // Initialize when page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      // Check if user is logged in
+      const userData = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+      if (!userData || !userData.username) {
+        window.location.href = 'login.html';
+        return;
+      }
+
+      // [BARU] Filter Menu Berdasarkan Role
+      // Staff: tidak lihat menu RBM (Absensi, Reservasi, Stok, dll); absensi hanya via link dari Owner
+      const role = userData.role || 'staff';
+      const allowedMenus = {
+        'owner': ['*'],
+        'manager': ['*'],
+        'staff': [
+          'kasir.html', 'orders.html', 'manage-menu.html', 'input-point.html', 'revenue-report.html',
+          'claim-vcr.html', 'qr_generator.html', 'promo-settings.html', 'manage-rewards.html',
+          'customer-settings.html', 'storage-viewer.html', 'settings.html', 'login.html'
+        ]
+      };
+
+      const menuItems = document.querySelectorAll('.menu-link');
+      menuItems.forEach(link => {
+        const href = link.getAttribute('href');
+        if (!href) return;
+        const allowed = allowedMenus[role];
+        const isAllowed = (allowed[0] === '*') ? true : allowed.includes(href);
+        if (!isAllowed) {
+            link.parentElement.style.display = 'none';
+        }
+      });
+
+      // Tampilkan menu Input Absensi Manual hanya untuk developer Burhan
+      var menuManual = document.getElementById('menu-absensi-gps-manual');
+      if (menuManual && (userData.username || '').toString().toLowerCase() === 'burhan') {
+        menuManual.style.display = 'list-item';
+      }
+
+      // [BARU] Filter Menu Berdasarkan Mode Penyimpanan (Online vs Offline)
+      function checkConnectionMode() {
+          try {
+              const storedConns = localStorage.getItem('rbm_db_connections');
+              const activeIdx = parseInt(localStorage.getItem('rbm_active_connection_index') || '0');
+              if (storedConns) {
+                  const conns = JSON.parse(storedConns);
+                  if (conns.length > 0) {
+                      const activeConn = conns[activeIdx >= 0 && activeIdx < conns.length ? activeIdx : 0];
+                      const config = activeConn.config;
+                      
+                      // Cek apakah mode Offline (Local / Server)
+                      if (config && (config.type === 'local' || config.type === 'server')) {
+                          applyOfflineModeRestrictions();
+                      }
+                  }
+              }
+          } catch(e) { console.error("Error checking connection mode", e); }
+      }
+
+      function applyOfflineModeRestrictions() {
+          // Daftar fitur yang DIIZINKAN di mode Offline
+          const allowedOffline = [
+              'kasir.html',
+              'manage-menu.html',
+              'revenue-report.html',
+              'promo-settings.html',
+              'storage-viewer.html',
+              'settings.html'
+          ];
+
+          const menuItems = document.querySelectorAll('.menu-link');
+          menuItems.forEach(link => {
+              const href = link.getAttribute('href');
+              // Jangan sembunyikan logout
+              if (href === 'login.html') return;
+              // Izinkan semua halaman RBM Pro (rbm-*.html)
+              if (href && href.startsWith('rbm-') && href.endsWith('.html')) return;
+              
+              if (!allowedOffline.includes(href)) {
+                  link.parentElement.style.display = 'none';
+              }
+          });
+          
+          // [BARU] Paksa Single Outlet untuk Mode Offline
+          // Agar sistem berjalan sederhana tanpa sinkronisasi multi-cabang yang kompleks
+          let outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+          if (outlets.length !== 1) {
+              const single = outlets.length > 0 ? [outlets[0]] : ['toko'];
+              localStorage.setItem('rbm_outlets', JSON.stringify(single));
+              localStorage.setItem('rbm_active_outlets', JSON.stringify(single));
+          }
+
+          // Update header info
+          const headerLocEl = document.getElementById('header-location');
+          if (headerLocEl) {
+              const currentText = headerLocEl.innerHTML;
+              headerLocEl.innerHTML = currentText + ' <span style="background:#fee2e2; color:#991b1b; padding:2px 6px; border-radius:4px; font-size:10px; border:1px solid #fecaca; margin-left:5px;">OFFLINE (1 Outlet)</span>';
+          }
+      }
+
+      // Panggil fungsi cek mode
+      checkConnectionMode();
+
+      const userNameEl = document.getElementById('user-name');
+      if (userNameEl) userNameEl.textContent = userData.nama || 'User';
+
+      // [BARU] Tampilkan Nama User & Lokasi di Header
+      const headerNameEl = document.getElementById('header-user-name');
+      const headerLocEl = document.getElementById('header-location');
+      
+      if (headerNameEl) headerNameEl.textContent = userData.nama || userData.username || 'User';
+      if (headerLocEl) {
+        // Jika Owner, tampilkan 'Semua Lokasi', jika tidak tampilkan outlet user
+        const locText = (userData.role === 'owner') ? '🏢 Semua Lokasi' : `📍 ${userData.outlet ? userData.outlet.charAt(0).toUpperCase() + userData.outlet.slice(1) : '-'}`;
+        headerLocEl.textContent = locText;
+      }
+
+      const menuLinks = document.querySelectorAll('.menu-link');
+      const iframe = document.getElementById('content-iframe');
+      const welcomeMessage = document.getElementById('welcome-message');
+      const pageTitle = document.getElementById('main-page-title');
+      const toggleBtn = document.getElementById('sidebar-toggle-btn');
+      const appContainer = document.querySelector('.app-container');
+
+      menuLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+          e.preventDefault();
+          
+          // [PERBAIKAN] Handle Logout agar tidak terbuka di dalam iframe
+          if (this.getAttribute('href') === 'login.html') {
+            localStorage.removeItem('rbm_user'); // Hapus sesi
+            window.top.location.href = 'login.html'; // Redirect window utama
+            return;
+          }
+
+          // Hapus pesan selamat datang dan tampilkan iframe
+          if (welcomeMessage) welcomeMessage.style.display = 'none';
+          iframe.style.display = 'block';
+
+          // Muat halaman di iframe
+          iframe.src = this.href;
+
+          // [DIUBAH] Ambil innerHTML dari link (termasuk ikon) untuk judul header
+          pageTitle.innerHTML = this.innerHTML;
+
+          // Atur status aktif
+          menuLinks.forEach(l => l.classList.remove('active'));
+          this.classList.add('active');
+
+          // [BARU] Tambahkan title untuk tooltip saat sidebar collapse
+          this.title = this.querySelector('.menu-text').textContent;
+        });
+      });
+
+      // [BARU] Listener saat halaman di dalam iframe selesai dimuat
+      iframe.addEventListener('load', () => {
+        try {
+          const doc = iframe.contentDocument || iframe.contentWindow.document;
+          // Tambahkan class ke body halaman anak agar CSS bisa menyembunyikan header ganda
+          doc.body.classList.add('in-iframe');
+          // Update judul header utama sesuai dengan halaman yang dibuka
+          const childTitle = doc.querySelector('.page-title');
+          if (childTitle) pageTitle.textContent = childTitle.textContent;
+        } catch (e) {
+          // [DIPERBAIKI] Error ini wajar saat membuka file lokal (file://) karena kebijakan keamanan browser.
+          // Kita abaikan saja agar konsol bersih.
+        }
+      });
+
+      // [BARU] Logika untuk toggle sidebar
+      function applySidebarState() {
+        const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        appContainer.classList.toggle('sidebar-collapsed', isCollapsed);
+        toggleBtn.innerHTML = isCollapsed ? '&#10095;' : '&#10094;'; // Panah Kanan (Buka) / Kiri (Tutup)
+      }
+
+      toggleBtn.addEventListener('click', () => {
+        const isCollapsed = appContainer.classList.toggle('sidebar-collapsed');
+        localStorage.setItem('sidebarCollapsed', isCollapsed);
+        toggleBtn.innerHTML = isCollapsed ? '&#10095;' : '&#10094;';
+      });
+
+      // Terapkan status sidebar saat halaman dimuat
+      applySidebarState();
+
+      // [BARU] OTOMATIS DETEKSI LOKASI DARI PENGATURAN (Print Bridge)
+      // Hanya fetch jika di http/https agar tidak ERR_CONNECTION_REFUSED saat buka dari file:// atau server bridge mati
+      if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+        fetch('http://localhost:3000/config')
+          .then(response => response.json())
+          .then(data => {
+            if (data && data.location) {
+              const badge = document.createElement('span');
+              badge.innerHTML = '📍 ' + data.location;
+              badge.style.cssText = 'font-size: 0.5em; background-color: #e6fffa; color: #00695c; padding: 4px 8px; border-radius: 4px; margin-left: 10px; vertical-align: middle; border: 1px solid #b2f5ea; font-weight: normal;';
+              pageTitle.appendChild(badge);
+            }
+          })
+          .catch(function() {});
+      }
+
+      // [BARU] Otomatis buka halaman Pesanan Masuk saat aplikasi dibuka/refresh
+      // Ini akan melewati halaman "Selamat Datang"
+      const defaultPage = document.querySelector('a[href="orders.html"]');
+      if (defaultPage) {
+        defaultPage.click();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pengaturan Jadwal & Absensi - RBM Pro</title>
+  <link rel="stylesheet" href="rbm-pro.css">
+</head>
+<body>
+<script>
+(function(){
+  var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+  if (u.role !== 'owner') {
+    window.location.href = 'settings.html';
+    return;
+  }
+})();
+</script>
+<header class="rbm-page-header">
+  <a href="settings.html" class="rbm-back-btn">&#8249;</a>
+  <h1 class="rbm-page-title">Pengaturan Jadwal & Absensi</h1>
+</header>
+<div class="rbm-content-wrap">
+<section class="rbm-outlet-card">
+  <label for="rbm-outlet-select" class="rbm-outlet-label">Pilih Outlet:</label>
+  <select id="rbm-outlet-select" class="rbm-outlet-select"></select>
+</section>
+<script>
+(function(){
+  var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+  var outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+  var names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+  var sel = document.getElementById('rbm-outlet-select');
+  if (sel) {
+    sel.innerHTML = '';
+    outlets.forEach(function(id) {
+      var opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = names[id] || (id.charAt(0).toUpperCase() + id.slice(1));
+      sel.appendChild(opt);
+    });
+    if (u.role === 'manager' && u.outlet) {
+      sel.value = u.outlet;
+      sel.disabled = true;
+    } else {
+      var last = localStorage.getItem('rbm_last_selected_outlet');
+      if (last && outlets.indexOf(last) >= 0) sel.value = last;
+      else if (outlets.length) sel.value = outlets[0];
+      sel.addEventListener('change', function() { localStorage.setItem('rbm_last_selected_outlet', sel.value); onOutletChange(); });
+    }
+  }
+  function onOutletChange() {
+    if (typeof loadJamConfig === 'function') loadJamConfig();
+  }
+  window.onOutletChange = onOutletChange;
+})();
+</script>
+<div class="app-layout">
+  <main class="app-main" style="margin-left:0;">
+  <div class="form-container" style="max-width: 720px; padding: 20px;">
+    <p style="font-size:12px; color:#64748b; margin-bottom:16px;">Lokasi kantor (Latitude, Longitude) dan <strong>Radius (Meter)</strong> untuk Absensi GPS diatur di <strong>Web Customer</strong> → data Outlet (tiap outlet punya lokasi &amp; radius sendiri).</p>
+
+    <!-- Pengaturan Jam per outlet - Daftar shift bisa ditambah/edit per outlet -->
+    <div class="form-section" style="background: #fefce8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top:0; font-size:14px;">Daftar Shift (ikut Pilih Outlet)</h3>
+        <p style="font-size:11px; color:#64748b; margin:0 0 10px;">Setiap outlet bisa punya shift berbeda. Tambah shift, isi Kode (untuk jadwal), Nama, Jam Masuk/Pulang, dan Durasi Istirahat. Digunakan untuk cek telat dan Rekap Gaji.</p>
+        <div style="overflow-x:auto;">
+            <table class="data-table" style="margin-bottom:10px;">
+                <thead>
+                    <tr>
+                        <th style="width:70px;">Kode</th>
+                        <th>Nama Shift</th>
+                        <th>Jam Masuk</th>
+                        <th>Jam Pulang</th>
+                        <th style="width:90px;">Istirahat (menit)</th>
+                        <th style="width:50px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="gps_shifts_tbody"></tbody>
+            </table>
+        </div>
+        <button type="button" class="btn-secondary" onclick="addGpsShiftRow()" style="font-size:11px; padding:5px 10px;">+ Tambah Shift</button>
+        <div class="row-group" style="margin-top:14px; display:flex; gap:15px; align-items:flex-end; flex-wrap:wrap;">
+            <div><label style="font-size:11px;">Perhitungan telat (untuk Rekap Gaji)</label><input type="number" id="gps_menit_telat_per_jam" placeholder="10" value="10" min="1" style="width:60px;"> menit = 1 jam potongan</div>
+        </div>
+        <button class="btn-secondary" onclick="saveJamConfig()" style="font-size:11px; padding:5px 10px; margin-top:10px;">Simpan Pengaturan Jam</button>
+    </div>
+  </div>
+  </main>
+</div>
+</div>
+<span class="watermark">RBM Pro 2.3</span>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+<script src="rbm-pro-storage.js"></script>
+<script src="firebase-storage.js"></script>
+<script src="rbm-pro.js"></script>
+<script>
+(function() {
+  if (typeof loadJamConfig === 'function') loadJamConfig();
+})();
+</script>
+</body>
+</html>

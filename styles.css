@@ -1,0 +1,688 @@
+/* Reset dan Base Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  /* [DIUBAH] Latar belakang diubah menjadi abu-abu netral untuk tampilan desktop */
+  background: #f0f2f5;
+  min-height: 100vh;
+  color: #333;
+}
+
+/* Container */
+.app-container {
+  min-height: 100vh;
+}
+
+/* Header */
+.app-header {
+  /* [DIUBAH] Header menjadi putih dengan bayangan */
+  background: white;
+  color: #333;
+  padding: 16px 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0; /* Membuat header tetap di atas */
+  z-index: 100;
+}
+
+/* [BARU] Tombol untuk toggle sidebar */
+.sidebar-toggle-btn {
+  background: #ffffff; /* Putih bersih */
+  border: 1px solid #e5e7eb; /* Border halus */
+  font-size: 12px; /* Ukuran ikon diperkecil agar elegan */
+  cursor: pointer;
+  color: #6b7280; /* Abu-abu soft */
+  padding: 0;
+  margin-right: 16px;
+  border-radius: 50%; /* Bulat penuh */
+  transition: all 0.2s ease;
+  width: 32px; /* Ukuran tombol lebih kecil */
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1); /* Shadow halus */
+}
+
+.sidebar-toggle-btn:hover {
+  background-color: #f9fafb;
+  color: #4C2A85; /* Warna brand saat hover */
+  transform: scale(1.05);
+}
+.app-header.simple {
+  justify-content: center;
+}
+
+.back-btn {
+  color: #333;
+  text-decoration: none;
+  font-size: 20px;
+  font-weight: bold;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+}
+
+.back-btn:hover {
+  background-color: #f3f4f6; /* Warna hover tombol kembali */
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  display: flex;       /* [BARU] Agar ikon dan teks sejajar rapi */
+  align-items: center;
+  gap: 12px;
+}
+
+/* Content */
+.content {
+  padding: 20px;
+  padding-bottom: 100px;
+}
+
+/* Points Summary */
+.points-summary {
+  background: #eef2ff; /* Biru muda */
+  color: #4338ca; /* Ungu gelap untuk teks */
+  padding: 20px;
+  border-radius: 16px;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.points-label {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+
+.points-value {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 24px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #6b7280;
+}
+
+.tab-btn.active {
+  background: white;
+  color: #4C2A85;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* QR Scanner */
+.qr-scanner-container {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  margin-bottom: 24px;
+}
+
+.qr-scanner-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #333;
+}
+
+.qr-scanner-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 20px;
+}
+
+.qr-scanner-box {
+  width: 100%;
+  max-width: 300px;
+  height: 300px;
+  border: 2px dashed #d1d5db;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  background: #f9fafb;
+  position: relative;
+  overflow: hidden;
+}
+
+.qr-scanner-box.has-camera {
+  border: 2px solid #4C2A85;
+  background: #000;
+}
+
+#qr-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.qr-scanner-placeholder {
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.scan-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 200px;
+  height: 200px;
+  border: 2px solid #4C2A85;
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+.scan-overlay::before,
+.scan-overlay::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 3px solid #4C2A85;
+}
+
+.scan-overlay::before {
+  top: -3px;
+  left: -3px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.scan-overlay::after {
+  bottom: -3px;
+  right: -3px;
+  border-left: none;
+  border-top: none;
+}
+
+/* Buttons */
+.btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+}
+
+.btn-primary {
+  background: #4C2A85;
+  color: white;
+  width: 100%;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #3c216b;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-group {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+/* Form */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #374151;
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 16px;
+  transition: border-color 0.2s;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #4C2A85;
+  box-shadow: 0 0 0 3px rgba(76, 42, 133, 0.1);
+}
+
+/* Cards */
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.card-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 16px;
+}
+
+/* Status */
+.status-success {
+  color: #16a34a;
+  background: #f0fdf4;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #bbf7d0;
+  margin-bottom: 16px;
+}
+
+.status-error {
+  color: #dc2626;
+  background: #fef2f2;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  margin-bottom: 16px;
+}
+
+.status-info {
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #bfdbfe;
+  margin-bottom: 16px;
+}
+
+/* Loading */
+.loading {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #4C2A85;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+}
+
+.modal-overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  transform: scale(0.9);
+  transition: transform 0.3s ease;
+}
+
+.modal-overlay.show .modal {
+  transform: scale(1);
+}
+
+.modal-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  text-align: center;
+  color: #333;
+}
+
+.modal-content {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.modal-actions .btn {
+  flex: 1;
+}
+
+/* QR Code Display */
+.qr-code-display {
+  text-align: center;
+  margin: 20px 0;
+}
+
+.qr-code-display img {
+  max-width: 200px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .content {
+    padding: 16px;
+  }
+  
+  .qr-scanner-box {
+    height: 250px;
+  }
+  
+  .scan-overlay {
+    width: 150px;
+    height: 150px;
+  }
+}
+
+/* Animation */
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Success Animation */
+.success-animation {
+  animation: successPulse 0.6s ease-in-out;
+}
+
+@keyframes successPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+/* [BARU] Tata Letak Desktop dengan Menu Kanan */
+.desktop-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.desktop-layout .app-header {
+  flex-shrink: 0;
+}
+
+.main-wrapper {
+  display: flex;
+  flex-grow: 1;
+  overflow: hidden; /* Mencegah scroll di level ini */
+}
+
+.content-frame {
+  flex-grow: 1;
+  position: relative;
+  overflow-y: auto; /* Biarkan konten di dalam iframe yang scroll */
+}
+
+#content-iframe {
+  width: 100%;
+  height: 100%;
+  display: none; /* Sembunyikan sampai menu diklik */
+}
+
+.left-sidebar {
+  width: 280px; /* Sedikit lebih lebar agar lega */
+  flex-shrink: 0;
+  background: #ffffff;
+  /* Ganti border biasa dengan shadow halus agar terlihat mengambang/modern */
+  border-right: none;
+  box-shadow: 4px 0 24px rgba(0,0,0,0.02);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  transition: width 0.3s ease, padding 0.3s ease; /* [BARU] Animasi transisi */
+  z-index: 50; /* Pastikan di atas konten jika ada overlap */
+}
+
+.main-menu {
+  flex-grow: 1;
+  overflow-y: auto; /* [DIUBAH] Agar bisa scroll vertikal jika menu panjang */
+  overflow-x: hidden;
+  margin-top: 10px;
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #d1d5db transparent;
+}
+
+/* Custom Scrollbar untuk Chrome/Edge/Safari */
+.main-menu::-webkit-scrollbar { width: 4px; }
+.main-menu::-webkit-scrollbar-track { background: transparent; }
+.main-menu::-webkit-scrollbar-thumb { background-color: #d1d5db; border-radius: 4px; }
+
+.menu-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 0 16px;
+  margin-bottom: 12px;
+}
+
+.menu-category {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 12px 16px 4px;
+  margin-top: 8px;
+  list-style: none;
+}
+.menu-category:first-of-type { margin-top: 0; }
+
+.main-menu ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.menu-link {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  margin-bottom: 8px; /* Jarak antar item */
+  border-radius: 12px; /* Sudut lebih bulat */
+  text-decoration: none;
+  color: #4b5563;
+  font-weight: 600;
+  font-size: 15px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Animasi lebih halus */
+  white-space: nowrap; /* [BARU] Mencegah teks turun baris */
+  border: 1px solid transparent;
+}
+
+.menu-link:hover {
+  background-color: #f8fafc;
+  color: #4C2A85;
+  transform: translateX(4px); /* Efek geser sedikit saat hover */
+}
+
+.menu-link.active {
+  /* Gradient background untuk kesan premium */
+  background: linear-gradient(135deg, #4C2A85 0%, #6d28d9 100%);
+  color: white;
+  box-shadow: 0 8px 16px rgba(76, 42, 133, 0.25); /* Bayangan ungu */
+}
+
+.sidebar-footer {
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Pesan Selamat Datang di Tengah */
+#welcome-message {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: #6b7280;
+  text-align: center;
+}
+#welcome-message .welcome-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+/* [BARU] Gaya untuk sidebar yang disembunyikan (collapsed) */
+.sidebar-collapsed .left-sidebar {
+  width: 80px; /* Lebar saat disembunyikan */
+  padding: 16px 8px;
+}
+
+.sidebar-collapsed .menu-link {
+  justify-content: center; /* Ikon menjadi di tengah */
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* [DIUBAH] Hanya sembunyikan teks menu di dalam sidebar, agar judul di header tetap muncul */
+.sidebar-collapsed .left-sidebar .menu-text {
+  display: none;
+}
+
+/* Pastikan label bisa terlihat keluar dari sidebar */
+.sidebar-collapsed .main-menu {
+  overflow-y: auto; /* [DIUBAH] Tetap bisa scroll saat collapsed */
+  overflow-x: hidden;
+}
+
+.sidebar-collapsed .menu-header {
+  display: none; /* Sembunyikan judul 'Menu Utama' */
+}
+
+.sidebar-collapsed .menu-category {
+  display: none;
+}
+
+/* [BARU] Pastikan footer tetap tampil (ikon logout) saat dilipat */
+.sidebar-collapsed .sidebar-footer {
+  display: block;
+  text-align: center;
+}
+
+/* [BARU] Style khusus saat halaman dibuka di dalam dashboard (iframe) */
+/* Menyembunyikan header halaman anak agar tidak double dengan header utama */
+body.in-iframe .app-header {
+  display: none !important;
+}
+
+body.in-iframe .content {
+  padding-top: 0 !important; /* Hapus jarak atas karena header hilang */
+}
+
+body.in-iframe .app-container {
+  min-height: auto !important;
+}
+
+/* [BARU] Style Pop-up Minimalis (Konsisten dengan Customer App) */
+.popup-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background-color: rgba(0, 0, 0, 0.6); display: flex;
+  justify-content: center; align-items: center; z-index: 2001;
+  opacity: 0; visibility: hidden; transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+.popup-overlay.show { opacity: 1; visibility: visible; }
+
+.popup-box {
+  background: white; padding: 24px 20px; border-radius: 28px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); width: 80%;
+  max-width: 300px; max-height: 80vh; overflow-y: auto;
+  transform: scale(0.9); transition: transform 0.2s ease;
+}
+.popup-overlay.show .popup-box { transform: scale(1); }
+
+.location-option {
+  padding: 14px 16px; border-radius: 16px; margin-bottom: 8px;
+  cursor: pointer; transition: all 0.2s; background: #f9fafb;
+  display: flex; align-items: center; gap: 14px; border: 1px solid transparent;
+}
+.location-option:hover { background: #f3f4f6; transform: scale(1.01); }
+.location-option .icon { font-size: 22px; line-height: 1; filter: grayscale(0.2); }
+.location-option .arrow { color: #d1d5db; font-size: 18px; font-weight: 300; margin-left: auto; }
