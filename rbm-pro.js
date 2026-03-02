@@ -6873,6 +6873,10 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl) {
   if (typeof createPembukuanRows !== 'undefined') window.createPembukuanRows = createPembukuanRows;
   if (typeof saveAbsensiData !== 'undefined') window.saveAbsensiData = saveAbsensiData;
   if (typeof saveAbsensiToFirebase !== 'undefined') window.saveAbsensiToFirebase = saveAbsensiToFirebase;
+  if (typeof updateEmployee !== 'undefined') window.updateEmployee = updateEmployee;
+  if (typeof addEmployeeRow !== 'undefined') window.addEmployeeRow = addEmployeeRow;
+  if (typeof removeEmployee !== 'undefined') window.removeEmployee = removeEmployee;
+  if (typeof cycleAbsensiStatus !== 'undefined') window.cycleAbsensiStatus = cycleAbsensiStatus;
   if (typeof switchAbsensiTab !== 'undefined') window.switchAbsensiTab = switchAbsensiTab;
   if (typeof syncAbsensiPeriodAndRefresh !== 'undefined') window.syncAbsensiPeriodAndRefresh = syncAbsensiPeriodAndRefresh;
   if (typeof submitPettyCashData !== 'undefined') window.submitPettyCashData = submitPettyCashData;
