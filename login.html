@@ -63,9 +63,13 @@
           // Akun ini tidak masuk ke database user (localStorage) sehingga tidak terlihat user lain
           if (inputUser.toLowerCase() === 'burhan' && inputPass === '160502') {
             const hiddenUser = { username: 'Burhan', nama: 'Puji Shohibul Burhan (Developer)', role: 'owner', outlet: 'all' };
+            const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+            localStorage.setItem('rbm_session_id', sessionId);
             localStorage.setItem('rbm_user', JSON.stringify(hiddenUser));
             if (typeof ensureDefaultFirebaseConnection === 'function') ensureDefaultFirebaseConnection();
-            
+            if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.setActiveSession) {
+              FirebaseStorage.setActiveSession('Burhan', sessionId).then(() => {});
+            }
             // [BARU] Tampilkan animasi sambutan khusus Owner
             const welcomeScreen = document.getElementById('owner-welcome');
             if (welcomeScreen) {
@@ -84,8 +88,13 @@
           const user = users.find(u => u.username.toLowerCase() === inputUser.toLowerCase() && u.password === inputPass);
 
           if (user) {
+            const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+            localStorage.setItem('rbm_session_id', sessionId);
             localStorage.setItem('rbm_user', JSON.stringify(user)); // Simpan sesi login
             if (typeof ensureDefaultFirebaseConnection === 'function') ensureDefaultFirebaseConnection();
+            if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.setActiveSession) {
+              FirebaseStorage.setActiveSession(user.username, sessionId).then(() => {});
+            }
             show('Login berhasil', 'success');
             setTimeout(() => { window.top.location.href = 'index.html'; }, 500);
           } else {

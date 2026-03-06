@@ -18,9 +18,10 @@
   <span class="rbm-manual-badge">Developer</span>
 </header>
 <div class="rbm-content-wrap">
-<section class="rbm-outlet-card">
+<section class="rbm-outlet-card" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
   <label for="rbm-outlet-select" class="rbm-outlet-label">Pilih Outlet:</label>
   <select id="rbm-outlet-select" class="rbm-outlet-select"></select>
+  <button type="button" class="btn btn-secondary" onclick="if(typeof populateManualAbsenNameSelect==='function')populateManualAbsenNameSelect();" title="Muat ulang data outlet terpilih">🔄 Refresh</button>
 </section>
 <script>
 (function(){
@@ -56,7 +57,7 @@
 <div class="view-container">
   <div class="page-header">
     <h2>Upload Foto & Tentukan Tanggal/Jam</h2>
-    <p>Input absensi GPS secara manual: upload foto dan atur tanggal serta jam sendiri. Hanya untuk keperluan developer/koreksi data.</p>
+    <p>Input absensi GPS secara manual. Foto opsional; tanpa foto tetap bisa disimpan. Atur tanggal dan jam sendiri. Hanya untuk keperluan developer/koreksi data.</p>
   </div>
   <div class="form-container">
     <div class="form-section">
@@ -65,29 +66,16 @@
         <option value="">-- Pilih Nama --</option>
       </select>
     </div>
-    <div class="form-section">
-      <label>Tipe Absen</label>
-      <select id="manual_absen_type">
-        <option value="Masuk">Masuk</option>
-        <option value="Pulang">Pulang</option>
-        <option value="Istirahat Keluar">Istirahat Keluar</option>
-        <option value="Istirahat Kembali">Istirahat Kembali</option>
-      </select>
-    </div>
     <div class="form-section" style="display:flex; gap:16px; flex-wrap:wrap;">
       <div class="filter-group" style="flex:1; min-width:140px;">
         <label>Tanggal</label>
         <input type="date" id="manual_absen_date">
       </div>
-      <div class="filter-group" style="flex:1; min-width:120px;">
-        <label>Jam</label>
-        <input type="time" id="manual_absen_time">
-      </div>
     </div>
     <div class="form-section">
-      <label>Foto Absen</label>
-      <input type="file" id="manual_absen_photo" accept="image/*" style="padding:8px;">
-      <img id="manual_absen_photo_preview" class="rbm-manual-photo-preview" src="" alt="" style="display:none;">
+      <label>Detail Absen (outlet + tanggal + nama sama, isi banyak tipe sekaligus)</label>
+      <div id="manual_absen_rows" style="display:flex; flex-direction:column; gap:12px;"></div>
+      <button type="button" class="btn btn-secondary" onclick="addManualAbsenRow()" style="margin-top:10px;">+ Tambah baris absen</button>
     </div>
     <div class="form-section">
       <button type="button" class="btn btn-primary" onclick="submitAbsensiGpsManual()" style="max-width:320px;">Simpan Absensi Manual</button>
@@ -107,55 +95,72 @@
 <script>
 (function(){
   var dateInp = document.getElementById('manual_absen_date');
-  var timeInp = document.getElementById('manual_absen_time');
   if (dateInp && !dateInp.value) {
     var d = new Date();
     dateInp.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
-  if (timeInp && !timeInp.value) {
-    var t = new Date();
-    timeInp.value = String(t.getHours()).padStart(2,'0') + ':' + String(t.getMinutes()).padStart(2,'0');
-  }
-  var fileInp = document.getElementById('manual_absen_photo');
-  var preview = document.getElementById('manual_absen_photo_preview');
-  if (fileInp && preview) {
-    fileInp.addEventListener('change', function(){
-      var f = this.files[0];
-      if (!f) { preview.style.display = 'none'; preview.src = ''; return; }
-      var r = new FileReader();
-      r.onload = function(){ preview.src = r.result; preview.style.display = 'block'; };
-      r.readAsDataURL(f);
-    });
-  }
   if (typeof populateManualAbsenNameSelect === 'function') populateManualAbsenNameSelect();
+  if (typeof addManualAbsenRow === 'function') addManualAbsenRow();
 })();
+function addManualAbsenRow() {
+  var container = document.getElementById('manual_absen_rows');
+  if (!container) return;
+  var t = new Date();
+  var timeVal = String(t.getHours()).padStart(2,'0') + ':' + String(t.getMinutes()).padStart(2,'0') + ':' + String(t.getSeconds()).padStart(2,'0');
+  var row = document.createElement('div');
+  row.className = 'manual-absen-row';
+  row.style.cssText = 'display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; padding:10px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;';
+  row.innerHTML = 
+    '<div style="flex:1; min-width:140px;"><label style="font-size:11px; display:block; margin-bottom:2px;">Tipe Absen</label><select class="manual_row_type" style="width:100%; padding:8px;"><option value="Masuk">Masuk</option><option value="Pulang">Pulang</option><option value="Istirahat Keluar">Istirahat Keluar</option><option value="Istirahat Kembali">Istirahat Kembali</option></select></div>' +
+    '<div style="flex:1; min-width:120px;"><label style="font-size:11px; display:block; margin-bottom:2px;">Jam (detik)</label><input type="time" class="manual_row_time" step="1" value="' + timeVal + '" style="width:100%; padding:8px;"></div>' +
+    '<div style="flex:1.5; min-width:160px;"><label style="font-size:11px; display:block; margin-bottom:2px;">Foto (opsional)</label><input type="file" class="manual_row_photo" accept="image/*" style="width:100%; padding:4px; font-size:12px;"></div>' +
+    '<button type="button" onclick="this.closest(\'.manual-absen-row\').remove()" style="padding:8px 12px; background:#dc3545; color:white; border:none; border-radius:6px; cursor:pointer;" title="Hapus baris">×</button>';
+  container.appendChild(row);
+}
 function submitAbsensiGpsManual() {
   var nameEl = document.getElementById('manual_absen_name');
-  var typeEl = document.getElementById('manual_absen_type');
   var dateEl = document.getElementById('manual_absen_date');
-  var timeEl = document.getElementById('manual_absen_time');
-  var photoEl = document.getElementById('manual_absen_photo');
   var feedback = document.getElementById('manual_absen_feedback');
   var name = nameEl && nameEl.value ? nameEl.value.trim() : '';
-  var type = typeEl && typeEl.value ? typeEl.value : 'Masuk';
   var date = dateEl && dateEl.value ? dateEl.value : '';
-  var time = timeEl && timeEl.value ? timeEl.value : '';
   if (!name) { feedback.textContent = 'Pilih nama karyawan dulu.'; feedback.style.color = '#b91c1c'; return; }
-  if (!date || !time) { feedback.textContent = 'Isi tanggal dan jam.'; feedback.style.color = '#b91c1c'; return; }
-  if (!photoEl || !photoEl.files || !photoEl.files[0]) { feedback.textContent = 'Upload foto wajib untuk absen manual.'; feedback.style.color = '#b91c1c'; return; }
-  var f = photoEl.files[0];
-  if (!f.type || !f.type.startsWith('image/')) { feedback.textContent = 'Pilih file gambar (foto).'; feedback.style.color = '#b91c1c'; return; }
-  var reader = new FileReader();
-  reader.onload = function() {
-    var photoData = reader.result;
-    if (typeof saveAbsensiGpsManual === 'function') {
-      saveAbsensiGpsManual(name, type, date, time, photoData, feedback);
-    } else {
-      feedback.textContent = 'Fungsi save belum tersedia. Pastikan rbm-pro.js dimuat.';
-      feedback.style.color = '#b91c1c';
+  if (!date) { feedback.textContent = 'Isi tanggal.'; feedback.style.color = '#b91c1c'; return; }
+  var rows = document.querySelectorAll('#manual_absen_rows .manual-absen-row');
+  if (!rows.length) { feedback.textContent = 'Tambah minimal 1 baris absen (klik + Tambah baris absen).'; feedback.style.color = '#b91c1c'; return; }
+  var entries = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var typeSel = r.querySelector('.manual_row_type');
+    var timeInp = r.querySelector('.manual_row_time');
+    var photoInp = r.querySelector('.manual_row_photo');
+    var time = timeInp && timeInp.value ? timeInp.value.trim() : '';
+    if (!time) continue;
+    entries.push({ type: typeSel ? typeSel.value : 'Masuk', time: time, file: photoInp && photoInp.files && photoInp.files[0] ? photoInp.files[0] : null });
+  }
+  if (entries.length === 0) { feedback.textContent = 'Isi jam di minimal satu baris.'; feedback.style.color = '#b91c1c'; return; }
+  feedback.textContent = 'Menyimpan ' + entries.length + ' absensi...';
+  feedback.style.color = 'var(--text-muted)';
+  function runNext(idx) {
+    if (idx >= entries.length) {
+      feedback.textContent = entries.length + ' absensi berhasil disimpan (manual).';
+      feedback.style.color = 'var(--success)';
+      alert(entries.length + ' absensi berhasil disimpan.');
+      return;
     }
-  };
-  reader.readAsDataURL(f);
+    var e = entries[idx];
+    function doOne(photoData) {
+      if (typeof saveAbsensiGpsManual === 'function') saveAbsensiGpsManual(name, e.type, date, e.time, photoData || '', feedback, true);
+      runNext(idx + 1);
+    }
+    if (e.file && e.file.type && e.file.type.startsWith('image/')) {
+      var reader = new FileReader();
+      reader.onload = function() { doOne(reader.result); };
+      reader.readAsDataURL(e.file);
+    } else {
+      doOne('');
+    }
+  }
+  runNext(0);
 }
 </script>
 </body>

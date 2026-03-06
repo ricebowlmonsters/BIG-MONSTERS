@@ -23,9 +23,10 @@
   <h1 class="rbm-page-title">Absensi GPS</h1>
 </header>
 <div class="rbm-content-wrap">
-<section class="rbm-outlet-card">
+<section class="rbm-outlet-card" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
   <label for="rbm-outlet-select" class="rbm-outlet-label">Pilih Outlet:</label>
   <select id="rbm-outlet-select" class="rbm-outlet-select"></select>
+  <button type="button" class="btn btn-secondary" onclick="if(typeof loadOfficeConfig==='function')loadOfficeConfig();if(typeof loadJamConfig==='function')loadJamConfig();if(typeof initAbsensiGPS==='function')initAbsensiGPS();" title="Muat ulang data outlet terpilih">🔄 Refresh</button>
   <div id="rbm-outlet-locked-msg" class="rbm-outlet-locked-card" style="display:none;">
     <div class="rbm-outlet-locked-title">&#128274; <span id="rbm-outlet-locked-name">-</span></div>
     <p class="rbm-outlet-locked-hint">Pilih nama Anda di bawah, lalu tap tombol Masuk / Istirahat / Pulang. Daftar kosong? Buka aplikasi utama sekali dari HP ini.</p>

@@ -297,13 +297,25 @@ function generatePhoneVariants(rawPhone) {
 
 document.addEventListener('DOMContentLoaded', () => {
   appState = new AppState();
+  const here = window.location.pathname.split('/').pop();
   if (!appState.user) {
-    const here = window.location.pathname.split('/').pop();
     if (here !== 'login.html') {
       window.location.href = 'login.html';
       return;
     }
     return;
+  }
+  // Satu akun satu perangkat: jika akun yang sama login di perangkat lain, sesi ini tidak valid
+  if (here !== 'login.html' && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getActiveSession) {
+    FirebaseStorage.getActiveSession(appState.user.username).then(function(active) {
+      if (!active || !active.sessionId) return;
+      var mySessionId = localStorage.getItem('rbm_session_id');
+      if (mySessionId && active.sessionId !== mySessionId) {
+        localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
+        localStorage.removeItem('rbm_session_id');
+        window.location.href = 'login.html';
+      }
+    }).catch(function() {});
   }
   const currentPage = window.location.pathname.split('/').pop();
   initializePage(currentPage);

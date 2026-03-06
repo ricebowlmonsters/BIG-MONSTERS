@@ -190,6 +190,24 @@
       // Panggil fungsi cek mode
       checkConnectionMode();
 
+      // Satu akun satu perangkat: cek sesi berkala (setiap 50 detik)
+      if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getActiveSession) {
+        setInterval(function() {
+          var u = null;
+          try { u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch (e) {}
+          if (!u || !u.username) return;
+          FirebaseStorage.getActiveSession(u.username).then(function(active) {
+            if (!active || !active.sessionId) return;
+            var mySessionId = localStorage.getItem('rbm_session_id');
+            if (mySessionId && active.sessionId !== mySessionId) {
+              localStorage.removeItem('rbm_user');
+              localStorage.removeItem('rbm_session_id');
+              window.location.href = 'login.html';
+            }
+          }).catch(function() {});
+        }, 50000);
+      }
+
       const userNameEl = document.getElementById('user-name');
       if (userNameEl) userNameEl.textContent = userData.nama || 'User';
 
@@ -217,7 +235,8 @@
           
           // [PERBAIKAN] Handle Logout agar tidak terbuka di dalam iframe
           if (this.getAttribute('href') === 'login.html') {
-            localStorage.removeItem('rbm_user'); // Hapus sesi
+            localStorage.removeItem('rbm_user');
+            localStorage.removeItem('rbm_session_id');
             window.top.location.href = 'login.html'; // Redirect window utama
             return;
           }

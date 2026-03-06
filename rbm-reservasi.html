@@ -127,6 +127,7 @@
             <div class="filter-group"><label>Dari Tanggal</label><input type="date" id="res_filter_start"></div>
             <div class="filter-group"><label>Sampai Tanggal</label><input type="date" id="res_filter_end"></div>
             <button class="btn btn-secondary" onclick="loadReservasiData()">Tampilkan Data</button>
+            <button class="btn btn-secondary" onclick="loadReservasiData();if(typeof renderReservasiCalendar==='function')renderReservasiCalendar();" title="Muat ulang data outlet terpilih" style="margin-left: 8px;">🔄 Refresh</button>
         </div>
         <div class="table-wrapper">
             <table class="data-table" id="reservasi_table">

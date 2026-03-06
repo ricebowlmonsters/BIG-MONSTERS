@@ -8,6 +8,7 @@
   };
   function setVal(id, val) { var e = document.getElementById(id); if (e) e.value = val; }
   function getRbmOutlet() { var s = document.getElementById('rbm-outlet-select'); return (s && s.value) ? s.value : ''; }
+  window.getRbmOutlet = getRbmOutlet;
   function getRbmStorageKey(baseKey) { var o = getRbmOutlet(); return o ? baseKey + '_' + o : baseKey; }
   window.onload = function() {
     var runInit = function() {
@@ -65,11 +66,21 @@
     var outletSel = document.getElementById('rbm-outlet-select');
     if (outletSel) outletSel.addEventListener('change', function() {
       var page = window.RBM_PAGE;
-      if (page === 'absensi-view' && typeof renderAbsensiTable === 'function') renderAbsensiTable();
-      else if (page === 'rekap-absensi-gps-view' && typeof loadRekapAbsensiGPS === 'function') loadRekapAbsensiGPS();
+      if (page === 'absensi-view' && typeof renderAbsensiTable === 'function') {
+        window._absensiViewData = undefined;
+        window._absensiViewEmployees = undefined;
+        renderAbsensiTable();
+      }
+      else if (page === 'rekap-absensi-gps-view') {
+        if (typeof populateRekapGpsFilterNama === 'function') populateRekapGpsFilterNama();
+        if (typeof loadRekapAbsensiGPS === 'function') loadRekapAbsensiGPS();
+      }
       else if (page === 'lihat-pembukuan-view' && typeof loadPembukuanData === 'function') loadPembukuanData();
       else if (page === 'lihat-petty-cash-view' && typeof loadPettyCashData === 'function') loadPettyCashData();
       else if (page === 'lihat-inventaris-view' && typeof loadInventarisData === 'function') loadInventarisData();
+      else if (page === 'stok-barang-view' && typeof renderStokTable === 'function') renderStokTable();
+      else if (page === 'input-barang-view' && typeof createBarangRows === 'function') createBarangRows();
+      else if ((page === 'lihat-reservasi-view' || page === 'input-reservasi-view') && typeof loadReservasiData === 'function') { loadReservasiData(); if (typeof renderReservasiCalendar === 'function') renderReservasiCalendar(); }
       else if (page === 'absensi-gps-view') {
         if (typeof loadOfficeConfig === 'function') loadOfficeConfig();
         if (typeof loadJamConfig === 'function') loadJamConfig();
@@ -206,7 +217,12 @@
       const hargaInput = `<div class="col-harga"><input type="number" class="pc_harga" placeholder="Harga Satuan" oninput="calculatePettyCashRowTotal(this)"></div>`;
       const totalInput = `<div class="col-total"><input type="text" class="pc_total" placeholder="Total Rp" readonly style="background: #f0f0f0; font-weight: bold;"></div>`;
       const satuanInput = `<div class="col-satuan"><input type="text" class="pc_satuan" placeholder="Satuan"></div>`;
-      const fotoInput = `<div class="col-foto"><input type="file" class="pc_foto" accept="image/*"></div>`;
+      const fotoInput = `<div class="col-foto" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
+        <input type="file" class="pc_foto" accept="image/*" style="display:none">
+        <button type="button" class="btn btn-secondary" onclick="triggerPcFoto(this, true)" style="font-size:12px;padding:4px 8px;">Kamera</button>
+        <button type="button" class="btn btn-secondary" onclick="triggerPcFoto(this, false)" style="font-size:12px;padding:4px 8px;">Pilih Foto</button>
+        <span class="pc_foto_label" style="font-size:12px;color:#666;">-</span>
+      </div>`;
       const nominalPemasukanInput = `<div class="col-jumlah" style="flex: 1.5;"><input type="number" class="pc_nominal_pemasukan" placeholder="Nominal (Rp)"></div>`;
 
       if (isPengeluaran) {
@@ -216,7 +232,34 @@
       }
 
       container.appendChild(row);
+      var fileInput = row.querySelector(".pc_foto");
+      if (fileInput) {
+        fileInput.addEventListener("change", function() {
+          var label = row.querySelector(".pc_foto_label");
+          if (label) label.textContent = this.files[0] ? this.files[0].name : "-";
+        });
+      }
     }
+  }
+
+  function triggerPcFoto(btn, useCamera) {
+    var row = btn.closest(".row-group");
+    if (!row) return;
+    var input = row.querySelector(".pc_foto");
+    if (!input) return;
+    if (useCamera) input.setAttribute("capture", "environment");
+    else input.removeAttribute("capture");
+    input.value = "";
+    input.click();
+  }
+
+  function removePettyCashInputRow(btn) {
+    var row = btn.closest(".row-group");
+    if (!row) return;
+    var container = document.getElementById("detail-container-petty-cash");
+    var rows = container.querySelectorAll(".row-group");
+    if (rows.length <= 1) return;
+    row.remove();
   }
 
   function calculatePettyCashRowTotal(element) {
@@ -318,7 +361,7 @@
     Promise.all(filePromises).then(() => {
       const dataToSend = { tanggal: tanggal, jenis: jenis, transactions: transactionList };
       if (useFirebaseBackend()) {
-        FirebaseStorage.savePettyCashTransactions(dataToSend).then(showResultPettyCash).catch(function(err) {
+        FirebaseStorage.savePettyCashTransactions(dataToSend, getRbmOutlet()).then(showResultPettyCash).catch(function(err) {
           showResultPettyCash('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.'));
         });
         return;
@@ -357,13 +400,17 @@
     const tglAkhir = document.getElementById("pc_tanggal_akhir").value;
 
     if (useFirebaseBackend()) {
-      FirebaseStorage.getPettyCash(tglAwal, tglAkhir).then(function(result) {
+      FirebaseStorage.getPettyCash(tglAwal, tglAkhir, getRbmOutlet()).then(function(result) {
         var data = result.data || [];
         var summary = result.summary || {};
         if (data.length === 0) {
           tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang tanggal ini.</td></tr>';
         } else {
-          tbody.innerHTML = data.map(row => `
+          tbody.innerHTML = data.map(row => {
+            var aksiBtn = (row._firebaseIndex != null)
+              ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(' + row._firebaseIndex + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItemFirebase(' + row._firebaseIndex + ')">Hapus</button>'
+              : '-';
+            return `
             <tr>
               <td>${row.no || ''}</td>
               <td>${row.tanggal || ''}</td>
@@ -375,9 +422,10 @@
               <td class="num">${row.kredit ? formatRupiah(row.kredit) : ''}</td>
               <td class="num">${row.saldo ? formatRupiah(row.saldo) : ''}</td>
               <td>${row.foto ? '<a class="foto-link" href="' + row.foto + '" target="_blank">Lihat</a>' : '-'}</td>
-              <td>-</td>
+              <td>${aksiBtn}</td>
             </tr>
-          `).join('');
+          `;
+          }).join('');
         }
         summaryEl.style.display = 'grid';
         document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
@@ -432,7 +480,7 @@
           <td class="num">${row.kredit ? formatRupiah(row.kredit) : ''}</td>
           <td class="num">${formatRupiah(row.saldo)}</td>
           <td>${row.foto}</td>
-          <td>${window.rbmOnlyOwnerCanEditDelete ? window.rbmOnlyOwnerCanEditDelete() ? '<button class="btn-small-danger" onclick="deletePettyCashItem(' + row.parentIdx + ',' + row.trxIdx + ')">Hapus</button>' : '-' : '-'}</td>
+          <td><button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItem(' + row.parentIdx + ',' + row.trxIdx + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItem(' + row.parentIdx + ',' + row.trxIdx + ')">Hapus</button></td>
         </tr>
       `).join('');
       summaryEl.style.display = 'grid';
@@ -496,9 +544,13 @@
     const oldDatalist2 = document.getElementById("barang-items-datalist");
     if(oldDatalist2) oldDatalist2.remove();
 
-    // Create datalist from Stok Barang
-    const allStokItems = safeParse(RBMStorage.getItem('RBM_STOK_ITEMS'), { sales: [], fruits: [], notsales: [] });
-    const combinedItems = [ ...allStokItems.sales, ...allStokItems.fruits, ...allStokItems.notsales ];
+    // Create datalist from Stok Barang (aman jika sales/fruits/notsales bukan array)
+    const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
+    const raw = safeParse(RBMStorage.getItem(stokKey), { sales: [], fruits: [], notsales: [] });
+    const sales = Array.isArray(raw && raw.sales) ? raw.sales : [];
+    const fruits = Array.isArray(raw && raw.fruits) ? raw.fruits : [];
+    const notsales = Array.isArray(raw && raw.notsales) ? raw.notsales : [];
+    const combinedItems = [ ...sales, ...fruits, ...notsales ];
     const uniqueNames = [...new Set(combinedItems.map(item => item.name))];
 
     if (uniqueNames.length > 0) {
@@ -693,11 +745,12 @@ function submitDataBarang(){
             }
             let isNew = false;
             if (!itemInfo) {
-                const allItems = safeParse(RBMStorage.getItem('RBM_STOK_ITEMS'), { sales: [], fruits: [], notsales: [] });
+                const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
+                const allItems = safeParse(RBMStorage.getItem(stokKey), { sales: [], fruits: [], notsales: [] });
                 const newId = Date.now() + Math.floor(Math.random() * 10000);
                 const newItem = { id: newId, name: itemData.nama, unit: 'Pcs', ratio: 1 };
                 allItems.sales.push(newItem);
-                RBMStorage.setItem('RBM_STOK_ITEMS', JSON.stringify(allItems));
+                RBMStorage.setItem(stokKey, JSON.stringify(allItems));
                 itemInfo = { id: newId, category: 'sales', ratio: 1, name: itemData.nama };
                 isNew = true;
             }
@@ -862,7 +915,7 @@ function submitTransactions() {
   Promise.all(filePromises).then(() => {
     const dataToSend = { tanggal: tanggal, jenis: jenis, transactions: transactionList };
     if (useFirebaseBackend()) {
-      FirebaseStorage.savePettyCashTransactions(dataToSend).then(showResultKeuangan).catch(function(err) { showResultKeuangan('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
+      FirebaseStorage.savePettyCashTransactions(dataToSend, getRbmOutlet()).then(showResultKeuangan).catch(function(err) { showResultKeuangan('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
       return;
     }
     if (!isGoogleScript()) {
@@ -889,16 +942,83 @@ function showResultKeuangan(res) {
   setTimeout(() => { output.innerText = "" }, 4000);
 }
 
+function getInventarisDaftarBarang() {
+  var key = getRbmStorageKey('RBM_INVENTARIS_DAFTAR_BARANG');
+  var raw = RBMStorage.getItem(key);
+  var arr = safeParse(raw, []);
+  if (!Array.isArray(arr)) return defaultInventarisItems.slice();
+  if (arr.length === 0) return defaultInventarisItems.slice();
+  return arr;
+}
+
+function setInventarisDaftarBarang(arr) {
+  var key = getRbmStorageKey('RBM_INVENTARIS_DAFTAR_BARANG');
+  RBMStorage.setItem(key, JSON.stringify(Array.isArray(arr) ? arr : []));
+}
+
+function addInventarisDaftarBarang(nama) {
+  var n = (nama || '').trim();
+  if (!n) return;
+  var list = getInventarisDaftarBarang();
+  if (!Array.isArray(list)) list = [];
+  else list = list.slice();
+  if (list.indexOf(n) >= 0) return;
+  list.push(n);
+  list.sort(function(a, b) { return String(a).localeCompare(String(b)); });
+  setInventarisDaftarBarang(list);
+  var inp = document.getElementById('inv_daftar_barang_nama');
+  if (inp) inp.value = '';
+  renderInventarisDaftarBarang();
+  if (document.getElementById('detail-container-inventaris') && typeof createInventarisRows === 'function') createInventarisRows();
+}
+
+function removeInventarisDaftarBarang(idx) {
+  var list = getInventarisDaftarBarang();
+  if (!Array.isArray(list)) list = [];
+  else list = list.slice();
+  if (idx < 0 || idx >= list.length) return;
+  list.splice(idx, 1);
+  setInventarisDaftarBarang(list.length ? list : []);
+  renderInventarisDaftarBarang();
+  if (document.getElementById('detail-container-inventaris') && typeof createInventarisRows === 'function') createInventarisRows();
+}
+
+function renderInventarisDaftarBarang() {
+  var tbody = document.getElementById('inv_daftar_barang_tbody');
+  if (!tbody) return;
+  var list = getInventarisDaftarBarang();
+  if (!Array.isArray(list)) list = [];
+  tbody.innerHTML = list.map(function(nama, i) {
+    var esc = ('' + nama).replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/>/g, '&gt;');
+    return '<tr><td>' + esc + '</td><td><button type="button" onclick="removeInventarisDaftarBarang(' + i + ')" style="background:#fff; color:#333; border:1px solid #ccc; padding:6px 10px; font-size:14px; cursor:pointer; border-radius:4px; min-width:36px;">×</button></td></tr>';
+  }).join('');
+}
+
+function openInventarisDaftarModal() {
+  var modal = document.getElementById('invDaftarBarangModal');
+  if (!modal) return;
+  var inp = document.getElementById('inv_daftar_barang_nama');
+  if (inp) inp.value = '';
+  renderInventarisDaftarBarang();
+  modal.style.display = 'flex';
+}
+
+function closeInventarisDaftarModal() {
+  var modal = document.getElementById('invDaftarBarangModal');
+  if (modal) modal.style.display = 'none';
+}
+
 function createInventarisRows() {
   const container = document.getElementById("detail-container-inventaris");
+  if (!container) return;
   container.innerHTML = "";
-
-  // Menggunakan daftar barang default agar user tinggal isi jumlah
-  defaultInventarisItems.forEach((item, i) => {
+  var items = getInventarisDaftarBarang();
+  if (!Array.isArray(items) || items.length === 0) items = defaultInventarisItems;
+  items.forEach((item, i) => {
     const row = document.createElement("div");
     row.className = "row-group";
     row.innerHTML = `
-      <div style="flex:2.5;"><input type="text" class="nama_inventaris" value="${item}" readonly style="background: #f1f5f9; color: #334155;"></div>
+      <div style="flex:2.5;"><input type="text" class="nama_inventaris" value="${String(item).replace(/"/g, '&quot;')}" readonly style="background: #f1f5f9; color: #334155;"></div>
       <div style="flex:1;"><input type="number" class="jumlah_inventaris" placeholder="Jumlah"></div>`;
     container.appendChild(row);
   });
@@ -939,7 +1059,7 @@ function submitDataInventaris() {
   }
 
   if (useFirebaseBackend()) {
-    FirebaseStorage.saveInventaris(dataList).then(showResultInventaris).catch(function(err) { showResultInventaris('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
+    FirebaseStorage.saveInventaris(dataList, getRbmOutlet()).then(showResultInventaris).catch(function(err) { showResultInventaris('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
     return;
   }
   if (!isGoogleScript()) {
@@ -957,6 +1077,7 @@ function showResultInventaris(res) {
   button.disabled = false;
   button.innerText = "Simpan Data Inventaris";
   createInventarisRows();
+  if (document.getElementById("inv_table") && typeof loadInventarisData === "function") loadInventarisData();
   setTimeout(() => { output.innerText = "" }, 3000);
 }
 
@@ -1171,7 +1292,7 @@ function createPembukuanRows() {
           if (dataMasuk.length > 0) {
             const dataToSend = { tanggal, kasMasuk: dataMasuk, kasKeluar: [] };
             if (useFirebaseBackend()) {
-              FirebaseStorage.savePembukuan(dataToSend).then(showResultPembukuan).catch(function(err) { showResultPembukuan('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
+              FirebaseStorage.savePembukuan(dataToSend, getRbmOutlet()).then(showResultPembukuan).catch(function(err) { showResultPembukuan('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
             } else if (!isGoogleScript()) {
               savePendingToLocalStorage('PEMBUKUAN', dataToSend);
               showResultPembukuan('✅ Data disimpan sementara di perangkat. Buka dari Google Apps Script untuk sinkron ke sheet.');
@@ -1217,7 +1338,7 @@ function createPembukuanRows() {
           Promise.all(filePromises).then(()=>{
               const dataToSend={tanggal,kasMasuk:[],kasKeluar:dataKeluar};
               if (useFirebaseBackend()) {
-                FirebaseStorage.savePembukuan(dataToSend).then(showResultPembukuan).catch(function(err) { showResultPembukuan('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
+                FirebaseStorage.savePembukuan(dataToSend, getRbmOutlet()).then(showResultPembukuan).catch(function(err) { showResultPembukuan('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
               } else if (!isGoogleScript()) {
                 savePendingToLocalStorage('PEMBUKUAN', dataToSend);
                 showResultPembukuan('✅ Data disimpan sementara di perangkat. Buka dari Google Apps Script untuk sinkron ke sheet.');
@@ -1239,6 +1360,7 @@ function createPembukuanRows() {
       button.innerText="Simpan Data Pembukuan";
       document.getElementById("jenis_transaksi_pembukuan").value="";
       createPembukuanRows();
+      if (document.getElementById("pembukuan_tbody") && typeof loadPembukuanData === "function") loadPembukuanData();
       setTimeout(()=>{output.innerText=""},4e3);
   }
 
@@ -1598,6 +1720,86 @@ function exportPettyCashToExcel() {
   document.body.removeChild(a);
 }
 
+function triggerImportPettyCashExcel() {
+  var el = document.getElementById('import_petty_cash_file');
+  if (el) { el.value = ''; el.click(); }
+}
+function processImportPettyCashExcel(input) {
+  var file = input && input.files && input.files[0];
+  if (!file) return;
+  if (typeof XLSX === 'undefined') { alert('Library Excel belum dimuat. Pastikan halaman memuat xlsx.'); return; }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var data = new Uint8Array(e.target.result);
+      var workbook = XLSX.read(data, { type: 'array' });
+      var sheet = workbook.Sheets[workbook.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(sheet);
+      if (!rows.length) { alert('File kosong atau tidak ada baris data.'); input.value = ''; return; }
+      var groups = {};
+      rows.forEach(function(r) {
+        var tanggal = (r['Tanggal'] != null ? String(r['Tanggal']) : '').trim();
+        if (!tanggal) return;
+        if (tanggal.indexOf('/') >= 0) {
+          var p = tanggal.split('/');
+          if (p.length >= 3) tanggal = p[2] + '-' + String(p[1]).padStart(2, '0') + '-' + String(p[0]).padStart(2, '0');
+        } else if (tanggal.length === 8 && tanggal.indexOf('-') < 0) {
+          tanggal = tanggal.slice(0, 4) + '-' + tanggal.slice(4, 6) + '-' + tanggal.slice(6, 8);
+        }
+        var jenis = (r['Jenis'] != null ? String(r['Jenis']).toLowerCase() : '').trim();
+        if (jenis !== 'pemasukan' && jenis !== 'pengeluaran') return;
+        var nama = (r['Nama'] != null ? String(r['Nama']) : (r['Keterangan'] != null ? String(r['Keterangan']) : '')).trim();
+        if (!nama) return;
+        var jumlah = parseFloat(r['Jumlah']) || 1;
+        var satuan = (r['Satuan'] != null ? String(r['Satuan']) : '').trim();
+        var harga = parseFloat(r['Harga']) || 0;
+        var total = (harga && jumlah) ? jumlah * harga : (parseFloat(r['Total']) || parseFloat(r['Kredit']) || parseFloat(r['Debit']) || jumlah);
+        var key = tanggal + '|' + jenis;
+        if (!groups[key]) groups[key] = { tanggal: tanggal, jenis: jenis, transactions: [] };
+        groups[key].transactions.push({
+          nama: nama,
+          jumlah: jumlah,
+          satuan: satuan,
+          harga: harga || total,
+          total: total,
+          foto: null
+        });
+      });
+      var payloads = Object.keys(groups).map(function(k) { return groups[k]; });
+      if (payloads.length === 0) { alert('Tidak ada baris valid. Kolom: Tanggal, Jenis (pemasukan/pengeluaran), Nama, Jumlah, Satuan, Harga.'); input.value = ''; return; }
+      var outlet = getRbmOutlet();
+      if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.savePettyCashTransactions) {
+        var idx = 0;
+        function next() {
+          if (idx >= payloads.length) { alert('Import selesai: ' + payloads.length + ' grup transaksi petty cash.'); if (typeof loadPettyCashData === 'function') loadPettyCashData(); input.value = ''; return; }
+          FirebaseStorage.savePettyCashTransactions(payloads[idx], outlet).then(function() { idx++; next(); }).catch(function(err) { alert('Gagal: ' + (err && err.message ? err.message : '')); input.value = ''; });
+        }
+        next();
+      } else {
+        payloads.forEach(function(p) { savePendingToLocalStorage('PETTY_CASH', p); });
+        alert('Import selesai: ' + payloads.length + ' grup transaksi petty cash (disimpan di perangkat).');
+        if (typeof loadPettyCashData === 'function') loadPettyCashData();
+        input.value = '';
+      }
+    } catch (err) { alert('Error baca file: ' + (err && err.message ? err.message : '')); input.value = ''; }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function downloadTemplatePettyCashExcel() {
+  if (typeof XLSX === 'undefined') { alert('Library Excel belum dimuat.'); return; }
+  var headers = ['Tanggal', 'Jenis', 'Nama', 'Jumlah', 'Satuan', 'Harga'];
+  var contoh = [
+    ['2026-03-01', 'pemasukan', 'Setoran kas', 1, 'kali', 500000],
+    ['2026-03-01', 'pengeluaran', 'Beli alat tulis', 2, 'pack', 15000]
+  ];
+  var aoa = [headers].concat(contoh);
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Petty Cash');
+  XLSX.writeFile(wb, 'Template_Import_Petty_Cash.xlsx');
+}
+
 function printPettyCashReport() {
   const table = document.getElementById("pc_table");
   if (!table) return;
@@ -1666,6 +1868,173 @@ function deletePettyCashItem(parentIdx, trxIdx) {
     RBMStorage.setItem(key, JSON.stringify(pending));
     loadPettyCashData(); // Refresh tabel
   }
+}
+
+function deletePettyCashItemFirebase(index) {
+  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
+  if (!confirm('Yakin ingin menghapus data ini?')) return;
+  if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.deletePettyCashByIndex) { alert('Fungsi hapus Firebase tidak tersedia.'); return; }
+  FirebaseStorage.deletePettyCashByIndex(index, getRbmOutlet()).then(function() {
+    if (typeof loadPettyCashData === 'function') loadPettyCashData();
+  }).catch(function(err) {
+    alert('Gagal menghapus: ' + (err && err.message ? err.message : ''));
+  });
+}
+
+function toggleEditPcFields() {
+  var jenis = document.getElementById('editPcJenis');
+  var pengeluaranEl = document.getElementById('editPcPengeluaranFields');
+  var pemasukanEl = document.getElementById('editPcPemasukanFields');
+  if (!jenis || !pengeluaranEl || !pemasukanEl) return;
+  if (jenis.value === 'pengeluaran') {
+    pengeluaranEl.style.display = 'block';
+    pemasukanEl.style.display = 'none';
+  } else {
+    pengeluaranEl.style.display = 'none';
+    pemasukanEl.style.display = 'block';
+  }
+}
+
+function openEditPettyCashModal(data, source, parentIdx, trxIdx, firebaseIndex) {
+  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
+  var modal = document.getElementById('editPettyCashModal');
+  if (!modal) return;
+  document.getElementById('editPcSource').value = source || '';
+  document.getElementById('editPcParentIdx').value = parentIdx != null ? parentIdx : '';
+  document.getElementById('editPcTrxIdx').value = trxIdx != null ? trxIdx : '';
+  document.getElementById('editPcFirebaseIndex').value = firebaseIndex != null ? firebaseIndex : '';
+  var tanggal = data.tanggal || '';
+  if (tanggal && tanggal.indexOf('/') !== -1) {
+    var parts = tanggal.split('/');
+    if (parts.length === 3) tanggal = parts[2] + '-' + ('0' + parts[1]).slice(-2) + '-' + ('0' + parts[0]).slice(-2);
+  } else if (tanggal && tanggal.length === 10 && tanggal.charAt(4) === '-') {
+    // already YYYY-MM-DD
+  } else if (data.date) {
+    try { var d = new Date(data.date); tanggal = d.toISOString().slice(0, 10); } catch(e) {}
+  }
+  document.getElementById('editPcTanggal').value = tanggal || '';
+  var jenis = data.jenis || (parseFloat(data.debit) > 0 ? 'pengeluaran' : 'pemasukan');
+  document.getElementById('editPcJenis').value = jenis;
+  document.getElementById('editPcNama').value = data.nama || '';
+  document.getElementById('editPcJumlah').value = data.jumlah != null ? data.jumlah : '';
+  document.getElementById('editPcSatuan').value = data.satuan || '';
+  document.getElementById('editPcHarga').value = data.harga != null ? data.harga : '';
+  document.getElementById('editPcNominal').value = (data.kredit != null ? parseFloat(data.kredit) : (data.harga != null ? parseFloat(data.harga) : '')) || '';
+  toggleEditPcFields();
+  modal.style.display = 'flex';
+}
+
+function closeEditPettyCashModal() {
+  var modal = document.getElementById('editPettyCashModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function saveEditPettyCashModal() {
+  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
+  var source = document.getElementById('editPcSource').value;
+  var parentIdx = parseInt(document.getElementById('editPcParentIdx').value, 10);
+  var trxIdx = parseInt(document.getElementById('editPcTrxIdx').value, 10);
+  var firebaseIndex = parseInt(document.getElementById('editPcFirebaseIndex').value, 10);
+  var tanggal = document.getElementById('editPcTanggal').value;
+  var jenis = document.getElementById('editPcJenis').value;
+  var nama = (document.getElementById('editPcNama').value || '').trim();
+  if (!nama) { alert('Nama / Keterangan wajib diisi.'); return; }
+  if (source === 'local') {
+    var key = getRbmStorageKey('RBM_PENDING_PETTY_CASH');
+    var pending = safeParse(RBMStorage.getItem(key), []);
+    if (!pending[parentIdx] || !pending[parentIdx].payload || !pending[parentIdx].payload.transactions || !pending[parentIdx].payload.transactions[trxIdx]) { alert('Data tidak ditemukan.'); return; }
+    var trx = pending[parentIdx].payload.transactions[trxIdx];
+    pending[parentIdx].payload.tanggal = tanggal;
+    pending[parentIdx].payload.jenis = jenis;
+    if (jenis === 'pengeluaran') {
+      var jumlah = parseFloat(document.getElementById('editPcJumlah').value) || 0;
+      var harga = parseFloat(document.getElementById('editPcHarga').value) || 0;
+      trx.nama = nama;
+      trx.jumlah = jumlah;
+      trx.satuan = (document.getElementById('editPcSatuan').value || '').trim();
+      trx.harga = harga;
+      trx.total = jumlah * harga;
+    } else {
+      var nominal = parseFloat(document.getElementById('editPcNominal').value) || 0;
+      trx.nama = nama;
+      trx.jumlah = 1;
+      trx.satuan = '';
+      trx.harga = nominal;
+      trx.total = nominal;
+    }
+    RBMStorage.setItem(key, JSON.stringify(pending));
+    closeEditPettyCashModal();
+    if (typeof loadPettyCashData === 'function') loadPettyCashData();
+    return;
+  }
+  if (source === 'firebase' && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.updatePettyCashTransaction) {
+    var debit = 0, kredit = 0;
+    var jumlah = 1, satuan = '', harga = 0;
+    if (jenis === 'pengeluaran') {
+      jumlah = parseFloat(document.getElementById('editPcJumlah').value) || 0;
+      satuan = (document.getElementById('editPcSatuan').value || '').trim();
+      harga = parseFloat(document.getElementById('editPcHarga').value) || 0;
+      debit = jumlah * harga;
+    } else {
+      kredit = parseFloat(document.getElementById('editPcNominal').value) || 0;
+      harga = kredit;
+    }
+    FirebaseStorage.updatePettyCashTransaction(firebaseIndex, {
+      tanggal: tanggal,
+      nama: nama,
+      jumlah: jumlah,
+      satuan: satuan,
+      harga: harga,
+      debit: debit,
+      kredit: kredit
+    }, getRbmOutlet()).then(function() {
+      closeEditPettyCashModal();
+      if (typeof loadPettyCashData === 'function') loadPettyCashData();
+    }).catch(function(err) {
+      alert('Gagal menyimpan: ' + (err && err.message ? err.message : ''));
+    });
+  }
+}
+
+function editPettyCashItem(parentIdx, trxIdx) {
+  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
+  var key = getRbmStorageKey('RBM_PENDING_PETTY_CASH');
+  var pending = safeParse(RBMStorage.getItem(key), []);
+  if (!pending[parentIdx] || !pending[parentIdx].payload || !pending[parentIdx].payload.transactions || !pending[parentIdx].payload.transactions[trxIdx]) return;
+  var p = pending[parentIdx].payload;
+  var trx = p.transactions[trxIdx];
+  var data = {
+    tanggal: p.tanggal,
+    jenis: p.jenis,
+    nama: trx.nama,
+    jumlah: trx.jumlah,
+    satuan: trx.satuan || '',
+    harga: trx.harga,
+    kredit: p.jenis === 'pemasukan' ? (trx.total || trx.harga) : 0,
+    debit: p.jenis === 'pengeluaran' ? trx.total : 0
+  };
+  openEditPettyCashModal(data, 'local', parentIdx, trxIdx, null);
+}
+
+function editPettyCashItemFirebase(index) {
+  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
+  if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.getPettyCashFullList) { alert('Fungsi edit Firebase tidak tersedia.'); return; }
+  FirebaseStorage.getPettyCashFullList(getRbmOutlet()).then(function(list) {
+    if (!list[index]) { alert('Data tidak ditemukan.'); return; }
+    var row = list[index];
+    var data = {
+      tanggal: row.tanggal || row.date,
+      nama: row.nama,
+      jumlah: row.jumlah,
+      satuan: row.satuan || '',
+      harga: row.harga,
+      debit: parseFloat(row.debit) || 0,
+      kredit: parseFloat(row.kredit) || 0
+    };
+    openEditPettyCashModal(data, 'firebase', null, null, index);
+  }).catch(function(err) {
+    alert('Gagal memuat data: ' + (err && err.message ? err.message : ''));
+  });
 }
 
 function showImageModal(src, caption) {
@@ -1867,7 +2236,8 @@ function loadPembukuanData() {
     const tglAwal = document.getElementById("pembukuan_tanggal_awal").value;
     const tglAkhir = document.getElementById("pembukuan_tanggal_akhir").value;
 
-    const pending = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_PEMBUKUAN')), []);
+    function renderPembukuanFromPending(pending) {
+    if (!Array.isArray(pending)) pending = [];
 
     let totalCashMasuk = 0;
     let totalKasKeluar = 0;
@@ -1992,19 +2362,20 @@ function loadPembukuanData() {
             if (i === 0) {
                 html += `<td rowspan="${group.masuk.length}" style="vertical-align: middle; text-align: center; background-color: #f1f5f9; font-weight: 500;">${date}</td>`;
             }
-            // build memo icon that shows popup with comment
+            // build memo icon that shows popup with comment (data-memo + delegation agar klik selalu jalan)
             let fisikCell = r.fisik;
             if (r.komentarFisik) {
-                // popup shows date + label on first line and memo text below
                 const displayDate = date.split('-').reverse().join('/');
                 const info = `${displayDate} - Fisik<br>${r.komentarFisik}`;
-                fisikCell += ` <span class="memo-icon" onclick="showMemoPopup('${info.replace(/'/g,"\\'")}')">📝</span>`;
+                const safe = ('' + info).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                fisikCell += ` <span class="memo-icon" data-memo="${safe}" title="Klik untuk lihat komentar">📝</span>`;
             }
             let selisihCell = r.selisih;
             if (r.komentarSelisih) {
                 const displayDate = date.split('-').reverse().join('/');
                 const info = `${displayDate} - Selisih<br>${r.komentarSelisih}`;
-                selisihCell += ` <span class="memo-icon" onclick="showMemoPopup('${info.replace(/'/g,"\\'")}')">📝</span>`;
+                const safe = ('' + info).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                selisihCell += ` <span class="memo-icon" data-memo="${safe}" title="Klik untuk lihat komentar">📝</span>`;
             }
             html += `
                 <td>${r.keterangan}</td>
@@ -2057,54 +2428,92 @@ function loadPembukuanData() {
     document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(totalKasKeluar);
     document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(totalFisikSheet);
     summaryEl.style.display = 'grid';
+    }
+
+    if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPembukuan && useFirebaseBackend()) {
+      FirebaseStorage.getPembukuan(tglAwal, tglAkhir, getRbmOutlet()).then(function(pending) {
+        window._lastPembukuanPending = pending;
+        renderPembukuanFromPending(pending);
+      }).catch(function() {
+        tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Gagal memuat data.</td></tr>';
+        summaryEl.style.display = 'none';
+      });
+      return;
+    }
+    var localPending = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_PEMBUKUAN')), []);
+    window._lastPembukuanPending = localPending;
+    renderPembukuanFromPending(localPending);
 }
 
 function toggleMemo(icon) {
     // not used any more
 }
 
-function showMemoPopup(text) {
+function showMemoPopup(text, doc) {
     if (!text) return;
-    const overlay = document.getElementById('memoModalOverlay');
-    const content = document.getElementById('memoModalContent');
-    // split first line as header and rest as body
-    const parts = text.split('<br>');
-    let html = '';
+    var d = doc || (typeof document !== 'undefined' ? document : null);
+    if (!d) return;
+    var overlay = d.getElementById('memoModalOverlay');
+    var content = d.getElementById('memoModalContent');
+    if (!overlay || !content) return;
+    var parts = text.split('<br>');
+    var html = '';
     if (parts.length > 0) {
-        html += `<div class="memo-modal-header">${parts[0]}</div>`;
+        html += '<div class="memo-modal-header">' + parts[0] + '</div>';
         if (parts.length > 1) html += parts.slice(1).join('<br>');
     }
     content.innerHTML = html;
     overlay.style.display = 'flex';
+    window._memoOverlayDoc = d;
 }
 
 function closeMemoPopup() {
-    const overlay = document.getElementById('memoModalOverlay');
-    overlay.style.display = 'none';
+    var d = window._memoOverlayDoc || (typeof document !== 'undefined' ? document : null);
+    if (d) {
+        var overlay = d.getElementById('memoModalOverlay');
+        if (overlay) overlay.style.display = 'none';
+    }
+    window._memoOverlayDoc = null;
 }
+
+document.addEventListener('click', function(e) {
+    var el = e.target && (e.target.closest ? e.target.closest('.memo-icon') : null);
+    if (!el || !el.getAttribute('data-memo')) return;
+    var text = el.getAttribute('data-memo');
+    if (!text) return;
+    showMemoPopup(text, el.ownerDocument || document);
+}, true);
 
 function deletePembukuanItem(parentIdx, type, subIdx) {
     if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
     if(!confirm("Yakin ingin menghapus data ini?")) return;
+
+    var pending = window._lastPembukuanPending;
+    if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.deletePembukuanDay && pending && pending[parentIdx] && pending[parentIdx].payload) {
+        var p = pending[parentIdx].payload;
+        var kasMasuk = (p.kasMasuk || []).slice();
+        var kasKeluar = (p.kasKeluar || []).slice();
+        if (type === 'kasMasuk' && kasMasuk.length > subIdx) kasMasuk.splice(subIdx, 1);
+        else if (type === 'kasKeluar' && kasKeluar.length > subIdx) kasKeluar.splice(subIdx, 1);
+        var outlet = getRbmOutlet();
+        if (kasMasuk.length === 0 && kasKeluar.length === 0) {
+            FirebaseStorage.deletePembukuanDay(outlet, p.tanggal).then(function() { loadPembukuanData(); }).catch(function(err) { alert('Gagal hapus: ' + (err && err.message ? err.message : '')); loadPembukuanData(); });
+        } else {
+            FirebaseStorage.savePembukuan({ tanggal: p.tanggal, kasMasuk: kasMasuk, kasKeluar: kasKeluar }, outlet).then(function() { loadPembukuanData(); }).catch(function(err) { alert('Gagal update: ' + (err && err.message ? err.message : '')); loadPembukuanData(); });
+        }
+        return;
+    }
+
     const key = getRbmStorageKey('RBM_PENDING_PEMBUKUAN');
-    let pending = safeParse(RBMStorage.getItem(key), []);
-    
-    if (pending[parentIdx] && pending[parentIdx].payload) {
-        const payload = pending[parentIdx].payload;
-        
-        if (type === 'kasMasuk' && payload.kasMasuk) {
-            payload.kasMasuk.splice(subIdx, 1);
-        } else if (type === 'kasKeluar' && payload.kasKeluar) {
-            payload.kasKeluar.splice(subIdx, 1);
+    let localPending = safeParse(RBMStorage.getItem(key), []);
+    if (localPending[parentIdx] && localPending[parentIdx].payload) {
+        const payload = localPending[parentIdx].payload;
+        if (type === 'kasMasuk' && payload.kasMasuk) payload.kasMasuk.splice(subIdx, 1);
+        else if (type === 'kasKeluar' && payload.kasKeluar) payload.kasKeluar.splice(subIdx, 1);
+        if ((!payload.kasMasuk || payload.kasMasuk.length === 0) && (!payload.kasKeluar || payload.kasKeluar.length === 0)) {
+            localPending.splice(parentIdx, 1);
         }
-        
-        // Jika kedua array kosong, hapus parent
-        if ((!payload.kasMasuk || payload.kasMasuk.length === 0) && 
-            (!payload.kasKeluar || payload.kasKeluar.length === 0)) {
-            pending.splice(parentIdx, 1);
-        }
-        
-        RBMStorage.setItem(key, JSON.stringify(pending));
+        RBMStorage.setItem(key, JSON.stringify(localPending));
         loadPembukuanData();
     }
 }
@@ -2112,13 +2521,15 @@ function deletePembukuanItem(parentIdx, type, subIdx) {
 function editPembukuanItem(parentIdx, type, subIdx) {
     if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
     if(!confirm("Edit data ini? Data akan dipindahkan ke form input dan dihapus dari daftar ini.")) return;
-    
-    const key = getRbmStorageKey('RBM_PENDING_PEMBUKUAN');
-    let pending = safeParse(RBMStorage.getItem(key), []);
-    const item = pending[parentIdx];
-    
+
+    var pending = window._lastPembukuanPending;
+    if (!pending && !useFirebaseBackend()) {
+      var key = getRbmStorageKey('RBM_PENDING_PEMBUKUAN');
+      pending = safeParse(RBMStorage.getItem(key), []);
+    }
+    var item = pending && pending[parentIdx];
     if (!item || !item.payload) return;
-    
+
     const p = item.payload;
     let dataToEdit = null;
     
@@ -2173,9 +2584,21 @@ function editPembukuanItem(parentIdx, type, subIdx) {
             }
         }
     }
-    
-    // Hapus data lama
-    deletePembukuanItem(parentIdx, type, subIdx);
+
+    if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && pending) {
+        var kasMasuk = (p.kasMasuk || []).slice();
+        var kasKeluar = (p.kasKeluar || []).slice();
+        if (type === 'kasMasuk' && kasMasuk.length > subIdx) kasMasuk.splice(subIdx, 1);
+        else if (type === 'kasKeluar' && kasKeluar.length > subIdx) kasKeluar.splice(subIdx, 1);
+        var outlet = getRbmOutlet();
+        if (kasMasuk.length === 0 && kasKeluar.length === 0) {
+            FirebaseStorage.deletePembukuanDay(outlet, p.tanggal).then(function() { loadPembukuanData(); }).catch(function() { loadPembukuanData(); });
+        } else {
+            FirebaseStorage.savePembukuan({ tanggal: p.tanggal, kasMasuk: kasMasuk, kasKeluar: kasKeluar }, outlet).then(function() { loadPembukuanData(); }).catch(function() { loadPembukuanData(); });
+        }
+    } else {
+        deletePembukuanItem(parentIdx, type, subIdx);
+    }
 }
 
 function exportPembukuanToExcel() {
@@ -2403,6 +2826,92 @@ function exportPembukuanToExcel() {
   document.body.removeChild(a);
 }
 
+function triggerImportPembukuanExcel() {
+  var el = document.getElementById('import_pembukuan_file');
+  if (el) { el.value = ''; el.click(); }
+}
+function processImportPembukuanExcel(input) {
+  var file = input && input.files && input.files[0];
+  if (!file) return;
+  if (typeof XLSX === 'undefined') { alert('Library Excel belum dimuat. Pastikan halaman memuat xlsx.'); return; }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var data = new Uint8Array(e.target.result);
+      var workbook = XLSX.read(data, { type: 'array' });
+      var sheet = workbook.Sheets[workbook.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(sheet);
+      if (!rows.length) { alert('File kosong atau tidak ada baris data.'); input.value = ''; return; }
+      var byDate = {};
+      rows.forEach(function(r) {
+        var tanggal = (r['Tanggal'] != null ? String(r['Tanggal']) : '').trim();
+        if (!tanggal) return;
+        if (tanggal.indexOf('/') >= 0) {
+          var p = tanggal.split('/');
+          if (p.length >= 3) tanggal = p[2] + '-' + String(p[1]).padStart(2, '0') + '-' + String(p[0]).padStart(2, '0');
+        } else if (tanggal.length === 8 && tanggal.indexOf('-') < 0) {
+          tanggal = tanggal.slice(0, 4) + '-' + tanggal.slice(4, 6) + '-' + tanggal.slice(6, 8);
+        }
+        var tipe = (r['Tipe'] != null ? String(r['Tipe']).toLowerCase() : (r['Type'] != null ? String(r['Type']).toLowerCase() : '')).trim();
+        var isKeluar = (tipe.indexOf('keluar') >= 0 || tipe === 'kas keluar');
+        if (isKeluar) {
+          var keterangan = (r['Keterangan'] != null ? String(r['Keterangan']) : '').trim();
+          var setor = parseFloat(r['Setor']) || parseFloat(r['Fisik']) || 0;
+          if (!keterangan && !setor) return;
+          if (!byDate[tanggal]) byDate[tanggal] = { tanggal: tanggal, kasMasuk: [], kasKeluar: [] };
+          byDate[tanggal].kasKeluar.push({ keterangan: keterangan, setor: setor, foto: null });
+        } else {
+          var ket = (r['Keterangan'] != null ? String(r['Keterangan']) : '').trim();
+          var catatan = parseFloat(r['Catatan']) || 0;
+          var fisik = parseFloat(r['Fisik']) || 0;
+          var vcr = (r['VCR'] != null ? String(r['VCR']) : '').trim();
+          if (!ket && !catatan && !fisik && !vcr) return;
+          if (!byDate[tanggal]) byDate[tanggal] = { tanggal: tanggal, kasMasuk: [], kasKeluar: [] };
+          byDate[tanggal].kasMasuk.push({
+            keterangan: ket,
+            catatan: String(catatan),
+            fisik: String(fisik),
+            vcr: vcr,
+            komentarFisik: (r['KomentarFisik'] != null ? String(r['KomentarFisik']) : '').trim(),
+            komentarSelisih: (r['KomentarSelisih'] != null ? String(r['KomentarSelisih']) : '').trim()
+          });
+        }
+      });
+      var payloads = Object.keys(byDate).map(function(k) { return byDate[k]; });
+      if (payloads.length === 0) { alert('Tidak ada baris valid. Kolom: Tanggal, Tipe (Kas Masuk/Kas Keluar), Keterangan, Catatan, Fisik, VCR, Setor.'); input.value = ''; return; }
+      var outlet = getRbmOutlet();
+      if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.savePembukuan) {
+        var idx = 0;
+        function next() {
+          if (idx >= payloads.length) { alert('Import selesai: ' + payloads.length + ' tanggal pembukuan.'); if (typeof loadPembukuanData === 'function') loadPembukuanData(); input.value = ''; return; }
+          FirebaseStorage.savePembukuan(payloads[idx], outlet).then(function() { idx++; next(); }).catch(function(err) { alert('Gagal: ' + (err && err.message ? err.message : '')); input.value = ''; });
+        }
+        next();
+      } else {
+        payloads.forEach(function(p) { savePendingToLocalStorage('PEMBUKUAN', p); });
+        alert('Import selesai: ' + payloads.length + ' tanggal pembukuan (disimpan di perangkat).');
+        if (typeof loadPembukuanData === 'function') loadPembukuanData();
+        input.value = '';
+      }
+    } catch (err) { alert('Error baca file: ' + (err && err.message ? err.message : '')); input.value = ''; }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function downloadTemplatePembukuanExcel() {
+  if (typeof XLSX === 'undefined') { alert('Library Excel belum dimuat.'); return; }
+  var headers = ['Tanggal', 'Tipe', 'Keterangan', 'Catatan', 'Fisik', 'VCR', 'Setor'];
+  var contoh = [
+    ['2026-03-01', 'Kas Masuk', 'Penjualan harian', 1200000, 1195000, 'VCR-001', ''],
+    ['2026-03-01', 'Kas Keluar', 'Setor ke bank', '', '', '', 500000]
+  ];
+  var aoa = [headers].concat(contoh);
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pembukuan');
+  XLSX.writeFile(wb, 'Template_Import_Pembukuan.xlsx');
+}
+
 function printPembukuanReport() {
     // Reuse existing print logic structure
     window.print();
@@ -2473,8 +2982,8 @@ function loadInventarisData() {
   };
 
   // Local Storage Logic (Offline/Pending)
-  if (!isGoogleScript()) {
-    const pending = safeParse(RBMStorage.getItem('RBM_PENDING_INVENTARIS'), []);
+  if (!useFirebaseBackend() && !isGoogleScript()) {
+    const pending = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_INVENTARIS')), []);
     let flatData = [];
     
     pending.forEach((item) => {
@@ -2494,13 +3003,28 @@ function loadInventarisData() {
     return;
   }
 
+  // Firebase: load inventaris dari Firebase
+  if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getInventaris && useFirebaseBackend()) {
+    FirebaseStorage.getInventaris(tglAwal, tglAkhir, getRbmOutlet()).then(function(list) {
+      renderPivot(list || []);
+    }).catch(function(err) {
+      tbody.innerHTML = '<tr><td colspan="5" class="table-empty">Error: ' + (err && err.message ? err.message : 'Gagal memuat') + '</td></tr>';
+    });
+    return;
+  }
+
   // Google Script Logic (Placeholder - Anda perlu membuat fungsi getLaporanInventaris di GAS)
-  google.script.run
-    .withSuccessHandler(renderPivot)
-    .withFailureHandler(function(err) {
-       tbody.innerHTML = '<tr><td colspan="5" class="table-empty">Error: ' + err.message + '</td></tr>';
-    })
-    .getLaporanInventaris(tglAwal, tglAkhir);
+  if (typeof google !== 'undefined' && google.script && google.script.run) {
+    google.script.run
+      .withSuccessHandler(renderPivot)
+      .withFailureHandler(function(err) {
+         tbody.innerHTML = '<tr><td colspan="5" class="table-empty">Error: ' + (err && err.message ? err.message : 'Gagal memuat') + '</td></tr>';
+      })
+      .getLaporanInventaris(tglAwal, tglAkhir);
+    return;
+  }
+
+  renderPivot([]);
 }
 
 function exportInventarisToExcel() {
@@ -2586,7 +3110,7 @@ function processInventarisUpdate(nama, tanggal, jumlah) {
     tbody.innerHTML = '<tr><td colspan="100%" class="table-loading">Menyimpan perubahan...</td></tr>';
 
     if (useFirebaseBackend()) {
-        FirebaseStorage.saveInventaris(dataList).then(function(res) { alert(res); loadInventarisData(); }).catch(function(err) { alert("Error: " + (err && err.message ? err.message : '')); loadInventarisData(); });
+        FirebaseStorage.saveInventaris(dataList, getRbmOutlet()).then(function(res) { alert(res); loadInventarisData(); }).catch(function(err) { alert("Error: " + (err && err.message ? err.message : '')); loadInventarisData(); });
         return;
     }
     if (!isGoogleScript()) {
@@ -4576,7 +5100,7 @@ function submitReservasi() {
         return;
     }
 
-    const reservasiData = safeParse(RBMStorage.getItem('RBM_RESERVASI_DATA'), []);
+    const reservasiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
     // Generate ID: RES + Timestamp
     const timestamp = new Date().toISOString();
     const id = "RES-" + Date.now().toString().slice(-6);
@@ -4586,7 +5110,7 @@ function submitReservasi() {
     };
 
     reservasiData.push(newRes);
-    RBMStorage.setItem('RBM_RESERVASI_DATA', JSON.stringify(reservasiData));
+    RBMStorage.setItem(getRbmStorageKey('RBM_RESERVASI_DATA'), JSON.stringify(reservasiData));
     
     alert("✅ Reservasi Berhasil Disimpan!");
     
@@ -4607,7 +5131,7 @@ function loadReservasiData() {
     const tglAkhir = document.getElementById("res_filter_end").value;
     const tbody = document.getElementById("reservasi_tbody");
     
-    const allData = safeParse(RBMStorage.getItem('RBM_RESERVASI_DATA'), []);
+    const allData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
     
     // Filter by date range
     const filtered = allData.filter(d => d.tanggal >= tglAwal && d.tanggal <= tglAkhir);
@@ -4642,15 +5166,15 @@ function loadReservasiData() {
 function deleteReservasi(id) {
     if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
     if(!confirm("Hapus data reservasi ini?")) return;
-    let allData = safeParse(RBMStorage.getItem('RBM_RESERVASI_DATA'), []);
+    let allData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
     allData = allData.filter(d => d.id !== id);
-    RBMStorage.setItem('RBM_RESERVASI_DATA', JSON.stringify(allData));
+    RBMStorage.setItem(getRbmStorageKey('RBM_RESERVASI_DATA'), JSON.stringify(allData));
     loadReservasiData();
     renderReservasiCalendar();
 }
 
 function printReservasiBill(id) {
-    const allData = safeParse(RBMStorage.getItem('RBM_RESERVASI_DATA'), []);
+    const allData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
     const res = allData.find(d => d.id === id);
     if (!res) return;
 
@@ -4726,7 +5250,7 @@ function renderReservasiCalendar() {
         html += `<div class="calendar-day other-month"></div>`;
     }
 
-    const reservasiData = safeParse(RBMStorage.getItem('RBM_RESERVASI_DATA'), []);
+    const reservasiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
 
     // Current month days
     for (let i = 1; i <= daysInMonth; i++) {
@@ -4775,9 +5299,12 @@ let activeStokTab = 'sales'; // sales, fruits, notsales
 
 // Helper to find item ID by name across all categories
 function findStokItemId(name) {
-    const allItems = safeParse(RBMStorage.getItem('RBM_STOK_ITEMS'), {sales:[], fruits:[], notsales:[]});
+    const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
+    const allItems = safeParse(RBMStorage.getItem(stokKey), {sales:[], fruits:[], notsales:[]});
     for (const cat in allItems) {
-        const item = allItems[cat].find(i => i.name.toLowerCase() === name.trim().toLowerCase());
+        const list = allItems[cat];
+        if (!Array.isArray(list)) continue;
+        const item = list.find(i => i.name.toLowerCase() === name.trim().toLowerCase());
         if (item) return { id: item.id, category: cat, ratio: item.ratio, name: item.name };
     }
     return null;
@@ -4786,8 +5313,9 @@ function findStokItemId(name) {
 // Cari item by nama di kategori tertentu (untuk rusak: bedakan Sales vs Fruits)
 function findStokItemIdByCategory(name, category) {
     if (!name || !name.trim() || !category) return null;
-    const allItems = safeParse(RBMStorage.getItem('RBM_STOK_ITEMS'), { sales: [], fruits: [], notsales: [] });
-    const list = allItems[category];
+    const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
+    const allItems = safeParse(RBMStorage.getItem(stokKey), { sales: [], fruits: [], notsales: [] });
+    const list = Array.isArray(allItems && allItems[category]) ? allItems[category] : null;
     if (!list) return null;
     const item = list.find(i => i.name.toLowerCase() === name.trim().toLowerCase());
     if (item) return { id: item.id, category: category, ratio: item.ratio, name: item.name };
@@ -4797,9 +5325,11 @@ function findStokItemIdByCategory(name, category) {
 // Ambil satuan dari Stok Barang berdasarkan nama (untuk Input Barang)
 function getStokUnitByName(name) {
     if (!name || !name.trim()) return '';
-    const allItems = safeParse(RBMStorage.getItem('RBM_STOK_ITEMS'), { sales: [], fruits: [], notsales: [] });
+    const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
+    const allItems = safeParse(RBMStorage.getItem(stokKey), { sales: [], fruits: [], notsales: [] });
     for (const cat in allItems) {
-        const item = allItems[cat].find(i => i.name.toLowerCase() === name.trim().toLowerCase());
+        const list = Array.isArray(allItems[cat]) ? allItems[cat] : [];
+        const item = list.find(i => i.name.toLowerCase() === name.trim().toLowerCase());
         if (item && item.unit) return item.unit;
     }
     return '';
@@ -4911,7 +5441,8 @@ function switchStokTab(tab) {
 }
 
 function getStokItems(category) {
-    const allItems = safeParse(RBMStorage.getItem('RBM_STOK_ITEMS'), {
+    const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
+    const allItems = safeParse(RBMStorage.getItem(stokKey), {
         sales: [
             {id:1, name:'Ayam', unit:'Ekor', ratio:1}, 
             {id:2, name:'Saus BBQ', unit:'Pck', ratio:20}
@@ -4925,7 +5456,8 @@ function getStokItems(category) {
             {id:202, name:'Sabun Cuci', unit:'Btl', ratio:1}
         ]
     });
-    return allItems[category] || [];
+    const list = allItems && allItems[category];
+    return Array.isArray(list) ? list : [];
 }
 
 // Untuk tab Same Item on Sales: gabung item Sales + item Fruits yang belum ada di Sales (nama sama)
@@ -5413,19 +5945,22 @@ function addStokItem() {
         ratio = 1 / qtyPorsi;
     }
 
-    const allItems = safeParse(RBMStorage.getItem('RBM_STOK_ITEMS'), {sales:[], fruits:[], notsales:[]});
+    const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
+    const allItems = safeParse(RBMStorage.getItem(stokKey), {sales:[], fruits:[], notsales:[]});
+    if (!Array.isArray(allItems[activeStokTab])) allItems[activeStokTab] = [];
     const newId = Date.now();
     allItems[activeStokTab].push({id: newId, name, unit, ratio});
     
     // Jika menambah di Fruits & Vegetables, otomatis tambah ke Same Item on Sales
     if (activeStokTab === 'fruits') {
+        if (!Array.isArray(allItems.sales)) allItems.sales = [];
         const exists = allItems.sales.some(i => i.name.toLowerCase() === name.toLowerCase());
         if (!exists) {
             allItems.sales.push({id: newId + 1, name, unit, ratio});
         }
     }
     
-    RBMStorage.setItem('RBM_STOK_ITEMS', JSON.stringify(allItems));
+    RBMStorage.setItem(stokKey, JSON.stringify(allItems));
     
     document.getElementById("new_stok_name").value = "";
     document.getElementById("new_stok_unit").value = "";
@@ -5437,9 +5972,10 @@ function addStokItem() {
 function removeStokItem(idx) {
     if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
     if(!confirm("Hapus item ini?")) return;
-    const allItems = safeParse(RBMStorage.getItem('RBM_STOK_ITEMS'), {sales:[], fruits:[], notsales:[]});
-    allItems[activeStokTab].splice(idx, 1);
-    RBMStorage.setItem('RBM_STOK_ITEMS', JSON.stringify(allItems));
+    const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
+    const allItems = safeParse(RBMStorage.getItem(stokKey), {sales:[], fruits:[], notsales:[]});
+    if (Array.isArray(allItems[activeStokTab])) allItems[activeStokTab].splice(idx, 1);
+    RBMStorage.setItem(stokKey, JSON.stringify(allItems));
     manageStokItems();
     renderStokTable();
 }
@@ -5466,7 +6002,9 @@ function processStokImport(input) {
             return;
         }
 
-        const allItems = safeParse(RBMStorage.getItem('RBM_STOK_ITEMS'), {sales:[], fruits:[], notsales:[]});
+        const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
+        const allItems = safeParse(RBMStorage.getItem(stokKey), {sales:[], fruits:[], notsales:[]});
+        if (!Array.isArray(allItems[activeStokTab])) allItems[activeStokTab] = [];
         let count = 0;
 
         json.forEach(row => {
@@ -5488,7 +6026,7 @@ function processStokImport(input) {
             }
         });
 
-        RBMStorage.setItem('RBM_STOK_ITEMS', JSON.stringify(allItems));
+        RBMStorage.setItem(stokKey, JSON.stringify(allItems));
         alert(`Berhasil mengimpor ${count} item baru.`);
         manageStokItems();
         renderStokTable();
@@ -6315,6 +6853,8 @@ function loadRekapAbsensiGPS() {
     function getLupaAbsen(item) {
         const lupa = [];
         if (!item.masuk) lupa.push('Masuk');
+        if (!item.breakOut) lupa.push('Istirahat Keluar');
+        if (!item.breakIn) lupa.push('Istirahat Kembali');
         if (!item.pulang) lupa.push('Pulang');
         if (lupa.length === 0) return '-';
         return 'Lupa ' + lupa.join(' & ');
@@ -6342,9 +6882,11 @@ function loadRekapAbsensiGPS() {
         const lupaAbsen = getLupaAbsen(item);
         const lupaMasuk = !item.masuk;
         const lupaPulang = !item.pulang;
+        const lupaBreakOut = !item.breakOut;
+        const lupaBreakIn = !item.breakIn;
         const detailTelatEsc = JSON.stringify({ lines: detailTelat.lines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const telatHtml = (telat || punyaTelatPulangCepat) ? '<span style="color:#b91c1c; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailTelatModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', \'' + detailTelatEsc + '\')">Ya</span>' : '-';
-        const lupaHtml = lupaAbsen !== '-' ? '<span style="color:#b45309; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailLupaModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', ' + lupaMasuk + ', ' + lupaPulang + ')">' + lupaAbsen + '</span>' : '-';
+        const lupaHtml = lupaAbsen !== '-' ? '<span style="color:#b45309; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailLupaModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', ' + lupaMasuk + ', ' + lupaPulang + ', ' + lupaBreakOut + ', ' + lupaBreakIn + ')">' + lupaAbsen + '</span>' : '-';
         let photosHtml = '';
         if (item.masuk) {
             const capMasuk = buildGpsLogCaption(item.masuk).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
@@ -6374,14 +6916,32 @@ function loadRekapAbsensiGPS() {
 function populateRekapGpsFilterNama() {
     const filterSelect = document.getElementById("rekap_gps_filter_nama");
     if (!filterSelect) return;
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    var key = getRbmStorageKey('RBM_GPS_LOGS');
+    var logs = safeParse(RBMStorage.getItem(key), []);
+    var names = [];
+    var seen = {};
+    logs.forEach(function(log) {
+        var n = (log && log.name || '').trim();
+        if (n && !seen[n]) { seen[n] = true; names.push(n); }
+    });
+    names.sort(function(a, b) { return String(a).localeCompare(String(b)); });
+    if (names.length === 0) {
+        var employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+        employees.forEach(function(emp) {
+            var n = (emp && emp.name || '').trim();
+            if (n && !seen[n]) names.push(n);
+        });
+        names.sort(function(a, b) { return String(a).localeCompare(String(b)); });
+    }
+    var currentVal = filterSelect.value;
     filterSelect.innerHTML = '<option value="">Semua</option>';
-    employees.forEach(emp => {
-        const opt = document.createElement('option');
-        opt.value = emp.name;
-        opt.textContent = emp.name;
+    names.forEach(function(n) {
+        var opt = document.createElement('option');
+        opt.value = n;
+        opt.textContent = n;
         filterSelect.appendChild(opt);
     });
+    if (currentVal && names.indexOf(currentVal) >= 0) filterSelect.value = currentVal;
 }
 
 // Data rekap GPS untuk export (Excel/PDF) - sama filter dengan tampilan
@@ -6411,9 +6971,11 @@ function getRekapAbsensiGpsDataForExport() {
         const telat = telatDetail.totalMenit > 0 ? 'Ya (' + telatDetail.totalMenit + ' menit)' : '-';
         let lupa = [];
         if (!item.masuk) lupa.push('Masuk');
+        if (!item.breakOut) lupa.push('Istirahat Keluar');
+        if (!item.breakIn) lupa.push('Istirahat Kembali');
         if (!item.pulang) lupa.push('Pulang');
         const lupaAbsen = lupa.length ? 'Lupa ' + lupa.join(' & ') : '-';
-        const foto = [item.masuk, item.pulang].filter(Boolean).length ? 'Ada' : '-';
+        const foto = [item.masuk, item.breakOut, item.breakIn, item.pulang].filter(Boolean).length ? 'Ada' : '-';
         rows.push({
             date: item.date,
             name: item.name,
@@ -6595,12 +7157,14 @@ function showDetailTelatModal(date, name, detailJson) {
     document.getElementById('gpsDetailModal').style.display = 'flex';
 }
 
-function showDetailLupaModal(date, name, lupaMasuk, lupaPulang) {
+function showDetailLupaModal(date, name, lupaMasuk, lupaPulang, lupaBreakOut, lupaBreakIn) {
     const title = document.getElementById('gpsDetailModalTitle');
     const body = document.getElementById('gpsDetailModalBody');
     title.textContent = 'Detail Lupa Absen - ' + name + ' (' + date + ')';
     const lines = [];
     if (lupaMasuk) lines.push('Tidak ada catatan absen <strong>Masuk</strong> pada tanggal ini.');
+    if (lupaBreakOut) lines.push('Tidak ada catatan absen <strong>Istirahat Keluar</strong> pada tanggal ini.');
+    if (lupaBreakIn) lines.push('Tidak ada catatan absen <strong>Istirahat Kembali</strong> pada tanggal ini.');
     if (lupaPulang) lines.push('Tidak ada catatan absen <strong>Pulang</strong> pada tanggal ini.');
     body.innerHTML = lines.length ? lines.map(l => '<p style="margin:8px 0;">' + l + '</p>').join('') : '<p>-</p>';
     document.getElementById('gpsDetailModal').style.display = 'flex';
@@ -6811,7 +7375,7 @@ function compressImageDataUrl(dataUrl, maxWidth, quality, callback) {
     img.src = dataUrl;
 }
 
-function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl) {
+function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noAlert) {
     if (!name || !date || !time) {
         if (feedbackEl) { feedbackEl.textContent = 'Nama, tanggal, dan jam wajib.'; feedbackEl.style.color = '#b91c1c'; }
         return;
@@ -6820,8 +7384,10 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl) {
         const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
         const emp = employees.find(function(e) { return e.name === name; });
         const empId = emp ? (emp.id != null ? emp.id : employees.indexOf(emp)) : null;
-        var timeDisplay = time.length >= 5 ? time.slice(0, 5) : time;
-        var isoDate = date + 'T' + (time.length === 5 ? time + ':00' : time);
+        var timeDisplay = (time.length >= 8 && time.indexOf(':') >= 0) ? time.slice(0, 8) : (time.length >= 5 ? time.slice(0, 5) : time);
+        if (timeDisplay.length === 5) timeDisplay = timeDisplay + ':00';
+        var isoTime = (time.length >= 8 && /^\d{2}:\d{2}:\d{2}$/.test(time.slice(0, 8))) ? time.slice(0, 8) : (time.length >= 5 ? time.slice(0, 5) + ':00' : time + ':00');
+        var isoDate = date + 'T' + isoTime;
         var d = new Date(isoDate);
         if (isNaN(d.getTime())) d = new Date();
         const log = {
@@ -6850,7 +7416,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl) {
             feedbackEl.textContent = 'Absensi ' + type + ' berhasil disimpan (manual). Tanggal: ' + date + ', Jam: ' + timeDisplay;
             feedbackEl.style.color = 'var(--success)';
         }
-        alert('Absensi ' + type + ' berhasil disimpan.');
+        if (!noAlert) alert('Absensi ' + type + ' berhasil disimpan.');
     }
     if (photoData && typeof photoData === 'string' && photoData.indexOf('data:image') === 0) {
         compressImageDataUrl(photoData, 800, 0.55, doSave);
@@ -6914,8 +7480,14 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl) {
   if (typeof hapusRiwayatBarangYangDitandai !== 'undefined') window.hapusRiwayatBarangYangDitandai = hapusRiwayatBarangYangDitandai;
   if (typeof exportRiwayatBarangToExcel !== 'undefined') window.exportRiwayatBarangToExcel = exportRiwayatBarangToExcel;
   if (typeof exportRiwayatBarangToPdf !== 'undefined') window.exportRiwayatBarangToPdf = exportRiwayatBarangToPdf;
+  if (typeof triggerImportPettyCashExcel !== 'undefined') window.triggerImportPettyCashExcel = triggerImportPettyCashExcel;
+  if (typeof processImportPettyCashExcel !== 'undefined') window.processImportPettyCashExcel = processImportPettyCashExcel;
+  if (typeof downloadTemplatePettyCashExcel !== 'undefined') window.downloadTemplatePettyCashExcel = downloadTemplatePettyCashExcel;
   if (typeof exportPettyCashToExcel !== 'undefined') window.exportPettyCashToExcel = exportPettyCashToExcel;
   if (typeof printPettyCashReport !== 'undefined') window.printPettyCashReport = printPettyCashReport;
+  if (typeof triggerImportPembukuanExcel !== 'undefined') window.triggerImportPembukuanExcel = triggerImportPembukuanExcel;
+  if (typeof processImportPembukuanExcel !== 'undefined') window.processImportPembukuanExcel = processImportPembukuanExcel;
+  if (typeof downloadTemplatePembukuanExcel !== 'undefined') window.downloadTemplatePembukuanExcel = downloadTemplatePembukuanExcel;
   if (typeof exportRekapToExcel !== 'undefined') window.exportRekapToExcel = exportRekapToExcel;
   if (typeof printRekapReport !== 'undefined') window.printRekapReport = printRekapReport;
   if (typeof sendRekapEmail !== 'undefined') window.sendRekapEmail = sendRekapEmail;
@@ -6941,15 +7513,36 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl) {
   if (typeof populateManualAbsenNameSelect !== 'undefined') window.populateManualAbsenNameSelect = populateManualAbsenNameSelect;
   if (typeof saveAbsensiGpsManual !== 'undefined') window.saveAbsensiGpsManual = saveAbsensiGpsManual;
   if (typeof deletePettyCashItem !== 'undefined') window.deletePettyCashItem = deletePettyCashItem;
+  if (typeof deletePettyCashItemFirebase !== 'undefined') window.deletePettyCashItemFirebase = deletePettyCashItemFirebase;
+  if (typeof toggleEditPcFields !== 'undefined') window.toggleEditPcFields = toggleEditPcFields;
+  if (typeof openEditPettyCashModal !== 'undefined') window.openEditPettyCashModal = openEditPettyCashModal;
+  if (typeof closeEditPettyCashModal !== 'undefined') window.closeEditPettyCashModal = closeEditPettyCashModal;
+  if (typeof saveEditPettyCashModal !== 'undefined') window.saveEditPettyCashModal = saveEditPettyCashModal;
+  if (typeof editPettyCashItem !== 'undefined') window.editPettyCashItem = editPettyCashItem;
+  if (typeof editPettyCashItemFirebase !== 'undefined') window.editPettyCashItemFirebase = editPettyCashItemFirebase;
   if (typeof editPembukuanItem !== 'undefined') window.editPembukuanItem = editPembukuanItem;
   if (typeof deletePembukuanItem !== 'undefined') window.deletePembukuanItem = deletePembukuanItem;
+  if (typeof openEditInventaris !== 'undefined') window.openEditInventaris = openEditInventaris;
+  if (typeof closeEditInventaris !== 'undefined') window.closeEditInventaris = closeEditInventaris;
+  if (typeof saveEditInventaris !== 'undefined') window.saveEditInventaris = saveEditInventaris;
+  if (typeof deleteEditInventaris !== 'undefined') window.deleteEditInventaris = deleteEditInventaris;
+  if (typeof getInventarisDaftarBarang !== 'undefined') window.getInventarisDaftarBarang = getInventarisDaftarBarang;
+  if (typeof addInventarisDaftarBarang !== 'undefined') window.addInventarisDaftarBarang = addInventarisDaftarBarang;
+  if (typeof removeInventarisDaftarBarang !== 'undefined') window.removeInventarisDaftarBarang = removeInventarisDaftarBarang;
+  if (typeof renderInventarisDaftarBarang !== 'undefined') window.renderInventarisDaftarBarang = renderInventarisDaftarBarang;
+  if (typeof openInventarisDaftarModal !== 'undefined') window.openInventarisDaftarModal = openInventarisDaftarModal;
+  if (typeof closeInventarisDaftarModal !== 'undefined') window.closeInventarisDaftarModal = closeInventarisDaftarModal;
   if (typeof showDetailLupaModal !== 'undefined') window.showDetailLupaModal = showDetailLupaModal;
   if (typeof showImageModal !== 'undefined') window.showImageModal = showImageModal;
   if (typeof closeImageModal !== 'undefined') window.closeImageModal = closeImageModal;
+  if (typeof showMemoPopup !== 'undefined') window.showMemoPopup = showMemoPopup;
+  if (typeof closeMemoPopup !== 'undefined') window.closeMemoPopup = closeMemoPopup;
   if (typeof showRusakDetailModal !== 'undefined') window.showRusakDetailModal = showRusakDetailModal;
   if (typeof closeRusakDetailModal !== 'undefined') window.closeRusakDetailModal = closeRusakDetailModal;
   if (typeof showDetailTelatModal !== 'undefined') window.showDetailTelatModal = showDetailTelatModal;
   if (typeof calculatePettyCashRowTotal !== 'undefined') window.calculatePettyCashRowTotal = calculatePettyCashRowTotal;
+  if (typeof triggerPcFoto !== 'undefined') window.triggerPcFoto = triggerPcFoto;
+  if (typeof removePettyCashInputRow !== 'undefined') window.removePettyCashInputRow = removePettyCashInputRow;
   if (typeof addEmployeeRow !== 'undefined') window.addEmployeeRow = addEmployeeRow;
   if (typeof setCurrentLocationAsOffice !== 'undefined') window.setCurrentLocationAsOffice = setCurrentLocationAsOffice;
   if (typeof saveOfficeConfig !== 'undefined') window.saveOfficeConfig = saveOfficeConfig;

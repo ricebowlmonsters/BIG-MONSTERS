@@ -96,7 +96,11 @@
         <input type="date" id="pembukuan_tanggal_akhir">
       </div>
       <button type="button" class="btn btn-secondary" onclick="loadPembukuanData()">Tampilkan Data</button>
+      <button type="button" class="btn btn-secondary" onclick="loadPembukuanData()" title="Muat ulang data outlet terpilih" style="margin-left: 8px;">🔄 Refresh</button>
+      <button type="button" class="btn btn-secondary" onclick="triggerImportPembukuanExcel()" style="background: #0d6efd; color: white; border-color: #0d6efd; margin-left: 8px;">Import Excel</button>
+      <button type="button" class="btn btn-secondary" onclick="downloadTemplatePembukuanExcel()" style="background: #6c757d; color: white; border-color: #6c757d; margin-left: 8px;">Download Template Excel</button>
       <button type="button" class="btn btn-secondary" onclick="exportPembukuanToExcel()" style="background: #198754; color: white; border-color: #198754; margin-left: 8px;">Export Excel</button>
+      <input type="file" id="import_pembukuan_file" accept=".xlsx,.xls" style="display:none" onchange="processImportPembukuanExcel(this)">
       <button type="button" class="btn btn-secondary" onclick="printPembukuanReport()" style="background: #0d6efd; color: white; border-color: #0d6efd; margin-left: 8px;">Print</button>
     </div>
 

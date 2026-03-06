@@ -297,6 +297,7 @@
     .row-group .col-satuan { flex: .8; }
     .row-group .col-harga { flex: 1.2; }
     .row-group .col-foto { flex: 1.5; }
+    .row-group .col-aksi { flex: 0 0 auto; }
 
     .detail-wrapper {
       max-height: 420px;

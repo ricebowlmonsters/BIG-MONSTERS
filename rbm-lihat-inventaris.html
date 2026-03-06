@@ -88,8 +88,10 @@
         <input type="date" id="inv_tanggal_akhir">
       </div>
       <button type="button" class="btn btn-secondary" onclick="loadInventarisData()">Tampilkan Data</button>
+      <button type="button" class="btn btn-secondary" onclick="loadInventarisData()" title="Muat ulang data outlet terpilih" style="margin-left: 8px;">🔄 Refresh</button>
       <button type="button" class="btn btn-secondary" onclick="exportInventarisToExcel()" style="background: #198754; color: white; border-color: #198754; margin-left: 8px;">Export Excel</button>
       <button type="button" class="btn btn-secondary" onclick="printInventarisReport()" style="background: #0d6efd; color: white; border-color: #0d6efd; margin-left: 8px;">Print</button>
+      <button type="button" class="btn btn-secondary" onclick="openInventarisDaftarModal()" style="background: #0d6efd; color: white; border-color: #0d6efd; margin-left: 8px;">📋 Kelola Daftar Barang Inventaris</button>
     </div>
 
     <div class="table-card">
@@ -158,6 +160,21 @@
     </div>
     <table class="data-table"><thead><tr><th>Nama</th><th>Satuan</th><th>Qty/Porsi</th><th>Aksi</th></tr></thead><tbody id="stok_item_tbody"></tbody></table>
     <div style="margin-top:10px; font-size:11px; color:#666;">* <b>Qty per Porsi</b>: Jumlah satuan yang dibutuhkan untuk 1 porsi.</div>
+  </div>
+</div>
+<div id="invDaftarBarangModal" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="background:white; padding:20px; width:500px; max-width:95%; border-radius:8px; max-height: 80vh; overflow-y: auto;">
+    <span class="modal-close" onclick="closeInventarisDaftarModal()" style="color:#333; top:10px; right:15px; font-size:24px; cursor:pointer;" title="Tutup">&times;</span>
+    <h3 style="margin-top:0;">Kelola Daftar Barang Inventaris</h3>
+    <p style="font-size:12px; color:#64748b; margin:0 0 12px;">Menambah/hapus item di daftar. Setelah tambah, tutup modal dan cek form di tab Input Inventaris.</p>
+    <div style="margin-bottom: 15px; display: flex; gap: 8px; align-items: flex-end;">
+      <div style="flex:2;"><label style="font-size:11px; display:block; margin-bottom:2px; color:#666;">Nama Item</label><input type="text" id="inv_daftar_barang_nama" placeholder="Contoh: Saus Vietnam" style="width:100%;"></div>
+      <button class="btn-primary" onclick="addInventarisDaftarBarang(document.getElementById('inv_daftar_barang_nama').value)" style="width:auto; height:42px; margin-bottom:1px;">+</button>
+    </div>
+    <table class="data-table"><thead><tr><th>Nama</th><th>Aksi</th></tr></thead><tbody id="inv_daftar_barang_tbody"></tbody></table>
+    <div style="margin-top:16px; text-align:right;">
+      <button type="button" class="btn btn-secondary" onclick="closeInventarisDaftarModal()" style="width:auto;">Tutup</button>
+    </div>
   </div>
 </div>
 <div id="memoModalOverlay" class="memo-modal-overlay" onclick="closeMemoPopup()">
