@@ -353,8 +353,11 @@
 
   function savePembukuan(data, outletId) {
     if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
-    var base = getPembukuanPath(outletId) + '/';
-    var key = base + (data.tanggal || Date.now());
+    var o = outletId || '';
+    var isTrosoboFlat = (o && String(o).toLowerCase().indexOf('trosobo') >= 0);
+    var key = isTrosoboFlat
+      ? 'rbm_pro/pembukuan/' + (data.tanggal || Date.now())
+      : getPembukuanPath(outletId) + '/' + (data.tanggal || Date.now());
     return db.ref(key).set({
       tanggal: data.tanggal,
       kasMasuk: data.kasMasuk || [],
@@ -363,29 +366,99 @@
     }).then(function() { return '✅ Data pembukuan disimpan di Firebase.'; });
   }
 
+  /** Pola tanggal YYYY-MM-DD untuk deteksi format flat (tanpa subfolder outlet). */
+  function isDateKey(key) {
+    return typeof key === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(key);
+  }
+
   function getPembukuan(tglAwal, tglAkhir, outletId) {
     if (!init()) return Promise.resolve([]);
+    var outLower = (outletId || '').toLowerCase();
+    var isTrosobo = outLower.indexOf('trosobo') >= 0;
+    // Untuk Trosobo: baca path flat DULU agar data lama + baru (yang sekarang disimpan ke flat) tetap utuh
+    if (isTrosobo && db) {
+      return db.ref('rbm_pro/pembukuan').once('value').then(function(rootSnap) {
+        var root = rootSnap.val();
+        if (!root || typeof root !== 'object') return [];
+        var keys = Object.keys(root);
+        if (keys.length === 0) return [];
+        var all = {};
+        keys.forEach(function(k) {
+          if (isDateKey(k)) {
+            all[k] = root[k];
+          } else if (outLower.indexOf(k.toLowerCase()) >= 0 || k.toLowerCase().indexOf(outLower) >= 0) {
+            var sub = root[k];
+            if (sub && typeof sub === 'object') Object.keys(sub).forEach(function(d) { all[d] = sub[d]; });
+          }
+        });
+        if (Object.keys(all).length === 0) return [];
+        var g = typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : {});
+        g._lastPembukuanOutletKey = 'Trosobo';
+        return parsePembukuanAll(all, tglAwal, tglAkhir);
+      }).catch(function() { return []; });
+    }
     var path = getPembukuanPath(outletId);
     return db.ref(path).once('value').then(function(snap) {
       var all = snap.val();
-      if (!all || typeof all !== 'object') return [];
-      var result = [];
-      Object.keys(all).forEach(function(key) {
-        var p = all[key];
-        if (!p || !p.tanggal) return;
-        var t = p.tanggal;
-        if (tglAwal && t < tglAwal) return;
-        if (tglAkhir && t > tglAkhir) return;
-        result.push({ payload: { tanggal: p.tanggal, kasMasuk: p.kasMasuk || [], kasKeluar: p.kasKeluar || [] } });
-      });
-      result.sort(function(a, b) { return (a.payload.tanggal || '').localeCompare(b.payload.tanggal || ''); });
-      return result;
+      var effectiveKey = outletId || '_default';
+      if ((!all || typeof all !== 'object' || Object.keys(all).length === 0) && db) {
+        return db.ref('rbm_pro/pembukuan').once('value').then(function(rootSnap) {
+          var root = rootSnap.val();
+          if (!root || typeof root !== 'object') return [];
+          var keys = Object.keys(root);
+          if (keys.length === 0) return [];
+          var firstKey = keys[0];
+          if (isDateKey(firstKey)) {
+            return [];
+          }
+          all = root[outletId];
+          if (!all && outletId) {
+            var matchedKey = keys.filter(function(k) {
+              var lower = k.toLowerCase();
+              var ol = (outletId || '').toLowerCase();
+              return lower === ol || ol.indexOf(lower) >= 0 || lower.indexOf(ol) >= 0;
+            })[0];
+            if (matchedKey && root[matchedKey] && typeof root[matchedKey] === 'object') {
+              all = root[matchedKey];
+              effectiveKey = matchedKey;
+            }
+          } else if (all) {
+            effectiveKey = outletId;
+          }
+          if (!all || typeof all !== 'object') return [];
+          var g = typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : {});
+          g._lastPembukuanOutletKey = effectiveKey;
+          return parsePembukuanAll(all, tglAwal, tglAkhir);
+        }).catch(function() { return []; });
+      }
+      var g = typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : {});
+      g._lastPembukuanOutletKey = effectiveKey;
+      return parsePembukuanAll(all, tglAwal, tglAkhir);
     }).catch(function() { return []; });
+  }
+
+  function parsePembukuanAll(all, tglAwal, tglAkhir) {
+    if (!all || typeof all !== 'object') return [];
+    var result = [];
+    Object.keys(all).forEach(function(key) {
+      var p = all[key];
+      if (!p || !p.tanggal) return;
+      var t = p.tanggal;
+      if (tglAwal && t < tglAwal) return;
+      if (tglAkhir && t > tglAkhir) return;
+      result.push({ payload: { tanggal: p.tanggal, kasMasuk: p.kasMasuk || [], kasKeluar: p.kasKeluar || [] } });
+    });
+    result.sort(function(a, b) { return (a.payload.tanggal || '').localeCompare(b.payload.tanggal || ''); });
+    return result;
   }
 
   function deletePembukuanDay(outletId, tanggal) {
     if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
-    var path = getPembukuanPath(outletId) + '/' + (tanggal || '');
+    var tg = tanggal || '';
+    var isTrosoboFlat = (outletId && String(outletId).toLowerCase().indexOf('trosobo') >= 0);
+    var path = isTrosoboFlat
+      ? 'rbm_pro/pembukuan/' + tg
+      : getPembukuanPath(outletId) + '/' + tg;
     return db.ref(path).remove().then(function() { return '✅ Data pembukuan dihapus.'; });
   }
 

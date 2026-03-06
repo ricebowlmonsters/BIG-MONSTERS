@@ -1771,7 +1771,20 @@ function processImportPettyCashExcel(input) {
       if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.savePettyCashTransactions) {
         var idx = 0;
         function next() {
-          if (idx >= payloads.length) { alert('Import selesai: ' + payloads.length + ' grup transaksi petty cash.'); if (typeof loadPettyCashData === 'function') loadPettyCashData(); input.value = ''; return; }
+          if (idx >= payloads.length) {
+            alert('Import selesai: ' + payloads.length + ' grup transaksi petty cash.');
+            var elAwal = document.getElementById('pc_tanggal_awal');
+            var elAkhir = document.getElementById('pc_tanggal_akhir');
+            if (elAwal && elAkhir) {
+              elAwal.value = '';
+              elAkhir.value = '';
+            }
+            input.value = '';
+            if (typeof loadPettyCashData === 'function') {
+              setTimeout(function() { loadPettyCashData(); }, 600);
+            }
+            return;
+          }
           FirebaseStorage.savePettyCashTransactions(payloads[idx], outlet).then(function() { idx++; next(); }).catch(function(err) { alert('Gagal: ' + (err && err.message ? err.message : '')); input.value = ''; });
         }
         next();
@@ -2495,7 +2508,7 @@ function deletePembukuanItem(parentIdx, type, subIdx) {
         var kasKeluar = (p.kasKeluar || []).slice();
         if (type === 'kasMasuk' && kasMasuk.length > subIdx) kasMasuk.splice(subIdx, 1);
         else if (type === 'kasKeluar' && kasKeluar.length > subIdx) kasKeluar.splice(subIdx, 1);
-        var outlet = getRbmOutlet();
+        var outlet = (window._lastPembukuanOutletKey !== undefined && window._lastPembukuanOutletKey !== '') ? window._lastPembukuanOutletKey : getRbmOutlet();
         if (kasMasuk.length === 0 && kasKeluar.length === 0) {
             FirebaseStorage.deletePembukuanDay(outlet, p.tanggal).then(function() { loadPembukuanData(); }).catch(function(err) { alert('Gagal hapus: ' + (err && err.message ? err.message : '')); loadPembukuanData(); });
         } else {
@@ -2590,7 +2603,7 @@ function editPembukuanItem(parentIdx, type, subIdx) {
         var kasKeluar = (p.kasKeluar || []).slice();
         if (type === 'kasMasuk' && kasMasuk.length > subIdx) kasMasuk.splice(subIdx, 1);
         else if (type === 'kasKeluar' && kasKeluar.length > subIdx) kasKeluar.splice(subIdx, 1);
-        var outlet = getRbmOutlet();
+        var outlet = (window._lastPembukuanOutletKey !== undefined && window._lastPembukuanOutletKey !== '') ? window._lastPembukuanOutletKey : getRbmOutlet();
         if (kasMasuk.length === 0 && kasKeluar.length === 0) {
             FirebaseStorage.deletePembukuanDay(outlet, p.tanggal).then(function() { loadPembukuanData(); }).catch(function() { loadPembukuanData(); });
         } else {
@@ -2606,7 +2619,8 @@ function exportPembukuanToExcel() {
   const tglAkhir = document.getElementById("pembukuan_tanggal_akhir").value;
   const filename = `Laporan_Pembukuan_${tglAwal}_sd_${tglAkhir}.xls`;
 
-  const pending = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_PEMBUKUAN')), []);
+  function buildAndDownloadExcel(pending) {
+    pending = Array.isArray(pending) ? pending : [];
   let rows = [];
 
   let totalCashMasuk = 0;
@@ -2824,12 +2838,31 @@ function exportPembukuanToExcel() {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  }
+
+  if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPembukuan && useFirebaseBackend()) {
+    FirebaseStorage.getPembukuan(tglAwal, tglAkhir, getRbmOutlet()).then(function(p) {
+      buildAndDownloadExcel(p || []);
+    }).catch(function() {
+      buildAndDownloadExcel(window._lastPembukuanPending || safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_PEMBUKUAN')), []));
+    });
+  } else {
+    buildAndDownloadExcel(window._lastPembukuanPending || safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_PEMBUKUAN')), []));
+  }
 }
 
 function triggerImportPembukuanExcel() {
   var el = document.getElementById('import_pembukuan_file');
   if (el) { el.value = ''; el.click(); }
 }
+function parseRupiahExcel(val) {
+  if (val == null || val === '') return 0;
+  if (typeof val === 'number' && !isNaN(val)) return val;
+  var s = String(val).replace(/Rp\s*/gi, '').replace(/\./g, '').replace(/,/g, '.').trim();
+  return parseFloat(s) || 0;
+}
+
 function processImportPembukuanExcel(input) {
   var file = input && input.files && input.files[0];
   if (!file) return;
@@ -2840,45 +2873,108 @@ function processImportPembukuanExcel(input) {
       var data = new Uint8Array(e.target.result);
       var workbook = XLSX.read(data, { type: 'array' });
       var sheet = workbook.Sheets[workbook.SheetNames[0]];
-      var rows = XLSX.utils.sheet_to_json(sheet);
+      var aoa = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      var headerRowIdx = 0;
+      for (var i = 0; i < aoa.length; i++) {
+        var first = (aoa[i] && aoa[i][0] != null) ? String(aoa[i][0]).trim() : '';
+        if (first === 'Tanggal') { headerRowIdx = i; break; }
+      }
+      var headers = (aoa[headerRowIdx] || []).map(function(h) { return (h != null && h !== '') ? String(h).trim() : ''; });
+      var rows = aoa.slice(headerRowIdx + 1).map(function(arr) {
+        var o = {};
+        headers.forEach(function(h, j) { if (h) o[h] = arr[j]; });
+        return o;
+      });
       if (!rows.length) { alert('File kosong atau tidak ada baris data.'); input.value = ''; return; }
       var byDate = {};
+      var hasFormatExport = false;
       rows.forEach(function(r) {
-        var tanggal = (r['Tanggal'] != null ? String(r['Tanggal']) : '').trim();
-        if (!tanggal) return;
-        if (tanggal.indexOf('/') >= 0) {
-          var p = tanggal.split('/');
-          if (p.length >= 3) tanggal = p[2] + '-' + String(p[1]).padStart(2, '0') + '-' + String(p[0]).padStart(2, '0');
-        } else if (tanggal.length === 8 && tanggal.indexOf('-') < 0) {
-          tanggal = tanggal.slice(0, 4) + '-' + tanggal.slice(4, 6) + '-' + tanggal.slice(6, 8);
-        }
-        var tipe = (r['Tipe'] != null ? String(r['Tipe']).toLowerCase() : (r['Type'] != null ? String(r['Type']).toLowerCase() : '')).trim();
-        var isKeluar = (tipe.indexOf('keluar') >= 0 || tipe === 'kas keluar');
-        if (isKeluar) {
-          var keterangan = (r['Keterangan'] != null ? String(r['Keterangan']) : '').trim();
-          var setor = parseFloat(r['Setor']) || parseFloat(r['Fisik']) || 0;
-          if (!keterangan && !setor) return;
-          if (!byDate[tanggal]) byDate[tanggal] = { tanggal: tanggal, kasMasuk: [], kasKeluar: [] };
-          byDate[tanggal].kasKeluar.push({ keterangan: keterangan, setor: setor, foto: null });
-        } else {
-          var ket = (r['Keterangan'] != null ? String(r['Keterangan']) : '').trim();
-          var catatan = parseFloat(r['Catatan']) || 0;
-          var fisik = parseFloat(r['Fisik']) || 0;
-          var vcr = (r['VCR'] != null ? String(r['VCR']) : '').trim();
-          if (!ket && !catatan && !fisik && !vcr) return;
-          if (!byDate[tanggal]) byDate[tanggal] = { tanggal: tanggal, kasMasuk: [], kasKeluar: [] };
-          byDate[tanggal].kasMasuk.push({
-            keterangan: ket,
-            catatan: String(catatan),
-            fisik: String(fisik),
-            vcr: vcr,
-            komentarFisik: (r['KomentarFisik'] != null ? String(r['KomentarFisik']) : '').trim(),
-            komentarSelisih: (r['KomentarSelisih'] != null ? String(r['KomentarSelisih']) : '').trim()
-          });
-        }
+        var kolomKeterangan = (r['Keterangan'] != null ? String(r['Keterangan']) : '').trim();
+        var kolomFisikSetor = r['Fisik / Setor'] != null ? r['Fisik / Setor'] : r['Fisik'];
+        if (r['Fisik / Setor'] !== undefined || (kolomKeterangan && (String(r['Catatan'] || '').indexOf('Rp') >= 0 || String(kolomFisikSetor || '').indexOf('Rp') >= 0))) hasFormatExport = true;
       });
-      var payloads = Object.keys(byDate).map(function(k) { return byDate[k]; });
-      if (payloads.length === 0) { alert('Tidak ada baris valid. Kolom: Tanggal, Tipe (Kas Masuk/Kas Keluar), Keterangan, Catatan, Fisik, VCR, Setor.'); input.value = ''; return; }
+      if (hasFormatExport) {
+        var currentDate = '';
+        var modeKeluar = false;
+        rows.forEach(function(r) {
+          var rawTanggal = (r['Tanggal'] != null ? String(r['Tanggal']) : '').trim();
+          var keterangan = (r['Keterangan'] != null ? String(r['Keterangan']) : '').trim();
+          if (!keterangan && !rawTanggal && parseRupiahExcel(r['Catatan']) === 0 && parseRupiahExcel(r['Fisik / Setor'] || r['Fisik']) === 0) return;
+          if (keterangan === 'Laporan Pembukuan' || (keterangan && keterangan.indexOf('Periode:') === 0)) return;
+          if (rawTanggal && (rawTanggal.indexOf('Laporan') >= 0 || rawTanggal.indexOf('Periode') >= 0)) return;
+          if (keterangan.toUpperCase().indexOf('TOTAL ') === 0) {
+            modeKeluar = true;
+            return;
+          }
+          var tanggal = rawTanggal || currentDate;
+          if (tanggal) {
+            if (tanggal.indexOf('/') >= 0) {
+              var p = tanggal.split('/');
+              if (p.length >= 3) tanggal = p[2] + '-' + String(p[1]).padStart(2, '0') + '-' + String(p[0]).padStart(2, '0');
+            } else if (tanggal.length === 8 && tanggal.indexOf('-') < 0) {
+              tanggal = tanggal.slice(0, 4) + '-' + tanggal.slice(4, 6) + '-' + tanggal.slice(6, 8);
+            }
+            currentDate = tanggal;
+          } else {
+            tanggal = currentDate;
+          }
+          if (!tanggal) return;
+          if (!byDate[tanggal]) { byDate[tanggal] = { tanggal: tanggal, kasMasuk: [], kasKeluar: [] }; modeKeluar = false; }
+          var catatanVal = parseRupiahExcel(r['Catatan']);
+          var fisikSetorVal = parseRupiahExcel(r['Fisik / Setor'] != null ? r['Fisik / Setor'] : r['Fisik']);
+          if (modeKeluar) {
+            if (!keterangan && fisikSetorVal === 0) return;
+            byDate[tanggal].kasKeluar.push({ keterangan: keterangan, setor: fisikSetorVal, foto: null });
+          } else {
+            if (!keterangan && catatanVal === 0 && fisikSetorVal === 0) return;
+            byDate[tanggal].kasMasuk.push({
+              keterangan: keterangan,
+              catatan: String(catatanVal),
+              fisik: String(fisikSetorVal),
+              vcr: (r['VCR'] != null ? String(r['VCR']) : '').trim(),
+              komentarFisik: (r['KomentarFisik'] != null ? String(r['KomentarFisik']) : '').trim(),
+              komentarSelisih: (r['KomentarSelisih'] != null ? String(r['KomentarSelisih']) : '').trim()
+            });
+          }
+        });
+      } else {
+        rows.forEach(function(r) {
+          var tanggal = (r['Tanggal'] != null ? String(r['Tanggal']) : '').trim();
+          if (!tanggal) return;
+          if (tanggal.indexOf('/') >= 0) {
+            var p = tanggal.split('/');
+            if (p.length >= 3) tanggal = p[2] + '-' + String(p[1]).padStart(2, '0') + '-' + String(p[0]).padStart(2, '0');
+          } else if (tanggal.length === 8 && tanggal.indexOf('-') < 0) {
+            tanggal = tanggal.slice(0, 4) + '-' + tanggal.slice(4, 6) + '-' + tanggal.slice(6, 8);
+          }
+          var tipe = (r['Tipe'] != null ? String(r['Tipe']).toLowerCase() : (r['Type'] != null ? String(r['Type']).toLowerCase() : '')).trim();
+          var isKeluar = (tipe.indexOf('keluar') >= 0 || tipe === 'kas keluar');
+          if (isKeluar) {
+            var keterangan = (r['Keterangan'] != null ? String(r['Keterangan']) : '').trim();
+            var setor = parseFloat(r['Setor']) || parseRupiahExcel(r['Fisik']) || 0;
+            if (!keterangan && !setor) return;
+            if (!byDate[tanggal]) byDate[tanggal] = { tanggal: tanggal, kasMasuk: [], kasKeluar: [] };
+            byDate[tanggal].kasKeluar.push({ keterangan: keterangan, setor: setor, foto: null });
+          } else {
+            var ket = (r['Keterangan'] != null ? String(r['Keterangan']) : '').trim();
+            var catatan = parseRupiahExcel(r['Catatan']) || parseFloat(r['Catatan']) || 0;
+            var fisik = parseRupiahExcel(r['Fisik']) || parseFloat(r['Fisik']) || 0;
+            var vcr = (r['VCR'] != null ? String(r['VCR']) : '').trim();
+            if (!ket && !catatan && !fisik && !vcr) return;
+            if (!byDate[tanggal]) byDate[tanggal] = { tanggal: tanggal, kasMasuk: [], kasKeluar: [] };
+            byDate[tanggal].kasMasuk.push({
+              keterangan: ket,
+              catatan: String(catatan),
+              fisik: String(fisik),
+              vcr: vcr,
+              komentarFisik: (r['KomentarFisik'] != null ? String(r['KomentarFisik']) : '').trim(),
+              komentarSelisih: (r['KomentarSelisih'] != null ? String(r['KomentarSelisih']) : '').trim()
+            });
+          }
+        });
+      }
+      var payloads = Object.keys(byDate).sort().map(function(k) { return byDate[k]; });
+      if (payloads.length === 0) { alert('Tidak ada baris valid. Gunakan format: Tanggal, Keterangan, Catatan, Fisik / Setor, Selisih, Foto (sama seperti hasil Export).'); input.value = ''; return; }
       var outlet = getRbmOutlet();
       if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.savePembukuan) {
         var idx = 0;
@@ -2900,15 +2996,19 @@ function processImportPembukuanExcel(input) {
 
 function downloadTemplatePembukuanExcel() {
   if (typeof XLSX === 'undefined') { alert('Library Excel belum dimuat.'); return; }
-  var headers = ['Tanggal', 'Tipe', 'Keterangan', 'Catatan', 'Fisik', 'VCR', 'Setor'];
+  // Format sama dengan hasil Export Excel: Tanggal, Keterangan, Catatan, Fisik / Setor, Selisih, Foto
+  var headers = ['Tanggal', 'Keterangan', 'Catatan', 'Fisik / Setor', 'Selisih', 'Foto'];
   var contoh = [
-    ['2026-03-01', 'Kas Masuk', 'Penjualan harian', 1200000, 1195000, 'VCR-001', ''],
-    ['2026-03-01', 'Kas Keluar', 'Setor ke bank', '', '', '', 500000]
+    ['2026-03-01', 'CASH', 'Rp 3683804', 'Rp 3.684.000', 'Rp 196', ''],
+    ['', 'MANDIRI INTRANSIT', 'Rp 2095458', 'Rp 2.095.458', 'Rp 0', ''],
+    ['', 'KAS BESAR', 'Rp 33601', 'Rp 33.601', 'Rp 0', ''],
+    ['', 'TOTAL 2026-03-01', 'Rp 5.812.863', 'Rp 5.813.059', 'Rp 196', ''],
+    ['2026-03-01', 'Setor ke bank', '', 'Rp 500000', '', '']
   ];
-  var aoa = [headers].concat(contoh);
+  var aoa = [['Laporan Pembukuan'], ['Periode: (isi tanggal dari - sampai)'], []].concat([headers]).concat(contoh);
   var ws = XLSX.utils.aoa_to_sheet(aoa);
   var wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Pembukuan');
+  XLSX.utils.book_append_sheet(wb, ws, 'Laporan Pembukuan');
   XLSX.writeFile(wb, 'Template_Import_Pembukuan.xlsx');
 }
 
@@ -6647,8 +6747,12 @@ function saveJamConfig() {
     if (shifts.length === 0) shifts = RBM_GPS_SHIFTS_DEFAULT;
     var menitTelatPerJamGaji = parseInt(document.getElementById('gps_menit_telat_per_jam') && document.getElementById('gps_menit_telat_per_jam').value, 10) || 10;
     var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_GPS_JAM_CONFIG') : 'RBM_GPS_JAM_CONFIG';
-    RBMStorage.setItem(key, JSON.stringify({ shifts: shifts, menitTelatPerJamGaji: menitTelatPerJamGaji }));
-    alert("Pengaturan Jam Disimpan!");
+    var p = RBMStorage.setItem(key, JSON.stringify({ shifts: shifts, menitTelatPerJamGaji: menitTelatPerJamGaji }));
+    if (p && typeof p.then === 'function') {
+        p.then(function() { alert("Pengaturan Jam Disimpan!"); }).catch(function(err) { alert("Gagal menyimpan: " + (err && err.message ? err.message : 'periksa koneksi')); });
+    } else {
+        alert("Pengaturan Jam Disimpan!");
+    }
 }
 
 function initAbsensiGPS() {

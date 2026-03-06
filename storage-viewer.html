@@ -348,6 +348,7 @@
     }
 
     // Daftar node utama yang akan dianalisis
+    // Data RBM Pro dibedakan per menu (bukan disatukan satu)
     const NODES = [
         { key: 'products', label: 'Produk & Menu', icon: '🍔' },
         { key: 'orders', label: 'Riwayat Pesanan', icon: '🧾' },
@@ -360,8 +361,24 @@
         { key: 'ai_responses', label: 'Data AI Chatbot', icon: '🤖' },
         { key: 'global_chat', label: 'Chat Komunitas', icon: '💬' },
         { key: 'games', label: 'Data Game', icon: '🎮' },
-        { key: 'rbm_pro', label: 'Data RBM Pro (Petty Cash, Barang, Absensi, dll)', icon: '💾' }
+        // --- Data RBM Pro: per menu (path di Firebase /rbm_pro/...) ---
+        { key: 'rbm_pro/petty_cash', label: 'Petty Cash', icon: '💵' },
+        { key: 'rbm_pro/database_barang', label: 'Stok Barang', icon: '📊' },
+        { key: 'rbm_pro/inventaris', label: 'Inventaris', icon: '📋' },
+        { key: 'rbm_pro/pembukuan', label: 'Pembukuan', icon: '📒' },
+        { key: 'rbm_pro/bank', label: 'Bank', icon: '🏦' },
+        { key: 'rbm_pro/pengajuan_tf', label: 'Pengajuan TF', icon: '📤' },
+        { key: 'rbm_pro/pengajuan_bukti_tf', label: 'Pengajuan Bukti TF', icon: '📎' },
+        { key: 'rbm_pro/pending', label: 'Pending Sync', icon: '⏳' },
+        { key: 'rbm_pro/points_history', label: 'Poin & Riwayat', icon: '💰' },
+        { key: 'rbm_pro/vouchers', label: 'Voucher', icon: '🎫' },
+        { key: 'rbm_pro', label: 'RBM Pro Lainnya (Absensi, Jadwal, Reservasi, dll)', icon: '📅' }
     ];
+
+    // ID DOM tidak boleh pakai slash; gunakan untuk getElementById
+    function safeId(key) {
+        return (key || '').replace(/\//g, '_');
+    }
 
     const grid = document.getElementById('storage-grid');
     const btnRefreshAll = document.getElementById('btn-refresh-all');
@@ -383,6 +400,8 @@
     }
 
     function createCard(node) {
+        const id = safeId(node.key);
+        const keyEsc = (node.key || '').replace(/'/g, "\\'");
         const div = document.createElement('div');
         div.className = 'storage-card';
         div.innerHTML = `
@@ -390,21 +409,21 @@
                 <div class="storage-title"><span>${node.icon}</span> ${node.label}</div>
                 <div style="font-family: monospace; font-size: 12px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">/${node.key}</div>
             </div>
-            <div class="storage-size" id="size-${node.key}">-</div>
-            <div class="storage-count" id="count-${node.key}">Menunggu analisis...</div>
+            <div class="storage-size" id="size-${id}">-</div>
+            <div class="storage-count" id="count-${id}">Menunggu analisis...</div>
             <div class="progress-bg">
-                <div class="progress-bar" id="bar-${node.key}"></div>
+                <div class="progress-bar" id="bar-${id}"></div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 8px;">
                 <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-secondary btn-analyze" onclick="analyzeNode('${node.key}')" style="flex: 1;">Analisis</button>
-                    <button class="btn btn-primary" id="btn-detail-${node.key}" onclick="showNodeDetails('${node.key}')" style="flex: 1; display: none;">Lihat Detail</button>
+                    <button class="btn btn-secondary btn-analyze" onclick="analyzeNode('${keyEsc}')" style="flex: 1;">Analisis</button>
+                    <button class="btn btn-primary" id="btn-detail-${id}" onclick="showNodeDetails('${keyEsc}')" style="flex: 1; display: none;">Lihat Detail</button>
                 </div>
                 <div style="display: flex; gap: 8px;">
-                    <button class="btn" style="background: #059669; color: white; flex: 1; font-size: 13px; padding: 8px;" onclick="backupNode('${node.key}')">⬇️ Backup</button>
-                    <button class="btn" style="background: #d97706; color: white; flex: 1; font-size: 13px; padding: 8px;" onclick="triggerRestore('${node.key}')">⬆️ Restore</button>
+                    <button class="btn" style="background: #059669; color: white; flex: 1; font-size: 13px; padding: 8px;" onclick="backupNode('${keyEsc}')">⬇️ Backup</button>
+                    <button class="btn" style="background: #d97706; color: white; flex: 1; font-size: 13px; padding: 8px;" onclick="triggerRestore('${keyEsc}')">⬆️ Restore</button>
                 </div>
-                <button class="btn" style="background: #ef4444; color: white; width: 100%; font-size: 13px; padding: 8px;" onclick="deleteNode('${node.key}')">🗑️ Hapus Data</button>
+                <button class="btn" style="background: #ef4444; color: white; width: 100%; font-size: 13px; padding: 8px;" onclick="deleteNode('${keyEsc}')">🗑️ Hapus Data</button>
             </div>
         `;
         return div;
@@ -421,9 +440,10 @@
             return; 
         }
 
-        const sizeEl = document.getElementById(`size-${key}`);
-        const countEl = document.getElementById(`count-${key}`);
-        const barEl = document.getElementById(`bar-${key}`);
+        const id = safeId(key);
+        const sizeEl = document.getElementById(`size-${id}`);
+        const countEl = document.getElementById(`count-${id}`);
+        const barEl = document.getElementById(`bar-${id}`);
         
         sizeEl.innerHTML = '<span style="font-size:16px; color:#6b7280;">Memuat...</span>';
         countEl.textContent = 'Sedang mengunduh data...';
@@ -441,7 +461,7 @@
                 sizeEl.textContent = '0 KB';
                 countEl.textContent = 'Tidak ada data (Kosong)';
                 barEl.style.width = '0%';
-                document.getElementById(`btn-detail-${key}`).style.display = 'none';
+                document.getElementById(`btn-detail-${id}`).style.display = 'none';
                 return;
             }
 
@@ -469,7 +489,7 @@
             }
 
             // Tampilkan tombol detail
-            document.getElementById(`btn-detail-${key}`).style.display = 'block';
+            document.getElementById(`btn-detail-${id}`).style.display = 'block';
 
         } catch (e) {
             console.error(e);
@@ -546,7 +566,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `RBM_Backup_${key}_${new Date().toISOString().slice(0,10)}.json`;
+            a.download = `RBM_Backup_${(key || '').replace(/\//g, '_')}_${new Date().toISOString().slice(0,10)}.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);

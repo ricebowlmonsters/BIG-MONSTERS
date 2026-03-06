@@ -98,7 +98,12 @@
 <script src="rbm-pro.js"></script>
 <script>
 (function() {
-  if (typeof loadJamConfig === 'function') loadJamConfig();
+  function runLoad() { if (typeof loadJamConfig === 'function') loadJamConfig(); }
+  if (window.RBMStorage && typeof window.RBMStorage.ready === 'function') {
+    window.RBMStorage.ready().then(runLoad).catch(runLoad);
+  } else {
+    runLoad();
+  }
 })();
 </script>
 </body>
