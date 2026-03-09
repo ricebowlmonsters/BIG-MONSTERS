@@ -118,6 +118,8 @@
     if (viewId === 'rekap-absensi-gps-view') {
         populateRekapGpsFilterNama();
     }
+    if (viewId === 'lihat-petty-cash-view' && typeof loadPettyCashData === 'function') loadPettyCashData();
+    if (viewId === 'lihat-pembukuan-view' && typeof loadPembukuanData === 'function') loadPembukuanData();
   }
   // expose globally just in case script loads after user interaction
   window.showView = showView;
@@ -393,46 +395,48 @@
   function loadPettyCashData() {
     const tbody = document.getElementById("pc_tbody");
     const summaryEl = document.getElementById("pc_summary");
+    if (!tbody || !summaryEl) return;
+    const elAwal = document.getElementById("pc_tanggal_awal");
+    const elAkhir = document.getElementById("pc_tanggal_akhir");
+    var today = new Date().toISOString().split("T")[0];
+    var firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
+    var tglAwal = (elAwal && elAwal.value) ? String(elAwal.value).trim() : firstDay;
+    var tglAkhir = (elAkhir && elAkhir.value) ? String(elAkhir.value).trim() : today;
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(tglAwal)) { var p = tglAwal.split('/'); tglAwal = p[2] + '-' + ('0' + p[1]).slice(-2) + '-' + ('0' + p[0]).slice(-2); }
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(tglAkhir)) { var q = tglAkhir.split('/'); tglAkhir = q[2] + '-' + ('0' + q[1]).slice(-2) + '-' + ('0' + q[0]).slice(-2); }
+    if (elAwal) elAwal.value = tglAwal;
+    if (elAkhir) elAkhir.value = tglAkhir;
+
     tbody.innerHTML = '<tr><td colspan="11" class="table-loading">Memuat data...</td></tr>';
     summaryEl.style.display = 'none';
 
-    const tglAwal = document.getElementById("pc_tanggal_awal").value;
-    const tglAkhir = document.getElementById("pc_tanggal_akhir").value;
+    function renderPettyCashFromResult(result) {
+      var data = result && result.data ? result.data : [];
+      var summary = (result && result.summary) ? result.summary : { totalDebit: 0, totalKredit: 0, saldoAkhir: 0 };
+      window._lastPettyCashData = data;
+      if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang tanggal ini.</td></tr>';
+      } else {
+        tbody.innerHTML = data.map(function(row) {
+          var aksiBtn = (row._firebaseDate != null && row._firebaseIndexInDate != null)
+            ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Hapus</button>'
+            : '-';
+          return '<tr><td>' + (row.no || '') + '</td><td>' + (row.tanggal || '') + '</td><td>' + (row.nama || '') + '</td><td class="num">' + (row.jumlah || '') + '</td><td>' + (row.satuan || '') + '</td><td class="num">' + (row.harga ? formatRupiah(row.harga) : '') + '</td><td class="num">' + (row.debit ? formatRupiah(row.debit) : '') + '</td><td class="num">' + (row.kredit ? formatRupiah(row.kredit) : '') + '</td><td class="num">' + (row.saldo ? formatRupiah(row.saldo) : '') + '</td><td>' + (row.foto ? '<a class="foto-link" href="' + row.foto + '" target="_blank">Lihat</a>' : '-') + '</td><td>' + aksiBtn + '</td></tr>';
+        }).join('');
+      }
+      summaryEl.style.display = 'grid';
+      var totalDebitEl = document.getElementById("pc_total_debit");
+      var totalKreditEl = document.getElementById("pc_total_kredit");
+      var saldoAkhirEl = document.getElementById("pc_saldo_akhir");
+      if (totalDebitEl) totalDebitEl.textContent = formatRupiah(summary.totalDebit || 0);
+      if (totalKreditEl) totalKreditEl.textContent = formatRupiah(summary.totalKredit || 0);
+      if (saldoAkhirEl) saldoAkhirEl.textContent = formatRupiah(summary.saldoAkhir || 0);
+    }
 
-    if (useFirebaseBackend()) {
-      FirebaseStorage.getPettyCash(tglAwal, tglAkhir, getRbmOutlet()).then(function(result) {
-        var data = result.data || [];
-        var summary = result.summary || {};
-        if (data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang tanggal ini.</td></tr>';
-        } else {
-          tbody.innerHTML = data.map(row => {
-            var aksiBtn = (row._firebaseIndex != null)
-              ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(' + row._firebaseIndex + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItemFirebase(' + row._firebaseIndex + ')">Hapus</button>'
-              : '-';
-            return `
-            <tr>
-              <td>${row.no || ''}</td>
-              <td>${row.tanggal || ''}</td>
-              <td>${row.nama || ''}</td>
-              <td class="num">${row.jumlah || ''}</td>
-              <td>${row.satuan || ''}</td>
-              <td class="num">${row.harga ? formatRupiah(row.harga) : ''}</td>
-              <td class="num">${row.debit ? formatRupiah(row.debit) : ''}</td>
-              <td class="num">${row.kredit ? formatRupiah(row.kredit) : ''}</td>
-              <td class="num">${row.saldo ? formatRupiah(row.saldo) : ''}</td>
-              <td>${row.foto ? '<a class="foto-link" href="' + row.foto + '" target="_blank">Lihat</a>' : '-'}</td>
-              <td>${aksiBtn}</td>
-            </tr>
-          `;
-          }).join('');
-        }
-        summaryEl.style.display = 'grid';
-        document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
-        document.getElementById("pc_total_kredit").textContent = formatRupiah(summary.totalKredit || 0);
-        document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
-      }).catch(function(err) {
+    if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPettyCash) {
+      FirebaseStorage.getPettyCash(tglAwal, tglAkhir, getRbmOutlet()).then(renderPettyCashFromResult).catch(function(err) {
         tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
+        summaryEl.style.display = 'none';
       });
       return;
     }
@@ -448,6 +452,16 @@
       const rows = [];
       pending.forEach(function(item, parentIdx) {
         const p = item.payload || {};
+        
+        // [FIX] Filter data berdasarkan tanggal yang dipilih
+        let d = p.tanggal || '';
+        // Normalize stored date to YYYY-MM-DD (pad single digits) just for comparison
+        if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(d)) {
+             const parts = d.split('-');
+             d = parts[0] + '-' + parts[1].padStart(2, '0') + '-' + parts[2].padStart(2, '0');
+        }
+        if (d < tglAwal || d > tglAkhir) return;
+
         (p.transactions || []).forEach(function(trx, trxIdx) {
           no++;
           const debit = (p.jenis === 'pengeluaran' && trx.total) ? trx.total : 0;
@@ -466,6 +480,10 @@
       });
       if (rows.length === 0) {
         tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang ini.</td></tr>';
+        // [FIX] Reset summary jika tidak ada data
+        document.getElementById("pc_total_debit").textContent = formatRupiah(0);
+        document.getElementById("pc_total_kredit").textContent = formatRupiah(0);
+        document.getElementById("pc_saldo_akhir").textContent = formatRupiah(0);
         return;
       }
       tbody.innerHTML = rows.map(row => `
@@ -480,7 +498,7 @@
           <td class="num">${row.kredit ? formatRupiah(row.kredit) : ''}</td>
           <td class="num">${formatRupiah(row.saldo)}</td>
           <td>${row.foto}</td>
-          <td><button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItem(' + row.parentIdx + ',' + row.trxIdx + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItem(' + row.parentIdx + ',' + row.trxIdx + ')">Hapus</button></td>
+          <td><button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItem(${row.parentIdx}, ${row.trxIdx})">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItem(${row.parentIdx}, ${row.trxIdx})">Hapus</button></td>
         </tr>
       `).join('');
       summaryEl.style.display = 'grid';
@@ -1775,13 +1793,17 @@ function processImportPettyCashExcel(input) {
             alert('Import selesai: ' + payloads.length + ' grup transaksi petty cash.');
             var elAwal = document.getElementById('pc_tanggal_awal');
             var elAkhir = document.getElementById('pc_tanggal_akhir');
-            if (elAwal && elAkhir) {
-              elAwal.value = '';
-              elAkhir.value = '';
+            if (elAwal && elAkhir && payloads.length > 0) {
+              var dates = payloads.map(function(p) { return (p.tanggal || '').toString().trim(); }).filter(Boolean);
+              if (dates.length > 0) {
+                dates.sort();
+                elAwal.value = dates[0];
+                elAkhir.value = dates[dates.length - 1];
+              }
             }
             input.value = '';
             if (typeof loadPettyCashData === 'function') {
-              setTimeout(function() { loadPettyCashData(); }, 600);
+              setTimeout(function() { loadPettyCashData(); }, 400);
             }
             return;
           }
@@ -1883,11 +1905,11 @@ function deletePettyCashItem(parentIdx, trxIdx) {
   }
 }
 
-function deletePettyCashItemFirebase(index) {
+function deletePettyCashItemFirebase(firebaseDate, indexInDate) {
   if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
   if (!confirm('Yakin ingin menghapus data ini?')) return;
-  if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.deletePettyCashByIndex) { alert('Fungsi hapus Firebase tidak tersedia.'); return; }
-  FirebaseStorage.deletePettyCashByIndex(index, getRbmOutlet()).then(function() {
+  if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.deletePettyCashByDateAndIndex) { alert('Fungsi hapus Firebase tidak tersedia.'); return; }
+  FirebaseStorage.deletePettyCashByDateAndIndex(firebaseDate, parseInt(indexInDate, 10), getRbmOutlet()).then(function() {
     if (typeof loadPettyCashData === 'function') loadPettyCashData();
   }).catch(function(err) {
     alert('Gagal menghapus: ' + (err && err.message ? err.message : ''));
@@ -1908,7 +1930,7 @@ function toggleEditPcFields() {
   }
 }
 
-function openEditPettyCashModal(data, source, parentIdx, trxIdx, firebaseIndex) {
+function openEditPettyCashModal(data, source, parentIdx, trxIdx, firebaseIndex, firebaseDate, firebaseIndexInDate) {
   if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
   var modal = document.getElementById('editPettyCashModal');
   if (!modal) return;
@@ -1916,6 +1938,10 @@ function openEditPettyCashModal(data, source, parentIdx, trxIdx, firebaseIndex) 
   document.getElementById('editPcParentIdx').value = parentIdx != null ? parentIdx : '';
   document.getElementById('editPcTrxIdx').value = trxIdx != null ? trxIdx : '';
   document.getElementById('editPcFirebaseIndex').value = firebaseIndex != null ? firebaseIndex : '';
+  var elDate = document.getElementById('editPcFirebaseDate');
+  var elIdx = document.getElementById('editPcFirebaseIndexInDate');
+  if (elDate) elDate.value = firebaseDate != null ? firebaseDate : '';
+  if (elIdx) elIdx.value = firebaseIndexInDate != null ? firebaseIndexInDate : '';
   var tanggal = data.tanggal || '';
   if (tanggal && tanggal.indexOf('/') !== -1) {
     var parts = tanggal.split('/');
@@ -1948,6 +1974,8 @@ function saveEditPettyCashModal() {
   var parentIdx = parseInt(document.getElementById('editPcParentIdx').value, 10);
   var trxIdx = parseInt(document.getElementById('editPcTrxIdx').value, 10);
   var firebaseIndex = parseInt(document.getElementById('editPcFirebaseIndex').value, 10);
+  var firebaseDate = document.getElementById('editPcFirebaseDate') ? document.getElementById('editPcFirebaseDate').value : '';
+  var firebaseIndexInDate = document.getElementById('editPcFirebaseIndexInDate') ? parseInt(document.getElementById('editPcFirebaseIndexInDate').value, 10) : 0;
   var tanggal = document.getElementById('editPcTanggal').value;
   var jenis = document.getElementById('editPcJenis').value;
   var nama = (document.getElementById('editPcNama').value || '').trim();
@@ -1980,7 +2008,11 @@ function saveEditPettyCashModal() {
     if (typeof loadPettyCashData === 'function') loadPettyCashData();
     return;
   }
-  if (source === 'firebase' && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.updatePettyCashTransaction) {
+  if (source === 'firebase' && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.updatePettyCashTransactionByDateAndIndex) {
+    var firebaseDateEl = document.getElementById('editPcFirebaseDate');
+    var firebaseIndexInDateEl = document.getElementById('editPcFirebaseIndexInDate');
+    var firebaseDate = firebaseDateEl ? firebaseDateEl.value : '';
+    var firebaseIndexInDate = firebaseIndexInDateEl ? parseInt(firebaseIndexInDateEl.value, 10) : 0;
     var debit = 0, kredit = 0;
     var jumlah = 1, satuan = '', harga = 0;
     if (jenis === 'pengeluaran') {
@@ -1992,7 +2024,7 @@ function saveEditPettyCashModal() {
       kredit = parseFloat(document.getElementById('editPcNominal').value) || 0;
       harga = kredit;
     }
-    FirebaseStorage.updatePettyCashTransaction(firebaseIndex, {
+    FirebaseStorage.updatePettyCashTransactionByDateAndIndex(firebaseDate, firebaseIndexInDate, {
       tanggal: tanggal,
       nama: nama,
       jumlah: jumlah,
@@ -2029,25 +2061,23 @@ function editPettyCashItem(parentIdx, trxIdx) {
   openEditPettyCashModal(data, 'local', parentIdx, trxIdx, null);
 }
 
-function editPettyCashItemFirebase(index) {
+function editPettyCashItemFirebase(firebaseDate, indexInDate) {
   if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
-  if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.getPettyCashFullList) { alert('Fungsi edit Firebase tidak tersedia.'); return; }
-  FirebaseStorage.getPettyCashFullList(getRbmOutlet()).then(function(list) {
-    if (!list[index]) { alert('Data tidak ditemukan.'); return; }
-    var row = list[index];
-    var data = {
-      tanggal: row.tanggal || row.date,
-      nama: row.nama,
-      jumlah: row.jumlah,
-      satuan: row.satuan || '',
-      harga: row.harga,
-      debit: parseFloat(row.debit) || 0,
-      kredit: parseFloat(row.kredit) || 0
-    };
-    openEditPettyCashModal(data, 'firebase', null, null, index);
-  }).catch(function(err) {
-    alert('Gagal memuat data: ' + (err && err.message ? err.message : ''));
-  });
+  var dataList = window._lastPettyCashData;
+  if (!Array.isArray(dataList)) { alert('Data tidak ditemukan. Silakan refresh tabel.'); return; }
+  var idx = parseInt(indexInDate, 10);
+  var row = dataList.find(function(r) { return (r._firebaseDate === firebaseDate || r._firebaseDate === String(firebaseDate)) && (r._firebaseIndexInDate === idx || r._firebaseIndexInDate === indexInDate); });
+  if (!row) { alert('Data tidak ditemukan.'); return; }
+  var data = {
+    tanggal: row._firebaseDate || row.tanggal,
+    nama: row.nama,
+    jumlah: row.jumlah,
+    satuan: row.satuan || '',
+    harga: row.harga,
+    debit: parseFloat(row.debit) || 0,
+    kredit: parseFloat(row.kredit) || 0
+  };
+  openEditPettyCashModal(data, 'firebase', null, null, null, firebaseDate, indexInDate);
 }
 
 function showImageModal(src, caption) {

@@ -274,7 +274,7 @@
   <div class="modal-content" style="background:white; padding:24px; width:420px; max-width:95%; border-radius:12px; overflow-y:auto;" onclick="event.stopPropagation()">
     <span class="modal-close" onclick="closeEditPettyCashModal()" style="color:#333; top:10px; right:14px; cursor:pointer;">&times;</span>
     <h3 style="margin-top:0;">Edit Transaksi Petty Cash</h3>
-    <input type="hidden" id="editPcSource"><input type="hidden" id="editPcParentIdx"><input type="hidden" id="editPcTrxIdx"><input type="hidden" id="editPcFirebaseIndex">
+    <input type="hidden" id="editPcSource"><input type="hidden" id="editPcParentIdx"><input type="hidden" id="editPcTrxIdx"><input type="hidden" id="editPcFirebaseIndex"><input type="hidden" id="editPcFirebaseDate"><input type="hidden" id="editPcFirebaseIndexInDate">
     <div style="margin-bottom:12px;"><label style="display:block; margin-bottom:4px; font-weight:600; font-size:13px;">Tanggal</label><input type="date" id="editPcTanggal" style="width:100%; padding:8px; border:1px solid #e2e8f0; border-radius:8px;"></div>
     <div style="margin-bottom:12px;"><label style="display:block; margin-bottom:4px; font-weight:600; font-size:13px;">Jenis</label><select id="editPcJenis" style="width:100%; padding:8px; border:1px solid #e2e8f0; border-radius:8px;" onchange="toggleEditPcFields()"><option value="pengeluaran">Pengeluaran</option><option value="pemasukan">Pemasukan</option></select></div>
     <div style="margin-bottom:12px;"><label style="display:block; margin-bottom:4px; font-weight:600; font-size:13px;">Nama / Keterangan</label><input type="text" id="editPcNama" style="width:100%; padding:8px; border:1px solid #e2e8f0; border-radius:8px;" placeholder="Nama atau keterangan"></div>
@@ -302,5 +302,238 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// [BARU] Helper functions untuk memastikan import berjalan di mode online/offline
+function useFirebaseBackend() {
+    if (typeof FirebaseStorage === 'undefined') return false;
+    try {
+        FirebaseStorage.init();
+        return FirebaseStorage.isReady();
+    } catch (e) { return false; }
+}
+
+function getRbmOutlet() {
+    var s = document.getElementById('rbm-outlet-select');
+    return (s && s.value) ? s.value : '';
+}
+
+function getRbmStorageKey(baseKey) {
+    var o = getRbmOutlet();
+    return o ? baseKey + '_' + o : baseKey;
+}
+
+function savePendingToLocalStorage(type, payload) {
+    try {
+        const key = getRbmStorageKey('RBM_PENDING_' + type);
+        const existing = JSON.parse(window.RBMStorage.getItem(key) || '[]');
+        const item = { ts: new Date().toISOString(), payload: payload };
+        existing.push(item);
+        window.RBMStorage.setItem(key, JSON.stringify(existing));
+        return true;
+    } catch (e) {
+        console.warn('Gagal menyimpan ke local storage', e);
+        return false;
+    }
+}
+// [BARU] Override fungsi untuk menangani format tanggal Excel dengan lebih baik
+window.downloadTemplatePettyCashExcel = function() {
+    const wb = XLSX.utils.book_new();
+    const wsData = [
+        ["Tanggal", "Keterangan", "Jenis", "Jumlah", "Satuan", "Harga", "Total Masuk"],
+        ["2026-03-08", "Contoh: Beli Sabun", "Pengeluaran", 2, "Pcs", 5000, ""],
+        ["2026-03-08", "Contoh: Tambahan Modal", "Pemasukan", "", "", "", 100000]
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{wch:15}, {wch:30}, {wch:12}, {wch:8}, {wch:8}, {wch:12}, {wch:15}];
+    XLSX.utils.book_append_sheet(wb, ws, "Template Petty Cash");
+    XLSX.writeFile(wb, "Template_Petty_Cash_RBM.xlsx");
+};
+
+window.processImportPettyCashExcel = function(input) {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        // cellDates: true PENTING agar tanggal Excel dibaca sebagai Object Date, bukan angka serial
+        const workbook = XLSX.read(data, {type: 'array', cellDates: true});
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet, {defval: ""});
+        
+        if (jsonData.length === 0) { alert("File kosong."); return; }
+
+        const outlet = document.getElementById('rbm-outlet-select').value;
+        if (!outlet) { alert("Pilih outlet dulu."); return; }
+
+        const useFirebase = useFirebaseBackend();
+        const db = useFirebase ? firebase.database() : null;
+
+        const groupedByDateAndType = {};
+        let count = 0;
+        let errors = [];
+        let importedDates = [];
+
+        // Helper format tanggal
+        const fmtDate = (d) => {
+            if (!d) return new Date().toISOString().slice(0,10);
+            
+            // 1. Handle JS Date object (Gunakan local time agar tidak geser hari karena timezone)
+            if (d instanceof Date) {
+                if (isNaN(d.getTime())) return new Date().toISOString().slice(0,10);
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+
+            // 2. Handle Excel Serial Number
+            if (typeof d === 'number' && d > 20000) {
+                const dateObj = new Date((d - 25569) * 86400 * 1000);
+                if (!isNaN(dateObj.getTime())) return fmtDate(dateObj);
+            }
+
+            let str = String(d).trim();
+            
+            // 3. Handle YYYY-MM-DD
+            if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+            // 4. Handle DD/MM/YYYY or DD-MM-YYYY or DD MMM YYYY
+            const indoMonths = {
+                'januari': '01', 'februari': '02', 'maret': '03', 'april': '04', 'mei': '05', 'juni': '06',
+                'juli': '07', 'agustus': '08', 'september': '09', 'oktober': '10', 'november': '11', 'desember': '12',
+                'feb': '02', 'mar': '03', 'apr': '04', 'mei': '05', 'jun': '06', 'jul': '07', 'agu': '08', 'sep': '09', 'okt': '10', 'nov': '11', 'des': '12',
+                'jan': '01', 'aug': '08', 'oct': '10', 'dec': '12'
+            };
+            
+            const match = str.match(/^(\d{1,2})[\s/\-.]+(\w+|\d{1,2})[\s/\-.]+(\d{2,4})$/);
+            if (match) {
+                const day = match[1].padStart(2, '0');
+                let monthName = match[2].toLowerCase();
+                let year = match[3];
+                if (year.length === 2) year = '20' + year;
+
+                if (indoMonths[monthName]) monthName = indoMonths[monthName];
+                else if (!isNaN(monthName)) monthName = String(monthName).padStart(2, '0');
+                
+                return `${year}-${monthName}-${day}`;
+            }
+
+            // 5. Handle DD/MM (Current Year)
+            const matchShort = str.match(/^(\d{1,2})[\s/\-.]+(\d{1,2})$/);
+            if (matchShort) {
+                const day = matchShort[1].padStart(2, '0');
+                const month = matchShort[2].padStart(2, '0');
+                const year = new Date().getFullYear();
+                return `${year}-${month}-${day}`;
+            }
+
+            const parsed = new Date(d);
+            if (!isNaN(parsed.getTime())) {
+                 const year = parsed.getFullYear();
+                 const month = String(parsed.getMonth() + 1).padStart(2, '0');
+                 const day = String(parsed.getDate()).padStart(2, '0');
+                 return `${year}-${month}-${day}`;
+            }
+            
+            return new Date().toISOString().slice(0,10);
+        };
+
+        // Helper Parse Number (Robust for ID/EN)
+        const parseNum = (v) => {
+            if (typeof v === 'number') return v;
+            if (!v) return 0;
+            let s = String(v).replace(/[^0-9,.-]/g, ''); // Hapus Rp, spasi, huruf
+            if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.'); // 10,5 -> 10.5
+            else if (s.includes('.') && s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); // 10.000,50 -> 10000.50
+            else if (s.includes('.')) s = s.replace(/\./g, ''); // 10.000 -> 10000
+            return parseFloat(s) || 0;
+        };
+
+        // [DIUBAH] Iterasi untuk mengelompokkan data per tanggal & jenis
+        jsonData.forEach((row, index) => {
+            const rowNum = index + 2; // Header is row 1
+            const r = {};
+            Object.keys(row).forEach(k => r[k.toLowerCase().trim()] = row[k]);
+            
+            if (!r['tanggal'] && !r['keterangan'] && !r['nama']) return;
+
+            const tgl = fmtDate(r['tanggal']);
+            let jenis = (r['jenis']||'').toLowerCase();
+            const nominalMasuk = parseNum(r['total masuk'] || r['nominal (pemasukan)'] || r['pemasukan'] || r['kredit']);
+            const nominalKeluarDirect = parseNum(r['total keluar'] || r['pengeluaran'] || r['debit']);
+
+            if (!jenis) jenis = (nominalMasuk > 0) ? 'pemasukan' : 'pengeluaran';
+
+            const key = `${tgl}|${jenis}`;
+            if (!groupedByDateAndType[key]) {
+                groupedByDateAndType[key] = { tanggal: tgl, jenis: jenis, transactions: [] };
+            }
+
+            const transaction = { nama: r['keterangan']||r['nama']||'-', foto: null };
+
+            if (jenis.includes('pengeluaran')) {
+                transaction.jumlah = parseNum(r['jumlah'] || 1); 
+                transaction.satuan = r['satuan']||''; 
+                
+                if (r['harga']) {
+                    transaction.harga = parseNum(r['harga']);
+                    transaction.total = transaction.jumlah * transaction.harga;
+                } else if (nominalKeluarDirect > 0) {
+                    transaction.total = nominalKeluarDirect;
+                    transaction.harga = transaction.jumlah > 0 ? transaction.total / transaction.jumlah : 0;
+                } else {
+                    transaction.harga = 0;
+                    transaction.total = 0;
+                }
+
+                if (transaction.total <= 0) { errors.push(`Baris ${rowNum}: Total Pengeluaran 0`); return; }
+            } else {
+                transaction.total = nominalMasuk > 0 ? nominalMasuk : parseNum(r['harga'] || r['total'] || 0); 
+                if (transaction.total <= 0) { errors.push(`Baris ${rowNum}: Total Pemasukan 0`); return; }
+            }
+            
+            groupedByDateAndType[key].transactions.push(transaction);
+            if (!importedDates.includes(tgl)) importedDates.push(tgl);
+        });
+
+        const payloads = Object.values(groupedByDateAndType);
+        if (payloads.length === 0 && errors.length === 0) { alert("Tidak ada data valid untuk diimpor."); return; }
+
+        // [DIUBAH] Simpan ke Firebase atau Local Storage sesuai mode
+        if (useFirebase) {
+            payloads.forEach(payload => {
+                // Asumsi FirebaseStorage.savePettyCashTransactions ada dan berfungsi
+                FirebaseStorage.savePettyCashTransactions(payload, outlet);
+                count += payload.transactions.length;
+            });
+        } else {
+            payloads.forEach(payload => {
+                savePendingToLocalStorage('PETTY_CASH', payload);
+                count += payload.transactions.length;
+            }
+        }
+        
+        let msg = `Berhasil import ${count} data.`;
+        if (errors.length > 0) {
+            msg += `\n\n⚠️ Gagal import ${errors.length} data:\n` + errors.slice(0, 15).join('\n');
+            if (errors.length > 15) msg += `\n... dan ${errors.length - 15} lainnya.`;
+        } else if (count > 0) {
+            msg += `\n\nTabel akan dimuat ulang untuk menampilkan data baru.`;
+        }
+        
+        alert(msg); input.value = '';
+
+        // [BARU] Otomatis set filter tanggal dan muat ulang data
+        if (importedDates.length > 0) {
+            importedDates.sort();
+            document.getElementById('pc_tanggal_awal').value = importedDates[0];
+            document.getElementById('pc_tanggal_akhir').value = importedDates[importedDates.length - 1];
+        }
+
+        if (typeof loadPettyCashData === 'function') loadPettyCashData();
+    };
+    reader.readAsArrayBuffer(file);
+};
+</script>
 </body>
 </html>

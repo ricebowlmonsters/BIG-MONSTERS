@@ -136,49 +136,138 @@
     return db.ref(path).set(payload).catch(function(err) { console.warn('firebase-storage setActiveSession failed', err); });
   }
 
-  // ---------- Petty Cash (pengganti Sheet "Pety Cash") ----------
+  // ---------- Petty Cash (logika sama seperti Pembukuan: satu node per tanggal) ----------
   function getPettyCashPath(outletId) {
     var o = outletId || (typeof getRbmOutlet === 'function' && getRbmOutlet()) || (window.getRbmOutlet && window.getRbmOutlet());
-    return 'rbm_pro/petty_cash/' + (o ? String(o).replace(/[.#$[\]]/g, '_') : 'default') + '/transactions';
+    return 'rbm_pro/petty_cash/' + (o ? String(o).replace(/[.#$[\]]/g, '_') : 'default');
+  }
+
+  function getPettyCashDatePath(outletId, dateStr) {
+    var d = (dateStr || '').toString().trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return getPettyCashPath(outletId) + '/' + d;
+    try {
+      var parts = d.split('/');
+      if (parts.length === 3) d = parts[2] + '-' + ('0' + parts[1]).slice(-2) + '-' + ('0' + parts[0]).slice(-2);
+    } catch (e) {}
+    return getPettyCashPath(outletId) + '/' + (d || Date.now());
+  }
+
+  function normalizeDateKeyToYyyyMmDd(keyOrDate) {
+    var s = (keyOrDate == null ? '' : keyOrDate).toString().trim();
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+      var p = s.split('/');
+      return p[2] + '-' + ('0' + p[1]).slice(-2) + '-' + ('0' + p[0]).slice(-2);
+    }
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) {
+      var parts = s.split('-');
+      return parts[0] + '-' + ('0' + parts[1]).slice(-2) + '-' + ('0' + parts[2]).slice(-2);
+    }
+    if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(s)) {
+      var p2 = s.split('-');
+      return p2[2] + '-' + ('0' + p2[1]).slice(-2) + '-' + ('0' + p2[0]).slice(-2);
+    }
+    try {
+      var d = new Date(s);
+      if (!isNaN(d.getTime())) return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    } catch (e) {}
+    return s;
   }
 
   function getPettyCash(tanggalAwal, tanggalAkhir, outletId) {
     if (!init()) return Promise.resolve({ data: [], summary: { totalDebit: 0, totalKredit: 0, saldoAkhir: 0 } });
     var path = getPettyCashPath(outletId);
     return db.ref(path).once('value').then(function(snap) {
-      var raw = snap.val();
-      var list = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? Object.values(raw) : []);
-      var tglAwal = tanggalAwal ? new Date(tanggalAwal) : null;
-      var tglAkhir = tanggalAkhir ? new Date(tanggalAkhir) : null;
+      var root = snap.val();
+      if (!root || typeof root !== 'object') root = {};
+      var oid = (outletId || '').toString().trim();
+      if (oid && root[oid] && typeof root[oid] === 'object') root = root[oid];
+      else if (!Array.isArray(root.transactions) && Object.keys(root).length === 1) {
+        var onlyKey = Object.keys(root)[0];
+        if (root[onlyKey] && typeof root[onlyKey] === 'object') root = root[onlyKey];
+      }
+      var tglAwalStr = (tanggalAwal || '').toString().trim();
+      var tglAkhirStr = (tanggalAkhir || '').toString().trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(tglAwalStr)) tglAwalStr = normalizeDateKeyToYyyyMmDd(tglAwalStr) || '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(tglAkhirStr)) tglAkhirStr = normalizeDateKeyToYyyyMmDd(tglAkhirStr) || '';
+      var tglAwal = tglAwalStr ? new Date(tglAwalStr) : null;
+      var tglAkhir = tglAkhirStr ? new Date(tglAkhirStr) : null;
       if (tglAkhir) tglAkhir.setHours(23, 59, 59, 999);
       var filtered = [];
       var totalDebit = 0, totalKredit = 0;
       var runningSaldo = 0;
-      list.forEach(function(row, idx) {
-        var t = row.tanggal || row.date;
-        if (!t) return;
-        var d = t instanceof Date ? t : new Date(t);
-        d.setHours(0, 0, 0, 0);
-        if (tglAwal && d < tglAwal) return;
-        if (tglAkhir && d > tglAkhir) return;
-        var debit = parseFloat(row.debit || row.keluar || 0) || 0;
-        var kredit = parseFloat(row.kredit || row.masuk || 0) || 0;
-        runningSaldo = (parseFloat(row.saldo) || runningSaldo) - debit + kredit;
-        filtered.push({
-          no: row.no != null ? row.no : (filtered.length + 1),
-          tanggal: row.tanggalStr || (d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear()),
-          nama: row.nama,
-          jumlah: row.jumlah,
-          satuan: row.satuan || '',
-          harga: row.harga,
-          debit: debit,
-          kredit: kredit,
-          saldo: runningSaldo,
-          foto: row.foto || '',
-          _firebaseIndex: idx
+      var allKeys = Object.keys(root);
+      var dateKeys = allKeys.filter(function(k) {
+        if (k === 'transactions') return false;
+        var node = root[k];
+        if (!node || typeof node !== 'object') return false;
+        var hasTransactions = Array.isArray(node.transactions) || (node.transactions && typeof node.transactions === 'object');
+        if (!hasTransactions) return false;
+        var effectiveDate = normalizeDateKeyToYyyyMmDd(node.tanggal || k);
+        if (tglAwalStr && effectiveDate && effectiveDate < tglAwalStr) return false;
+        if (tglAkhirStr && effectiveDate && effectiveDate > tglAkhirStr) return false;
+        return true;
+      });
+      if (dateKeys.length === 0 && Array.isArray(root.transactions)) {
+        var legacyList = root.transactions;
+        legacyList.forEach(function(row, idx) {
+          var t = row.tanggal || row.date;
+          if (!t) return;
+          var d = t instanceof Date ? t : new Date(t);
+          d.setHours(0, 0, 0, 0);
+          var dateKey = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+          if (tglAwal && d < tglAwal) return;
+          if (tglAkhir && d > tglAkhir) return;
+          var debit = parseFloat(row.debit || row.keluar || 0) || 0;
+          var kredit = parseFloat(row.kredit || row.masuk || 0) || 0;
+          runningSaldo = (parseFloat(row.saldo) || runningSaldo) - debit + kredit;
+          filtered.push({
+            no: filtered.length + 1,
+            tanggal: row.tanggalStr || (d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear()),
+            nama: row.nama,
+            jumlah: row.jumlah,
+            satuan: row.satuan || '',
+            harga: row.harga,
+            debit: debit,
+            kredit: kredit,
+            saldo: runningSaldo,
+            foto: row.foto || ''
+          });
+          totalDebit += debit;
+          totalKredit += kredit;
         });
-        totalDebit += debit;
-        totalKredit += kredit;
+        var saldoAkhirLegacy = filtered.length ? (filtered[filtered.length - 1].saldo || 0) : 0;
+        return { data: filtered, summary: { totalDebit: totalDebit, totalKredit: totalKredit, saldoAkhir: saldoAkhirLegacy } };
+      }
+      dateKeys.sort();
+      dateKeys.forEach(function(dateKey) {
+        var node = root[dateKey];
+        var arr = node && Array.isArray(node.transactions) ? node.transactions : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
+        arr.forEach(function(row, idxInDate) {
+          var t = row.tanggal || row.date || dateKey;
+          var d = t instanceof Date ? t : new Date(t);
+          d.setHours(0, 0, 0, 0);
+          var debit = parseFloat(row.debit || row.keluar || 0) || 0;
+          var kredit = parseFloat(row.kredit || row.masuk || 0) || 0;
+          runningSaldo = (parseFloat(row.saldo) || runningSaldo) - debit + kredit;
+          filtered.push({
+            no: filtered.length + 1,
+            tanggal: row.tanggalStr || (d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear()),
+            nama: row.nama,
+            jumlah: row.jumlah,
+            satuan: row.satuan || '',
+            harga: row.harga,
+            debit: debit,
+            kredit: kredit,
+            saldo: runningSaldo,
+            foto: row.foto || '',
+            _firebaseDate: dateKey,
+            _firebaseIndexInDate: idxInDate
+          });
+          totalDebit += debit;
+          totalKredit += kredit;
+        });
       });
       var saldoAkhir = filtered.length ? (filtered[filtered.length - 1].saldo || 0) : 0;
       return { data: filtered, summary: { totalDebit: totalDebit, totalKredit: totalKredit, saldoAkhir: saldoAkhir } };
@@ -190,13 +279,18 @@
 
   function savePettyCashTransactions(data, outletId) {
     if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
-    var path = getPettyCashPath(outletId);
-    var list = (data.transactions || []).map(function(trx) {
+    var dateStr = (data.tanggal || '').toString().trim();
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateStr)) {
+      var p = dateStr.split('/');
+      dateStr = p[2] + '-' + ('0' + p[1]).slice(-2) + '-' + ('0' + p[0]).slice(-2);
+    }
+    var path = getPettyCashDatePath(outletId, dateStr);
+    var newList = (data.transactions || []).map(function(trx) {
       var nominalPemasukan = parseFloat(trx.total) || parseFloat(trx.harga) || 0;
       var nominalPengeluaran = (parseFloat(trx.jumlah) || 0) * (parseFloat(trx.harga) || 0);
       return {
-        tanggal: data.tanggal,
-        date: data.tanggal,
+        tanggal: dateStr,
+        date: dateStr,
         nama: trx.nama,
         jumlah: trx.jumlah != null ? trx.jumlah : 1,
         satuan: trx.satuan || '',
@@ -209,21 +303,32 @@
         createdAt: firebase.database.ServerValue.TIMESTAMP
       };
     });
-    return db.ref(path).transaction(function(current) {
-      var arr = Array.isArray(current) ? current.slice() : [];
-      list.forEach(function(item) { arr.push(item); });
-      return arr;
+    return db.ref(path).once('value').then(function(snap) {
+      var existing = snap.val();
+      var existingArr = existing && Array.isArray(existing.transactions) ? existing.transactions : (existing && existing.transactions && typeof existing.transactions === 'object' ? Object.values(existing.transactions) : []);
+      existingArr = existingArr.concat(newList);
+      return db.ref(path).set({
+        tanggal: dateStr,
+        transactions: existingArr,
+        createdAt: (existing && existing.createdAt) || firebase.database.ServerValue.TIMESTAMP
+      });
     }).then(function() { return '✅ Transaksi petty cash disimpan di Firebase.'; });
   }
 
-  function deletePettyCashByIndex(index, outletId) {
+  function deletePettyCashByDateAndIndex(dateStr, indexInDate, outletId) {
     if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
-    var path = getPettyCashPath(outletId);
+    var path = getPettyCashDatePath(outletId, dateStr);
     return db.ref(path).once('value').then(function(snap) {
-      var arr = snap.val();
-      if (!Array.isArray(arr) || index < 0 || index >= arr.length) return Promise.resolve();
-      arr.splice(index, 1);
-      return db.ref(path).set(arr);
+      var node = snap.val();
+      var arr = node && Array.isArray(node.transactions) ? node.transactions.slice() : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
+      if (indexInDate < 0 || indexInDate >= arr.length) return Promise.resolve();
+      arr.splice(indexInDate, 1);
+      if (arr.length === 0) return db.ref(path).remove();
+      return db.ref(path).set({
+        tanggal: node.tanggal || dateStr,
+        transactions: arr,
+        createdAt: node.createdAt || firebase.database.ServerValue.TIMESTAMP
+      });
     }).then(function() { return '✅ Transaksi petty cash dihapus.'; });
   }
 
@@ -231,21 +336,30 @@
     if (!init()) return Promise.resolve([]);
     var path = getPettyCashPath(outletId);
     return db.ref(path).once('value').then(function(snap) {
-      var raw = snap.val();
-      return Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? Object.values(raw) : []);
+      var root = snap.val();
+      if (!root || typeof root !== 'object') return [];
+      var list = [];
+      Object.keys(root).forEach(function(dateKey) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+        var node = root[dateKey];
+        var arr = node && Array.isArray(node.transactions) ? node.transactions : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
+        arr.forEach(function(row) { list.push(row); });
+      });
+      return list;
     });
   }
 
-  function updatePettyCashTransaction(index, data, outletId) {
+  function updatePettyCashTransactionByDateAndIndex(dateStr, indexInDate, data, outletId) {
     if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
-    var path = getPettyCashPath(outletId);
+    var path = getPettyCashDatePath(outletId, dateStr);
     return db.ref(path).once('value').then(function(snap) {
-      var arr = snap.val();
-      if (!Array.isArray(arr) || index < 0 || index >= arr.length) return Promise.resolve();
-      var existing = arr[index] || {};
-      arr[index] = {
-        tanggal: data.tanggal != null ? data.tanggal : existing.tanggal,
-        date: data.tanggal != null ? data.tanggal : existing.date,
+      var node = snap.val();
+      var arr = node && Array.isArray(node.transactions) ? node.transactions.slice() : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
+      if (indexInDate < 0 || indexInDate >= arr.length) return Promise.resolve();
+      var existing = arr[indexInDate] || {};
+      arr[indexInDate] = {
+        tanggal: data.tanggal != null ? data.tanggal : (existing.tanggal || dateStr),
+        date: data.tanggal != null ? data.tanggal : (existing.date || dateStr),
         nama: data.nama != null ? data.nama : existing.nama,
         jumlah: data.jumlah != null ? data.jumlah : existing.jumlah,
         satuan: data.satuan != null ? data.satuan : (existing.satuan || ''),
@@ -257,7 +371,11 @@
         foto: data.foto !== undefined ? data.foto : (existing.foto || ''),
         createdAt: existing.createdAt || firebase.database.ServerValue.TIMESTAMP
       };
-      return db.ref(path).set(arr);
+      return db.ref(path).set({
+        tanggal: node.tanggal || dateStr,
+        transactions: arr,
+        createdAt: node.createdAt || firebase.database.ServerValue.TIMESTAMP
+      });
     }).then(function() { return '✅ Transaksi petty cash diperbarui.'; });
   }
 
@@ -656,9 +774,9 @@
     setActiveSession: setActiveSession,
     getPettyCash: getPettyCash,
     savePettyCashTransactions: savePettyCashTransactions,
-    deletePettyCashByIndex: deletePettyCashByIndex,
+    deletePettyCashByDateAndIndex: deletePettyCashByDateAndIndex,
     getPettyCashFullList: getPettyCashFullList,
-    updatePettyCashTransaction: updatePettyCashTransaction,
+    updatePettyCashTransactionByDateAndIndex: updatePettyCashTransactionByDateAndIndex,
     savePettyCashPengajuan: savePettyCashPengajuan,
     saveDatabaseBarang: saveDatabaseBarang,
     saveInventaris: saveInventaris,
