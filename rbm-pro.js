@@ -7124,7 +7124,8 @@ function checkDistance() {
     var dist = getDistanceFromLatLonInM(currentPos.latitude, currentPos.longitude, officeLat, officeLng);
     var distStr = Math.round(dist);
 
-    infoEl.innerText = "Jarak ke titik: " + distStr + " Meter (Max: " + maxRadius + "m)";
+    var infoText = "Jarak ke titik: " + distStr + " Meter (Max: " + maxRadius + "m)";
+    infoEl.innerText = infoText;
 
     var inRange = dist <= maxRadius;
 
