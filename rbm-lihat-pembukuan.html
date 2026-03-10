@@ -88,12 +88,8 @@
   <div class="form-container">
     <div class="filter-row">
       <div class="filter-group">
-        <label>Tanggal Dari</label>
-        <input type="date" id="pembukuan_tanggal_awal">
-      </div>
-      <div class="filter-group">
-        <label>Tanggal Sampai</label>
-        <input type="date" id="pembukuan_tanggal_akhir">
+        <label>Pilih Bulan</label>
+        <input type="month" id="pembukuan_bulan_filter" onchange="loadPembukuanData()">
       </div>
       <button type="button" class="btn btn-secondary" onclick="loadPembukuanData()">Tampilkan Data</button>
       <button type="button" class="btn btn-secondary" onclick="loadPembukuanData()" title="Muat ulang data outlet terpilih" style="margin-left: 8px;">🔄 Refresh</button>
@@ -102,19 +98,24 @@
       <button type="button" class="btn btn-secondary" onclick="exportPembukuanToExcel()" style="background: #198754; color: white; border-color: #198754; margin-left: 8px;">Export Excel</button>
       <input type="file" id="import_pembukuan_file" accept=".xlsx,.xls" style="display:none" onchange="processImportPembukuanExcel(this)">
       <button type="button" class="btn btn-secondary" onclick="printPembukuanReport()" style="background: #0d6efd; color: white; border-color: #0d6efd; margin-left: 8px;">Print</button>
+      <button type="button" class="btn btn-secondary" onclick="savePembukuanToJpg()" style="background: #6610f2; color: white; border-color: #6610f2; margin-left: 8px;">Save JPG (1 Hari)</button>
     </div>
 
     <div class="summary-grid" id="pembukuan_summary" style="display:none">
+      <div class="summary-card" style="background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);">
+        <div class="label">Saldo Awal Periode</div>
+        <div class="value" id="pembukuan_saldo_awal">Rp 0</div>
+      </div>
       <div class="summary-card">
-        <div class="label">Total Cash Masuk (G4)</div>
+        <div class="label">Cash Masuk (Periode)</div>
         <div class="value" id="pembukuan_total_cash">Rp 0</div>
       </div>
       <div class="summary-card">
-        <div class="label">Total Kas Keluar (H4)</div>
+        <div class="label">Kas Keluar (Periode)</div>
         <div class="value" id="pembukuan_total_keluar">Rp 0</div>
       </div>
       <div class="summary-card" style="background: linear-gradient(135deg, #64748b 0%, #475569 100%);">
-        <div class="label">Total Fisik (Sheet)</div>
+        <div class="label">Saldo Akhir</div>
         <div class="value" id="pembukuan_total_fisik">Rp 0</div>
       </div>
     </div>

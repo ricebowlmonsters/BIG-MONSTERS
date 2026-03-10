@@ -44,7 +44,7 @@
   var DEFAULT_FIREBASE_CONFIG = {
     apiKey: 'AIzaSyDWQG53tP2zKILTwPSJQpiVzFNyvYLxLqw',
     authDomain: 'ricebowlmonst.firebaseapp.com',
-    databaseURL: 'https://ricebowlmonst-default-rtdb.firebaseio.com',
+    databaseURL: 'https://ricebowlmonst-default-rtdb.asia-southeast1.firebasedatabase.app',
     projectId: 'ricebowlmonst',
     storageBucket: 'ricebowlmonst.firebasestorage.app',
     messagingSenderId: '723669558962',
@@ -196,6 +196,7 @@
       if (tglAkhir) tglAkhir.setHours(23, 59, 59, 999);
       var filtered = [];
       var totalDebit = 0, totalKredit = 0;
+      var saldoAwal = 0;
       var runningSaldo = 0;
       var allKeys = Object.keys(root);
       var dateKeys = allKeys.filter(function(k) {
@@ -204,9 +205,6 @@
         if (!node || typeof node !== 'object') return false;
         var hasTransactions = Array.isArray(node.transactions) || (node.transactions && typeof node.transactions === 'object');
         if (!hasTransactions) return false;
-        var effectiveDate = normalizeDateKeyToYyyyMmDd(node.tanggal || k);
-        if (tglAwalStr && effectiveDate && effectiveDate < tglAwalStr) return false;
-        if (tglAkhirStr && effectiveDate && effectiveDate > tglAkhirStr) return false;
         return true;
       });
       if (dateKeys.length === 0 && Array.isArray(root.transactions)) {
@@ -243,7 +241,24 @@
       dateKeys.sort();
       dateKeys.forEach(function(dateKey) {
         var node = root[dateKey];
+        var effectiveDate = normalizeDateKeyToYyyyMmDd(node.tanggal || dateKey);
         var arr = node && Array.isArray(node.transactions) ? node.transactions : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
+        
+        // Jika tanggal sebelum periode, akumulasi ke Saldo Awal
+        if (tglAwalStr && effectiveDate && effectiveDate < tglAwalStr) {
+          arr.forEach(function(row) {
+            var debit = parseFloat(row.debit || row.keluar || 0) || 0;
+            var kredit = parseFloat(row.kredit || row.masuk || 0) || 0;
+            saldoAwal = saldoAwal - debit + kredit;
+          });
+          return;
+        }
+        
+        // Jika tanggal setelah periode, abaikan
+        if (tglAkhirStr && effectiveDate && effectiveDate > tglAkhirStr) return;
+
+        if (filtered.length === 0) runningSaldo = saldoAwal;
+
         arr.forEach(function(row, idxInDate) {
           var t = row.tanggal || row.date || dateKey;
           var d = t instanceof Date ? t : new Date(t);
@@ -269,8 +284,8 @@
           totalKredit += kredit;
         });
       });
-      var saldoAkhir = filtered.length ? (filtered[filtered.length - 1].saldo || 0) : 0;
-      return { data: filtered, summary: { totalDebit: totalDebit, totalKredit: totalKredit, saldoAkhir: saldoAkhir } };
+      var saldoAkhir = filtered.length ? (filtered[filtered.length - 1].saldo || 0) : saldoAwal;
+      return { data: filtered, summary: { totalDebit: totalDebit, totalKredit: totalKredit, saldoAkhir: saldoAkhir, saldoAwal: saldoAwal } };
     }).catch(function(err) {
       console.warn('getPettyCash failed', err);
       return { data: [], summary: {} };

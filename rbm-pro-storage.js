@@ -9,7 +9,7 @@
   var DEFAULT_FIREBASE_CONFIG = {
     apiKey: 'AIzaSyDWQG53tP2zKILTwPSJQpiVzFNyvYLxLqw',
     authDomain: 'ricebowlmonst.firebaseapp.com',
-    databaseURL: 'https://ricebowlmonst-default-rtdb.firebaseio.com',
+    databaseURL: 'https://ricebowlmonst-default-rtdb.asia-southeast1.firebasedatabase.app',
     projectId: 'ricebowlmonst',
     storageBucket: 'ricebowlmonst.firebasestorage.app',
     messagingSenderId: '723669558962',
@@ -77,6 +77,7 @@
       } catch (e) {
         console.warn('RBM Storage: Firebase init failed', e);
       }
+      this._initDevTools(); // [DEV] Cek apakah mode developer aktif
     },
 
     loadFromFirebase: function() {
@@ -159,6 +160,102 @@
         }
       }
       return Promise.resolve();
+    },
+
+    // =========================================================================
+    // [FITUR RAHASIA DEVELOPER] - Import Excel Absensi
+    // Cara Pakai: Buka Console (F12), ketik: RBMStorage.enableDevMode()
+    // =========================================================================
+    
+    enableDevMode: function() {
+      localStorage.setItem('RBM_DEV_MODE', 'true');
+      alert('✅ Developer Mode AKTIF. Tombol Import akan muncul di pojok kanan bawah.\nSilakan Refresh halaman.');
+    },
+
+    disableDevMode: function() {
+      localStorage.removeItem('RBM_DEV_MODE');
+      alert('❌ Developer Mode NON-AKTIF.');
+      location.reload();
+    },
+
+    _initDevTools: function() {
+      if (localStorage.getItem('RBM_DEV_MODE') !== 'true') return;
+
+      // Buat tombol rahasia
+      var btn = document.createElement('button');
+      btn.innerHTML = '📥 Import Absensi (XLS)';
+      btn.style.position = 'fixed';
+      btn.style.bottom = '10px';
+      btn.style.right = '10px';
+      btn.style.zIndex = '10000';
+      btn.style.background = '#2e7d32'; // Hijau Excel
+      btn.style.color = 'white';
+      btn.style.border = 'none';
+      btn.style.padding = '8px 12px';
+      btn.style.borderRadius = '4px';
+      btn.style.cursor = 'pointer';
+      btn.style.fontSize = '11px';
+      btn.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
+      btn.title = 'Fitur Developer: Import Data Absensi dari Excel';
+
+      var self = this;
+      btn.onclick = function() { self.importAbsensiExcel(); };
+      document.body.appendChild(btn);
+    },
+
+    importAbsensiExcel: function() {
+      // 1. Load Library SheetJS (XLSX) jika belum ada
+      if (typeof XLSX === 'undefined') {
+        var script = document.createElement('script');
+        script.src = "https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js";
+        script.onload = () => { this.importAbsensiExcel(); };
+        document.head.appendChild(script);
+        console.log('⏳ Mengunduh library Excel...');
+        return;
+      }
+
+      // 2. Buat input file hidden
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.xlsx, .xls, .csv';
+      input.style.display = 'none';
+      
+      input.onchange = (e) => {
+        var file = e.target.files[0];
+        if (!file) return;
+
+        var reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            var data = new Uint8Array(e.target.result);
+            var workbook = XLSX.read(data, {type: 'array'});
+            var firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            // Konversi ke JSON
+            var jsonData = XLSX.utils.sheet_to_json(firstSheet);
+
+            if (jsonData.length === 0) {
+              alert('File Excel kosong!');
+              return;
+            }
+
+            console.log('📄 Data Excel Terbaca:', jsonData);
+            
+            // 3. Simpan ke Storage (Key: RBM_ABSENSI)
+            // Format disesuaikan: Array of Objects
+            this.setItem('RBM_ABSENSI', JSON.stringify(jsonData)).then(() => {
+              alert('✅ Berhasil Import ' + jsonData.length + ' data absensi!\nData tersimpan di key: RBM_ABSENSI');
+              location.reload(); // Refresh untuk melihat hasil
+            });
+
+          } catch (err) {
+            console.error(err);
+            alert('Gagal memproses file: ' + err.message);
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      };
+
+      input.click();
     }
   };
 

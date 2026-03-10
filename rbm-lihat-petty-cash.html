@@ -88,12 +88,8 @@
   <div class="form-container">
     <div class="filter-row" style="flex-wrap: wrap; align-items: center; gap: 8px;">
       <div class="filter-group">
-        <label>Tanggal Dari</label>
-        <input type="date" id="pc_tanggal_awal">
-      </div>
-      <div class="filter-group">
-        <label>Tanggal Sampai</label>
-        <input type="date" id="pc_tanggal_akhir">
+        <label>Pilih Bulan</label>
+        <input type="month" id="pc_bulan_filter" onchange="loadPettyCashData()">
       </div>
       <button type="button" class="btn btn-secondary" onclick="loadPettyCashData()">Tampilkan Data</button>
       <button type="button" class="btn btn-secondary" onclick="loadPettyCashData()" title="Muat ulang data outlet terpilih" style="margin-left: 8px;">🔄 Refresh</button>
@@ -106,12 +102,16 @@
     </div>
 
     <div class="summary-grid" id="pc_summary" style="display:none">
+      <div class="summary-card" style="background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);">
+        <div class="label">Saldo Awal Periode</div>
+        <div class="value" id="pc_saldo_awal">Rp 0</div>
+      </div>
       <div class="summary-card">
         <div class="label">Total Debit (Pengeluaran)</div>
         <div class="value" id="pc_total_debit">Rp 0</div>
       </div>
       <div class="summary-card">
-        <div class="label">Total Kredit (Pemasukan)</div>
+        <div class="label">Total Kredit (Saldo Awal + Masuk)</div>
         <div class="value" id="pc_total_kredit">Rp 0</div>
       </div>
       <div class="summary-card">
@@ -510,7 +510,7 @@ window.processImportPettyCashExcel = function(input) {
             payloads.forEach(payload => {
                 savePendingToLocalStorage('PETTY_CASH', payload);
                 count += payload.transactions.length;
-            }
+            });
         }
         
         let msg = `Berhasil import ${count} data.`;
@@ -526,8 +526,7 @@ window.processImportPettyCashExcel = function(input) {
         // [BARU] Otomatis set filter tanggal dan muat ulang data
         if (importedDates.length > 0) {
             importedDates.sort();
-            document.getElementById('pc_tanggal_awal').value = importedDates[0];
-            document.getElementById('pc_tanggal_akhir').value = importedDates[importedDates.length - 1];
+            document.getElementById('pc_bulan_filter').value = importedDates[0].slice(0, 7);
         }
 
         if (typeof loadPettyCashData === 'function') loadPettyCashData();

@@ -12,31 +12,35 @@
   function getRbmStorageKey(baseKey) { var o = getRbmOutlet(); return o ? baseKey + '_' + o : baseKey; }
   window.onload = function() {
     var runInit = function() {
-    var today = new Date().toISOString().split("T")[0];
-    var firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
+    var now = new Date();
+    var fmt = function(d) { return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); };
+    var today = fmt(now);
+    var firstDay = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
+    // Periode Gaji: Tanggal 26 Bulan Lalu s/d Tanggal 25 Bulan Ini
+    var payrollStart = fmt(new Date(now.getFullYear(), now.getMonth() - 1, 26));
+    var payrollEnd = fmt(new Date(now.getFullYear(), now.getMonth(), 25));
+
     setVal("tanggal_barang", today);
     setVal("tanggal_keuangan", today);
     setVal("tanggal_inventaris", today);
     setVal("tanggal_pembukuan", today);
     setVal("pc_input_tanggal", today);
-    setVal("pc_tanggal_awal", firstDay);
-    setVal("pc_tanggal_akhir", today);
+    setVal("pc_bulan_filter", today.slice(0, 7));
     setVal("pengajuan_saldo_date", today);
     setVal("pengajuan_filter_date_start", today);
     setVal("pengajuan_filter_date_end", today);
-    setVal("pembukuan_tanggal_awal", firstDay);
-    setVal("pembukuan_tanggal_akhir", today);
+    setVal("pembukuan_bulan_filter", today.slice(0, 7));
     setVal("inv_tanggal_awal", firstDay);
     setVal("inv_tanggal_akhir", today);
-    setVal("absensi_tgl_awal", firstDay);
-    setVal("absensi_tgl_akhir", today);
-    setVal("bonus_start_date", firstDay);
-    setVal("bonus_end_date", today);
+    setVal("absensi_tgl_awal", payrollStart);
+    setVal("absensi_tgl_akhir", payrollEnd);
+    setVal("bonus_start_date", payrollStart);
+    setVal("bonus_end_date", payrollEnd);
     setVal("res_filter_start", firstDay);
     setVal("res_filter_end", today);
     setVal("stok_bulan_filter", today.slice(0, 7));
-    setVal("rekap_gps_start", firstDay);
-    setVal("rekap_gps_end", today);
+    setVal("rekap_gps_start", payrollStart);
+    setVal("rekap_gps_end", payrollEnd);
     setVal("riwayat_barang_start", firstDay);
     setVal("riwayat_barang_end", today);
     var pageView = window.RBM_PAGE || (window.location.hash || '').replace(/^#/, '');
@@ -48,7 +52,7 @@
       else if (viewId === 'reservasi-view') renderReservasiCalendar();
       else if (viewId === 'stok-barang-view') renderStokTable();
       else if (viewId === 'absensi-gps-view') { initAbsensiGPS(); loadOfficeConfig(); if (typeof loadJamConfig === 'function') loadJamConfig(); }
-      else if (viewId === 'rekap-absensi-gps-view') populateRekapGpsFilterNama();
+      else if (viewId === 'rekap-absensi-gps-view') { populateRekapGpsFilterNama(); loadRekapAbsensiGPS(); }
     } else if (pageView && document.getElementById(pageView)) {
       showView(pageView);
     } else {
@@ -72,7 +76,7 @@
         renderAbsensiTable();
       }
       else if (page === 'rekap-absensi-gps-view') {
-        if (typeof populateRekapGpsFilterNama === 'function') populateRekapGpsFilterNama();
+        if (typeof populateRekapGpsFilterNama === 'function') { populateRekapGpsFilterNama(); }
         if (typeof loadRekapAbsensiGPS === 'function') loadRekapAbsensiGPS();
       }
       else if (page === 'lihat-pembukuan-view' && typeof loadPembukuanData === 'function') loadPembukuanData();
@@ -117,6 +121,7 @@
     }
     if (viewId === 'rekap-absensi-gps-view') {
         populateRekapGpsFilterNama();
+        loadRekapAbsensiGPS();
     }
     if (viewId === 'lihat-petty-cash-view' && typeof loadPettyCashData === 'function') loadPettyCashData();
     if (viewId === 'lihat-pembukuan-view' && typeof loadPembukuanData === 'function') loadPembukuanData();
@@ -392,23 +397,176 @@
     setTimeout(() => { output.innerText = "" }, 4000);
   }
 
+function savePembukuanToJpg() {
+    const monthFilter = document.getElementById("pembukuan_bulan_filter");
+    const monthVal = monthFilter ? monthFilter.value : '';
+    
+    if (!monthVal) { alert("Pilih bulan terlebih dahulu."); return; }
+    
+    // Gunakan tanggal awal sebagai target
+    const targetDate = monthVal + '-01';
+    
+    if(!confirm("Fitur Save JPG akan mencetak laporan harian untuk tanggal pertama bulan yang dipilih: " + targetDate + ". Lanjutkan?")) return;
+
+    // Ambil data
+    let pending = window._lastPembukuanPending;
+    if (!pending && !useFirebaseBackend()) {
+        pending = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_PEMBUKUAN')), []);
+    }
+    if (!pending) pending = [];
+
+    // [BARU] Hitung Saldo Awal & Total Hari Ini (Kumulatif)
+    let saldoAwal = 0;
+    let totalMasuk = 0;
+    let totalKeluar = 0;
+    let dayData = null;
+
+    pending.forEach(item => {
+        const p = item.payload;
+        if (!p || !p.tanggal) return;
+
+        if (p.tanggal < targetDate) {
+            // Akumulasi Saldo Awal (transaksi sebelum tanggal target)
+            if (p.kasMasuk) {
+                p.kasMasuk.forEach(m => {
+                    let fisikVal = parseFloat(m.fisik) || 0;
+                    if (m.keterangan && m.keterangan.toUpperCase() === 'VCR') {
+                        fisikVal = (parseFloat(m.vcr) || 0) * 20000;
+                    }
+                    saldoAwal += fisikVal;
+                });
+            }
+            if (p.kasKeluar) {
+                p.kasKeluar.forEach(k => {
+                    saldoAwal -= parseFloat(k.setor) || 0;
+                });
+            }
+        } else if (p.tanggal === targetDate) {
+            // Data hari ini
+            dayData = item;
+        }
+    });
+    
+    if (!dayData && saldoAwal === 0) {
+        alert("Tidak ada data untuk tanggal " + targetDate);
+        return;
+    }
+
+    // [BARU] Hitung subtotal untuk hari ini agar sesuai dengan tampilan tabel
+    let subtotalCatatan = 0;
+    let subtotalFisik = 0;
+    let subtotalSelisih = 0;
+    let subtotalKeluar = 0;
+    const p = dayData ? dayData.payload : { kasMasuk: [], kasKeluar: [] };
+
+    (p.kasMasuk || []).forEach(m => {
+        const catatanVal = parseFloat(m.catatan) || 0;
+        let fisikVal = parseFloat(m.fisik) || 0;
+        if (m.keterangan && m.keterangan.toUpperCase() === 'VCR') {
+            fisikVal = (parseFloat(m.vcr) || 0) * 20000;
+        }
+        subtotalCatatan += catatanVal;
+        subtotalFisik += fisikVal;
+        subtotalSelisih += (fisikVal - catatanVal);
+    });
+    (p.kasKeluar || []).forEach(k => {
+        subtotalKeluar += parseFloat(k.setor) || 0;
+    });
+
+    const saldoAkhir = saldoAwal + subtotalFisik - subtotalKeluar;
+
+    // Buat elemen HTML temporary untuk di-capture
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:absolute; top:-9999px; left:-9999px; width:600px; background:white; padding:30px; font-family:sans-serif; color:#333; border:1px solid #ccc;';
+    
+    let html = `
+        <h2 style="text-align:center; margin:0 0 10px 0; color:#1e40af;">Laporan Pembukuan Harian</h2>
+        <p style="text-align:center; margin:0 0 20px 0; font-size:14px; color:#666;">Tanggal: ${targetDate}</p>
+        
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:10px; margin-bottom:20px; background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
+            <div style="text-align:center;">
+                <div style="font-size:11px; color:#666;">Saldo Awal</div>
+                <div style="font-size:14px; font-weight:bold; color:#6b7280;">${formatRupiah(saldoAwal)}</div>
+            </div>
+            <div style="text-align:center;">
+                <div style="font-size:11px; color:#666;">Masuk</div>
+                <div style="font-size:14px; font-weight:bold; color:#1e40af;">${formatRupiah(subtotalFisik)}</div>
+            </div>
+            <div style="text-align:center;">
+                <div style="font-size:11px; color:#666;">Keluar</div>
+                <div style="font-size:14px; font-weight:bold; color:#dc2626;">${formatRupiah(subtotalKeluar)}</div>
+            </div>
+            <div style="text-align:center;">
+                <div style="font-size:11px; color:#666;">Saldo Akhir</div>
+                <div style="font-size:14px; font-weight:bold; color:#059669;">${formatRupiah(saldoAkhir)}</div>
+            </div>
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead>
+                <tr style="background:#1e40af; color:white;">
+                    <th style="padding:8px; border:1px solid #ccc;">Keterangan</th>
+                    <th style="padding:8px; border:1px solid #ccc;">Catatan</th>
+                    <th style="padding:8px; border:1px solid #ccc;">Fisik / Setor</th>
+                    <th style="padding:8px; border:1px solid #ccc;">Selisih</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    // Render Rows
+    (p.kasMasuk || []).forEach(m => {
+        let fisikVal = parseFloat(m.fisik) || 0;
+        let fisikDisplay = formatRupiah(fisikVal);
+        if (m.keterangan && m.keterangan.toUpperCase() === 'VCR') {
+            fisikVal = (parseFloat(m.vcr) || 0) * 20000;
+            fisikDisplay = `${m.vcr} (VCR)`;
+        }
+        let selisihVal = fisikVal - (parseFloat(m.catatan) || 0);
+        html += `<tr><td style="padding:6px; border:1px solid #eee;">${m.keterangan}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(m.catatan)}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${fisikDisplay}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(selisihVal)}</td></tr>`;
+    });
+
+    // [BARU] Tambahkan baris subtotal
+    html += `<tr style="background:#e2e8f0; font-weight:bold;"><td style="padding:6px; border:1px solid #eee; text-align:center;">TOTAL</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(subtotalCatatan)}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(subtotalFisik)}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(subtotalSelisih)}</td></tr>`;
+
+    (p.kasKeluar || []).forEach(k => {
+        html += `<tr style="background:#f0fdf4;"><td style="padding:6px; border:1px solid #eee;">${k.keterangan}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">-</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(k.setor)}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">-</td></tr>`;
+    });
+
+    html += `</tbody></table>`;
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+
+    html2canvas(wrap, { scale: 2 }).then(canvas => {
+        const link = document.createElement('a');
+        link.download = `Laporan_Pembukuan_${targetDate}.jpg`;
+        link.href = canvas.toDataURL('image/jpeg', 0.9);
+        link.click();
+        document.body.removeChild(wrap);
+    }).catch(err => {
+        alert("Gagal menyimpan JPG: " + err);
+        document.body.removeChild(wrap);
+    });
+}
+
   function loadPettyCashData() {
     const tbody = document.getElementById("pc_tbody");
     const summaryEl = document.getElementById("pc_summary");
     if (!tbody || !summaryEl) return;
-    const elAwal = document.getElementById("pc_tanggal_awal");
-    const elAkhir = document.getElementById("pc_tanggal_akhir");
-    var today = new Date().toISOString().split("T")[0];
-    var firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
-    var tglAwal = (elAwal && elAwal.value) ? String(elAwal.value).trim() : firstDay;
-    var tglAkhir = (elAkhir && elAkhir.value) ? String(elAkhir.value).trim() : today;
-    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(tglAwal)) { var p = tglAwal.split('/'); tglAwal = p[2] + '-' + ('0' + p[1]).slice(-2) + '-' + ('0' + p[0]).slice(-2); }
-    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(tglAkhir)) { var q = tglAkhir.split('/'); tglAkhir = q[2] + '-' + ('0' + q[1]).slice(-2) + '-' + ('0' + q[0]).slice(-2); }
-    if (elAwal) elAwal.value = tglAwal;
-    if (elAkhir) elAkhir.value = tglAkhir;
 
     tbody.innerHTML = '<tr><td colspan="11" class="table-loading">Memuat data...</td></tr>';
     summaryEl.style.display = 'none';
+
+    const monthFilter = document.getElementById("pc_bulan_filter");
+    const monthVal = monthFilter ? monthFilter.value : '';
+    if (!monthVal) {
+        tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Pilih bulan terlebih dahulu.</td></tr>';
+        summaryEl.style.display = 'none';
+        return;
+    }
+    const [year, month] = monthVal.split('-');
+    const tglAwal = `${year}-${month}-01`;
+    const tglAkhir = new Date(year, parseInt(month, 10), 0).toLocaleDateString('sv').slice(0, 10);
 
     function renderPettyCashFromResult(result) {
       var data = result && result.data ? result.data : [];
@@ -426,11 +584,15 @@
       }
       summaryEl.style.display = 'grid';
       var totalDebitEl = document.getElementById("pc_total_debit");
+      var saldoAwalEl = document.getElementById("pc_saldo_awal");
       var totalKreditEl = document.getElementById("pc_total_kredit");
       var saldoAkhirEl = document.getElementById("pc_saldo_akhir");
       if (totalDebitEl) totalDebitEl.textContent = formatRupiah(summary.totalDebit || 0);
-      if (totalKreditEl) totalKreditEl.textContent = formatRupiah(summary.totalKredit || 0);
+      // [UBAH] Total Kredit = Saldo Awal + Total Pemasukan Periode Ini
+      var totalDana = (summary.saldoAwal || 0) + (summary.totalKredit || 0);
+      if (totalKreditEl) totalKreditEl.textContent = formatRupiah(totalDana);
       if (saldoAkhirEl) saldoAkhirEl.textContent = formatRupiah(summary.saldoAkhir || 0);
+      if (saldoAwalEl) saldoAwalEl.textContent = formatRupiah(summary.saldoAwal || 0);
     }
 
     if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPettyCash) {
@@ -448,8 +610,13 @@
       }
       let no = 0;
       let totalDebit = 0, totalKredit = 0;
+      let saldoAwal = 0;
       let runningSaldo = 0;
       const rows = [];
+      
+      // Sort data pending berdasarkan tanggal agar perhitungan saldo urut
+      pending.sort((a, b) => (a.payload.tanggal || '').localeCompare(b.payload.tanggal || ''));
+
       pending.forEach(function(item, parentIdx) {
         const p = item.payload || {};
         
@@ -460,12 +627,27 @@
              const parts = d.split('-');
              d = parts[0] + '-' + parts[1].padStart(2, '0') + '-' + parts[2].padStart(2, '0');
         }
-        if (d < tglAwal || d > tglAkhir) return;
+        
+        // Jika tanggal sebelum periode, hitung sebagai Saldo Awal
+        if (d < tglAwal) {
+            (p.transactions || []).forEach(function(trx) {
+                const debit = (p.jenis === 'pengeluaran' && trx.total) ? parseFloat(trx.total) || 0 : 0;
+                const kredit = (p.jenis === 'pemasukan' && trx.total) ? parseFloat(trx.total) || 0 : 0;
+                saldoAwal = saldoAwal - debit + kredit;
+            });
+            return;
+        }
+        
+        // Jika tanggal setelah periode, abaikan
+        if (d > tglAkhir) return;
+
+        // Set runningSaldo awal jika ini baris pertama yang ditampilkan
+        if (rows.length === 0) runningSaldo = saldoAwal;
 
         (p.transactions || []).forEach(function(trx, trxIdx) {
           no++;
-          const debit = (p.jenis === 'pengeluaran' && trx.total) ? trx.total : 0;
-          const kredit = (p.jenis === 'pemasukan' && trx.total) ? trx.total : 0;
+          const debit = (p.jenis === 'pengeluaran' && trx.total) ? parseFloat(trx.total) || 0 : 0;
+          const kredit = (p.jenis === 'pemasukan' && trx.total) ? parseFloat(trx.total) || 0 : 0;
           totalDebit += debit;
           totalKredit += kredit;
           runningSaldo = runningSaldo - debit + kredit;
@@ -483,7 +665,8 @@
         // [FIX] Reset summary jika tidak ada data
         document.getElementById("pc_total_debit").textContent = formatRupiah(0);
         document.getElementById("pc_total_kredit").textContent = formatRupiah(0);
-        document.getElementById("pc_saldo_akhir").textContent = formatRupiah(0);
+        document.getElementById("pc_saldo_akhir").textContent = formatRupiah(saldoAwal); // Tampilkan saldo awal sebagai saldo akhir
+        if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(saldoAwal);
         return;
       }
       tbody.innerHTML = rows.map(row => `
@@ -503,7 +686,9 @@
       `).join('');
       summaryEl.style.display = 'grid';
       document.getElementById("pc_total_debit").textContent = formatRupiah(totalDebit);
-      document.getElementById("pc_total_kredit").textContent = formatRupiah(totalKredit);
+      if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(saldoAwal);
+      // [UBAH] Total Kredit = Saldo Awal + Total Pemasukan Periode Ini
+      document.getElementById("pc_total_kredit").textContent = formatRupiah(saldoAwal + totalKredit);
       document.getElementById("pc_saldo_akhir").textContent = formatRupiah(runningSaldo);
       return;
     }
@@ -539,6 +724,7 @@
 
         summaryEl.style.display = 'grid';
         document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit);
+        if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
         document.getElementById("pc_total_kredit").textContent = formatRupiah(summary.totalKredit);
         document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir);
       })
@@ -1690,12 +1876,15 @@ function exportPettyCashToExcel() {
   const table = document.getElementById("pc_table");
   if (!table) return;
 
-  const tglAwal = document.getElementById("pc_tanggal_awal").value;
-  const tglAkhir = document.getElementById("pc_tanggal_akhir").value;
+  const monthFilter = document.getElementById("pc_bulan_filter");
+  const monthVal = monthFilter ? monthFilter.value : '';
+  const [year, month] = monthVal.split('-');
+  const tglAwal = `${year}-${month.padStart(2, '0')}-01`;
+  const tglAkhir = new Date(year, parseInt(month, 10), 0).toLocaleDateString('sv').slice(0, 10);
   const debit = document.getElementById("pc_total_debit").textContent;
   const kredit = document.getElementById("pc_total_kredit").textContent;
   const saldo = document.getElementById("pc_saldo_akhir").textContent;
-  const filename = `Laporan_Petty_Cash_${tglAwal}_sd_${tglAkhir}.xls`;
+  const filename = `Laporan_Petty_Cash_${monthVal}.xls`;
 
   const html = `
     <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
@@ -1791,14 +1980,12 @@ function processImportPettyCashExcel(input) {
         function next() {
           if (idx >= payloads.length) {
             alert('Import selesai: ' + payloads.length + ' grup transaksi petty cash.');
-            var elAwal = document.getElementById('pc_tanggal_awal');
-            var elAkhir = document.getElementById('pc_tanggal_akhir');
-            if (elAwal && elAkhir && payloads.length > 0) {
+            var elBulan = document.getElementById('pc_bulan_filter');
+            if (elBulan && payloads.length > 0) {
               var dates = payloads.map(function(p) { return (p.tanggal || '').toString().trim(); }).filter(Boolean);
               if (dates.length > 0) {
                 dates.sort();
-                elAwal.value = dates[0];
-                elAkhir.value = dates[dates.length - 1];
+                elBulan.value = dates[0].slice(0, 7);
               }
             }
             input.value = '';
@@ -1839,8 +2026,11 @@ function printPettyCashReport() {
   const table = document.getElementById("pc_table");
   if (!table) return;
 
-  const tglAwal = document.getElementById("pc_tanggal_awal").value;
-  const tglAkhir = document.getElementById("pc_tanggal_akhir").value;
+  const monthFilter = document.getElementById("pc_bulan_filter");
+  const monthVal = monthFilter ? monthFilter.value : '';
+  const [year, month] = monthVal.split('-');
+  const tglAwal = `${year}-${month.padStart(2, '0')}-01`;
+  const tglAkhir = new Date(year, parseInt(month, 10), 0).toLocaleDateString('sv').slice(0, 10);
   const debit = document.getElementById("pc_total_debit").textContent;
   const kredit = document.getElementById("pc_total_kredit").textContent;
   const saldo = document.getElementById("pc_saldo_akhir").textContent;
@@ -2275,23 +2465,64 @@ function loadPembukuanData() {
     const summaryEl = document.getElementById("pembukuan_summary");
     tbody.innerHTML = '<tr><td colspan="7" class="table-loading">Memuat data...</td></tr>';
     summaryEl.style.display = 'none';
+    
+    const monthFilter = document.getElementById("pembukuan_bulan_filter");
+    const monthVal = monthFilter ? monthFilter.value : '';
+    if (!monthVal) {
+        tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Pilih bulan terlebih dahulu.</td></tr>';
+        summaryEl.style.display = 'none';
+        return;
+    }
 
-    const tglAwal = document.getElementById("pembukuan_tanggal_awal").value;
-    const tglAkhir = document.getElementById("pembukuan_tanggal_akhir").value;
+    const [year, month] = monthVal.split('-');
+    const tglAwal = `${year}-${month}-01`;
+    const tglAkhir = new Date(year, parseInt(month, 10), 0).toLocaleDateString('sv').slice(0, 10);
 
     function renderPembukuanFromPending(pending) {
-    if (!Array.isArray(pending)) pending = [];
+        if (!Array.isArray(pending)) pending = [];
 
-    let totalCashMasuk = 0;
-    let totalKasKeluar = 0;
-    let totalFisikSheet = 0;
-    let totalCatatan = 0;
-    let totalSelisih = 0;
-    let rows = [];
+        // [BARU] Tahap 1: Pisahkan data sebelum periode dan dalam periode
+        let saldoAwalCashMasuk = 0;
+        let saldoAwalKasKeluar = 0;
+        const dataPeriode = [];
 
-    pending.forEach((item, parentIdx) => {
-        const p = item.payload;
-        if (p.tanggal >= tglAwal && p.tanggal <= tglAkhir) {
+        pending.forEach((item) => {
+            const p = item.payload;
+            if (!p || !p.tanggal) return;
+
+            if (p.tanggal < tglAwal) {
+                // Akumulasi untuk Saldo Awal
+                if (p.kasMasuk && p.kasMasuk.length > 0) {
+                    p.kasMasuk.forEach(km => {
+                        if (km.keterangan && km.keterangan.toUpperCase() === 'CASH') {
+                            let fisikVal = parseFloat(km.fisik) || 0;
+                            if (km.keterangan.toUpperCase() === 'VCR') {
+                                fisikVal = (parseFloat(km.vcr) || 0) * 20000;
+                            }
+                            saldoAwalCashMasuk += fisikVal;
+                        }
+                    });
+                }
+                if (p.kasKeluar && p.kasKeluar.length > 0) {
+                    p.kasKeluar.forEach(kk => {
+                        saldoAwalKasKeluar += parseFloat(kk.setor) || 0;
+                    });
+                }
+            } else if (p.tanggal >= tglAwal && p.tanggal <= tglAkhir) {
+                // Kumpulkan data untuk periode yang dipilih
+                dataPeriode.push(item);
+            }
+        });
+
+        const saldoAwal = saldoAwalCashMasuk - saldoAwalKasKeluar;
+
+        // [DIUBAH] Tahap 2: Proses data HANYA untuk periode yang dipilih
+        let totalCashMasuk = 0;
+        let totalKasKeluar = 0;
+        let rows = [];
+
+        dataPeriode.forEach((item, parentIdx) => { // Loop pada dataPeriode, bukan 'pending'
+            const p = item.payload;
             // Kas Masuk
             if (p.kasMasuk && p.kasMasuk.length > 0) {
                 p.kasMasuk.forEach((km, subIdx) => {
@@ -2299,8 +2530,7 @@ function loadPembukuanData() {
                     let catatanVal = parseFloat(km.catatan) || 0;
                     let fisikDisplay = formatRupiah(fisikVal);
                     let selisihVal = 0;
-
-                    // Logika VCR
+                    
                     if(km.keterangan && km.keterangan.toUpperCase() === 'VCR') {
                         const jmlVcr = parseFloat(km.vcr) || 0;
                         fisikVal = jmlVcr * 20000;
@@ -2310,10 +2540,7 @@ function loadPembukuanData() {
                     }
 
                     if (km.keterangan && km.keterangan.toUpperCase() === 'CASH') totalCashMasuk += fisikVal;
-                    totalCatatan += catatanVal;
-                    totalSelisih += selisihVal;
 
-                    // store numeric values for later grouping
                     const komentarFisik = km.komentarFisik || '';
                     const komentarSelisih = km.komentarSelisih || '';
                     rows.push({
@@ -2324,7 +2551,6 @@ function loadPembukuanData() {
                         selisih: (km.fisik || km.catatan) ? formatRupiah(selisihVal) : '-',
                         komentarFisik,
                         komentarSelisih,
-                        // numeric values for subtotal calculations
                         catatanVal: catatanVal,
                         fisikVal: fisikVal,
                         selisihVal: selisihVal,
@@ -2340,7 +2566,7 @@ function loadPembukuanData() {
                 p.kasKeluar.forEach((kk, subIdx) => {
                     const setor = parseFloat(kk.setor) || 0;
                     totalKasKeluar += setor;
-
+    
                     let fotoDisplay = '-';
                     if (kk.foto && kk.foto.data && kk.foto.mimeType) {
                          fotoDisplay = `<img src="data:${kk.foto.mimeType};base64,${kk.foto.data}" style="height:40px; border-radius:4px; cursor:pointer;" onclick="showImageModal(this.src)">`;
@@ -2353,7 +2579,6 @@ function loadPembukuanData() {
                         selisih: '-',
                         komentarFisik: '',
                         komentarSelisih: '',
-                        // numeric values for subtotal calculations
                         catatanVal: 0,
                         fisikVal: setor,
                         selisihVal: 0,
@@ -2364,19 +2589,20 @@ function loadPembukuanData() {
                     });
                 });
             }
+        });
+
+        // [DIUBAH] Hitung saldo akhir kumulatif
+        const saldoAkhir = saldoAwal + totalCashMasuk - totalKasKeluar;
+
+        if (rows.length === 0 && saldoAwal === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Tidak ada data untuk rentang ini.</td></tr>';
+            document.getElementById("pembukuan_saldo_awal").textContent = "Rp 0";
+            document.getElementById("pembukuan_total_cash").textContent = "Rp 0";
+            document.getElementById("pembukuan_total_keluar").textContent = "Rp 0";
+            document.getElementById("pembukuan_total_fisik").textContent = "Rp 0";
+            summaryEl.style.display = 'grid';
+            return;
         }
-    });
-
-    totalFisikSheet = totalCashMasuk - totalKasKeluar;
-
-    if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Tidak ada data untuk rentang ini.</td></tr>';
-        document.getElementById("pembukuan_total_cash").textContent = "Rp 0";
-        document.getElementById("pembukuan_total_keluar").textContent = "Rp 0";
-        document.getElementById("pembukuan_total_fisik").textContent = "Rp 0";
-        summaryEl.style.display = 'grid';
-        return;
-    }
 
     // group rows by date and calculate per-date subtotals
     const grouped = {};
@@ -2467,9 +2693,10 @@ function loadPembukuanData() {
 
     // do not include a global total row; only per-date subtotals are needed
     tbody.innerHTML = html;
+    document.getElementById("pembukuan_saldo_awal").textContent = formatRupiah(saldoAwal);
     document.getElementById("pembukuan_total_cash").textContent = formatRupiah(totalCashMasuk);
     document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(totalKasKeluar);
-    document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(totalFisikSheet);
+    document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(saldoAkhir);
     summaryEl.style.display = 'grid';
     }
 
@@ -6885,55 +7112,25 @@ function getDistanceFromLatLonInM(lat1, lon1, lat2, lon2) {
 
 function deg2rad(deg) { return deg * (Math.PI/180); }
 
-function processAbsensiGPS(type) {
-    const name = document.getElementById('gps_absen_name').value;
-    if (!name) { alert("Pilih nama karyawan dulu!"); return; }
-    if (!currentPos) { alert("Lokasi belum ditemukan!"); return; }
-
-    const video = document.getElementById('gps_video');
-    const canvas = document.getElementById('gps_canvas');
-    const context = canvas.getContext('2d');
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // Add Watermark
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('id-ID');
-    const timeStr = now.toLocaleTimeString('id-ID');
-    const locStr = `Lat: ${currentPos.latitude.toFixed(5)}, Lng: ${currentPos.longitude.toFixed(5)}`;
-    
-    context.fillStyle = "rgba(0, 0, 0, 0.5)";
-    context.fillRect(0, canvas.height - 60, canvas.width, 60);
-    
-    context.font = "16px Arial";
-    context.fillStyle = "white";
-    context.fillText(`${name} - ${type}`, 10, canvas.height - 35);
-    context.font = "12px Arial";
-    context.fillText(`${dateStr} ${timeStr} | ${locStr}`, 10, canvas.height - 15);
-
-    const photoData = canvas.toDataURL('image/jpeg', 0.7);
-
-    // Save Data
-    const log = {
-        id: Date.now(),
-        timestamp: now.toISOString(),
-        date: now.toISOString().split('T')[0],
-        time: timeStr,
-        name: name,
-        type: type,
-        lat: currentPos.latitude,
-        lng: currentPos.longitude,
-        photo: photoData
-    };
-
-    const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
-    const logs = safeParse(RBMStorage.getItem(gpsKey), []);
-    logs.push(log);
-    RBMStorage.setItem(gpsKey, JSON.stringify(logs));
-
-    alert(`Absensi ${type} Berhasil!`);
+function getBreakStats(logs, name, date) {
+    let total = 0;
+    let lastOut = null;
+    logs.forEach(l => {
+        if (l.name === name && l.date === date) {
+            if (l.type === 'Istirahat Keluar') {
+                lastOut = parseTimeToMinutes(l.time);
+            } else if (l.type === 'Istirahat Kembali') {
+                if (lastOut !== null) {
+                    let inTime = parseTimeToMinutes(l.time);
+                    let dur = inTime - lastOut;
+                    if (dur < 0) dur += 24 * 60;
+                    total += dur;
+                    lastOut = null;
+                }
+            }
+        }
+    });
+    return { total, lastOut };
 }
 
 function loadRekapAbsensiGPS() {
@@ -6958,11 +7155,11 @@ function loadRekapAbsensiGPS() {
     const grouped = {};
     filtered.forEach(log => {
         const key = `${log.date}_${log.name}`;
-        if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOut: null, breakIn: null, pulang: null };
+        if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null };
         if (log.type === 'Masuk' && !grouped[key].masuk) grouped[key].masuk = log;
         else if (log.type === 'Pulang') grouped[key].pulang = log;
-        else if (log.type === 'Istirahat Keluar') grouped[key].breakOut = log;
-        else if (log.type === 'Istirahat Kembali') grouped[key].breakIn = log;
+        else if (log.type === 'Istirahat Keluar') grouped[key].breakOuts.push(log);
+        else if (log.type === 'Istirahat Kembali') grouped[key].breakIns.push(log);
     });
 
     function isTelat(date, name, masukLog) {
@@ -6974,8 +7171,7 @@ function loadRekapAbsensiGPS() {
         const shift = jadwalData[jadwalKey];
         const batas = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift) : null) || JADWAL_BATAS_MASUK[shift];
         if (!batas) return false;
-        const [bJam, bMenit] = batas.split(':').map(Number);
-        const menitBatas = bJam * 60 + bMenit;
+        const menitBatas = parseTimeToMinutes(batas);
         const menitMasuk = parseTimeToMinutes(masukLog.time);
         return menitMasuk > menitBatas;
     }
@@ -6987,8 +7183,8 @@ function loadRekapAbsensiGPS() {
     function getLupaAbsen(item) {
         const lupa = [];
         if (!item.masuk) lupa.push('Masuk');
-        if (!item.breakOut) lupa.push('Istirahat Keluar');
-        if (!item.breakIn) lupa.push('Istirahat Kembali');
+        if (item.breakOuts.length > item.breakIns.length) lupa.push('Istirahat Kembali');
+        if (item.breakIns.length > item.breakOuts.length) lupa.push('Istirahat Keluar');
         if (!item.pulang) lupa.push('Pulang');
         if (lupa.length === 0) return '-';
         return 'Lupa ' + lupa.join(' & ');
@@ -7004,8 +7200,17 @@ function loadRekapAbsensiGPS() {
             if (log.lat != null && log.lng != null) s += ' | Lat: ' + Number(log.lat).toFixed(5) + ', Lng: ' + Number(log.lng).toFixed(5);
             return s;
         };
-        const renderCell = (log) => {
-            if (!log) return '-';
+        const renderCell = (logOrArray) => {
+            if (!logOrArray) return '-';
+            if (Array.isArray(logOrArray)) {
+                if (logOrArray.length === 0) return '-';
+                return logOrArray.map(log => {
+                    const photoEsc = (log.photo || '').replace(/'/g, "\\'");
+                    const captionEsc = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                    return `<div style="white-space:nowrap;"><span style="cursor:pointer; color:blue; text-decoration:underline;" onclick="showImageModal('${photoEsc}', '${captionEsc}')">${log.time}</span></div>`;
+                }).join('');
+            }
+            const log = logOrArray;
             const photoEsc = (log.photo || '').replace(/'/g, "\\'");
             const captionEsc = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             return `<span style="cursor:pointer; color:blue; text-decoration:underline;" onclick="showImageModal('${photoEsc}', '${captionEsc}')">${log.time}</span>`;
@@ -7016,8 +7221,8 @@ function loadRekapAbsensiGPS() {
         const lupaAbsen = getLupaAbsen(item);
         const lupaMasuk = !item.masuk;
         const lupaPulang = !item.pulang;
-        const lupaBreakOut = !item.breakOut;
-        const lupaBreakIn = !item.breakIn;
+        const lupaBreakOut = item.breakIns.length > item.breakOuts.length;
+        const lupaBreakIn = item.breakOuts.length > item.breakIns.length;
         const detailTelatEsc = JSON.stringify({ lines: detailTelat.lines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const telatHtml = (telat || punyaTelatPulangCepat) ? '<span style="color:#b91c1c; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailTelatModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', \'' + detailTelatEsc + '\')">Ya</span>' : '-';
         const lupaHtml = lupaAbsen !== '-' ? '<span style="color:#b45309; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailLupaModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', ' + lupaMasuk + ', ' + lupaPulang + ', ' + lupaBreakOut + ', ' + lupaBreakIn + ')">' + lupaAbsen + '</span>' : '-';
@@ -7026,16 +7231,31 @@ function loadRekapAbsensiGPS() {
             const capMasuk = buildGpsLogCaption(item.masuk).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             photosHtml += `<img src="${item.masuk.photo}" style="height:30px; margin:1px; cursor:pointer;" onclick="showImageModal(this.src, '${capMasuk}')" title="Masuk">`;
         }
+        if (item.breakOuts.length > 0) {
+            item.breakOuts.forEach(log => {
+                const cap = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                photosHtml += `<img src="${log.photo}" style="height:30px; margin:1px; cursor:pointer;" onclick="showImageModal(this.src, '${cap}')" title="Istirahat Keluar">`;
+            });
+        }
+        if (item.breakIns.length > 0) {
+            item.breakIns.forEach(log => {
+                const cap = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                photosHtml += `<img src="${log.photo}" style="height:30px; margin:1px; cursor:pointer;" onclick="showImageModal(this.src, '${cap}')" title="Istirahat Kembali">`;
+            });
+        }
         if (item.pulang) {
             const capPulang = buildGpsLogCaption(item.pulang).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             photosHtml += `<img src="${item.pulang.photo}" style="height:30px; margin:1px; cursor:pointer;" onclick="showImageModal(this.src, '${capPulang}')" title="Pulang">`;
         }
+        const breakStats = getBreakStats(filtered, item.name, item.date);
+        const totalIstirahat = breakStats.total > 0 ? breakStats.total + ' menit' : '-';
         html += `<tr${telat || punyaTelatPulangCepat || lupaAbsen !== '-' ? ' style="background:#fef2f2;"' : ''}>
             <td>${item.date}</td>
             <td>${item.name}</td>
             <td>${renderCell(item.masuk)}</td>
-            <td>${renderCell(item.breakOut)}</td>
-            <td>${renderCell(item.breakIn)}</td>
+            <td>${renderCell(item.breakOuts)}</td>
+            <td>${renderCell(item.breakIns)}</td>
+            <td>${totalIstirahat}</td>
             <td>${renderCell(item.pulang)}</td>
             <td>${telatHtml}</td>
             <td>${lupaHtml}</td>
@@ -7091,11 +7311,11 @@ function getRekapAbsensiGpsDataForExport() {
     const grouped = {};
     filtered.forEach(log => {
         const key = `${log.date}_${log.name}`;
-        if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOut: null, breakIn: null, pulang: null };
+        if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null };
         if (log.type === 'Masuk' && !grouped[key].masuk) grouped[key].masuk = log;
         else if (log.type === 'Pulang') grouped[key].pulang = log;
-        else if (log.type === 'Istirahat Keluar') grouped[key].breakOut = log;
-        else if (log.type === 'Istirahat Kembali') grouped[key].breakIn = log;
+        else if (log.type === 'Istirahat Keluar') grouped[key].breakOuts.push(log);
+        else if (log.type === 'Istirahat Kembali') grouped[key].breakIns.push(log);
     });
     const keys = Object.keys(grouped).sort().reverse();
     const rows = [];
@@ -7105,17 +7325,19 @@ function getRekapAbsensiGpsDataForExport() {
         const telat = telatDetail.totalMenit > 0 ? 'Ya (' + telatDetail.totalMenit + ' menit)' : '-';
         let lupa = [];
         if (!item.masuk) lupa.push('Masuk');
-        if (!item.breakOut) lupa.push('Istirahat Keluar');
-        if (!item.breakIn) lupa.push('Istirahat Kembali');
+        if (item.breakOuts.length > item.breakIns.length) lupa.push('Istirahat Kembali');
+        if (item.breakIns.length > item.breakOuts.length) lupa.push('Istirahat Keluar');
         if (!item.pulang) lupa.push('Pulang');
         const lupaAbsen = lupa.length ? 'Lupa ' + lupa.join(' & ') : '-';
-        const foto = [item.masuk, item.breakOut, item.breakIn, item.pulang].filter(Boolean).length ? 'Ada' : '-';
+        const foto = [item.masuk, ...item.breakOuts, ...item.breakIns, item.pulang].filter(Boolean).length ? 'Ada' : '-';
+        const breakStats = getBreakStats(filtered, item.name, item.date);
         rows.push({
             date: item.date,
             name: item.name,
             masuk: item.masuk ? item.masuk.time : '-',
-            breakOut: item.breakOut ? item.breakOut.time : '-',
-            breakIn: item.breakIn ? item.breakIn.time : '-',
+            breakOut: item.breakOuts.length ? item.breakOuts.map(l => l.time).join(', ') : '-',
+            breakIn: item.breakIns.length ? item.breakIns.map(l => l.time).join(', ') : '-',
+            totalIstirahat: breakStats.total > 0 ? breakStats.total + ' menit' : '-',
             pulang: item.pulang ? item.pulang.time : '-',
             telat: telat,
             lupaAbsen: lupaAbsen,
@@ -7140,6 +7362,7 @@ function exportRekapAbsensiGpsToExcel() {
             <td>${r.masuk}</td>
             <td>${r.breakOut}</td>
             <td>${r.breakIn}</td>
+            <td>${r.totalIstirahat}</td>
             <td>${r.pulang}</td>
             <td>${r.telat}</td>
             <td>${r.lupaAbsen}</td>
@@ -7156,7 +7379,7 @@ function exportRekapAbsensiGpsToExcel() {
     <p style="text-align:center;margin:5px 0 15px;">Riwayat absensi foto dan lokasi. Periode: ${data.tglAwal} s/d ${data.tglAkhir}</p>
     <table>
     <thead><tr>
-        <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Pulang</th><th>Telat</th><th>Lupa Absen</th><th>Foto</th>
+        <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Total Istirahat</th><th>Pulang</th><th>Telat</th><th>Lupa Absen</th><th>Foto</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
     </table>
@@ -7189,6 +7412,7 @@ function printRekapAbsensiGpsPdf() {
             <td>${r.masuk}</td>
             <td>${r.breakOut}</td>
             <td>${r.breakIn}</td>
+            <td>${r.totalIstirahat}</td>
             <td>${r.pulang}</td>
             <td>${r.telat}</td>
             <td>${r.lupaAbsen}</td>
@@ -7213,7 +7437,7 @@ function printRekapAbsensiGpsPdf() {
     <p class="period">Riwayat absensi foto dan lokasi. Periode: ${data.tglAwal} s/d ${data.tglAkhir}</p>
     <table>
     <thead><tr>
-      <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Pulang</th><th>Telat</th><th>Lupa Absen</th><th>Foto</th>
+      <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Total Istirahat</th><th>Pulang</th><th>Telat</th><th>Lupa Absen</th><th>Foto</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
     </table>
@@ -7249,8 +7473,7 @@ function getDetailTelatUntukRekap(date, name, item, employees, jadwalData) {
     const lines = [];
     let menitTelatMasuk = 0, menitPulangCepat = 0;
     if (item.masuk && item.masuk.time && batasMasuk) {
-        const [bJam, bMenit] = batasMasuk.split(':').map(Number);
-        const menitBatas = bJam * 60 + bMenit;
+        const menitBatas = parseTimeToMinutes(batasMasuk);
         const menitMasuk = parseTimeToMinutes(item.masuk.time);
         if (menitMasuk > menitBatas) {
             menitTelatMasuk = menitMasuk - menitBatas;
@@ -7258,8 +7481,7 @@ function getDetailTelatUntukRekap(date, name, item, employees, jadwalData) {
         }
     }
     if (item.pulang && item.pulang.time && batasPulang) {
-        const [bJam, bMenit] = batasPulang.split(':').map(Number);
-        const menitBatas = bJam * 60 + bMenit;
+        const menitBatas = parseTimeToMinutes(batasPulang);
         const menitPulang = parseTimeToMinutes(item.pulang.time);
         if (menitPulang < menitBatas) {
             menitPulangCepat = menitBatas - menitPulang;
@@ -7347,12 +7569,40 @@ function updateGpsJadwalDisplay() {
         box.style.display = 'block';
         return;
     }
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
     const jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
     const key = `${today}_${emp.id || employees.indexOf(emp)}`;
     const shift = jadwalData[key] || '';
     const label = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift || 'Tidak ada jadwal';
-    textEl.textContent = shift ? `${shift} (${label})` : label;
+    
+    // Hitung sisa istirahat
+    const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
+    const logs = safeParse(RBMStorage.getItem(gpsKey), []);
+    const stats = getBreakStats(logs, name, today);
+    const batasMenit = typeof getDurasiIstirahatMenitFromConfig === 'function' ? getDurasiIstirahatMenitFromConfig(shift) : 60;
+    
+    let info = '';
+    if (shift) {
+        info += `<br><span style="font-size:0.9em; color:#555;">Jatah Istirahat: ${batasMenit} menit.</span>`;
+        if (stats.total > 0) {
+            info += `<br><span style="font-size:0.9em; color:#555;">Terpakai: ${stats.total} menit.</span>`;
+        }
+        
+        if (stats.lastOut !== null) {
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+            let currentDur = currentMinutes - stats.lastOut;
+            if (currentDur < 0) currentDur += 24 * 60;
+            info += `<br><span style="color:#d97706; font-weight:bold;">Sedang Istirahat: ${currentDur} menit.</span>`;
+        } else {
+            const sisa = batasMenit - stats.total;
+            info += sisa >= 0 ? `<br><span style="color:#16a34a; font-weight:bold;">Sisa: ${sisa} menit.</span>` : `<br><span style="color:#dc2626; font-weight:bold;">Over: ${Math.abs(sisa)} menit.</span>`;
+        }
+    }
+
+    const quote = `<br><br><div style="font-style:italic; color:#6b7280; font-size:0.9em; border-top:1px solid #e5e7eb; padding-top:8px;">"Lakukan rutinitas pekerjaanmu dengan senang hati"</div>`;
+
+    textEl.innerHTML = (shift ? `${shift} (${label})` : label) + info + quote;
     box.style.display = 'block';
 }
 
@@ -7364,8 +7614,9 @@ function processAbsensiGPS(type) {
     const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
     const emp = employees.find(e => e.name === name);
     const empId = emp ? (emp.id || employees.indexOf(emp)) : null;
-    const today = new Date().toISOString().split('T')[0];
+    
     const now = new Date();
+    const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
 
     const video = document.getElementById('gps_video');
     const canvas = document.getElementById('gps_canvas');
@@ -7406,28 +7657,25 @@ function processAbsensiGPS(type) {
 
     // Peringatan durasi istirahat (sebelum push log Selesai Istirahat)
     if (type === 'Istirahat Kembali' && empId !== null) {
-        var breakOutLog = null;
-        for (var i = logs.length - 1; i >= 0; i--) {
-            if (logs[i].name === name && logs[i].date === today && logs[i].type === 'Istirahat Keluar') {
-                breakOutLog = logs[i];
-                break;
-            }
-        }
-        if (breakOutLog && breakOutLog.time) {
-            var menitMulai = parseTimeToMinutes(breakOutLog.time);
+        const stats = getBreakStats(logs, name, today);
+        if (stats.lastOut !== null) {
             var menitSelesai = now.getHours() * 60 + now.getMinutes();
-            var durasiMenit = menitSelesai - menitMulai;
-            if (durasiMenit < 0) durasiMenit += 24 * 60;
+            var durasiIni = menitSelesai - stats.lastOut;
+            if (durasiIni < 0) durasiIni += 24 * 60;
+            var totalDurasi = stats.total + durasiIni;
+
             var jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
             var jadwalKey = today + '_' + empId;
             var shift = jadwalData[jadwalKey];
             var batasMenit = typeof getDurasiIstirahatMenitFromConfig === 'function' ? getDurasiIstirahatMenitFromConfig(shift) : 60;
-            if (batasMenit > 0 && durasiMenit > batasMenit) {
-                var labelShift = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || (shift || 'Shift');
-                alert("⚠️ Peringatan: Durasi istirahat melebihi batas!\n\n" +
-                    "Shift " + labelShift + ": batas " + batasMenit + " menit.\n" +
-                    "Durasi istirahat Anda: " + durasiMenit + " menit.\n" +
-                    "Silakan perhatikan untuk absen berikutnya.");
+            var labelShift = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || (shift || 'Shift');
+
+            if (batasMenit > 0) {
+                if (totalDurasi > batasMenit) {
+                    alert("⚠️ Peringatan: Total durasi istirahat melebihi batas!\n\n" + "Shift " + labelShift + ": batas " + batasMenit + " menit.\n" + "Sudah diambil: " + stats.total + " menit.\n" + "Istirahat ini: " + durasiIni + " menit.\n" + "Total: " + totalDurasi + " menit.\n" + "Over: " + (totalDurasi - batasMenit) + " menit.");
+                } else {
+                    alert("✅ Selesai Istirahat.\n\n" + "Istirahat ini: " + durasiIni + " menit.\n" + "Total hari ini: " + totalDurasi + " menit.\n" + "Sisa: " + (batasMenit - totalDurasi) + " menit.");
+                }
             }
         }
     }
@@ -7450,10 +7698,9 @@ function processAbsensiGPS(type) {
         const shift = jadwalData[jadwalKey];
         const batas = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift) : null) || JADWAL_BATAS_MASUK[shift];
         if (batas) {
-            const [bJam, bMenit] = batas.split(':').map(Number);
+            const menitBatas = parseTimeToMinutes(batas);
             const jamNow = now.getHours();
             const menitNow = now.getMinutes();
-            const menitBatas = bJam * 60 + bMenit;
             const menitSekarang = jamNow * 60 + menitNow;
             if (menitSekarang > menitBatas) {
                 alert("⚠️ Anda tercatat TELAT.\nBatas masuk " + ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift) + ": " + batas + "\nWaktu Anda: " + timeStr);
@@ -7462,6 +7709,52 @@ function processAbsensiGPS(type) {
     }
 
     alert(`Absensi ${type} Berhasil!`);
+}
+
+function loadMyGpsHistory() {
+    const name = document.getElementById('gps_absen_name').value;
+    if (!name) { alert("Pilih nama karyawan terlebih dahulu!"); return; }
+    
+    const logs = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_GPS_LOGS')), []);
+    // Filter by name and sort descending
+    const myLogs = logs.filter(l => l.name === name).sort((a, b) => {
+        const ta = a.timestamp || (a.date + 'T' + a.time);
+        const tb = b.timestamp || (b.date + 'T' + b.time);
+        return tb.localeCompare(ta);
+    });
+
+    const listContainer = document.getElementById('gpsHistoryList');
+    if (!listContainer) return;
+    
+    if (myLogs.length === 0) {
+        listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">Belum ada riwayat absensi untuk ' + name + '.</div>';
+    } else {
+        let html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+        html += '<thead style="background:#f8fafc; color:#64748b;"><tr><th style="padding:10px; text-align:left; border-bottom:1px solid #e2e8f0;">Tanggal</th><th style="padding:10px; text-align:left; border-bottom:1px solid #e2e8f0;">Jam</th><th style="padding:10px; text-align:left; border-bottom:1px solid #e2e8f0;">Status</th></tr></thead><tbody>';
+        
+        myLogs.slice(0, 50).forEach(log => {
+            let color = '#334155';
+            let bg = 'transparent';
+            if (log.type === 'Masuk') { color = '#15803d'; bg = '#f0fdf4'; }
+            else if (log.type === 'Pulang') { color = '#b91c1c'; bg = '#fef2f2'; }
+            else if (log.type.includes('Istirahat')) { color = '#b45309'; bg = '#fffbeb'; }
+            
+            html += `<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:10px; color:#334155;">${log.date}</td><td style="padding:10px; color:#334155;">${log.time}</td><td style="padding:10px;"><span style="color:${color}; background:${bg}; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600;">${log.type}</span></td></tr>`;
+        });
+        html += '</tbody></table>';
+        if (myLogs.length > 50) {
+            html += '<div style="text-align:center; padding:10px; font-size:11px; color:#94a3b8;">Menampilkan 50 data terakhir</div>';
+        }
+        listContainer.innerHTML = html;
+    }
+
+    const modal = document.getElementById('gpsHistoryModal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function closeGpsHistoryModal() {
+    const modal = document.getElementById('gpsHistoryModal');
+    if (modal) modal.style.display = 'none';
 }
 
 function populateManualAbsenNameSelect() {
@@ -7628,6 +7921,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof loadLihatPengajuanData !== 'undefined') window.loadLihatPengajuanData = loadLihatPengajuanData;
   if (typeof exportPembukuanToExcel !== 'undefined') window.exportPembukuanToExcel = exportPembukuanToExcel;
   if (typeof printPembukuanReport !== 'undefined') window.printPembukuanReport = printPembukuanReport;
+  if (typeof savePembukuanToJpg !== 'undefined') window.savePembukuanToJpg = savePembukuanToJpg;
   if (typeof printInventarisReport !== 'undefined') window.printInventarisReport = printInventarisReport;
   if (typeof exportInventarisToExcel !== 'undefined') window.exportInventarisToExcel = exportInventarisToExcel;
   if (typeof exportRekapAbsensiGpsToExcel !== 'undefined') window.exportRekapAbsensiGpsToExcel = exportRekapAbsensiGpsToExcel;
@@ -7644,6 +7938,8 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof deleteReservasi !== 'undefined') window.deleteReservasi = deleteReservasi;
   if (typeof updateGpsJadwalDisplay !== 'undefined') window.updateGpsJadwalDisplay = updateGpsJadwalDisplay;
   if (typeof processAbsensiGPS !== 'undefined') window.processAbsensiGPS = processAbsensiGPS;
+  if (typeof loadMyGpsHistory !== 'undefined') window.loadMyGpsHistory = loadMyGpsHistory;
+  if (typeof closeGpsHistoryModal !== 'undefined') window.closeGpsHistoryModal = closeGpsHistoryModal;
   if (typeof populateManualAbsenNameSelect !== 'undefined') window.populateManualAbsenNameSelect = populateManualAbsenNameSelect;
   if (typeof saveAbsensiGpsManual !== 'undefined') window.saveAbsensiGpsManual = saveAbsensiGpsManual;
   if (typeof deletePettyCashItem !== 'undefined') window.deletePettyCashItem = deletePettyCashItem;
@@ -7674,6 +7970,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof showRusakDetailModal !== 'undefined') window.showRusakDetailModal = showRusakDetailModal;
   if (typeof closeRusakDetailModal !== 'undefined') window.closeRusakDetailModal = closeRusakDetailModal;
   if (typeof showDetailTelatModal !== 'undefined') window.showDetailTelatModal = showDetailTelatModal;
+  if (typeof closeGpsDetailModal !== 'undefined') window.closeGpsDetailModal = closeGpsDetailModal;
   if (typeof calculatePettyCashRowTotal !== 'undefined') window.calculatePettyCashRowTotal = calculatePettyCashRowTotal;
   if (typeof triggerPcFoto !== 'undefined') window.triggerPcFoto = triggerPcFoto;
   if (typeof removePettyCashInputRow !== 'undefined') window.removePettyCashInputRow = removePettyCashInputRow;

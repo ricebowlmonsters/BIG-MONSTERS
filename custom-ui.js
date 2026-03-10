@@ -262,7 +262,7 @@ function isRbmOfflineMode() {
 var RBM_DEFAULT_FIREBASE_CONFIG = {
     apiKey: "AIzaSyDWQG53tP2zKILTwPSJQpiVzFNyvYLxLqw",
     authDomain: "ricebowlmonst.firebaseapp.com",
-    databaseURL: "https://ricebowlmonst-default-rtdb.firebaseio.com",
+    databaseURL: "https://ricebowlmonst-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "ricebowlmonst",
     storageBucket: "ricebowlmonst.firebasestorage.app",
     messagingSenderId: "723669558962",
