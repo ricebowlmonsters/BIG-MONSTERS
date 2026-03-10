@@ -3750,6 +3750,7 @@ function updateEmployee(index, field, value) {
     if (employees[index]) {
         employees[index][field] = value;
     }
+    saveAbsensiToFirebase(true); // [AUTO-SAVE] Simpan otomatis saat edit
     renderAbsensiTable();
 }
 
@@ -3760,6 +3761,7 @@ function addEmployeeRow() {
     const employees = window._absensiViewEmployees;
     const newId = employees.length > 0 ? Math.max(...employees.map(e => e.id || 0)) + 1 : 1;
     employees.push({ id: newId, name: "Nama Baru", jabatan: "-", email: "", joinDate: "", sisaAL:0, sisaDP:0, sisaPH:0 });
+    saveAbsensiToFirebase(true); // [AUTO-SAVE] Simpan otomatis saat tambah
     renderAbsensiTable();
 }
 
@@ -3770,6 +3772,7 @@ function removeEmployee(index) {
         window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
     }
     window._absensiViewEmployees.splice(index, 1);
+    saveAbsensiToFirebase(true); // [AUTO-SAVE] Simpan otomatis saat hapus
     renderAbsensiTable();
 }
 
@@ -3778,10 +3781,10 @@ function saveAbsensiData() {
 }
 
 /** Simpan data Absensi & Jadwal (karyawan + status per tanggal) ke Firebase. Panggil saat user klik tombol Simpan. */
-function saveAbsensiToFirebase() {
+function saveAbsensiToFirebase(silent) {
     var employees = window._absensiViewEmployees;
     if (!employees || !Array.isArray(employees)) {
-        alert('Tidak ada data karyawan untuk disimpan.');
+        if (!silent) alert('Tidak ada data karyawan untuk disimpan.');
         return;
     }
     var data = window._absensiViewData;
@@ -3796,7 +3799,7 @@ function saveAbsensiToFirebase() {
             msg.style.color = '#16a34a';
             setTimeout(function() { msg.textContent = ''; }, 3000);
         } else {
-            alert('Data tersimpan.');
+            if (!silent) alert('Data tersimpan.');
         }
     }
     function showError() {
@@ -3804,10 +3807,10 @@ function saveAbsensiToFirebase() {
             msg.textContent = 'Gagal menyimpan. Cek koneksi internet.';
             msg.style.color = '#dc2626';
         } else {
-            alert('Gagal menyimpan. Cek koneksi internet.');
+            if (!silent) alert('Gagal menyimpan. Cek koneksi internet.');
         }
     }
-    if (msg) msg.textContent = 'Menyimpan...';
+    if (msg && !silent) msg.textContent = 'Menyimpan...';
     var p1 = RBMStorage.setItem(keyEmployees, JSON.stringify(employees));
     var p2 = RBMStorage.setItem(keyData, JSON.stringify(data));
     Promise.all([p1, p2]).then(function() {
@@ -7013,17 +7016,44 @@ function saveJamConfig() {
 }
 
 function initAbsensiGPS() {
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    // Fungsi ini dipanggil setelah DB siap, jadi kita panggil lagi untuk me-refresh data.
+    // UI awal (nama karyawan) sudah di-load dari cache di bawah.
+    populateGpsNames();
+    loadOfficeConfig();
+    if (typeof loadJamConfig === 'function') loadJamConfig();
+    initAbsensiHardware(); // Panggil lagi untuk memastikan, tidak akan jalan ganda
+}
+
+function populateGpsNames() {
     const select = document.getElementById('gps_absen_name');
+    if (!select) return;
+    const currentValue = select.value;
+
+    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
     select.innerHTML = '<option value="">-- Pilih Nama --</option>';
     employees.forEach(emp => {
         select.innerHTML += `<option value="${emp.name}">${emp.name}</option>`;
     });
+    if (Array.from(select.options).some(opt => opt.value === currentValue)) {
+        select.value = currentValue;
+    }
+    if (!select.onchange) select.onchange = function() { updateGpsJadwalDisplay(); };
     updateGpsJadwalDisplay();
+}
+
+function initAbsensiHardware() {
+    if (window._gpsHardwareStarted) return; // Cegah double init
+    window._gpsHardwareStarted = true;
+
+    // [FIX] Bersihkan pencarian lokasi sebelumnya
+    if (typeof gpsWatchId !== 'undefined' && gpsWatchId !== null) {
+        navigator.geolocation.clearWatch(gpsWatchId);
+        gpsWatchId = null;
+    }
 
     // Start Camera
     const video = document.getElementById('gps_video');
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    if (video && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
         .then(stream => {
             gpsStream = stream;
@@ -7038,18 +7068,29 @@ function initAbsensiGPS() {
 
     // Start GPS Watch
     if (navigator.geolocation) {
+        // [OPTIMASI] Tambahkan timeout 20 detik & maximumAge 0
+        // Ini memaksa browser untuk tidak menunggu selamanya jika sinyal susah
+        var geoOptions = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+
         gpsWatchId = navigator.geolocation.watchPosition(
             pos => {
                 currentPos = pos.coords;
                 checkDistance();
             },
             err => {
-                document.getElementById('gps_status_overlay').innerText = "GPS Error: " + err.message;
+                var msg = "GPS Error: " + err.message;
+                if (err.code === 1) msg = "❌ Izin Lokasi Ditolak. Mohon izinkan di pengaturan browser.";
+                else if (err.code === 2) msg = "❌ Lokasi tidak tersedia. Pastikan GPS aktif.";
+                else if (err.code === 3) msg = "⚠️ Sinyal GPS Lemah (Timeout). Coba geser ke area terbuka.";
+                
+                var el = document.getElementById('gps_status_overlay');
+                if(el) el.innerHTML = msg + " <button class='btn-secondary' style='padding:2px 6px; font-size:10px; margin-left:5px;' onclick='window._gpsHardwareStarted=false; initAbsensiHardware()'>Ulangi</button>";
             },
-            { enableHighAccuracy: true }
+            geoOptions
         );
     } else {
-        document.getElementById('gps_status_overlay').innerText = "Browser tidak support GPS";
+        var el = document.getElementById('gps_status_overlay');
+        if(el) el.innerText = "Browser tidak support GPS";
     }
 }
 
@@ -7082,19 +7123,66 @@ function checkDistance() {
 
     var dist = getDistanceFromLatLonInM(currentPos.latitude, currentPos.longitude, officeLat, officeLng);
     var distStr = Math.round(dist);
-    var buttons = ['btn_absen_masuk', 'btn_absen_pulang', 'btn_absen_break_out', 'btn_absen_break_in'];
 
     infoEl.innerText = "Jarak ke titik: " + distStr + " Meter (Max: " + maxRadius + "m)";
 
-    if (dist <= maxRadius) {
+    var inRange = dist <= maxRadius;
+
+    if (inRange) {
         statusEl.innerText = "✅ Dalam Area Absensi";
         statusEl.style.background = "rgba(25, 135, 84, 0.7)";
-        buttons.forEach(function (id) { var b = document.getElementById(id); if (b) b.disabled = false; });
     } else {
         statusEl.innerText = "❌ Di Luar Area Absensi";
         statusEl.style.background = "rgba(220, 53, 69, 0.7)";
-        buttons.forEach(function (id) { var b = document.getElementById(id); if (b) b.disabled = true; });
     }
+
+    // Logic Kunci Tombol berdasarkan Status Absensi
+    var nameEl = document.getElementById('gps_absen_name');
+    var name = nameEl ? nameEl.value : '';
+    
+    var disableAll = !inRange || !name;
+    var statusMsg = "";
+
+    if (name) {
+        var gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
+        var logs = safeParse(RBMStorage.getItem(gpsKey), []);
+        var now = new Date();
+        var today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+        
+        var todayLogs = logs.filter(function(l) { return l.name === name && l.date === today; });
+        var hasMasuk = todayLogs.some(function(l) { return l.type === 'Masuk'; });
+        var hasPulang = todayLogs.some(function(l) { return l.type === 'Pulang'; });
+
+        if (hasPulang) {
+            statusMsg = "Sudah Absen Pulang Hari Ini";
+        } else if (hasMasuk) {
+            statusMsg = "Sudah Absen Masuk";
+            var breaks = todayLogs.filter(function(l) { return l.type === 'Istirahat Keluar' || l.type === 'Istirahat Kembali'; });
+            var lastBreak = breaks.length > 0 ? breaks[breaks.length - 1] : null;
+            if (lastBreak && lastBreak.type === 'Istirahat Keluar') {
+                statusMsg += " (Sedang Istirahat)";
+            } else {
+            }
+        } else {
+            statusMsg = "Belum Absen Masuk";
+        }
+    }
+
+    if (statusMsg) {
+        infoEl.innerHTML = infoText + "<br><div style='margin-top:6px; font-weight:bold; color:#1e40af; background:#dbeafe; padding:6px 12px; border-radius:6px; display:inline-block; font-size:13px;'>" + statusMsg + "</div>";
+    } else {
+        infoEl.innerText = infoText;
+    }
+
+    var btnM = document.getElementById('btn_absen_masuk');
+    var btnP = document.getElementById('btn_absen_pulang');
+    var btnBO = document.getElementById('btn_absen_break_out');
+    var btnBI = document.getElementById('btn_absen_break_in');
+
+    if (btnM) btnM.disabled = disableAll;
+    if (btnP) btnP.disabled = disableAll;
+    if (btnBO) btnBO.disabled = disableAll;
+    if (btnBI) btnBI.disabled = disableAll;
 }
 
 function getDistanceFromLatLonInM(lat1, lon1, lat2, lon2) {
@@ -7139,28 +7227,70 @@ function loadRekapAbsensiGPS() {
     const filterNama = document.getElementById("rekap_gps_filter_nama").value;
     const tbody = document.getElementById("rekap_gps_tbody");
 
-    const logs = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_GPS_LOGS')), []);
-    let filtered = logs.filter(l => l.date >= tglAwal && l.date <= tglAkhir);
-    if (filterNama) filtered = filtered.filter(l => l.name === filterNama);
-
-    if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Tidak ada data.</td></tr>';
-        return;
+    // [NEW] Cek status tombol mata (Tampilkan/Sembunyikan baris kosong)
+    const showEmpty = localStorage.getItem('RBM_SHOW_EMPTY_ABSENSI') !== '0';
+    const toggleBtn = document.getElementById('toggle-empty-rows-btn');
+    if (toggleBtn) {
+        toggleBtn.innerHTML = showEmpty ? '👁️' : '🙈';
+        toggleBtn.title = showEmpty ? 'Sembunyikan yang belum absen' : 'Tampilkan yang belum absen';
+        toggleBtn.style.opacity = showEmpty ? '1' : '0.7';
     }
 
+    // Ambil Data
+    const logs = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_GPS_LOGS')), []);
     const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
     const jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
 
-    // Group by Date + Name
+    let filtered = logs.filter(l => l.date >= tglAwal && l.date <= tglAkhir);
+
+    // Generate Range Tanggal
+    const dates = [];
+    let curr = new Date(tglAwal);
+    const end = new Date(tglAkhir);
+    while (curr <= end) {
+        dates.push(new Date(curr).toISOString().split('T')[0]);
+        curr.setDate(curr.getDate() + 1);
+    }
+
+    // Grouping: Inisialisasi slot untuk SEMUA karyawan di SEMUA tanggal
     const grouped = {};
+    dates.forEach(d => {
+        employees.forEach(emp => {
+            const key = `${d}_${emp.name}`;
+            grouped[key] = { date: d, name: emp.name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: false };
+        });
+    });
+
+    // Isi dengan data Log yang ada
     filtered.forEach(log => {
         const key = `${log.date}_${log.name}`;
-        if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null };
+        // Jika ada log dari nama yg tidak ada di master karyawan, tetap buat entry
+        if (!grouped[key]) {
+            grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: true };
+        }
+        grouped[key].hasLog = true;
+
         if (log.type === 'Masuk' && !grouped[key].masuk) grouped[key].masuk = log;
         else if (log.type === 'Pulang') grouped[key].pulang = log;
         else if (log.type === 'Istirahat Keluar') grouped[key].breakOuts.push(log);
         else if (log.type === 'Istirahat Kembali') grouped[key].breakIns.push(log);
     });
+
+    const canDelete = window.rbmOnlyOwnerCanEditDelete && (window.rbmOnlyOwnerCanEditDelete() || (JSON.parse(localStorage.getItem('rbm_user')||'{}').username||'').toLowerCase() === 'burhan');
+
+    // Filter & Sort Keys
+    let keys = Object.keys(grouped);
+    if (filterNama) keys = keys.filter(k => grouped[k].name === filterNama);
+    
+    keys.sort((a, b) => {
+        if (grouped[a].date !== grouped[b].date) return grouped[b].date.localeCompare(grouped[a].date); // Tanggal Desc
+        return grouped[a].name.localeCompare(grouped[b].name); // Nama Asc
+    });
+
+    if (keys.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data karyawan/absensi.</td></tr>';
+        return;
+    }
 
     function isTelat(date, name, masukLog) {
         if (!masukLog || !masukLog.time) return false;
@@ -7191,9 +7321,17 @@ function loadRekapAbsensiGPS() {
     }
 
     let html = '';
-    const keys = Object.keys(grouped).sort().reverse();
     keys.forEach(k => {
         const item = grouped[k];
+        
+        // [FIX] Tampilkan baris kosong jika tidak ada log (Belum Absen)
+        if (!item.hasLog) {
+            if (showEmpty) {
+                html += `<tr style="background:#f8fafc; color:#94a3b8;"><td>${item.date}</td><td>${item.name}</td><td colspan="8" style="text-align:center; font-style:italic; font-size:12px;">Tidak ada data absensi (Belum Absen / Libur)</td></tr>`;
+            }
+            return;
+        }
+
         const buildGpsLogCaption = (log) => {
             if (!log) return '';
             let s = (log.name || '') + ' - ' + (log.type || '') + ' | ' + (log.date || '') + ' ' + (log.time || '');
@@ -7201,19 +7339,17 @@ function loadRekapAbsensiGPS() {
             return s;
         };
         const renderCell = (logOrArray) => {
-            if (!logOrArray) return '-';
-            if (Array.isArray(logOrArray)) {
-                if (logOrArray.length === 0) return '-';
-                return logOrArray.map(log => {
-                    const photoEsc = (log.photo || '').replace(/'/g, "\\'");
-                    const captionEsc = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                    return `<div style="white-space:nowrap;"><span style="cursor:pointer; color:blue; text-decoration:underline;" onclick="showImageModal('${photoEsc}', '${captionEsc}')">${log.time}</span></div>`;
-                }).join('');
-            }
-            const log = logOrArray;
-            const photoEsc = (log.photo || '').replace(/'/g, "\\'");
-            const captionEsc = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            return `<span style="cursor:pointer; color:blue; text-decoration:underline;" onclick="showImageModal('${photoEsc}', '${captionEsc}')">${log.time}</span>`;
+            const renderSingleLog = (log) => {
+                if (!log || log.id == null) return '<span>-</span>';
+                const photoEsc = (log.photo || '').replace(/'/g, "\\'");
+                const captionEsc = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const timeHtml = `<span style="cursor:pointer; color:blue; text-decoration:underline;" onclick="showImageModal('${photoEsc}', '${captionEsc}')">${log.time}</span>`;
+                const deleteHtml = canDelete ? ` <span style="cursor:pointer; color:#dc3545; font-size:14px; vertical-align:middle; margin-left:4px;" onclick="deleteSingleGpsLog(${log.id})" title="Hapus absensi ini">&#x2715;</span>` : '';
+                return `<div style="white-space:nowrap; display:flex; align-items:center; justify-content:flex-start;">${timeHtml}${deleteHtml}</div>`;
+            };
+            if (!logOrArray) return renderSingleLog(null);
+            if (Array.isArray(logOrArray)) return logOrArray.length > 0 ? logOrArray.map(renderSingleLog).join('') : '-';
+            return renderSingleLog(logOrArray);
         };
         const telat = isTelat(item.date, item.name, item.masuk);
         const detailTelat = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData);
@@ -7267,6 +7403,40 @@ function loadRekapAbsensiGPS() {
     if (legend) legend.style.display = 'block';
 }
 
+function toggleEmptyRows() {
+    const current = localStorage.getItem('RBM_SHOW_EMPTY_ABSENSI') !== '0';
+    localStorage.setItem('RBM_SHOW_EMPTY_ABSENSI', current ? '0' : '1');
+    loadRekapAbsensiGPS();
+}
+
+function deleteSingleGpsLog(logId) {
+    var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+    var isDev = (u.username || '').toString().toLowerCase() === 'burhan';
+    var isOwner = u.role === 'owner';
+    
+    if (!isDev && !isOwner) {
+        alert('Akses ditolak. Hanya Owner atau Developer yang bisa menghapus data.');
+        return;
+    }
+    
+    if (!confirm('Yakin ingin menghapus 1 data absensi ini?')) return;
+    
+    var key = getRbmStorageKey('RBM_GPS_LOGS');
+    var logs = safeParse(RBMStorage.getItem(key), []);
+    
+    var logToDelete = logs.find(l => l.id == logId);
+    if (!logToDelete) { alert('Data tidak ditemukan untuk dihapus.'); return; }
+
+    var newLogs = logs.filter(function(l) {
+        return l.id != logId;
+    });
+    
+    RBMStorage.setItem(key, JSON.stringify(newLogs)).then(function() {
+        loadRekapAbsensiGPS();
+        alert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.');
+    });
+}
+
 function populateRekapGpsFilterNama() {
     const filterSelect = document.getElementById("rekap_gps_filter_nama");
     if (!filterSelect) return;
@@ -7278,15 +7448,16 @@ function populateRekapGpsFilterNama() {
         var n = (log && log.name || '').trim();
         if (n && !seen[n]) { seen[n] = true; names.push(n); }
     });
+    
+    // [FIX] Selalu gabungkan dengan data Master Karyawan agar nama yang belum absen tetap muncul
+    var employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    employees.forEach(function(emp) {
+        var n = (emp && emp.name || '').trim();
+        if (n && !seen[n]) { seen[n] = true; names.push(n); }
+    });
+
     names.sort(function(a, b) { return String(a).localeCompare(String(b)); });
-    if (names.length === 0) {
-        var employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-        employees.forEach(function(emp) {
-            var n = (emp && emp.name || '').trim();
-            if (n && !seen[n]) names.push(n);
-        });
-        names.sort(function(a, b) { return String(a).localeCompare(String(b)); });
-    }
+    
     var currentVal = filterSelect.value;
     filterSelect.innerHTML = '<option value="">Semua</option>';
     names.forEach(function(n) {
@@ -7604,12 +7775,53 @@ function updateGpsJadwalDisplay() {
 
     textEl.innerHTML = (shift ? `${shift} (${label})` : label) + info + quote;
     box.style.display = 'block';
+    if (typeof checkDistance === 'function') checkDistance();
 }
 
 function processAbsensiGPS(type) {
     const name = document.getElementById('gps_absen_name').value;
-    if (!name) { alert("Pilih nama karyawan dulu!"); return; }
-    if (!currentPos) { alert("Lokasi belum ditemukan!"); return; }
+    if (!name) { showCustomAlert("Pilih nama karyawan dulu!", "Perhatian", "error"); return; }
+    
+    // Cek riwayat untuk peringatan (bukan kunci mati)
+    const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
+    const logs = safeParse(RBMStorage.getItem(gpsKey), []);
+    const now = new Date();
+    const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+    const todayLogs = logs.filter(l => l.name === name && l.date === today);
+    
+    const hasMasuk = todayLogs.some(l => l.type === 'Masuk');
+    const hasPulang = todayLogs.some(l => l.type === 'Pulang');
+    const breaks = todayLogs.filter(l => l.type === 'Istirahat Keluar' || l.type === 'Istirahat Kembali');
+    const lastBreak = breaks.length > 0 ? breaks[breaks.length - 1] : null;
+    const isOnBreak = lastBreak && lastBreak.type === 'Istirahat Keluar';
+
+    let warning = null;
+
+    if (type === 'Masuk' && hasMasuk) {
+        warning = "Anda sudah absen Masuk hari ini.<br>Ingin absen Masuk lagi?";
+    } else if (type === 'Pulang') {
+        if (hasPulang) warning = "Anda sudah absen Pulang hari ini.<br>Ingin absen Pulang lagi?";
+        else if (!hasMasuk) warning = "Anda belum absen Masuk hari ini.<br>Yakin ingin absen Pulang?";
+    } else if (type === 'Istirahat Keluar') {
+        if (!hasMasuk) warning = "Anda belum absen Masuk.<br>Yakin ingin absen Istirahat?";
+        else if (isOnBreak) warning = "Anda tercatat sedang istirahat.<br>Ingin absen Istirahat Keluar lagi?";
+    } else if (type === 'Istirahat Kembali') {
+        if (!hasMasuk) warning = "Anda belum absen Masuk.<br>Yakin ingin absen Selesai Istirahat?";
+        else if (!isOnBreak) warning = "Anda tidak tercatat sedang istirahat.<br>Yakin ingin absen Selesai Istirahat?";
+    }
+
+    if (warning) {
+        showCustomConfirm(warning, "Konfirmasi Absensi", function() {
+            _executeAbsensiGPS(type);
+        });
+    } else {
+        _executeAbsensiGPS(type);
+    }
+}
+
+function _executeAbsensiGPS(type) {
+    const name = document.getElementById('gps_absen_name').value;
+    if (!currentPos) { showCustomAlert("Lokasi belum ditemukan! Pastikan GPS aktif.", "GPS Error", "error"); return; }
 
     const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
     const emp = employees.find(e => e.name === name);
@@ -7672,9 +7884,9 @@ function processAbsensiGPS(type) {
 
             if (batasMenit > 0) {
                 if (totalDurasi > batasMenit) {
-                    alert("⚠️ Peringatan: Total durasi istirahat melebihi batas!\n\n" + "Shift " + labelShift + ": batas " + batasMenit + " menit.\n" + "Sudah diambil: " + stats.total + " menit.\n" + "Istirahat ini: " + durasiIni + " menit.\n" + "Total: " + totalDurasi + " menit.\n" + "Over: " + (totalDurasi - batasMenit) + " menit.");
+                    showCustomAlert("⚠️ Peringatan: Total durasi istirahat melebihi batas!<br><br>" + "Shift " + labelShift + ": batas " + batasMenit + " menit.<br>" + "Sudah diambil: " + stats.total + " menit.<br>" + "Istirahat ini: " + durasiIni + " menit.<br>" + "Total: " + totalDurasi + " menit.<br>" + "Over: " + (totalDurasi - batasMenit) + " menit.", "Over Istirahat", "warning");
                 } else {
-                    alert("✅ Selesai Istirahat.\n\n" + "Istirahat ini: " + durasiIni + " menit.\n" + "Total hari ini: " + totalDurasi + " menit.\n" + "Sisa: " + (batasMenit - totalDurasi) + " menit.");
+                    showCustomAlert("✅ Selesai Istirahat.<br><br>" + "Istirahat ini: " + durasiIni + " menit.<br>" + "Total hari ini: " + totalDurasi + " menit.<br>" + "Sisa: " + (batasMenit - totalDurasi) + " menit.", "Info Istirahat", "success");
                 }
             }
         }
@@ -7703,12 +7915,13 @@ function processAbsensiGPS(type) {
             const menitNow = now.getMinutes();
             const menitSekarang = jamNow * 60 + menitNow;
             if (menitSekarang > menitBatas) {
-                alert("⚠️ Anda tercatat TELAT.\nBatas masuk " + ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift) + ": " + batas + "\nWaktu Anda: " + timeStr);
+                showCustomAlert("⚠️ Anda tercatat TELAT.<br>Batas masuk " + ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift) + ": " + batas + "<br>Waktu Anda: " + timeStr, "Terlambat", "warning");
             }
         }
     }
 
-    alert(`Absensi ${type} Berhasil!`);
+    showCustomAlert(`Absensi ${type} Berhasil!`, "Sukses", "success");
+    if (typeof updateGpsJadwalDisplay === 'function') updateGpsJadwalDisplay();
 }
 
 function loadMyGpsHistory() {
@@ -7803,53 +8016,58 @@ function compressImageDataUrl(dataUrl, maxWidth, quality, callback) {
 }
 
 function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noAlert) {
-    if (!name || !date || !time) {
-        if (feedbackEl) { feedbackEl.textContent = 'Nama, tanggal, dan jam wajib.'; feedbackEl.style.color = '#b91c1c'; }
-        return;
-    }
-    function doSave(photo) {
-        const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-        const emp = employees.find(function(e) { return e.name === name; });
-        const empId = emp ? (emp.id != null ? emp.id : employees.indexOf(emp)) : null;
-        var timeDisplay = (time.length >= 8 && time.indexOf(':') >= 0) ? time.slice(0, 8) : (time.length >= 5 ? time.slice(0, 5) : time);
-        if (timeDisplay.length === 5) timeDisplay = timeDisplay + ':00';
-        var isoTime = (time.length >= 8 && /^\d{2}:\d{2}:\d{2}$/.test(time.slice(0, 8))) ? time.slice(0, 8) : (time.length >= 5 ? time.slice(0, 5) + ':00' : time + ':00');
-        var isoDate = date + 'T' + isoTime;
-        var d = new Date(isoDate);
-        if (isNaN(d.getTime())) d = new Date();
-        const log = {
-            id: Date.now(),
-            timestamp: d.toISOString(),
-            date: date,
-            time: timeDisplay,
-            name: name,
-            type: type,
-            lat: null,
-            lng: null,
-            photo: photo || '',
-            manualEntry: true
-        };
-        const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
-        const logs = safeParse(RBMStorage.getItem(gpsKey), []);
-        logs.push(log);
-        RBMStorage.setItem(gpsKey, JSON.stringify(logs));
-        if (type === 'Masuk' && empId !== null) {
-            const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
-            const absKey = date + '_' + empId;
-            absensiData[absKey] = 'H';
-            RBMStorage.setItem(getRbmStorageKey('RBM_ABSENSI_DATA'), JSON.stringify(absensiData));
+    return new Promise(function(resolve, reject) {
+        if (!name || !date || !time) {
+            if (feedbackEl) { feedbackEl.textContent = 'Nama, tanggal, dan jam wajib.'; feedbackEl.style.color = '#b91c1c'; }
+            resolve(false);
+            return;
         }
-        if (feedbackEl) {
-            feedbackEl.textContent = 'Absensi ' + type + ' berhasil disimpan (manual). Tanggal: ' + date + ', Jam: ' + timeDisplay;
-            feedbackEl.style.color = 'var(--success)';
+        function doSave(photo) {
+            const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+            const emp = employees.find(function(e) { return e.name === name; });
+            const empId = emp ? (emp.id != null ? emp.id : employees.indexOf(emp)) : null;
+            var timeDisplay = (time.length >= 8 && time.indexOf(':') >= 0) ? time.slice(0, 8) : (time.length >= 5 ? time.slice(0, 5) : time);
+            if (timeDisplay.length === 5) timeDisplay = timeDisplay + ':00';
+            var isoTime = (time.length >= 8 && /^\d{2}:\d{2}:\d{2}$/.test(time.slice(0, 8))) ? time.slice(0, 8) : (time.length >= 5 ? time.slice(0, 5) + ':00' : time + ':00');
+            var isoDate = date + 'T' + isoTime;
+            var d = new Date(isoDate);
+            if (isNaN(d.getTime())) d = new Date();
+            const log = {
+                id: Date.now() + Math.floor(Math.random() * 1000), // Tambah random agar ID unik jika loop cepat
+                timestamp: d.toISOString(),
+                date: date,
+                time: timeDisplay,
+                name: name,
+                type: type,
+                lat: null,
+                lng: null,
+                photo: photo || '',
+                manualEntry: true
+            };
+            const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
+            const logs = safeParse(RBMStorage.getItem(gpsKey), []);
+            logs.push(log);
+            RBMStorage.setItem(gpsKey, JSON.stringify(logs)).then(function() {
+                if (type === 'Masuk' && empId !== null) {
+                    const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
+                    const absKey = date + '_' + empId;
+                    absensiData[absKey] = 'H';
+                    RBMStorage.setItem(getRbmStorageKey('RBM_ABSENSI_DATA'), JSON.stringify(absensiData));
+                }
+                if (feedbackEl) {
+                    feedbackEl.textContent = 'Absensi ' + type + ' berhasil disimpan (manual). Tanggal: ' + date + ', Jam: ' + timeDisplay;
+                    feedbackEl.style.color = 'var(--success)';
+                }
+                if (!noAlert) alert('Absensi ' + type + ' berhasil disimpan.');
+                resolve(true);
+            });
         }
-        if (!noAlert) alert('Absensi ' + type + ' berhasil disimpan.');
-    }
-    if (photoData && typeof photoData === 'string' && photoData.indexOf('data:image') === 0) {
-        compressImageDataUrl(photoData, 800, 0.55, doSave);
-    } else {
-        doSave(photoData || '');
-    }
+        if (photoData && typeof photoData === 'string' && photoData.indexOf('data:image') === 0) {
+            compressImageDataUrl(photoData, 800, 0.55, doSave);
+        } else {
+            doSave(photoData || '');
+        }
+    });
 }
 
   // Expose functions for inline handlers (onclick/onchange) di halaman RBM terpisah
@@ -7983,4 +8201,111 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof addGpsShiftRow !== 'undefined') window.addGpsShiftRow = addGpsShiftRow;
   if (typeof cycleAbsensiStatus !== 'undefined') window.cycleAbsensiStatus = cycleAbsensiStatus;
   if (typeof updateJadwalLegend !== 'undefined') window.updateJadwalLegend = updateJadwalLegend;
+  if (typeof deleteSingleGpsLog !== 'undefined') window.deleteSingleGpsLog = deleteSingleGpsLog;
+  if (typeof toggleEmptyRows !== 'undefined') window.toggleEmptyRows = toggleEmptyRows;
+  if (typeof showCustomAlert !== 'undefined') window.showCustomAlert = showCustomAlert;
+  if (typeof initAbsensiHardware !== 'undefined') window.initAbsensiHardware = initAbsensiHardware;
+  if (typeof showCustomConfirm !== 'undefined') window.showCustomConfirm = showCustomConfirm;
+  if (typeof populateGpsNames !== 'undefined') window.populateGpsNames = populateGpsNames;
 })();
+
+// [OPTIMASI] Jalankan Kamera & GPS segera setelah halaman siap (tanpa menunggu DB)
+if (window.RBM_PAGE === 'absensi-gps-view') {
+    function runGpsEarlyInit() {
+        if (window.initAbsensiHardware) window.initAbsensiHardware();
+        // [OPTIMASI 2] Langsung isi nama dari cache localStorage, jangan tunggu DB
+        if (window.populateGpsNames) window.populateGpsNames();
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', runGpsEarlyInit);
+    } else {
+        runGpsEarlyInit();
+    }
+}
+
+function showCustomAlert(message, title, type) {
+    let modal = document.getElementById('rbm-custom-alert');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'rbm-custom-alert';
+        modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center; z-index:10000;';
+        modal.innerHTML = `
+            <div style="background:white; padding:24px; border-radius:16px; max-width:85%; width:320px; text-align:center; box-shadow:0 10px 25px rgba(0,0,0,0.2); animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);">
+                <style>@keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }</style>
+                <div id="rbm-alert-icon" style="font-size:48px; margin-bottom:16px;"></div>
+                <h3 id="rbm-alert-title" style="margin:0 0 8px; color:#1e293b; font-size: 18px; font-weight: 700;"></h3>
+                <p id="rbm-alert-msg" style="margin:0 0 24px; color:#64748b; font-size:14px; line-height:1.5;"></p>
+                <button onclick="document.getElementById('rbm-custom-alert').style.display='none'" style="background:#1e40af; color:white; border:none; padding:12px 0; border-radius:10px; font-weight:600; cursor:pointer; width:100%; font-size:14px; transition: background 0.2s;">Tutup</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    const iconEl = document.getElementById('rbm-alert-icon');
+    const titleEl = document.getElementById('rbm-alert-title');
+    const msgEl = document.getElementById('rbm-alert-msg');
+    
+    titleEl.textContent = title || 'Info';
+    msgEl.innerHTML = message.replace(/\n/g, '<br>');
+    
+    if (type === 'success') {
+        iconEl.textContent = '✅';
+        titleEl.style.color = '#15803d';
+    } else if (type === 'error') {
+        iconEl.textContent = '❌';
+        titleEl.style.color = '#b91c1c';
+    } else if (type === 'warning') {
+        iconEl.textContent = '⚠️';
+        titleEl.style.color = '#b45309';
+    } else {
+        iconEl.textContent = 'ℹ️';
+        titleEl.style.color = '#1e293b';
+    }
+    
+    modal.style.display = 'flex';
+}
+
+function showCustomConfirm(message, title, onYes) {
+    let modal = document.getElementById('rbm-custom-confirm');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'rbm-custom-confirm';
+        modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center; z-index:10001;';
+        modal.innerHTML = `
+            <div style="background:white; padding:24px; border-radius:16px; max-width:85%; width:320px; text-align:center; box-shadow:0 10px 25px rgba(0,0,0,0.2); animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);">
+                <div style="font-size:48px; margin-bottom:16px;">❓</div>
+                <h3 id="rbm-confirm-title" style="margin:0 0 8px; color:#1e293b; font-size: 18px; font-weight: 700;"></h3>
+                <p id="rbm-confirm-msg" style="margin:0 0 24px; color:#64748b; font-size:14px; line-height:1.5;"></p>
+                <div style="display:flex; gap:10px;">
+                    <button id="rbm-confirm-no" style="flex:1; background:#e2e8f0; color:#475569; border:none; padding:12px 0; border-radius:10px; font-weight:600; cursor:pointer; font-size:14px;">Batal</button>
+                    <button id="rbm-confirm-yes" style="flex:1; background:#1e40af; color:white; border:none; padding:12px 0; border-radius:10px; font-weight:600; cursor:pointer; font-size:14px;">Ya, Lanjut</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    const titleEl = document.getElementById('rbm-confirm-title');
+    const msgEl = document.getElementById('rbm-confirm-msg');
+    const yesBtn = document.getElementById('rbm-confirm-yes');
+    const noBtn = document.getElementById('rbm-confirm-no');
+    
+    titleEl.textContent = title || 'Konfirmasi';
+    msgEl.innerHTML = message;
+    
+    // Clone buttons to remove old listeners
+    const newYes = yesBtn.cloneNode(true);
+    const newNo = noBtn.cloneNode(true);
+    yesBtn.parentNode.replaceChild(newYes, yesBtn);
+    noBtn.parentNode.replaceChild(newNo, noBtn);
+    
+    newYes.onclick = function() {
+        document.getElementById('rbm-custom-confirm').style.display = 'none';
+        if (onYes) onYes();
+    };
+    newNo.onclick = function() {
+        document.getElementById('rbm-custom-confirm').style.display = 'none';
+    };
+    
+    modal.style.display = 'flex';
+}

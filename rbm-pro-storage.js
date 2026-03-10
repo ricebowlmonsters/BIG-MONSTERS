@@ -119,14 +119,18 @@
         }
         var prefix = path + '/';
         var rebuilt = {};
+        var hasPrefixData = false;
         for (var c in this._cache) {
           if (Object.prototype.hasOwnProperty.call(this._cache, c) && c.indexOf(prefix) === 0) {
+            hasPrefixData = true;
             var subKey = c.slice(prefix.length);
             rebuilt[subKey] = this._cache[c];
           }
         }
-        if (Object.keys(rebuilt).length > 0) return JSON.stringify(rebuilt);
-        return null;
+        if (hasPrefixData && Object.keys(rebuilt).length > 0) return JSON.stringify(rebuilt);
+        // [FIX] Jika tidak ada di cache Firebase, coba ambil dari localStorage sebagai fallback
+        // Ini penting agar UI bisa load cepat saat pertama kali buka halaman.
+        return _origGetItem.call(localStorage, key);
       }
       return _origGetItem.call(localStorage, key);
     },
@@ -181,26 +185,34 @@
     _initDevTools: function() {
       if (localStorage.getItem('RBM_DEV_MODE') !== 'true') return;
 
-      // Buat tombol rahasia
-      var btn = document.createElement('button');
-      btn.innerHTML = '📥 Import Absensi (XLS)';
-      btn.style.position = 'fixed';
-      btn.style.bottom = '10px';
-      btn.style.right = '10px';
-      btn.style.zIndex = '10000';
-      btn.style.background = '#2e7d32'; // Hijau Excel
-      btn.style.color = 'white';
-      btn.style.border = 'none';
-      btn.style.padding = '8px 12px';
-      btn.style.borderRadius = '4px';
-      btn.style.cursor = 'pointer';
-      btn.style.fontSize = '11px';
-      btn.style.boxShadow = '0 2px 5px rgba(0,0,0,0.3)';
-      btn.title = 'Fitur Developer: Import Data Absensi dari Excel';
-
+      // [DEV] Inject tombol Import ke header halaman Absensi (Input Absensi Manual)
+      // Menggunakan interval karena halaman mungkin SPA (Single Page App) yang berubah kontennya
       var self = this;
-      btn.onclick = function() { self.importAbsensiExcel(); };
-      document.body.appendChild(btn);
+      setInterval(function() {
+        // Cari header yang mengandung kata "Absensi" atau "Input Absensi"
+        // [DEV] Tambahkan selector h3 untuk menangkap header modal/section kecil
+        var headers = document.querySelectorAll('.page-header h2, h1.rbm-page-title, h3');
+        headers.forEach(function(h) {
+          // Cek apakah ini header yang tepat dan belum ada tombolnya
+          if ((h.innerText.includes('Absensi') || h.innerText.includes('Jadwal') || h.innerText.includes('Input Absensi')) && !h.querySelector('#rbm-dev-import-btn')) {
+            var btn = document.createElement('button');
+            btn.id = 'rbm-dev-import-btn';
+            btn.innerHTML = '📥 Import (Dev)';
+            btn.style.marginLeft = '15px';
+            btn.style.background = '#2e7d32'; // Hijau Excel
+            btn.style.color = 'white';
+            btn.style.border = 'none';
+            btn.style.padding = '4px 8px';
+            btn.style.borderRadius = '4px';
+            btn.style.cursor = 'pointer';
+            btn.style.fontSize = '12px';
+            btn.style.verticalAlign = 'middle';
+            btn.title = 'Fitur Developer: Import Data Absensi dari Excel';
+            btn.onclick = function() { self.importAbsensiExcel(); };
+            h.appendChild(btn);
+          }
+        });
+      }, 1000);
     },
 
     importAbsensiExcel: function() {
@@ -240,12 +252,48 @@
 
             console.log('📄 Data Excel Terbaca:', jsonData);
             
-            // 3. Simpan ke Storage (Key: RBM_ABSENSI)
-            // Format disesuaikan: Array of Objects
-            this.setItem('RBM_ABSENSI', JSON.stringify(jsonData)).then(() => {
-              alert('✅ Berhasil Import ' + jsonData.length + ' data absensi!\nData tersimpan di key: RBM_ABSENSI');
-              location.reload(); // Refresh untuk melihat hasil
-            });
+            // [DEV] Deteksi Format: GPS Logs vs Rekap Absensi
+            var firstRow = jsonData[0];
+            var isGpsLog = firstRow && (firstRow.hasOwnProperty('Tipe') || firstRow.hasOwnProperty('Type') || firstRow.hasOwnProperty('Jam') || firstRow.hasOwnProperty('Time'));
+
+            if (isGpsLog) {
+              // --- IMPORT GPS LOGS (Untuk Input Absensi Manual) ---
+              var outletSelect = document.getElementById('rbm-outlet-select');
+              var outletId = outletSelect ? outletSelect.value : '';
+              var storageKey = outletId ? 'RBM_GPS_LOGS_' + outletId : 'RBM_GPS_LOGS';
+
+              // Ambil data lama
+              var existingRaw = this.getItem(storageKey);
+              var existing = [];
+              try { existing = existingRaw ? JSON.parse(existingRaw) : []; } catch(e) {}
+
+              var newLogs = jsonData.map(function(row) {
+                return {
+                  id: Date.now() + Math.random(),
+                  date: row['Tanggal'] || row['Date'] || new Date().toISOString().slice(0,10),
+                  time: row['Jam'] || row['Time'] || '00:00:00',
+                  name: row['Nama'] || row['Name'] || 'Unknown',
+                  type: row['Tipe'] || row['Type'] || 'Masuk',
+                  lat: row['Lat'] || null,
+                  lng: row['Lng'] || null,
+                  photo: row['Foto'] || row['Photo'] || '',
+                  manualEntry: true
+                };
+              });
+
+              var combined = existing.concat(newLogs);
+              this.setItem(storageKey, JSON.stringify(combined)).then(function() {
+                alert('✅ Berhasil Import ' + newLogs.length + ' data GPS Logs ke ' + storageKey);
+                location.reload();
+              });
+
+            } else {
+              // --- IMPORT REKAP ABSENSI (Format Lama) ---
+              this.setItem('RBM_ABSENSI', JSON.stringify(jsonData)).then(function() {
+                alert('✅ Berhasil Import ' + jsonData.length + ' data rekap absensi!\nData tersimpan di key: RBM_ABSENSI');
+                location.reload();
+              });
+            }
 
           } catch (err) {
             console.error(err);

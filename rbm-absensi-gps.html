@@ -79,6 +79,11 @@
         sel.style.display = 'none';
         if (document.body && !document.body.classList.contains('rbm-absensi-karyawan')) document.body.classList.add('rbm-absensi-karyawan');
       }
+      // [BARU] Sembunyikan tombol kembali jika diakses dari link share karyawan
+      var backBtn = document.querySelector('.rbm-back-btn');
+      if (backBtn) {
+        backBtn.style.display = 'none';
+      }
     } else {
       if (u.role === 'manager' && u.outlet) {
         sel.value = u.outlet;

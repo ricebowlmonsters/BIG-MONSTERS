@@ -15,6 +15,8 @@
 <header class="rbm-page-header">
   <a href="index.html" class="rbm-back-btn">&#8249;</a>
   <h1 class="rbm-page-title">Input Absensi Manual</h1>
+  <button id="rbm-dev-import-btn" type="button" class="btn" style="display:inline-block; margin-left: 15px; background: #2e7d32; color: white; font-size: 12px; vertical-align: middle; padding: 4px 8px;" title="Fitur Developer: Import Data Absensi dari Excel">📥 Import Excel</button>
+  <button id="rbm-dev-template-btn" type="button" class="btn" style="display:inline-block; margin-left: 5px; background: #6c757d; color: white; font-size: 12px; vertical-align: middle; padding: 4px 8px;" title="Download Template Excel">📄 Template</button>
   <span class="rbm-manual-badge">Developer</span>
 </header>
 <div class="rbm-content-wrap">
@@ -93,6 +95,42 @@
 <script src="firebase-storage.js"></script>
 <script src="rbm-pro.js"></script>
 <script>
+// [DEV] Show import button if dev mode is active
+// [DEV] Tombol Import Excel selalu tampil di halaman ini (karena halaman ini khusus Developer)
+(function() {
+  var btn = document.getElementById('rbm-dev-import-btn');
+  if (btn) {
+    btn.onclick = function() {
+      if (window.RBMStorage && typeof window.RBMStorage.importAbsensiExcel === 'function') {
+        window.RBMStorage.importAbsensiExcel();
+      } else {
+        alert('Fungsi import (RBMStorage.importAbsensiExcel) tidak ditemukan.');
+      }
+    };
+  }
+
+  // [DEV] Tombol Download Template
+  var btnTemplate = document.getElementById('rbm-dev-template-btn');
+  if (btnTemplate) {
+    btnTemplate.onclick = function() {
+      if (typeof XLSX === 'undefined') {
+        var script = document.createElement('script');
+        script.src = "https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js";
+        script.onload = function() { generateTemplate(); };
+        document.head.appendChild(script);
+      } else {
+        generateTemplate();
+      }
+    };
+  }
+  function generateTemplate() {
+    var ws = XLSX.utils.aoa_to_sheet([['Tanggal', 'Jam', 'Nama', 'Tipe'], ['2026-03-10', '08:00:00', 'Contoh Nama', 'Masuk'], ['2026-03-10', '17:00:00', 'Contoh Nama', 'Pulang']]);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "Template_Absensi_Manual.xlsx");
+  }
+})();
+
 (function(){
   var dateInp = document.getElementById('manual_absen_date');
   if (dateInp && !dateInp.value) {
@@ -149,8 +187,17 @@ function submitAbsensiGpsManual() {
     }
     var e = entries[idx];
     function doOne(photoData) {
-      if (typeof saveAbsensiGpsManual === 'function') saveAbsensiGpsManual(name, e.type, date, e.time, photoData || '', feedback, true);
-      runNext(idx + 1);
+      if (typeof saveAbsensiGpsManual === 'function') {
+        var p = saveAbsensiGpsManual(name, e.type, date, e.time, photoData || '', feedback, true);
+        // Tunggu proses simpan selesai baru lanjut ke item berikutnya
+        if (p && typeof p.then === 'function') {
+            p.then(function() { runNext(idx + 1); });
+        } else {
+            runNext(idx + 1);
+        }
+      } else {
+        runNext(idx + 1);
+      }
     }
     if (e.file && e.file.type && e.file.type.startsWith('image/')) {
       var reader = new FileReader();
