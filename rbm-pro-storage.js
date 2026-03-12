@@ -90,6 +90,27 @@
         var val = snap.val();
         if (val && typeof val === 'object') {
           self._cache = flattenToCache(val, '', {});
+          
+          // [PERBAIKAN] Cache data penting ke localStorage agar load halaman berikutnya instan
+          try {
+            // Cache Employees (Global & Per Outlet)
+            Object.keys(self._cache).forEach(function(k) {
+              if (k === 'employees' || k.indexOf('employees_') === 0) {
+                var localKey = 'RBM_' + k.toUpperCase();
+                localStorage.setItem(localKey, JSON.stringify(self._cache[k]));
+              }
+              // Cache Konfigurasi GPS
+              if (k === 'gps_config' || k.indexOf('gps_config_') === 0) {
+                var localKey = 'RBM_' + k.toUpperCase();
+                localStorage.setItem(localKey, JSON.stringify(self._cache[k]));
+              }
+              // Cache Shift/Jam Kerja
+              if (k === 'gps_jam_config' || k.indexOf('gps_jam_config_') === 0) {
+                var localKey = 'RBM_' + k.toUpperCase();
+                localStorage.setItem(localKey, JSON.stringify(self._cache[k]));
+              }
+            });
+          } catch(e) { console.warn('Cache to localStorage failed', e); }
         }
         // [FIREBASE ONLY] Data RBM Pro hanya dari Firebase, tidak merge dari localStorage
       }).catch(function(err) {
@@ -151,6 +172,13 @@
           if (typeof value === 'string') toSet = JSON.parse(value);
         } catch (e) { toSet = value; }
         this._cache[path] = toSet;
+        
+        // [PERBAIKAN] Simpan juga ke localStorage untuk cache offline/startup cepat
+        // Khusus untuk data master yang sering dibaca (Karyawan, Config)
+        if (key.indexOf('RBM_EMPLOYEES') === 0 || key.indexOf('RBM_GPS_') === 0) {
+           try { localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); } catch(e) {}
+        }
+
         var refPath = 'rbm_pro/' + path.replace(/\//g, '/');
         return this._db.ref(refPath).set(toSet);
       }
