@@ -131,14 +131,62 @@
   }
 })();
 
+function populateManualAbsenNameSelect() {
+  var select = document.getElementById('manual_absen_name');
+  var outletSel = document.getElementById('rbm-outlet-select');
+  var outlet = outletSel ? outletSel.value : '';
+  if (!select) return;
+  
+  select.innerHTML = '<option value="">Memuat data...</option>';
+  
+  var renderOptions = function(employees) {
+    select.innerHTML = '<option value="">-- Pilih Nama --</option>';
+    var empArr = Array.isArray(employees) ? employees : (employees ? Object.values(employees) : []);
+    empArr.forEach(function(emp) {
+      if (emp && emp.name) {
+        var opt = document.createElement('option');
+        opt.value = emp.name;
+        opt.textContent = emp.name;
+        select.appendChild(opt);
+      }
+    });
+  };
+
+  if (outlet && typeof firebase !== 'undefined' && firebase.apps.length > 0) {
+    firebase.database().ref('rbm_pro/employees/' + outlet).once('value').then(function(snap) {
+      var data = snap.val();
+      renderOptions(data || JSON.parse(localStorage.getItem('RBM_EMPLOYEES_' + outlet) || '[]'));
+    }).catch(function() {
+      renderOptions(JSON.parse(localStorage.getItem('RBM_EMPLOYEES_' + outlet) || '[]'));
+    });
+  } else {
+    var key = outlet ? 'RBM_EMPLOYEES_' + outlet : 'RBM_EMPLOYEES';
+    var data = [];
+    try { data = JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) {}
+    renderOptions(data);
+  }
+}
+
 (function(){
   var dateInp = document.getElementById('manual_absen_date');
   if (dateInp && !dateInp.value) {
     var d = new Date();
     dateInp.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
-  if (typeof populateManualAbsenNameSelect === 'function') populateManualAbsenNameSelect();
-  if (typeof addManualAbsenRow === 'function') addManualAbsenRow();
+  
+  var init = function() {
+    if (typeof populateManualAbsenNameSelect === 'function') populateManualAbsenNameSelect();
+    if (typeof addManualAbsenRow === 'function') {
+      var rows = document.querySelectorAll('#manual_absen_rows .manual-absen-row');
+      if (rows.length === 0) addManualAbsenRow();
+    }
+  };
+
+  if (window.RBMStorage && typeof window.RBMStorage.ready === 'function') {
+    window.RBMStorage.ready().then(init).catch(init);
+  } else {
+    setTimeout(init, 500);
+  }
 })();
 function addManualAbsenRow() {
   var container = document.getElementById('manual_absen_rows');

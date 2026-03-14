@@ -13,9 +13,16 @@
       <h1 class="page-title" id="main-page-title">Selamat Datang</h1>
 
       <!-- [BARU] Info User & Lokasi di Kanan Header -->
-      <div style="margin-left: auto; text-align: right; line-height: 1.3;">
-        <div id="header-user-name" style="font-weight: 700; font-size: 14px; color: #374151;"></div>
-        <div id="header-location" style="font-size: 11px; color: #6b7280; font-weight: 500;"></div>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 16px;">
+        <!-- [BARU] Lonceng Notifikasi Pengajuan (Khusus Owner/Dev) -->
+        <div id="header-notification" style="position: relative; cursor: pointer; display: none;" title="Lihat Pengajuan Masuk">
+            <span style="font-size: 22px;">🔔</span>
+            <span id="notif-badge" style="position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 10px; font-size: 10px; font-weight: bold; padding: 2px 6px; display: none; border: 1px solid white;">0</span>
+        </div>
+        <div style="text-align: right; line-height: 1.3;">
+          <div id="header-user-name" style="font-weight: 700; font-size: 14px; color: #374151;"></div>
+          <div id="header-location" style="font-size: 11px; color: #6b7280; font-weight: 500;"></div>
+        </div>
       </div>
     </header>
 
@@ -29,6 +36,7 @@
             <li><a href="manage-menu.html" class="menu-link"><span style="font-size: 16px;">🍔</span><span class="menu-text">Kelola Menu</span></a></li>
             <li><a href="input-point.html" class="menu-link"><span style="font-size: 16px;">💰</span><span class="menu-text">Input Point</span></a></li>
             <li><a href="revenue-report.html" class="menu-link"><span style="font-size: 16px;">📈</span><span class="menu-text">Laporan Pendapatan</span></a></li>
+            <li><a href="dashboard-keuangan.html" class="menu-link"><span style="font-size: 16px;">📊</span><span class="menu-text">Dashboard Keuangan</span></a></li>
             <li><a href="claim-vcr.html" class="menu-link"><span style="font-size: 16px;">🎫</span><span class="menu-text">Validasi Voucher</span></a></li>
             <li><a href="qr_generator.html" class="menu-link"><span style="font-size: 16px;">🔲</span><span class="menu-text">QR Meja</span></a></li>
             <li><a href="promo-settings.html" class="menu-link"><span style="font-size: 16px;">🏷️</span><span class="menu-text">Promo & Diskon</span></a></li>
@@ -43,6 +51,7 @@
             <li><a href="rbm-stok-barang.html" class="menu-link"><span style="font-size: 16px;">📊</span><span class="menu-text">Stok Barang</span></a></li>
             <li><a href="rbm-absensi-gps.html" class="menu-link"><span style="font-size: 16px;">📍</span><span class="menu-text">Absensi GPS</span></a></li>
 
+            <li><a href="rbm-pengajuan.html" class="menu-link"><span style="font-size: 16px;">💸</span><span class="menu-text">Pengajuan Dana</span></a></li>
             <li><a href="rbm-lihat-petty-cash.html" class="menu-link"><span style="font-size: 16px;">💵</span><span class="menu-text">Lihat Petty Cash</span></a></li>
             <li><a href="rbm-lihat-pembukuan.html" class="menu-link"><span style="font-size: 16px;">📒</span><span class="menu-text">Pembukuan</span></a></li>
             <li><a href="rbm-lihat-inventaris.html" class="menu-link"><span style="font-size: 16px;">📋</span><span class="menu-text">Lihat Inventaris</span></a></li>
@@ -103,7 +112,7 @@
         'owner': ['*'],
         'manager': ['*'],
         'staff': [
-          'kasir.html', 'orders.html', 'manage-menu.html', 'input-point.html', 'revenue-report.html',
+          'kasir.html', 'orders.html', 'manage-menu.html', 'input-point.html', 'revenue-report.html', 'dashboard-keuangan.html',
           'claim-vcr.html', 'qr_generator.html', 'promo-settings.html', 'manage-rewards.html',
           'customer-settings.html', 'storage-viewer.html', 'settings.html', 'login.html'
         ]
@@ -220,6 +229,49 @@
         // Jika Owner, tampilkan 'Semua Lokasi', jika tidak tampilkan outlet user
         const locText = (userData.role === 'owner') ? '🏢 Semua Lokasi' : `📍 ${userData.outlet ? userData.outlet.charAt(0).toUpperCase() + userData.outlet.slice(1) : '-'}`;
         headerLocEl.textContent = locText;
+      }
+
+      // [BARU] Logika Notifikasi Pengajuan khusus Owner/Developer
+      const isDevOrOwner = userData.role === 'owner' || (userData.username || '').toLowerCase() === 'burhan';
+      const notifEl = document.getElementById('header-notification');
+      const notifBadge = document.getElementById('notif-badge');
+      if (isDevOrOwner && notifEl) {
+          notifEl.style.display = 'block';
+          
+          const loadPengajuanCount = () => {
+              if (typeof firebase === 'undefined' || !firebase.apps.length) {
+                  setTimeout(loadPengajuanCount, 2000);
+                  return;
+              }
+              const db = firebase.database();
+              
+              // Dengarkan pengajuan Petty Cash
+              db.ref('rbm_pro/petty_cash/pengajuan').on('value', snap => {
+                  const pcData = snap.val();
+                  let count = pcData ? (Array.isArray(pcData) ? pcData.length : Object.keys(pcData).length) : 0;
+                  
+                  // Tambahkan Pengajuan TF
+                  db.ref('rbm_pro/pengajuan_tf').once('value').then(snapTf => {
+                      const tfData = snapTf.val();
+                      const tfCount = tfData ? (Array.isArray(tfData) ? tfData.length : Object.keys(tfData).length) : 0;
+                      
+                      count += tfCount;
+                      if (count > 0) {
+                          notifBadge.textContent = count;
+                          notifBadge.style.display = 'block';
+                      } else {
+                          notifBadge.style.display = 'none';
+                      }
+                  });
+              });
+          };
+          setTimeout(loadPengajuanCount, 2500);
+
+          // Buka halaman pengajuan saat lonceng diklik
+          notifEl.addEventListener('click', () => {
+              const menuPengajuan = document.querySelector('a[href="rbm-pengajuan.html"]');
+              if (menuPengajuan) menuPengajuan.click();
+          });
       }
 
       const menuLinks = document.querySelectorAll('.menu-link');

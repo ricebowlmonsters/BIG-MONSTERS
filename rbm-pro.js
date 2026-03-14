@@ -1693,6 +1693,66 @@ function createPembukuanRows() {
       setTimeout(()=>{output.innerText=""},4e3);
   }
 
+function getPettyCashRecapForPengajuan(cb) {
+    var outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+    
+    function processTransactions(list) {
+        list.sort(function(a, b) {
+            var d1 = a.tanggal || a.date || '';
+            var d2 = b.tanggal || b.date || '';
+            return d1.localeCompare(d2);
+        });
+        var lastKredit = 0;
+        var lastKreditDate = '-';
+        var totalDebitSince = 0;
+        var detailsSince = [];
+        for (var i = 0; i < list.length; i++) {
+            var r = list[i];
+            var k = parseFloat(r.kredit || r.masuk) || 0;
+            var d = parseFloat(r.debit || r.keluar) || parseFloat(r.total) || 0;
+            if (r.jenis === 'pemasukan') k = parseFloat(r.total || r.harga) || 0;
+            if (r.jenis === 'pengeluaran') d = parseFloat(r.total) || 0;
+            if (k > 0) {
+                lastKredit = k;
+                lastKreditDate = r.tanggal || r.date || '-';
+                totalDebitSince = 0;
+                detailsSince = [];
+            } else if (d > 0) {
+                totalDebitSince += d;
+                detailsSince.push(r);
+            }
+        }
+        var sisa = lastKredit - totalDebitSince;
+        cb({ lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince });
+    }
+    
+    // Menggunakan kueri langsung yang sangat cepat
+    if (typeof FirebaseStorage !== 'undefined' && typeof FirebaseStorage.isReady === 'function' && FirebaseStorage.isReady()) {
+        var db = typeof FirebaseStorage.db === 'function' ? FirebaseStorage.db() : null;
+        if (db) {
+            db.ref('rbm_pro/petty_cash/' + (outlet || 'default')).once('value').then(function(snap) {
+                var root = snap.val();
+                var list = [];
+                if (root && typeof root === 'object') {
+                    Object.keys(root).forEach(function(dateKey) {
+                        var node = root[dateKey];
+                        var arr = node && Array.isArray(node.transactions) ? node.transactions : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
+                        arr.forEach(function(row) { row.tanggal = row.tanggal || dateKey; list.push(row); });
+                    });
+                }
+                processTransactions(list);
+            }).catch(function() { processTransactions([]); });
+            return;
+        }
+    }
+    
+    var pending = [];
+    try { var key = outlet ? 'RBM_PENDING_PETTY_CASH_' + outlet : 'RBM_PENDING_PETTY_CASH'; var raw = localStorage.getItem(key); if(!raw) { key = 'RBM_PENDING_PETTY_CASH'; raw = localStorage.getItem(key); } pending = JSON.parse(raw || '[]'); } catch(e){}
+    var list = [];
+    pending.forEach(function(p) { var payload = p.payload || p; (payload.transactions || []).forEach(function(trx) { list.push({ tanggal: payload.tanggal, nama: trx.nama, jenis: payload.jenis, debit: payload.jenis === 'pengeluaran' ? (parseFloat(trx.total) || 0) : 0, kredit: payload.jenis === 'pemasukan' ? (parseFloat(trx.total) || parseFloat(trx.harga) || 0) : 0 }); }); });
+    processTransactions(list);
+}
+
 function createPengajuanForm() {
   const container = document.getElementById("pengajuan-form-container");
   const jenisPengajuan = document.getElementById("jenis_pengajuan").value;
@@ -1731,17 +1791,49 @@ function createPengajuanForm() {
       container.appendChild(rowDiv);
     }
   } else if (jenisPengajuan === 'pengajuan-petty-cash') {
-    container.innerHTML += `<h3>Detail Pengajuan Petty Cash</h3>`;
-    for (let i = 0; i < 5; i++) {
-        const rowDiv = document.createElement('div');
-        rowDiv.className = 'row-group';
-        rowDiv.style.alignItems = 'flex-start';
-        rowDiv.innerHTML = `
-            <div style="flex:1;"><label>Nominal</label><input type="number" class="pengajuan_pc_nominal" placeholder="Nominal (Rp)"></div>
-            <div style="flex:1.5;"><label>Foto Pengajuan</label><input type="file" class="pengajuan_pc_foto_pengajuan" accept="image/*"></div>
+    container.innerHTML += `<h3>Detail Pengajuan Reimburse Petty Cash</h3>`;
+    container.innerHTML += `<div id="pc_recap_loading" style="padding:20px; text-align:center; color:#64748b;">Menghitung rekap dari dana terakhir... ⏳</div>`;
+
+    getPettyCashRecapForPengajuan(function(recap) {
+        var detailsHtml = '';
+        if (recap.detailsSince.length > 0) {
+            detailsHtml += `<table class="data-table" style="width:100%; font-size:11px; margin-top:10px; border:1px solid #e2e8f0;">
+                <thead><tr style="background:#f1f5f9;"><th style="padding:6px; text-align:left;">Tanggal</th><th style="padding:6px; text-align:left;">Keterangan Pengeluaran</th><th style="padding:6px; text-align:right;">Nominal</th></tr></thead><tbody>`;
+            recap.detailsSince.forEach(function(d) {
+                var nm = d.nama || d.keterangan || '-';
+                var val = parseFloat(d.debit || d.keluar || d.total) || 0;
+                var tg = d.tanggal || d.date || '-';
+                detailsHtml += `<tr><td style="padding:4px 6px; border-bottom:1px solid #eee;">${tg}</td><td style="padding:4px 6px; border-bottom:1px solid #eee;">${nm}</td><td style="padding:4px 6px; text-align:right; border-bottom:1px solid #eee;">${formatRupiah(val)}</td></tr>`;
+            });
+            detailsHtml += `</tbody></table>`;
+        } else {
+            detailsHtml = `<p style="font-size:12px; color:#64748b; margin-top:10px; font-style:italic;">Belum ada pengeluaran sejak uang masuk terakhir.</p>`;
+        }
+
+        var html = `
+            <div style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:15px;">
+                <p style="margin:0 0 5px; font-size:13px; color:#475569;">Dana Masuk Terakhir (${recap.lastKreditDate}): <strong>${formatRupiah(recap.lastKredit)}</strong></p>
+                <p style="margin:0 0 5px; font-size:13px; color:#dc2626;">Total Pengeluaran Sejak Itu: <strong>${formatRupiah(recap.totalDebitSince)}</strong></p>
+                <p style="margin:0 0 5px; font-size:14px; color:#16a34a; font-weight:bold;">Sisa Uang (Saldo Saat Ini): ${formatRupiah(recap.sisa)}</p>
+                ${detailsHtml}
+            </div>
+            <div class="row-group" style="align-items:flex-start; background:white; padding:15px; border:1px solid #e2e8f0; border-radius:8px;">
+                <div style="flex:1;">
+                    <label style="font-size:12px;">Nominal Pengajuan Reimburse (Rp)</label>
+                    <input type="number" class="pengajuan_pc_nominal" value="${recap.totalDebitSince}" placeholder="Nominal (Rp)" style="font-size:16px; font-weight:bold; color:#1e40af;">
+                    <p style="font-size:10px; color:#64748b; margin-top:4px;">*Otomatis disamakan dengan total pengeluaran agar saldo kembali utuh.</p>
+                </div>
+                <div style="flex:1.5;">
+                    <label style="font-size:12px;">Foto Bukti / Dokumen Pengajuan (Opsional)</label>
+                    <input type="file" class="pengajuan_pc_foto_pengajuan" accept="image/*" style="font-size:12px;">
+                </div>
+            </div>
         `;
-        container.appendChild(rowDiv);
-    }
+        var loadingEl = document.getElementById('pc_recap_loading');
+        if (loadingEl) {
+            loadingEl.outerHTML = html;
+        }
+    });
   } else if (jenisPengajuan === 'sudah-tf') {
     container.innerHTML += `<h3>Laporan Bukti Transfer</h3>`;
     for (let i = 0; i < 5; i++) {
@@ -7184,10 +7276,19 @@ function initAbsensiHardware() {
             video.srcObject = stream;
         })
         .catch(err => {
-            var msg = (err && err.name === 'NotAllowedError') ? "Izin kamera ditolak atau ditutup" : "Kamera tidak tersedia";
+            window._gpsHardwareStarted = false;
+            var msg = "Kamera tidak tersedia";
+            if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+                msg = "❌ Izin Kamera Ditolak";
+                showCustomAlert("Akses kamera ditolak!<br><br>Fitur absensi <b>WAJIB</b> menggunakan foto wajah Anda untuk validasi kehadiran.<br><br><b>Cara memperbaiki:</b><br>1. Ketuk ikon gembok (atau logo situs) di samping alamat web.<br>2. Pilih 'Izin' atau 'Permissions'.<br>3. Izinkan akses <b>Kamera</b>.<br>4. Sistem otomatis meminta ulang dalam 3 detik...", "Izin Kamera Wajib", "error");
+                setTimeout(function() { window.initAbsensiHardware(); }, 3000);
+            }
             var el = document.getElementById('gps_status_overlay');
-            if (el) el.innerText = msg;
+            if (el) el.innerHTML = msg + " <button class='btn-secondary' style='padding:2px 6px; font-size:10px; margin-left:5px; color:#333;' onclick='window.location.reload()'>Refresh</button>";
         });
+    } else {
+        var el = document.getElementById('gps_status_overlay');
+        if (el) el.innerText = "Kamera tidak didukung perangkat ini.";
     }
 
     // Start GPS Watch
@@ -7203,12 +7304,22 @@ function initAbsensiHardware() {
             },
             err => {
                 var msg = "GPS Error: " + err.message;
-                if (err.code === 1) msg = "❌ Izin Lokasi Ditolak. Mohon izinkan di pengaturan browser.";
-                else if (err.code === 2) msg = "❌ Lokasi tidak tersedia. Pastikan GPS aktif.";
+                var action = "window._gpsHardwareStarted=false; window.initAbsensiHardware()";
+                var btnText = "Ulangi";
+                
+                if (err.code === 1) {
+                    msg = "❌ Izin Lokasi Ditolak.";
+                    action = "window.location.reload()";
+                    btnText = "Refresh";
+                    window._gpsHardwareStarted = false;
+                    showCustomAlert("Akses lokasi (GPS) ditolak!<br><br>Fitur absensi <b>WAJIB</b> mendeteksi posisi Anda untuk memastikan Anda berada di lokasi outlet.<br><br><b>Cara memperbaiki:</b><br>1. Pastikan GPS/Lokasi HP Anda menyala.<br>2. Ketuk ikon gembok di samping alamat web.<br>3. Pilih 'Izin' atau 'Permissions'.<br>4. Izinkan akses <b>Lokasi</b>.<br>5. Sistem otomatis meminta ulang dalam 3 detik...", "Izin Lokasi Wajib", "error");
+                    setTimeout(function() { window.initAbsensiHardware(); }, 3000);
+                }
+                else if (err.code === 2) msg = "❌ Lokasi tidak tersedia. Pastikan GPS HP Anda menyala.";
                 else if (err.code === 3) msg = "⚠️ Sinyal GPS Lemah (Timeout). Coba geser ke area terbuka.";
                 
                 var el = document.getElementById('gps_status_overlay');
-                if(el) el.innerHTML = msg + " <button class='btn-secondary' style='padding:2px 6px; font-size:10px; margin-left:5px;' onclick='window._gpsHardwareStarted=false; initAbsensiHardware()'>Ulangi</button>";
+                if(el) el.innerHTML = msg + " <button class='btn-secondary' style='padding:2px 6px; font-size:10px; margin-left:5px; color:#333;' onclick='" + action + "'>" + btnText + "</button>";
             },
             geoOptions
         );
@@ -7879,7 +7990,15 @@ function updateGpsJadwalDisplay() {
     const batasMenit = typeof getDurasiIstirahatMenitFromConfig === 'function' ? getDurasiIstirahatMenitFromConfig(shift) : 60;
     
     let info = '';
-    if (shift) {
+    
+    let isOnLeave = false;
+    let leaveCode = '';
+    if (['PH','AL','DP'].includes(shift)) {
+        isOnLeave = true;
+        leaveCode = shift;
+    }
+
+    if (shift && !isOnLeave) {
         info += `<br><span style="font-size:0.9em; color:#555;">Jatah Istirahat: ${batasMenit} menit.</span>`;
         if (stats.total > 0) {
             info += `<br><span style="font-size:0.9em; color:#555;">Terpakai: ${stats.total} menit.</span>`;
@@ -7896,9 +8015,22 @@ function updateGpsJadwalDisplay() {
         }
     }
 
-    const quote = `<br><br><div style="font-style:italic; color:#6b7280; font-size:0.9em; border-top:1px solid #e5e7eb; padding-top:8px;">"Lakukan rutinitas pekerjaanmu dengan senang hati"</div>`;
+    let cutiInfo = `<br><br><div style="font-size:0.9em; color:#374151; background:#f8fafc; padding:8px; border-radius:6px; border:1px solid #e2e8f0; margin-top:8px;">
+        <strong>Sisa Cuti Kamu:</strong><br>
+        <span style="display:inline-block; margin-right:10px;">AL: <strong>${emp.sisaAL || 0}</strong></span>
+        <span style="display:inline-block; margin-right:10px;">DP: <strong>${emp.sisaDP || 0}</strong></span>
+        <span style="display:inline-block;">PH: <strong>${emp.sisaPH || 0}</strong></span>
+    </div>`;
 
-    textEl.innerHTML = (shift ? `${shift} (${label})` : label) + info + quote;
+    let quote = '';
+    if (isOnLeave) {
+        let leaveName = leaveCode === 'AL' ? 'Cuti Tahunan (AL)' : (leaveCode === 'PH' ? 'Public Holiday (PH)' : 'Day Off Payment (DP)');
+        quote = `<br><div style="font-style:italic; color:#059669; font-size:1em; font-weight:bold; border-top:1px solid #e5e7eb; padding-top:12px; margin-top:8px;">"Selamat menikmati ${leaveName} kamu! Lepaskan penat, nikmati waktumu, dan kembalilah dengan energi baru!" 🌴✨</div>`;
+    } else {
+        quote = `<br><div style="font-style:italic; color:#6b7280; font-size:0.9em; border-top:1px solid #e5e7eb; padding-top:8px; margin-top:8px;">"Lakukan rutinitas pekerjaanmu dengan senang hati. Jangan lupa istirahat jika lelah!" 💪😊</div>`;
+    }
+
+    textEl.innerHTML = (shift ? `<strong>${shift} (${label})</strong>` : `<strong>${label}</strong>`) + info + cutiInfo + quote;
     box.style.display = 'block';
     if (typeof checkDistance === 'function') checkDistance();
 }
@@ -8332,6 +8464,12 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof initAbsensiHardware !== 'undefined') window.initAbsensiHardware = initAbsensiHardware;
   if (typeof showCustomConfirm !== 'undefined') window.showCustomConfirm = showCustomConfirm;
   if (typeof populateGpsNames !== 'undefined') window.populateGpsNames = populateGpsNames;
+  if (typeof getPettyCashRecapForPengajuan !== 'undefined') window.getPettyCashRecapForPengajuan = getPettyCashRecapForPengajuan;
+  if (typeof createPengajuanForm !== 'undefined') window.createPengajuanForm = createPengajuanForm;
+  if (typeof submitDataPengajuan !== 'undefined') window.submitDataPengajuan = submitDataPengajuan;
+  if (typeof samakanTotal !== 'undefined') window.samakanTotal = samakanTotal;
+  if (typeof isiOtomatisDataBank !== 'undefined') window.isiOtomatisDataBank = isiOtomatisDataBank;
+  if (typeof applyKeteranganColor !== 'undefined') window.applyKeteranganColor = applyKeteranganColor;
 })();
 
 // [OPTIMASI] Jalankan Kamera & GPS segera setelah halaman siap (tanpa menunggu DB)
