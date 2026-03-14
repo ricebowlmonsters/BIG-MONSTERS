@@ -1,5 +1,5 @@
 
-  window.onload = () => {
+  window.addEventListener('load', () => {
     const today = new Date().toISOString().split("T")[0];
     document.getElementById("tanggal_barang").value = today;
     document.getElementById("tanggal_keuangan").value = today;
@@ -28,7 +28,7 @@
     createPengajuanForm();
     createPettyCashInputRows();
     calculateSisaUangPengajuan();
-  };
+  });
 
   function showView(viewId) {
     document.querySelectorAll('.view-container').forEach(view => view.style.display = 'none');

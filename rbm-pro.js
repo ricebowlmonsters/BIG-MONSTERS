@@ -10,7 +10,8 @@
   function getRbmOutlet() { var s = document.getElementById('rbm-outlet-select'); return (s && s.value) ? s.value : ''; }
   window.getRbmOutlet = getRbmOutlet;
   function getRbmStorageKey(baseKey) { var o = getRbmOutlet(); return o ? baseKey + '_' + o : baseKey; }
-  window.onload = function() {
+  window.getRbmStorageKey = getRbmStorageKey;
+  window.addEventListener('load', function() {
     var runInit = function() {
     var now = new Date();
     var fmt = function(d) { return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); };
@@ -67,8 +68,16 @@
     if (document.getElementById('pc_input_jenis')) createPettyCashInputRows();
     var saldoEl = document.getElementById("pengajuan_saldo_date");
     if (saldoEl && typeof calculateSisaUangPengajuan === 'function') calculateSisaUangPengajuan();
+    
     var outletSel = document.getElementById('rbm-outlet-select');
     if (outletSel) outletSel.addEventListener('change', function() {
+      if (window.RBMStorage && typeof window.RBMStorage.loadFromFirebase === 'function') {
+          window.RBMStorage.loadFromFirebase().then(refreshCurrentView);
+      } else {
+          refreshCurrentView();
+      }
+    });
+    function refreshCurrentView() {
       var page = window.RBM_PAGE;
       if (page === 'absensi-view' && typeof renderAbsensiTable === 'function') {
         window._absensiViewData = undefined;
@@ -90,14 +99,14 @@
         if (typeof loadJamConfig === 'function') loadJamConfig();
         if (typeof initAbsensiGPS === 'function') initAbsensiGPS();
       }
-    });
+    }
     };
     if (window.RBMStorage && window.RBMStorage.ready) {
       window.RBMStorage.ready().then(runInit).catch(function() { runInit(); });
     } else {
       runInit();
     }
-  };
+  });
 
   function showView(viewId) {
     document.querySelectorAll('.view-container').forEach(function(view) { view.style.display = 'none'; });
@@ -152,7 +161,16 @@
   function safeParse(str, fallback) {
     if (!str) return fallback;
     try {
-      return JSON.parse(str);
+      var parsed = JSON.parse(str);
+      if (Array.isArray(fallback)) {
+          if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              parsed = Object.keys(parsed).map(function(k) { return parsed[k]; });
+          }
+          if (Array.isArray(parsed)) {
+              return parsed.filter(function(item) { return item !== null && item !== undefined; });
+          }
+      }
+      return parsed;
     } catch (e) {
       console.warn('safeParse failed, returning fallback', e);
       return fallback;
@@ -219,18 +237,18 @@
       const row = document.createElement("div");
       row.className = "row-group";
 
-      const namaInput = `<div class="col-nama"><input type="text" class="pc_nama" placeholder="${isPengeluaran ? 'Nama Barang' : 'Keterangan'}"></div>`;
-      const jumlahInput = `<div class="col-jumlah"><input type="number" class="pc_jumlah" placeholder="Qty" oninput="calculatePettyCashRowTotal(this)"></div>`;
-      const hargaInput = `<div class="col-harga"><input type="number" class="pc_harga" placeholder="Harga Satuan" oninput="calculatePettyCashRowTotal(this)"></div>`;
-      const totalInput = `<div class="col-total"><input type="text" class="pc_total" placeholder="Total Rp" readonly style="background: #f0f0f0; font-weight: bold;"></div>`;
-      const satuanInput = `<div class="col-satuan"><input type="text" class="pc_satuan" placeholder="Satuan"></div>`;
+      const namaInput = `<div class="col-nama"><input type="text" class="pc_nama" name="pc_nama_${i}" aria-label="Nama Keterangan" placeholder="${isPengeluaran ? 'Nama Barang' : 'Keterangan'}"></div>`;
+      const jumlahInput = `<div class="col-jumlah"><input type="number" class="pc_jumlah" name="pc_jumlah_${i}" aria-label="Jumlah" placeholder="Qty" oninput="calculatePettyCashRowTotal(this)"></div>`;
+      const hargaInput = `<div class="col-harga"><input type="number" class="pc_harga" name="pc_harga_${i}" aria-label="Harga" placeholder="Harga Satuan" oninput="calculatePettyCashRowTotal(this)"></div>`;
+      const totalInput = `<div class="col-total"><input type="text" class="pc_total" name="pc_total_${i}" aria-label="Total" placeholder="Total Rp" readonly style="background: #f0f0f0; font-weight: bold;"></div>`;
+      const satuanInput = `<div class="col-satuan"><input type="text" class="pc_satuan" name="pc_satuan_${i}" aria-label="Satuan" placeholder="Satuan"></div>`;
       const fotoInput = `<div class="col-foto" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
-        <input type="file" class="pc_foto" accept="image/*" style="display:none">
-        <button type="button" class="btn btn-secondary" onclick="triggerPcFoto(this, true)" style="font-size:12px;padding:4px 8px;">Kamera</button>
-        <button type="button" class="btn btn-secondary" onclick="triggerPcFoto(this, false)" style="font-size:12px;padding:4px 8px;">Pilih Foto</button>
+        <input type="file" class="pc_foto" name="pc_foto_${i}" aria-label="Foto Transaksi" accept="image/*" style="display:none">
+        <button type="button" class="btn btn-secondary" aria-label="Kamera" onclick="triggerPcFoto(this, true)" style="font-size:12px;padding:4px 8px;">Kamera</button>
+        <button type="button" class="btn btn-secondary" aria-label="Pilih Foto" onclick="triggerPcFoto(this, false)" style="font-size:12px;padding:4px 8px;">Pilih Foto</button>
         <span class="pc_foto_label" style="font-size:12px;color:#666;">-</span>
       </div>`;
-      const nominalPemasukanInput = `<div class="col-jumlah" style="flex: 1.5;"><input type="number" class="pc_nominal_pemasukan" placeholder="Nominal (Rp)"></div>`;
+      const nominalPemasukanInput = `<div class="col-jumlah" style="flex: 1.5;"><input type="number" class="pc_nominal_pemasukan" name="pc_nominal_${i}" aria-label="Nominal Pemasukan" placeholder="Nominal (Rp)"></div>`;
 
       if (isPengeluaran) {
         row.innerHTML = namaInput + jumlahInput + satuanInput + hargaInput + totalInput + fotoInput;
@@ -346,9 +364,32 @@
           const promise = new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = (e) => {
-              const fileData = e.target.result.split(",");
-              transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
-              resolve();
+              if (typeof compressImageDataUrl === 'function') {
+                compressImageDataUrl(e.target.result, 800, 0.6, async function(compressed) {
+                  if (useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.storage) {
+                    try {
+                      const storageRef = firebase.storage().ref();
+                      const fileName = 'petty_cash/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jpg';
+                      const fileRef = storageRef.child(fileName);
+                      await fileRef.putString(compressed, 'data_url');
+                      transaction.foto = await fileRef.getDownloadURL();
+                      resolve();
+                    } catch(err) {
+                      const fileData = compressed.split(",");
+                      transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
+                      resolve();
+                    }
+                  } else {
+                    const fileData = compressed.split(",");
+                    transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
+                    resolve();
+                  }
+                });
+              } else {
+                const fileData = e.target.result.split(",");
+                transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
+                resolve();
+              }
             };
             reader.onerror = reject;
             reader.readAsDataURL(file);
@@ -566,7 +607,8 @@ function savePembukuanToJpg() {
     }
     const [year, month] = monthVal.split('-');
     const tglAwal = `${year}-${month}-01`;
-    const tglAkhir = new Date(year, parseInt(month, 10), 0).toLocaleDateString('sv').slice(0, 10);
+    const lastDay = new Date(year, parseInt(month, 10), 0).getDate();
+    const tglAkhir = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
 
     function renderPettyCashFromResult(result) {
       var data = result && result.data ? result.data : [];
@@ -773,6 +815,8 @@ function savePembukuanToJpg() {
         namaDiv.style.flex="2.5";
         const namaInput=document.createElement("input");
         namaInput.type="text";
+        namaInput.name="nama_barang_"+i;
+        namaInput.setAttribute("aria-label", "Nama Barang");
         namaInput.className="nama_barang";
         namaInput.placeholder="Nama Barang";
         if(jenis && uniqueNames.length > 0){ 
@@ -785,6 +829,8 @@ function savePembukuanToJpg() {
         satuanDiv.style.minWidth="60px";
         const satuanInput=document.createElement("input");
         satuanInput.type="text";
+        satuanInput.name="satuan_barang_"+i;
+        satuanInput.setAttribute("aria-label", "Satuan Barang");
         satuanInput.className="satuan_barang";
         satuanInput.placeholder="Satuan";
         satuanInput.readOnly=true;
@@ -805,6 +851,8 @@ function savePembukuanToJpg() {
         jumlahDiv.style.flex="1.2";
         const jumlahInput=document.createElement("input");
         jumlahInput.type="number";
+        jumlahInput.name="jumlah_barang_"+i;
+        jumlahInput.setAttribute("aria-label", "Jumlah Barang");
         jumlahInput.className="jumlah_barang";
         jumlahInput.placeholder="Jumlah";
         jumlahDiv.appendChild(jumlahInput);
@@ -814,6 +862,8 @@ function savePembukuanToJpg() {
         barangJadiDiv.style.display=jenis==="barang keluar"?"block":"none";
         const barangJadiInput=document.createElement("input");
         barangJadiInput.type="text";
+        barangJadiInput.name="barangjadi_barang_"+i;
+        barangJadiInput.setAttribute("aria-label", "Barang Jadi");
         barangJadiInput.className="barangjadi_barang";
         barangJadiInput.placeholder="Barang Jadi";
         barangJadiDiv.appendChild(barangJadiInput);
@@ -823,6 +873,8 @@ function savePembukuanToJpg() {
         keteranganRusakDiv.style.display = jenis === "rusak" ? "block" : "none";
         const keteranganRusakInput = document.createElement("textarea");
         keteranganRusakInput.className = "keterangan_rusak";
+        keteranganRusakInput.name = "keterangan_rusak_"+i;
+        keteranganRusakInput.setAttribute("aria-label", "Keterangan Rusak");
         keteranganRusakInput.placeholder = "Keterangan mengapa rusak...";
         keteranganRusakInput.rows = 1;
         keteranganRusakDiv.appendChild(keteranganRusakInput);
@@ -840,6 +892,8 @@ function savePembukuanToJpg() {
         rusakTujuanDiv.appendChild(rusakTujuanLabel);
         const rusakTujuanSelect = document.createElement("select");
         rusakTujuanSelect.className = "rusak_tujuan_kategori";
+        rusakTujuanSelect.name = "rusak_tujuan_kategori_"+i;
+        rusakTujuanSelect.setAttribute("aria-label", "Tujuan Kategori Rusak");
         rusakTujuanSelect.innerHTML = '<option value="sales">Same Item on Sales</option><option value="fruits">Fruits & Vegetables</option><option value="notsales">Same Item Not Sales</option>';
         rusakTujuanSelect.style.padding = "6px 8px";
         rusakTujuanSelect.style.width = "100%";
@@ -850,6 +904,8 @@ function savePembukuanToJpg() {
         fotoRusakDiv.style.display = jenis === "rusak" ? "block" : "none";
         const fotoRusakInput = document.createElement("input");
         fotoRusakInput.type = "file";
+        fotoRusakInput.name = "foto_barang_rusak_"+i;
+        fotoRusakInput.setAttribute("aria-label", "Foto Barang Rusak");
         fotoRusakInput.className = "foto_barang_rusak";
         fotoRusakInput.accept = "image/*";
         fotoRusakDiv.appendChild(fotoRusakInput);
@@ -901,9 +957,32 @@ function submitDataBarang(){
                     const promise = new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = e => {
-                            const fileData = e.target.result.split(",");
-                            itemData.fotoRusak = { fileName: file.name, mimeType: file.type, data: fileData[1] };
-                            resolve();
+              if (typeof compressImageDataUrl === 'function') {
+                compressImageDataUrl(e.target.result, 800, 0.6, async function(compressed) {
+                  if (useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.storage) {
+                    try {
+                      const storageRef = firebase.storage().ref();
+                      const fileName = 'petty_cash/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jpg';
+                      const fileRef = storageRef.child(fileName);
+                      await fileRef.putString(compressed, 'data_url');
+                      transaction.foto = await fileRef.getDownloadURL();
+                      resolve();
+                    } catch(err) {
+                      const fileData = compressed.split(",");
+                      transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
+                      resolve();
+                    }
+                  } else {
+                    const fileData = compressed.split(",");
+                    transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
+                    resolve();
+                  }
+                });
+              } else {
+                const fileData = e.target.result.split(",");
+                transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
+                resolve();
+              }
                         };
                         reader.onerror = reject;
                         reader.readAsDataURL(file);
@@ -1026,12 +1105,12 @@ function createTransactionRows() {
     const row = document.createElement("div");
     row.className = "row-group";
 
-    const namaInput = `<div class="col-nama"><input type="text" class="nama_keuangan" placeholder="${isPengeluaran ? 'Nama Barang' : 'Keterangan'}"></div>`;
-    const jumlahInput = `<div class="col-jumlah"><input type="number" class="jumlah_keuangan" placeholder="Qty" oninput="calculateRowTotal(this)"></div>`;
-    const hargaInput = `<div class="col-harga"><input type="number" class="harga_keuangan" placeholder="Harga Satuan" oninput="calculateRowTotal(this)"></div>`;
-    const totalInput = `<div class="col-total"><input type="text" class="total_keuangan" placeholder="Total Rp" readonly style="background: #f0f0f0; font-weight: bold;"></div>`;
-    const satuanInput = `<div class="col-satuan"><input type="text" class="satuan_keuangan" placeholder="Satuan"></div>`;
-    const fotoInput = `<div class="col-foto"><input type="file" class="foto_keuangan" accept="image/*"></div>`;
+    const namaInput = `<div class="col-nama"><input type="text" class="nama_keuangan" name="nama_keuangan_${i}" aria-label="Keterangan" placeholder="${isPengeluaran ? 'Nama Barang' : 'Keterangan'}"></div>`;
+    const jumlahInput = `<div class="col-jumlah"><input type="number" class="jumlah_keuangan" name="jumlah_keuangan_${i}" aria-label="Jumlah" placeholder="Qty" oninput="calculateRowTotal(this)"></div>`;
+    const hargaInput = `<div class="col-harga"><input type="number" class="harga_keuangan" name="harga_keuangan_${i}" aria-label="Harga" placeholder="Harga Satuan" oninput="calculateRowTotal(this)"></div>`;
+    const totalInput = `<div class="col-total"><input type="text" class="total_keuangan" name="total_keuangan_${i}" aria-label="Total" placeholder="Total Rp" readonly style="background: #f0f0f0; font-weight: bold;"></div>`;
+    const satuanInput = `<div class="col-satuan"><input type="text" class="satuan_keuangan" name="satuan_keuangan_${i}" aria-label="Satuan" placeholder="Satuan"></div>`;
+    const fotoInput = `<div class="col-foto"><input type="file" class="foto_keuangan" name="foto_keuangan_${i}" aria-label="Foto Keuangan" accept="image/*"></div>`;
 
     if (isPengeluaran) {
       row.innerHTML = namaInput + jumlahInput + satuanInput + hargaInput + totalInput + fotoInput;
@@ -1097,9 +1176,32 @@ function submitTransactions() {
         const promise = new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (e) => {
-            const fileData = e.target.result.split(",");
-            transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
-            resolve();
+              if (typeof compressImageDataUrl === 'function') {
+                compressImageDataUrl(e.target.result, 800, 0.6, async function(compressed) {
+                  if (useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.storage) {
+                    try {
+                      const storageRef = firebase.storage().ref();
+                      const fileName = 'keuangan/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jpg';
+                      const fileRef = storageRef.child(fileName);
+                      await fileRef.putString(compressed, 'data_url');
+                      transaction.foto = await fileRef.getDownloadURL();
+                      resolve();
+                    } catch(err) {
+                      const fileData = compressed.split(",");
+                      transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
+                      resolve();
+                    }
+                  } else {
+                    const fileData = compressed.split(",");
+                    transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
+                    resolve();
+                  }
+                });
+              } else {
+                const fileData = e.target.result.split(",");
+                transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
+                resolve();
+              }
           };
           reader.onerror = reject;
           reader.readAsDataURL(file);
@@ -1523,9 +1625,32 @@ function createPembukuanRows() {
                       const promise=new Promise((resolve,reject)=>{
                           const reader=new FileReader;
                           reader.onload=e=>{
-                              const fileData=e.target.result.split(",");
-                              itemKeluar.foto={fileName:file.name,mimeType:file.type,data:fileData[1]};
-                              resolve();
+              if (typeof compressImageDataUrl === 'function') {
+                compressImageDataUrl(e.target.result, 800, 0.6, async function(compressed) {
+                  if (useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.storage) {
+                    try {
+                      const storageRef = firebase.storage().ref();
+                      const fileName = 'keuangan/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jpg';
+                      const fileRef = storageRef.child(fileName);
+                      await fileRef.putString(compressed, 'data_url');
+                      transaction.foto = await fileRef.getDownloadURL();
+                      resolve();
+                    } catch(err) {
+                      const fileData = compressed.split(",");
+                      transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
+                      resolve();
+                    }
+                  } else {
+                    const fileData = compressed.split(",");
+                    transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
+                    resolve();
+                  }
+                });
+              } else {
+                const fileData = e.target.result.split(",");
+                transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
+                resolve();
+              }
                           };
                           reader.onerror=reject;
                           reader.readAsDataURL(file);
@@ -1880,7 +2005,8 @@ function exportPettyCashToExcel() {
   const monthVal = monthFilter ? monthFilter.value : '';
   const [year, month] = monthVal.split('-');
   const tglAwal = `${year}-${month.padStart(2, '0')}-01`;
-  const tglAkhir = new Date(year, parseInt(month, 10), 0).toLocaleDateString('sv').slice(0, 10);
+  const lastDay = new Date(year, parseInt(month, 10), 0).getDate();
+  const tglAkhir = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
   const debit = document.getElementById("pc_total_debit").textContent;
   const kredit = document.getElementById("pc_total_kredit").textContent;
   const saldo = document.getElementById("pc_saldo_akhir").textContent;
@@ -2030,7 +2156,8 @@ function printPettyCashReport() {
   const monthVal = monthFilter ? monthFilter.value : '';
   const [year, month] = monthVal.split('-');
   const tglAwal = `${year}-${month.padStart(2, '0')}-01`;
-  const tglAkhir = new Date(year, parseInt(month, 10), 0).toLocaleDateString('sv').slice(0, 10);
+  const lastDay = new Date(year, parseInt(month, 10), 0).getDate();
+  const tglAkhir = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
   const debit = document.getElementById("pc_total_debit").textContent;
   const kredit = document.getElementById("pc_total_kredit").textContent;
   const saldo = document.getElementById("pc_saldo_akhir").textContent;
@@ -2476,7 +2603,8 @@ function loadPembukuanData() {
 
     const [year, month] = monthVal.split('-');
     const tglAwal = `${year}-${month}-01`;
-    const tglAkhir = new Date(year, parseInt(month, 10), 0).toLocaleDateString('sv').slice(0, 10);
+    const lastDay = new Date(year, parseInt(month, 10), 0).getDate();
+    const tglAkhir = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
 
     function renderPembukuanFromPending(pending) {
         if (!Array.isArray(pending)) pending = [];
@@ -3628,10 +3756,6 @@ function renderAbsensiTable(mode) {
         window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
     }
     const employees = window._absensiViewEmployees;
-    if (employees.length === 0) {
-        employees.push({id: 1, name: "Budi", jabatan: "Kitchen", joinDate: "2023-01-01", sisaAL:12, sisaDP:0, sisaPH:0});
-        employees.push({id: 2, name: "Siti", jabatan: "Server", joinDate: "2023-02-15", sisaAL:12, sisaDP:0, sisaPH:0});
-    }
 
     // 3. Build Body
     tbody.innerHTML = '';
@@ -3642,22 +3766,22 @@ function renderAbsensiTable(mode) {
         let html = `
             <td style="position:sticky; left:0; background:white; z-index:5;">${index + 1}</td>
             <td style="position:sticky; left:40px; background:white; z-index:5; text-align:left;">
-                <input type="text" value="${emp.name}" onchange="updateEmployee(${index}, 'name', this.value)" style="border:none; width:100%; padding:0;">
+                <input type="text" name="emp_name_${index}" aria-label="Nama Karyawan" value="${emp.name}" onchange="updateEmployee(${index}, 'name', this.value)" style="border:none; width:100%; padding:0;">
             </td>
             <td class="col-jabatan">
-                <input type="text" value="${emp.jabatan}" onchange="updateEmployee(${index}, 'jabatan', this.value)" style="border:none; width:80px; padding:0;">
+                <input type="text" name="emp_jabatan_${index}" aria-label="Jabatan Karyawan" value="${emp.jabatan}" onchange="updateEmployee(${index}, 'jabatan', this.value)" style="border:none; width:80px; padding:0;">
             </td>
             <td class="col-joindate">
-                <input type="date" value="${emp.joinDate || ''}" onchange="updateEmployee(${index}, 'joinDate', this.value)" style="border:none; width:100px; padding:0; font-size:11px;">
+                <input type="date" name="emp_joindate_${index}" aria-label="Tanggal Masuk" value="${emp.joinDate || ''}" onchange="updateEmployee(${index}, 'joinDate', this.value)" style="border:none; width:100px; padding:0; font-size:11px;">
             </td>
             <td class="col-sisa-cuti">
-                <input type="number" value="${emp.sisaAL||0}" onchange="updateEmployee(${index}, 'sisaAL', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">
+                <input type="number" name="emp_sisaAL_${index}" aria-label="Sisa Cuti AL" value="${emp.sisaAL||0}" onchange="updateEmployee(${index}, 'sisaAL', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">
             </td>
             <td class="col-sisa-cuti">
-                <input type="number" value="${emp.sisaDP||0}" onchange="updateEmployee(${index}, 'sisaDP', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">
+                <input type="number" name="emp_sisaDP_${index}" aria-label="Sisa Cuti DP" value="${emp.sisaDP||0}" onchange="updateEmployee(${index}, 'sisaDP', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">
             </td>
             <td class="col-sisa-cuti">
-                <input type="number" value="${emp.sisaPH||0}" onchange="updateEmployee(${index}, 'sisaPH', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">
+                <input type="number" name="emp_sisaPH_${index}" aria-label="Sisa Cuti PH" value="${emp.sisaPH||0}" onchange="updateEmployee(${index}, 'sisaPH', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">
             </td>
         `;
 

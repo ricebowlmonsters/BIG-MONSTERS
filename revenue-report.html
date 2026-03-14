@@ -231,10 +231,6 @@
     <main class="content">
       <section class="card">
         <div class="filters">
-          <select id="outlet" aria-label="Pilih outlet" style="grid-column: 1 / -1;">
-            <option value="sidoarjo">Sidoarjo</option>
-            <option value="surabaya">Surabaya</option>
-          </select>
           <div style="grid-column: 1 / -1; display: flex; gap: 12px;">
             <select id="outlet" aria-label="Pilih outlet" style="flex: 1;">
               <option value="sidoarjo">Sidoarjo</option>
@@ -555,28 +551,27 @@
       // [BARU] Fungsi untuk mengisi filter outlet berdasarkan pengaturan
       function populateOutletFilter() {
         const activeOutlets = JSON.parse(localStorage.getItem('rbm_active_outlets') || '[]');
-        const allOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '["sidoarjo", "surabaya"]');
+        let allOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+        if (!Array.isArray(allOutlets) || allOutlets.length === 0) allOutlets = ['sidoarjo', 'surabaya'];
         
         // Gunakan outlet aktif jika ada, jika tidak, gunakan semua outlet sebagai fallback
         const outletsToDisplay = activeOutlets.length > 0 ? activeOutlets : allOutlets;
 
         outletSel.innerHTML = ''; // Hapus opsi yang ada
+        const outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
 
         if (outletsToDisplay.length === 0) {
           outletSel.innerHTML = '<option disabled>Tidak ada outlet</option>';
           btnRefresh.disabled = true;
         } else {
           outletsToDisplay.forEach(outlet => {
+            if (typeof outlet !== 'string') outlet = String(outlet.id || outlet);
+            if (!outlet) return;
             const option = document.createElement('option');
             option.value = outlet;
-            option.textContent = outlet.charAt(0).toUpperCase() + outlet.slice(1);
+            option.textContent = outletNames[outlet] || (outlet.charAt(0).toUpperCase() + outlet.slice(1));
             outletSel.appendChild(option);
           });
-        }
-
-        // [BARU] Sembunyikan jika offline
-        if (isRbmOfflineMode()) {
-            outletSel.style.display = 'none';
         }
 
         // [BARU] Logika Role Manager

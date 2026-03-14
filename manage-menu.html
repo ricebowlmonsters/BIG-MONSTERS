@@ -100,8 +100,7 @@
     <main class="content">
       <!-- [BARU] Selector Outlet untuk Menu Berbeda Tiap Outlet -->
       <section class="card" style="margin-bottom: 20px; padding: 16px;">
-          <label style="font-weight: 600; margin-right: 10px;">Pilih Outlet:</label>
-          <select id="outlet-selector" class="form-input" style="width: auto; display: inline-block;"></select>
+           <select id="outlet-selector" class="form-input" style="width: auto; display: inline-block;"></select>
       </section>
 
       <!-- [BARU] Bagian Kelola Kategori -->
@@ -247,21 +246,27 @@
         const userOutlet = user.outlet;
         
         // Ambil daftar outlet dari localStorage (disimpan oleh settings.html)
-        const outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '["sidoarjo", "surabaya"]');
+        let outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+        if (!Array.isArray(outlets) || outlets.length === 0) outlets = ['sidoarjo', 'surabaya'];
+        const outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
         
         outletSelector.innerHTML = '';
         outlets.forEach(outlet => {
+            if (typeof outlet !== 'string') outlet = String(outlet.id || outlet);
+            if (!outlet) return;
             const opt = document.createElement('option');
             opt.value = outlet;
-            opt.textContent = outlet.charAt(0).toUpperCase() + outlet.slice(1);
+            opt.textContent = outletNames[outlet] || (outlet.charAt(0).toUpperCase() + outlet.slice(1));
             outletSelector.appendChild(opt);
         });
 
         // [BARU] Sembunyikan bagian selector jika hanya 1 outlet (Mode Offline)
-        if (outlets.length === 1 || isRbmOfflineMode()) {
-            const section = outletSelector.closest('section');
-            if (section) section.style.display = 'none';
-        }
+        try {
+            if (outlets.length === 1 || (typeof isRbmOfflineMode === 'function' && isRbmOfflineMode())) {
+                const section = outletSelector.closest('section');
+                if (section) section.style.display = 'none';
+            }
+        } catch(e) {}
 
         // Logika Role
         if (role === 'manager') {

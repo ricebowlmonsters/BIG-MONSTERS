@@ -251,34 +251,44 @@
         // --- POS DISCOUNT LOGIC ---
         
         // Load Outlets for Select
-        const outletsRef = db.ref('customer_app_settings/outlets');
-        outletsRef.once('value').then(snap => {
-            const outlets = snap.val();
+        const loadOutletsToSelect = () => {
             const select = document.getElementById('posOutletSelect');
             select.innerHTML = '';
-            if (outlets) {
-                const list = Array.isArray(outlets) ? outlets : Object.values(outlets);
-                list.forEach(o => {
-                    // Handle both object structure {id, name} and simple string/id
-                    const val = o.id || (typeof o === 'string' ? o : null);
-                    const txt = o.name || (typeof o === 'string' ? o : null);
-                    if(val) {
-                        const opt = document.createElement('option');
-                        opt.value = val;
-                        opt.textContent = txt;
-                        select.appendChild(opt);
-                    }
-                });
-                if (select.value) {
-                    // [BARU] Sembunyikan selector jika offline
-                    if (isRbmOfflineMode()) {
-                        select.closest('.form-group').style.display = 'none';
-                    }
+            let allOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+            let outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+            if (!Array.isArray(allOutlets) || allOutlets.length === 0) allOutlets = ['sidoarjo', 'surabaya']; // Fallback
+            
+            allOutlets.forEach(outlet => {
+                if (typeof outlet !== 'string') outlet = String(outlet.id || outlet);
+                if (!outlet) return;
+                const opt = document.createElement('option');
+                opt.value = outlet;
+                opt.textContent = outletNames[outlet] || (outlet.charAt(0).toUpperCase() + outlet.slice(1));
+                select.appendChild(opt);
+            });
 
-                    loadPosPromos(); // Load initial
-                    loadProductsForPicker(select.value);
+            if (select.value) {
+                loadPosPromos();
+                loadProductsForPicker(select.value);
+            }
+        };
+
+        const outletsRef = db.ref('customer_app_settings/outlets');
+        outletsRef.once('value').then(snap => {
+            const outletsData = snap.val();
+            if (outletsData) {
+                const list = Array.isArray(outletsData) ? outletsData : Object.values(outletsData).filter(i => i);
+                const ids = list.map(o => o.id).filter(id => id);
+                const names = {};
+                list.forEach(o => { if(o.id) names[o.id] = o.name; });
+                if (ids.length > 0) {
+                    localStorage.setItem('rbm_outlets', JSON.stringify(ids));
+                    localStorage.setItem('rbm_outlet_names', JSON.stringify(names));
                 }
             }
+            loadOutletsToSelect();
+        }).catch(() => {
+            loadOutletsToSelect();
         });
 
         // Handle Scope & Target Type Visibility

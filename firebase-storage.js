@@ -44,7 +44,7 @@
   var DEFAULT_FIREBASE_CONFIG = {
     apiKey: 'AIzaSyDWQG53tP2zKILTwPSJQpiVzFNyvYLxLqw',
     authDomain: 'ricebowlmonst.firebaseapp.com',
-    databaseURL: 'https://ricebowlmonst-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL: 'https://ricebowlmonst-default-rtdb.firebaseio.com',
     projectId: 'ricebowlmonst',
     storageBucket: 'ricebowlmonst.firebasestorage.app',
     messagingSenderId: '723669558962',
@@ -178,7 +178,15 @@
   function getPettyCash(tanggalAwal, tanggalAkhir, outletId) {
     if (!init()) return Promise.resolve({ data: [], summary: { totalDebit: 0, totalKredit: 0, saldoAkhir: 0 } });
     var path = getPettyCashPath(outletId);
-    return db.ref(path).once('value').then(function(snap) {
+    
+    var tglAwalStr = normalizeDateKeyToYyyyMmDd(tanggalAwal) || '';
+    var tglAkhirStr = (tanggalAkhir || '').toString().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tglAkhirStr)) tglAkhirStr = normalizeDateKeyToYyyyMmDd(tglAkhirStr) || '';
+    var query = db.ref(path).orderByKey();
+    if (tglAwalStr) query = query.startAt(tglAwalStr);
+    if (tglAkhirStr) query = query.endAt(tglAkhirStr); // Filter data masa depan agar query lebih cepat
+    
+    return query.once('value').then(function(snap) {
       var root = snap.val();
       if (!root || typeof root !== 'object') root = {};
       var oid = (outletId || '').toString().trim();
@@ -187,10 +195,6 @@
         var onlyKey = Object.keys(root)[0];
         if (root[onlyKey] && typeof root[onlyKey] === 'object') root = root[onlyKey];
       }
-      var tglAwalStr = (tanggalAwal || '').toString().trim();
-      var tglAkhirStr = (tanggalAkhir || '').toString().trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(tglAwalStr)) tglAwalStr = normalizeDateKeyToYyyyMmDd(tglAwalStr) || '';
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(tglAkhirStr)) tglAkhirStr = normalizeDateKeyToYyyyMmDd(tglAkhirStr) || '';
       var tglAwal = tglAwalStr ? new Date(tglAwalStr) : null;
       var tglAkhir = tglAkhirStr ? new Date(tglAkhirStr) : null;
       if (tglAkhir) tglAkhir.setHours(23, 59, 59, 999);
@@ -457,12 +461,15 @@
   function getInventaris(tglAwal, tglAkhir, outletId) {
     if (!init()) return Promise.resolve([]);
     var path = getInventarisPath(outletId);
-    return db.ref(path).once('value').then(function(snap) {
+    var start = tglAwal ? tglAwal.replace(/-/g, '_') : '';
+    var end = tglAkhir ? tglAkhir.replace(/-/g, '_') : '';
+    var query = db.ref(path).orderByKey();
+    if (start) query = query.startAt(start);
+    if (end) query = query.endAt(end);
+    return query.once('value').then(function(snap) {
       var dates = snap.val();
       if (!dates || typeof dates !== 'object') return [];
       var result = [];
-      var start = tglAwal ? tglAwal.replace(/-/g, '_') : '';
-      var end = tglAkhir ? tglAkhir.replace(/-/g, '_') : '';
       Object.keys(dates).forEach(function(dateKey) {
         if (tglAwal && dateKey < start) return;
         if (tglAkhir && dateKey > end) return;
@@ -531,7 +538,13 @@
       }).catch(function() { return []; });
     }
     var path = getPembukuanPath(outletId);
-    return db.ref(path).once('value').then(function(snap) {
+    var query = db.ref(path);
+    if (tglAwal || tglAkhir) {
+        query = query.orderByKey();
+        if (tglAwal) query = query.startAt(tglAwal);
+        if (tglAkhir) query = query.endAt(tglAkhir);
+    }
+    return query.once('value').then(function(snap) {
       var all = snap.val();
       var effectiveKey = outletId || '_default';
       if ((!all || typeof all !== 'object' || Object.keys(all).length === 0) && db) {

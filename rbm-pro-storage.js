@@ -9,7 +9,7 @@
   var DEFAULT_FIREBASE_CONFIG = {
     apiKey: 'AIzaSyDWQG53tP2zKILTwPSJQpiVzFNyvYLxLqw',
     authDomain: 'ricebowlmonst.firebaseapp.com',
-    databaseURL: 'https://ricebowlmonst-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL: 'https://ricebowlmonst-default-rtdb.firebaseio.com',
     projectId: 'ricebowlmonst',
     storageBucket: 'ricebowlmonst.firebasestorage.app',
     messagingSenderId: '723669558962',
@@ -37,26 +37,8 @@
     if (key.indexOf('RBM_GAJI_') === 0) return 'gaji/' + key.slice(9);
     if (key.indexOf('RBM_BONUS_') === 0) return 'bonus/' + key.slice(10);
     if (key.indexOf('RBM_JADWAL_NOTE_') === 0) return 'jadwal_notes/' + key.slice(16);
-    return key.replace(/^RBM_/, '').toLowerCase();
-  }
-
-  function flattenToCache(obj, prefix, out) {
-    prefix = prefix || '';
-    out = out || {};
-    if (obj === null || obj === undefined) return out;
-    if (Array.isArray(obj)) { out[prefix.replace(/\/$/, '')] = obj; return out; }
-    if (typeof obj !== 'object') { out[prefix.replace(/\/$/, '')] = obj; return out; }
-    for (var k in obj) {
-      if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
-      var full = prefix + k;
-      var v = obj[k];
-      if (v !== null && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0 && typeof v.getMonth !== 'function') {
-        flattenToCache(v, full + '/', out);
-      } else {
-        out[full] = v;
-      }
-    }
-    return out;
+    // Samakan konversi karakter khusus dengan yang ada di loadFromFirebase
+    return key.replace(/^RBM_/, '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
   }
 
   var RBMStorage = {
@@ -86,33 +68,84 @@
         this._readyPromise = Promise.resolve();
         return this._readyPromise;
       }
-      this._readyPromise = this._db.ref('rbm_pro').once('value').then(function(snap) {
-        var val = snap.val();
-        if (val && typeof val === 'object') {
-          self._cache = flattenToCache(val, '', {});
+      
+      // [PERBAIKAN] Deteksi Outlet Aktif agar Firebase mendownload data yang tepat (misal: employees_sidoarjo)
+      var outlet = '';
+      try {
+         var el = typeof document !== 'undefined' ? document.getElementById('rbm-outlet-select') : null;
+         outlet = (el && el.value) ? el.value : (localStorage.getItem('rbm_last_selected_outlet') || '');
+         if (!outlet) {
+             var outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+             if (outlets.length) outlet = outlets[0];
+         }
+      } catch(e) {}
+      var sfx = outlet ? '_' + outlet.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
+
+      var nodesToLoad = ['employees' + sfx, 'gps_config' + sfx, 'gps_jam_config' + sfx, 'employees']; 
+      if (outlet) nodesToLoad.push(outlet); // Load format lama rbm_pro/sidoarjo just in case
+      var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
+      
+      if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
+          // [FIX] Gunakan absensi_data & jadwal_data agar cocok dengan nama saat disimpan
+          nodesToLoad.push('absensi_data' + sfx, 'jadwal_data' + sfx, 'jadwal_notes', 'gaji', 'bonus', 'gps_logs' + sfx, 'gps_logs');
+      } else if (page.indexOf('petty-cash') >= 0) {
+          // [OPTIMASI KILAT] Jangan load seluruh petty_cash karena data sangat besar dan sudah diload otomatis sesuai tanggal
+      } else if (page.indexOf('barang') >= 0 || page.indexOf('stok') >= 0) {
+          nodesToLoad.push('stok_items' + sfx);
+      } else if (page.indexOf('pembukuan') >= 0 || page.indexOf('keuangan') >= 0) {
+          nodesToLoad.push('bank');
+      } else if (page.indexOf('inventaris') >= 0) {
+          // Jangan load inventaris secara global
+      } else if (page.indexOf('pengajuan') >= 0) {
+          // Jangan load pengajuan secara global
+      } else {
+          nodesToLoad.push('stok_items' + sfx, 'absensi' + sfx); // Fallback standar
+      }
+
+      // Hapus duplikat node jika ada
+      var uniqueNodes = [];
+      nodesToLoad.forEach(function(n) { if (uniqueNodes.indexOf(n) === -1) uniqueNodes.push(n); });
+
+      var promises = uniqueNodes.map(function(node) {
+          // [OPTIMASI KILAT] Batasi unduhan foto GPS maksimal 500 data terakhir agar loading instan
+          if (node.indexOf('gps_logs') === 0) {
+              return self._db.ref('rbm_pro/' + node).limitToLast(500).once('value').then(function(snap) {
+                  return { key: node, val: snap.val() };
+              });
+          }
+          // Unduhan standar untuk node lainnya
+          return self._db.ref('rbm_pro/' + node).once('value').then(function(snap) {
+              return { key: node, val: snap.val() };
+          });
+      });
+
+      this._readyPromise = Promise.all(promises).then(function(results) {
+        var rootVal = {};
+        results.forEach(function(res) {
+            if (res.val !== null) {
+                var parts = res.key.split('/');
+                var curr = rootVal;
+                for(var i=0; i<parts.length-1; i++){ if(!curr[parts[i]]) curr[parts[i]]={}; curr=curr[parts[i]]; }
+                curr[parts[parts.length-1]] = res.val;
+            }
+        });
+        
+        self._cache = rootVal;
+        
+        try {
+          if (rootVal.employees) localStorage.setItem('RBM_EMPLOYEES_ALL', JSON.stringify(rootVal.employees));
           
-          // [PERBAIKAN] Cache data penting ke localStorage agar load halaman berikutnya instan
-          try {
-            // Cache Employees (Global & Per Outlet)
-            Object.keys(self._cache).forEach(function(k) {
-              if (k === 'employees' || k.indexOf('employees_') === 0) {
-                var localKey = 'RBM_' + k.toUpperCase();
-                localStorage.setItem(localKey, JSON.stringify(self._cache[k]));
-              }
-              // Cache Konfigurasi GPS
-              if (k === 'gps_config' || k.indexOf('gps_config_') === 0) {
-                var localKey = 'RBM_' + k.toUpperCase();
-                localStorage.setItem(localKey, JSON.stringify(self._cache[k]));
-              }
-              // Cache Shift/Jam Kerja
-              if (k === 'gps_jam_config' || k.indexOf('gps_jam_config_') === 0) {
-                var localKey = 'RBM_' + k.toUpperCase();
-                localStorage.setItem(localKey, JSON.stringify(self._cache[k]));
-              }
-            });
-          } catch(e) { console.warn('Cache to localStorage failed', e); }
-        }
-        // [FIREBASE ONLY] Data RBM Pro hanya dari Firebase, tidak merge dari localStorage
+          if (sfx) {
+              var empKey = 'employees' + sfx;
+              if (rootVal[empKey]) localStorage.setItem('RBM_EMPLOYEES' + sfx, JSON.stringify(rootVal[empKey]));
+              
+              var gpsKey = 'gps_config' + sfx;
+              if (rootVal[gpsKey]) localStorage.setItem('RBM_GPS_CONFIG' + sfx, JSON.stringify(rootVal[gpsKey]));
+              
+              var jamKey = 'gps_jam_config' + sfx;
+              if (rootVal[jamKey]) localStorage.setItem('RBM_GPS_JAM_CONFIG' + sfx, JSON.stringify(rootVal[jamKey]));
+          }
+        } catch(e) {}
       }).catch(function(err) {
         console.warn('RBM Storage: load failed', err);
         self._useFirebase = false;
@@ -131,26 +164,63 @@
       if (!key || key.indexOf('RBM_') !== 0) return _origGetItem.call(localStorage, key);
       var path = keyToPath(key);
       if (this._useFirebase) {
-        if (this._cache.hasOwnProperty(path)) {
-          var v = this._cache[path];
-          var isEmpty = v === undefined || v === null ||
-            (Array.isArray(v) && v.length === 0) ||
-            (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
-          if (!isEmpty) return typeof v === 'string' ? v : JSON.stringify(v);
+        var self = this;
+        var getFromCache = function(targetPath) {
+            var parts = targetPath.split('/');
+            var curr = self._cache;
+            for (var i = 0; i < parts.length; i++) {
+                if (curr && typeof curr === 'object' && curr.hasOwnProperty(parts[i])) {
+                    curr = curr[parts[i]];
+                } else {
+                    return null;
+                }
+            }
+            var v = curr;
+            var isEmpty = v === undefined || v === null ||
+              (Array.isArray(v) && v.length === 0) ||
+              (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
+            if (isEmpty) return null;
+            
+            // Perbaikan Krusial: Transformasi Object Firebase kembali menjadi Array
+            if (typeof v === 'object' && !Array.isArray(v)) {
+                var ks = Object.keys(v);
+                var isArrayLike = ks.length > 0 && ks.every(function(k) { return !isNaN(k); });
+                if (isArrayLike) {
+                    var arr = [];
+                    ks.forEach(function(k) { arr[Number(k)] = v[k]; });
+                    v = arr.filter(function(x) { return x !== null && x !== undefined; });
+                } else if (targetPath.indexOf('employees') >= 0) {
+                    // [FIX] Paksa konversi Object berantakan menjadi Array berurutan
+                    var arr2 = [];
+                    ks.forEach(function(k) { arr2.push(v[k]); });
+                    v = arr2;
+                }
+            }
+            return typeof v === 'string' ? v : JSON.stringify(v);
+        };
+
+        var val = getFromCache(path);
+        if (val !== null) return val;
+
+        // Auto-Fallback ke data format lama (contoh: rbm_pro/sidoarjo/employees)
+        var rawOutlet = '';
+        try {
+            var el = typeof document !== 'undefined' ? document.getElementById('rbm-outlet-select') : null;
+            rawOutlet = (el && el.value) ? el.value : (localStorage.getItem('rbm_last_selected_outlet') || '');
+        } catch(e) {}
+        if (rawOutlet) {
+            if (path.indexOf('employees_') === 0) { var fb = getFromCache(rawOutlet + '/employees'); if (fb) return fb; }
+            if (path.indexOf('absensi_data_') === 0) { var fb = getFromCache(rawOutlet + '/absensi_data'); if (fb) return fb; }
+            if (path.indexOf('jadwal_data_') === 0) { var fb = getFromCache(rawOutlet + '/jadwal_data'); if (fb) return fb; }
+            if (path.indexOf('gps_logs_') === 0) { var fb = getFromCache(rawOutlet + '/gps_logs'); if (fb) return fb; }
         }
-        var prefix = path + '/';
-        var rebuilt = {};
-        var hasPrefixData = false;
-        for (var c in this._cache) {
-          if (Object.prototype.hasOwnProperty.call(this._cache, c) && c.indexOf(prefix) === 0) {
-            hasPrefixData = true;
-            var subKey = c.slice(prefix.length);
-            rebuilt[subKey] = this._cache[c];
-          }
-        }
-        if (hasPrefixData && Object.keys(rebuilt).length > 0) return JSON.stringify(rebuilt);
-        // [FIX] Jika tidak ada di cache Firebase, coba ambil dari localStorage sebagai fallback
-        // Ini penting agar UI bisa load cepat saat pertama kali buka halaman.
+
+        // Auto-Fallback ke Data Master jika cabang baru
+        if (path.indexOf('employees_') === 0) { var fb = getFromCache('employees'); if (fb) return fb; }
+        if (path.indexOf('stok_items_') === 0) { var fb = getFromCache('stok_items'); if (fb) return fb; }
+        if (path.indexOf('gps_config_') === 0) { var fb = getFromCache('gps_config'); if (fb) return fb; }
+        if (path.indexOf('gps_jam_config_') === 0) { var fb = getFromCache('gps_jam_config'); if (fb) return fb; }
+
         return _origGetItem.call(localStorage, key);
       }
       return _origGetItem.call(localStorage, key);
@@ -168,10 +238,15 @@
       var path = keyToPath(key);
       if (this._useFirebase && this._db) {
         var toSet = value;
-        try {
-          if (typeof value === 'string') toSet = JSON.parse(value);
-        } catch (e) { toSet = value; }
-        this._cache[path] = toSet;
+        try { if (typeof value === 'string') toSet = JSON.parse(value); } catch (e) { toSet = value; }
+        
+        var parts = path.split('/');
+        var curr = this._cache;
+        for (var i = 0; i < parts.length - 1; i++) {
+            if (!curr[parts[i]]) curr[parts[i]] = {};
+            curr = curr[parts[i]];
+        }
+        curr[parts[parts.length - 1]] = toSet;
         
         // [PERBAIKAN] Simpan juga ke localStorage untuk cache offline/startup cepat
         // Khusus untuk data master yang sering dibaca (Karyawan, Config)

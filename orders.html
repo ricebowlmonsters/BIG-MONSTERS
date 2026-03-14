@@ -242,6 +242,7 @@
                     if (activeOutlets.length === 0) {
                         activeOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
                     }
+                    if (activeOutlets.length === 0) activeOutlets = ['sidoarjo', 'surabaya']; // Fallback
                     displayOutlets = activeOutlets;
                 }
 
@@ -251,6 +252,8 @@
                 }
                 outletSelectorDiv.innerHTML = '';
                 displayOutlets.forEach(outlet => {
+                    if (typeof outlet !== 'string') outlet = String(outlet.id || outlet);
+                    if (!outlet) return;
                     const btn = document.createElement('button');
                     btn.className = 'outlet-btn';
                     btn.dataset.outlet = outlet;
@@ -262,18 +265,11 @@
                 outletButtons = document.querySelectorAll('.outlet-btn');
                 addEventListenersToOutletButtons();
 
-                // [BARU] Jika mode offline, sembunyikan selector dan paksa pilih yang pertama
-                if (isRbmOfflineMode()) {
-                    outletSelectorDiv.style.display = 'none';
-                    if (outletButtons.length > 0) outletButtons[0].click();
-                    return;
-                }
-
                 // [BARU] LOGIKA OTOMATIS:
-                // Jika hanya ada 1 outlet, langsung pilih dan sembunyikan tombolnya.
+                // Jika hanya ada 1 outlet, langsung pilih (tapi jangan disembunyikan).
                 if (displayOutlets.length === 1) {
                     outletButtons[0].click();
-                    outletSelectorDiv.style.display = 'none'; // Sembunyikan agar tidak perlu dipilih manual
+                    outletSelectorDiv.style.display = 'flex'; // Tetap tampilkan
                 } else {
                     // Jika lebih dari 1, pilih yang terakhir kali dibuka
                     const lastOutlet = localStorage.getItem(LAST_OUTLET_KEY);
@@ -313,6 +309,7 @@
 
                 currentOutletId = outletId;
                 ordersRef = database.ref(`orders/${outletId}`);
+                var recentOrdersQuery = ordersRef.orderByChild('date').limitToLast(100); // [OPTIMASI] Batasi data historis
                 
                 // Kosongkan daftar pesanan dan tampilkan placeholder
                 orderListEl.innerHTML = '';
@@ -743,8 +740,10 @@
                     } else {
                         CustomUI.alert('Order ini sudah dicetak');
                     }
+                }).catch(err => {
+                    console.error("Gagal manual print:", err);
                 });
-            }
+            };
 
             // [BARU] Fungsi untuk update flag 'printed' di Firebase
             function updatePrintedFlag(orderId) {
@@ -754,7 +753,7 @@
                         updates[`/orders/${currentOutletId}/${orderId}/printed`] = true;
                         database.ref().update(updates);
                     }
-                } catch (e) { console.warn('Gagal update printed flag:', e); }
+                } catch (e) { console.warn('Gagal update flag printed:', e); }
             }
             // [BARU] Fungsi untuk mengkategorikan item
             function getItemCategory(itemName) {
@@ -770,7 +769,7 @@
             }
 
             // [BARU] Fungsi untuk mengekstrak kategori dari HTML struk yang sudah dibuat
-            function getCategoryFromHtml(html) {
+            function getCategoryFromHtml(htmlStr) {
                 const match = html.match(/--- (MAKANAN|MINUMAN|CHECKER) ---/);
                 if (match && match[1]) {
                     return match[1];
@@ -826,8 +825,8 @@
                     <div class="line"></div>
                     <div class="row"><span>Tipe</span><span>${orderType}</span></div>`
                     // [DIUBAH] Jika struk dapur, hanya tampilkan item. Jika tidak, tampilkan footer harga.
-                    + (isKitchenReceipt ? `<div class="line"></div><div style="font-size:10px;">${itemsHtml || '-'}</div>` : priceFooter)
-                    + `
+                    + (isKitchenReceipt ? '<div class="line"></div><div style="font-size:10px;">' + (itemsHtml || '-') + '</div>' : priceFooter)
+                    + ` 
                 </body></html>`;
             }
 
@@ -880,6 +879,7 @@
 
             // [BARU] Fungsi helper untuk memutar suara dengan aman
             function playFallbackSound(audioEl) {
+                if (!audioEl) return;
                 // Coba set src ke file mp3 jika belum ada
                 if (!audioEl.src) audioEl.src = "notification.mp3";
                 
@@ -918,4 +918,4 @@
         });
     </script>
 </body>
-</html>
+</html>     

@@ -85,6 +85,7 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js"></script>
 
     <script>
         const firebaseConfig = {
@@ -135,34 +136,58 @@
         });
 
         // Add Reward
-        document.getElementById('addRewardForm').addEventListener('submit', (e) => {
+        document.getElementById('addRewardForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const name = document.getElementById('rewardName').value;
             const points = parseInt(document.getElementById('rewardPoints').value);
             const type = document.getElementById('rewardType').value;
             const image = document.getElementById('rewardImageBase64').value;
+            const submitBtn = e.target.querySelector('button[type="submit"]');
 
             if (!image) {
                 alert('Mohon upload foto hadiah terlebih dahulu.');
                 return;
             }
 
-            const newRewardRef = rewardsRef.push();
-            newRewardRef.set({
-                nama: name,
-                point: points,
-                type: type,
-                foto: image,
-                createdAt: firebase.database.ServerValue.TIMESTAMP
-            }).then(() => {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Menyimpan & Mengunggah Foto...';
+
+            try {
+                let imageUrl = image;
+                
+                // Cek apakah image masih berupa Base64 (data:image/...)
+                if (image.startsWith('data:image')) {
+                    const storageRef = firebase.storage().ref();
+                    // Buat nama file unik
+                    const fileName = 'rewards/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.png';
+                    const fileRef = storageRef.child(fileName);
+                    
+                    // Unggah string Base64 ke Firebase Storage
+                    await fileRef.putString(image, 'data_url');
+                    imageUrl = await fileRef.getDownloadURL();
+                }
+
+                const newRewardRef = rewardsRef.push();
+                await newRewardRef.set({
+                    nama: name,
+                    point: points,
+                    type: type,
+                    foto: imageUrl, // Simpan URL, bukan base64
+                    createdAt: firebase.database.ServerValue.TIMESTAMP
+                });
+
                 alert('Hadiah berhasil ditambahkan!');
                 document.getElementById('addRewardForm').reset();
                 document.getElementById('imagePreview').style.display = 'none';
                 document.getElementById('rewardImageBase64').value = '';
-            }).catch(err => {
-                alert('Gagal menambahkan hadiah: ' + err.message);
-            });
+            } catch (err) {
+                console.error(err);
+                alert('Terjadi kesalahan: ' + err.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Simpan Hadiah';
+            }
         });
 
         // Load Rewards

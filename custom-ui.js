@@ -262,7 +262,7 @@ function isRbmOfflineMode() {
 var RBM_DEFAULT_FIREBASE_CONFIG = {
     apiKey: "AIzaSyDWQG53tP2zKILTwPSJQpiVzFNyvYLxLqw",
     authDomain: "ricebowlmonst.firebaseapp.com",
-    databaseURL: "https://ricebowlmonst-default-rtdb.asia-southeast1.firebasedatabase.app",
+    databaseURL: "https://ricebowlmonst-default-rtdb.firebaseio.com",
     projectId: "ricebowlmonst",
     storageBucket: "ricebowlmonst.firebasestorage.app",
     messagingSenderId: "723669558962",
@@ -281,6 +281,19 @@ function getRbmConnections() {
 function ensureDefaultFirebaseConnection() {
     if (!navigator.onLine) return;
     var conns = getRbmConnections();
+    
+    // [PERBAIKAN] Auto-fix URL Firebase yang salah di LocalStorage
+    let hasChanges = false;
+    conns.forEach(function(conn) {
+        if (conn && conn.config && conn.config.databaseURL && conn.config.databaseURL.indexOf('asia-southeast1') >= 0) {
+            conn.config.databaseURL = 'https://ricebowlmonst-default-rtdb.firebaseio.com';
+            hasChanges = true;
+        }
+    });
+    if (hasChanges) {
+        try { localStorage.setItem('rbm_db_connections', JSON.stringify(conns)); } catch(e) {}
+    }
+
     if (conns.length > 0) return;
     conns = [{ name: 'Online (Firebase)', config: RBM_DEFAULT_FIREBASE_CONFIG }];
     try {
