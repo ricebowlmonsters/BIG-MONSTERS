@@ -7055,6 +7055,7 @@ function saveOfficeConfig() {
     var radius = radEl.value;
     var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_GPS_CONFIG') : 'RBM_GPS_CONFIG';
     RBMStorage.setItem(key, JSON.stringify({ lat: lat, lng: lng, radius: radius }));
+    window._cachedOfficeConfig = null;
     alert("Konfigurasi Lokasi Disimpan!");
     if (typeof checkDistance === 'function') checkDistance();
 }
@@ -7257,7 +7258,7 @@ function populateGpsNames() {
     if (Array.from(select.options).some(opt => opt.value === currentValue)) {
         select.value = currentValue;
     }
-    if (!select.onchange) select.onchange = function() { updateGpsJadwalDisplay(); };
+    if (!select.onchange) select.onchange = function() { window._cachedGpsName = null; updateGpsJadwalDisplay(); };
     updateGpsJadwalDisplay();
 }
 
@@ -7345,10 +7346,13 @@ function checkDistance() {
         officeLng = parseFloat(lngEl.value);
         maxRadius = parseFloat(radEl.value) || 50;
     } else {
-        var config = getOfficeConfigFromStorage();
-        officeLat = parseFloat(config.lat);
-        officeLng = parseFloat(config.lng);
-        maxRadius = parseFloat(config.radius) || 50;
+        // [OPTIMASI] Gunakan cache config agar tidak baca localStorage ratusan kali per menit
+        if (!window._cachedOfficeConfig) {
+            window._cachedOfficeConfig = getOfficeConfigFromStorage();
+        }
+        officeLat = parseFloat(window._cachedOfficeConfig.lat);
+        officeLng = parseFloat(window._cachedOfficeConfig.lng);
+        maxRadius = parseFloat(window._cachedOfficeConfig.radius) || 50;
     }
 
     var statusEl = document.getElementById('gps_status_overlay');
@@ -7384,28 +7388,33 @@ function checkDistance() {
     var statusMsg = "";
 
     if (name) {
-        var gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
-        var logs = safeParse(RBMStorage.getItem(gpsKey), []);
         var now = new Date();
         var today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
         
-        var todayLogs = logs.filter(function(l) { return l.name === name && l.date === today; });
-        var hasMasuk = todayLogs.some(function(l) { return l.type === 'Masuk'; });
-        var hasPulang = todayLogs.some(function(l) { return l.type === 'Pulang'; });
+        // [OPTIMASI KILAT] Hindari parse JSON gps_logs (foto base64 besar) pada setiap sinyal GPS agar HP karyawan tidak Hang/Macet
+        if (window._cachedGpsName !== name || window._cachedGpsLogsTime !== today) {
+            var gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
+            var logs = safeParse(RBMStorage.getItem(gpsKey), []);
+            var todayLogs = logs.filter(function(l) { return l.name === name && l.date === today; });
+            var hasMasuk = todayLogs.some(function(l) { return l.type === 'Masuk'; });
+            var hasPulang = todayLogs.some(function(l) { return l.type === 'Pulang'; });
 
-        if (hasPulang) {
-            statusMsg = "Sudah Absen Pulang Hari Ini";
-        } else if (hasMasuk) {
-            statusMsg = "Sudah Absen Masuk";
-            var breaks = todayLogs.filter(function(l) { return l.type === 'Istirahat Keluar' || l.type === 'Istirahat Kembali'; });
-            var lastBreak = breaks.length > 0 ? breaks[breaks.length - 1] : null;
-            if (lastBreak && lastBreak.type === 'Istirahat Keluar') {
-                statusMsg += " (Sedang Istirahat)";
+            if (hasPulang) {
+                window._cachedGpsStatusMsg = "Sudah Absen Pulang Hari Ini";
+            } else if (hasMasuk) {
+                window._cachedGpsStatusMsg = "Sudah Absen Masuk";
+                var breaks = todayLogs.filter(function(l) { return l.type === 'Istirahat Keluar' || l.type === 'Istirahat Kembali'; });
+                var lastBreak = breaks.length > 0 ? breaks[breaks.length - 1] : null;
+                if (lastBreak && lastBreak.type === 'Istirahat Keluar') {
+                    window._cachedGpsStatusMsg += " (Sedang Istirahat)";
+                }
             } else {
+                window._cachedGpsStatusMsg = "Belum Absen Masuk";
             }
-        } else {
-            statusMsg = "Belum Absen Masuk";
+            window._cachedGpsName = name;
+            window._cachedGpsLogsTime = today;
         }
+        statusMsg = window._cachedGpsStatusMsg;
     }
 
     if (statusMsg) {
@@ -8155,6 +8164,7 @@ function _executeAbsensiGPS(type) {
 
     logs.push(log);
     RBMStorage.setItem(gpsKey, JSON.stringify(logs));
+    window._cachedGpsName = null; // Reset cache agar UI status langsung terupdate
 
     // Jika absen Masuk: set Hadir (H) di tab Absensi & Jadwal
     if (type === 'Masuk' && empId !== null) {
