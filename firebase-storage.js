@@ -14,11 +14,9 @@
 
   // Pemetaan key localStorage → path Firebase (app_state)
   var APP_STATE_KEYS = {
-    rbm_user: 'app_state/session',
     rbm_users: 'app_state/users',
     rbm_outlets: 'app_state/outlet_ids',
     rbm_outlet_names: 'app_state/outlet_names',
-    rbm_last_selected_outlet: 'app_state/last_selected_outlet',
     rbm_db_connections: 'app_state/db_connections',
     rbm_active_connection_index: 'app_state/active_connection_index',
     rbm_settings: 'app_state/settings',
@@ -30,8 +28,7 @@
     rbm_vouchers: 'rbm_pro/vouchers',
     rbm_active_outlets: 'app_state/active_outlets',
     rbm_outlet_locations: 'app_state/outlet_locations',
-    rbm_quick_memos: 'app_state/quick_memos',
-    rbm_manage_menu_outlet: 'app_state/manage_menu_outlet'
+    rbm_quick_memos: 'app_state/quick_memos'
   };
 
   function getConnections() {
@@ -134,6 +131,25 @@
     var path = 'app_state/active_sessions/' + safeUsernameKey(username);
     var payload = { sessionId: String(sessionId), lastLogin: Date.now() };
     return db.ref(path).set(payload).catch(function(err) { console.warn('firebase-storage setActiveSession failed', err); });
+  }
+
+  // ---------- Fitur Online / Presence ----------
+  function trackPresence(username, nama, role) {
+    if (!init() || !username) return;
+    var uid = safeUsernameKey(username);
+    var myConnectionsRef = db.ref('app_state/presence/' + uid + '/connections');
+    var lastOnlineRef = db.ref('app_state/presence/' + uid + '/lastOnline');
+    var infoRef = db.ref('app_state/presence/' + uid + '/info');
+
+    db.ref('.info/connected').on('value', function(snap) {
+      if (snap.val() === true) {
+        var con = myConnectionsRef.push();
+        con.onDisconnect().remove();
+        lastOnlineRef.onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
+        con.set(true);
+        infoRef.set({ username: username, nama: nama || username, role: role || 'user', onlineSince: firebase.database.ServerValue.TIMESTAMP });
+      }
+    });
   }
 
   // ---------- Petty Cash (logika sama seperti Pembukuan: satu node per tanggal) ----------
@@ -800,6 +816,7 @@
     removeAppState: removeAppState,
     getActiveSession: getActiveSession,
     setActiveSession: setActiveSession,
+    trackPresence: trackPresence,
     getPettyCash: getPettyCash,
     savePettyCashTransactions: savePettyCashTransactions,
     deletePettyCashByDateAndIndex: deletePettyCashByDateAndIndex,
