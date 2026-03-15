@@ -7676,14 +7676,25 @@ function deleteSingleGpsLog(logId) {
     var logToDelete = logs.find(l => l.id == logId);
     if (!logToDelete) { alert('Data tidak ditemukan untuk dihapus.'); return; }
 
-    var newLogs = logs.filter(function(l) {
-        return l.id != logId;
-    });
-    
-    RBMStorage.setItem(key, JSON.stringify(newLogs)).then(function() {
-        loadRekapAbsensiGPS();
-        alert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.');
-    });
+    if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase() && logToDelete._firebaseKey) {
+        var sfx = getRbmOutlet() ? '_' + getRbmOutlet().toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
+        var refPath = 'rbm_pro/gps_logs' + sfx + '/' + logToDelete._firebaseKey;
+        window.RBMStorage._db.ref(refPath).remove().then(function() {
+            var newLogs = logs.filter(function(l) { return l.id != logId; });
+            try { localStorage.setItem(key, JSON.stringify(newLogs)); } catch(e){}
+            loadRekapAbsensiGPS();
+            alert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.');
+        });
+    } else {
+        var newLogs = logs.filter(function(l) {
+            return l.id != logId;
+        });
+        
+        RBMStorage.setItem(key, JSON.stringify(newLogs)).then(function() {
+            loadRekapAbsensiGPS();
+            alert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.');
+        });
+    }
 }
 
 function populateRekapGpsFilterNama() {
@@ -8163,7 +8174,18 @@ function _executeAbsensiGPS(type) {
     }
 
     logs.push(log);
-    RBMStorage.setItem(gpsKey, JSON.stringify(logs));
+    
+    // [OPTIMASI KILAT & AMAN] Jangan gunakan setItem untuk gps_logs karena akan menimpa seluruh history!
+    if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase()) {
+        var sfx = getRbmOutlet() ? '_' + getRbmOutlet().toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
+        var refPath = 'rbm_pro/gps_logs' + sfx;
+        if (window.RBMStorage._db) {
+            window.RBMStorage._db.ref(refPath).push(log);
+        }
+        try { localStorage.setItem(gpsKey, JSON.stringify(logs)); } catch(e){}
+    } else {
+        RBMStorage.setItem(gpsKey, JSON.stringify(logs));
+    }
     window._cachedGpsName = null; // Reset cache agar UI status langsung terupdate
 
     // Jika absen Masuk: set Hadir (H) di tab Absensi & Jadwal
@@ -8318,7 +8340,22 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
             const logs = safeParse(RBMStorage.getItem(gpsKey), []);
             logs.push(log);
-            RBMStorage.setItem(gpsKey, JSON.stringify(logs)).then(function() {
+            
+            var savePromise;
+            if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase()) {
+                var sfx = getRbmOutlet() ? '_' + getRbmOutlet().toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
+                var refPath = 'rbm_pro/gps_logs' + sfx;
+                if (window.RBMStorage._db) {
+                    savePromise = window.RBMStorage._db.ref(refPath).push(log).then(function(){ return true; });
+                } else {
+                    savePromise = RBMStorage.setItem(gpsKey, JSON.stringify(logs));
+                }
+                try { localStorage.setItem(gpsKey, JSON.stringify(logs)); } catch(e){}
+            } else {
+                savePromise = RBMStorage.setItem(gpsKey, JSON.stringify(logs));
+            }
+            
+            savePromise.then(function() {
                 if (type === 'Masuk' && empId !== null) {
                     const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
                     const absKey = date + '_' + empId;

@@ -115,9 +115,15 @@
       var promises = uniqueNodes.map(function(node) {
           // [OPTIMASI KILAT] Batasi unduhan foto GPS maksimal 500 data terakhir agar loading instan
           if (node.indexOf('gps_logs') === 0) {
-              var limit = (page === 'absensi-gps-view') ? 50 : 500; // HP Karyawan cukup 50 data terakhir agar kilat
+              var limit = (page === 'absensi-gps-view') ? 50 : 200; // HP Karyawan cukup 50 data terakhir agar kilat
               return self._db.ref('rbm_pro/' + node).limitToLast(limit).once('value').then(function(snap) {
-                  return { key: node, val: snap.val() };
+                  var data = snap.val();
+                  if (page === 'absensi-gps-view' && data) {
+                      Object.keys(data).forEach(function(k) {
+                          if (data[k]) data[k].photo = ''; // Hapus foto base64 agar browser HP tidak lemot/hang
+                      });
+                  }
+                  return { key: node, val: data };
               });
           }
           // Unduhan standar untuk node lainnya
@@ -196,10 +202,14 @@
                     var arr = [];
                     ks.forEach(function(k) { arr[Number(k)] = v[k]; });
                     v = arr.filter(function(x) { return x !== null && x !== undefined; });
-                } else if (targetPath.indexOf('employees') >= 0) {
+                } else if (targetPath.indexOf('employees') >= 0 || targetPath.indexOf('gps_logs') >= 0) {
                     // [FIX] Paksa konversi Object berantakan menjadi Array berurutan
                     var arr2 = [];
-                    ks.forEach(function(k) { arr2.push(v[k]); });
+                    ks.forEach(function(k) { 
+                        var item = v[k];
+                        if (item && typeof item === 'object' && targetPath.indexOf('gps_logs') >= 0) item._firebaseKey = k;
+                        arr2.push(item); 
+                    });
                     v = arr2;
                 }
             }
