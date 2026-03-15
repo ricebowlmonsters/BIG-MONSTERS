@@ -416,6 +416,10 @@
 
   function savePettyCashPengajuan(data) {
     if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    var o = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || (window.getRbmOutlet && window.getRbmOutlet()) || '';
+    var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+    var userName = u.nama || u.username || 'User';
+    var userRole = u.role || 'staff';
     var details = data.details || [];
     var ref = db.ref('rbm_pro/petty_cash/pengajuan');
     return ref.once('value').then(function(snap) {
@@ -426,7 +430,11 @@
         arr.push({
           tanggalPengajuan: item.tanggalPengajuan,
           nominal: parseFloat(item.nominal) || 0,
+          recapData: item.recapData || null,
           fotoPengajuan: foto,
+          outlet: o,
+          userName: userName,
+          userRole: userRole,
           createdAt: firebase.database.ServerValue.TIMESTAMP
         });
       });
@@ -628,6 +636,10 @@
 
   function savePengajuanTF(data) {
     if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    var o = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || (window.getRbmOutlet && window.getRbmOutlet()) || '';
+    var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+    var userName = u.nama || u.username || 'User';
+    var userRole = u.role || 'staff';
     var details = data.details || [];
     var ref = db.ref('rbm_pro/pengajuan_tf');
     return ref.once('value').then(function(snap) {
@@ -648,6 +660,9 @@
           keterangan: item.keterangan,
           fotoNotaUrl: fotoNota,
           fotoTtdUrl: fotoTtd,
+          outlet: o,
+          userName: userName,
+          userRole: userRole,
           createdAt: firebase.database.ServerValue.TIMESTAMP
         });
       });

@@ -1828,6 +1828,7 @@ function createPengajuanForm() {
                     <input type="file" class="pengajuan_pc_foto_pengajuan" accept="image/*" style="font-size:12px;">
                 </div>
             </div>
+            <input type="hidden" id="pengajuan_pc_recap_data" value='${JSON.stringify(recap).replace(/'/g, "&#39;")}'>
         `;
         var loadingEl = document.getElementById('pc_recap_loading');
         if (loadingEl) {
@@ -1965,6 +1966,10 @@ function submitDataPengajuan() {
     });
 
   } else if (jenisPengajuan === 'pengajuan-petty-cash') {
+    const recapDataStr = document.getElementById("pengajuan_pc_recap_data") ? document.getElementById("pengajuan_pc_recap_data").value : "null";
+    let recapData = null;
+    try { recapData = JSON.parse(recapDataStr); } catch(e) {}
+
     rows.forEach(row => {
       const nominalPc = row.querySelector(".pengajuan_pc_nominal").value.trim();
 
@@ -1972,6 +1977,7 @@ function submitDataPengajuan() {
         const pettyCashItem = {
           tanggalPengajuan: tanggalPengajuanGlobal,
           nominal: nominalPc,
+          recapData: recapData,
           fotoPengajuan: null
         };
         dataList.push(pettyCashItem);
