@@ -72,8 +72,11 @@
       // [PERBAIKAN] Deteksi Outlet Aktif agar Firebase mendownload data yang tepat (misal: employees_sidoarjo)
       var outlet = '';
       try {
+         var params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+         var urlOutlet = params ? params.get('outlet') : null;
+         if (urlOutlet) outlet = urlOutlet.trim();
          var el = typeof document !== 'undefined' ? document.getElementById('rbm-outlet-select') : null;
-         outlet = (el && el.value) ? el.value : (localStorage.getItem('rbm_last_selected_outlet') || '');
+         if (!outlet) outlet = (el && el.value) ? el.value : (localStorage.getItem('rbm_last_selected_outlet') || '');
          if (!outlet) {
              var outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
              if (outlets.length) outlet = outlets[0];
@@ -85,7 +88,10 @@
       if (outlet) nodesToLoad.push(outlet); // Load format lama rbm_pro/sidoarjo just in case
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
-      if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
+      if (page === 'absensi-gps-view') {
+          // [OPTIMASI KILAT] Di HP karyawan, JANGAN load data berat seperti absensi_data, gaji, bonus
+          nodesToLoad.push('jadwal_data' + sfx, 'gps_logs' + sfx);
+      } else if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
           // [FIX] Gunakan absensi_data & jadwal_data agar cocok dengan nama saat disimpan
           nodesToLoad.push('absensi_data' + sfx, 'jadwal_data' + sfx, 'jadwal_notes', 'gaji', 'bonus', 'gps_logs' + sfx, 'gps_logs');
       } else if (page.indexOf('petty-cash') >= 0) {
@@ -109,7 +115,8 @@
       var promises = uniqueNodes.map(function(node) {
           // [OPTIMASI KILAT] Batasi unduhan foto GPS maksimal 500 data terakhir agar loading instan
           if (node.indexOf('gps_logs') === 0) {
-              return self._db.ref('rbm_pro/' + node).limitToLast(500).once('value').then(function(snap) {
+              var limit = (page === 'absensi-gps-view') ? 50 : 500; // HP Karyawan cukup 50 data terakhir agar kilat
+              return self._db.ref('rbm_pro/' + node).limitToLast(limit).once('value').then(function(snap) {
                   return { key: node, val: snap.val() };
               });
           }

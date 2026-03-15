@@ -7246,10 +7246,14 @@ function populateGpsNames() {
     const currentValue = select.value;
 
     const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-    select.innerHTML = '<option value="">-- Pilih Nama --</option>';
-    employees.forEach(emp => {
-        select.innerHTML += `<option value="${emp.name}">${emp.name}</option>`;
-    });
+    if (employees.length === 0) {
+        select.innerHTML = '<option value="">-- Memuat Data Karyawan... --</option>';
+    } else {
+        select.innerHTML = '<option value="">-- Pilih Nama --</option>';
+        employees.forEach(emp => {
+            select.innerHTML += `<option value="${emp.name}">${emp.name}</option>`;
+        });
+    }
     if (Array.from(select.options).some(opt => opt.value === currentValue)) {
         select.value = currentValue;
     }
