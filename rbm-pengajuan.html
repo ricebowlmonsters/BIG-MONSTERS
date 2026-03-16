@@ -87,6 +87,7 @@
   <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #e5e7eb; padding-bottom: 15px;">
     <button id="tab-pending" class="btn btn-primary" onclick="switchOwnerTab('pending')" style="width: auto;">Pengajuan Baru</button>
     <button id="tab-history" class="btn btn-secondary" onclick="switchOwnerTab('history')" style="width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;">Riwayat Persetujuan</button>
+    <button id="btn-refresh-owner" class="btn btn-secondary" onclick="fetchSubmissionsForOwner()" style="width: auto; margin-left: auto;">🔄 Refresh</button>
   </div>
 
   <div id="pengajuan-pending-list">
@@ -154,6 +155,9 @@
       
       const db = firebase.database();
       
+      const btnRefresh = document.getElementById('btn-refresh-owner');
+      if (btnRefresh) { btnRefresh.textContent = 'Memuat...'; btnRefresh.disabled = true; }
+
       let tfData = null;
       let pcData = null;
       let tfLoaded = false;
@@ -218,18 +222,23 @@
 
           pendingListContainer.innerHTML = buildHtml(pendingSubmissions, 'Tidak ada pengajuan baru.');
           historyListContainer.innerHTML = buildHtml(historySubmissions, 'Belum ada riwayat persetujuan.');
+          if (btnRefresh) { btnRefresh.textContent = '🔄 Refresh'; btnRefresh.disabled = false; }
       };
 
-      db.ref('rbm_pro/pengajuan_tf').on('value', snap => {
-          tfData = snap.val();
+      // [OPTIMASI] Gunakan once() alih-alih on() agar browser tidak hang karena ukuran payload yang raksasa
+      Promise.all([
+          db.ref('rbm_pro/pengajuan_tf').orderByKey().limitToLast(50).once('value'),
+          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(50).once('value')
+      ]).then(snaps => {
+          tfData = snaps[0].val();
+          pcData = snaps[1].val();
           tfLoaded = true;
-          renderList();
-      });
-      
-      db.ref('rbm_pro/petty_cash/pengajuan').on('value', snap => {
-          pcData = snap.val();
           pcLoaded = true;
           renderList();
+      }).catch(err => {
+          console.error(err);
+          if (btnRefresh) { btnRefresh.textContent = '🔄 Refresh'; btnRefresh.disabled = false; }
+          pendingListContainer.innerHTML = '<p style="color:red; text-align:center;">Gagal memuat data.</p>';
       });
     }
     fetchSubmissionsForOwner();
@@ -280,6 +289,9 @@
           if (tfData) Object.keys(tfData).forEach(k => allSubmissions.push({ id: k, type: 'tf', data: tfData[k] }));
           if (pcData) Object.keys(pcData).forEach(k => allSubmissions.push({ id: k, type: 'pc', data: pcData[k] }));
           
+          const btnRefresh = document.getElementById('btn-refresh-manager');
+          if (btnRefresh) { btnRefresh.textContent = '🔄 Refresh'; btnRefresh.disabled = false; }
+
           if (allSubmissions.length === 0) {
              listContainer.innerHTML = '<p style="text-align:center; color:#888;">Belum ada riwayat pengajuan.</p>';
              return;
@@ -301,8 +313,21 @@
           });
           listContainer.innerHTML = html;
       };
-      db.ref('rbm_pro/pengajuan_tf').on('value', snap => { tfData = snap.val(); tfLoaded = true; renderList(); });
-      db.ref('rbm_pro/petty_cash/pengajuan').on('value', snap => { pcData = snap.val(); pcLoaded = true; renderList(); });
+      
+      const btnRefresh = document.getElementById('btn-refresh-manager');
+      if (btnRefresh) { btnRefresh.textContent = 'Memuat...'; btnRefresh.disabled = true; }
+
+      // [OPTIMASI] Gunakan once() agar tidak berat.
+      Promise.all([
+          db.ref('rbm_pro/pengajuan_tf').orderByKey().limitToLast(50).once('value'),
+          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(50).once('value')
+      ]).then(snaps => {
+          tfData = snaps[0].val();
+          pcData = snaps[1].val();
+          tfLoaded = true;
+          pcLoaded = true;
+          renderList();
+      });
     }
     fetchSubmissionsForManager();
   }
@@ -476,7 +501,10 @@ function updatePengajuanStatus(type, id, status) {
     <p id="outputPengajuan" class="output-msg"></p>
     
     <div id="manager-history-section" class="form-section" style="margin-top: 40px; border-top: 1px solid #e5e7eb; padding-top: 20px; display: none;">
-      <h3>Riwayat Pengajuan & Status</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="margin: 0; border: none; padding: 0;">Riwayat Pengajuan & Status</h3>
+        <button id="btn-refresh-manager" class="btn btn-secondary" onclick="fetchSubmissionsForManager()" style="padding: 6px 12px; font-size: 12px;">🔄 Refresh</button>
+      </div>
       <div id="manager-pengajuan-list"><p style="color:#64748b;">Memuat data...</p></div>
     </div>
   </div>
