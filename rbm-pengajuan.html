@@ -437,19 +437,20 @@ function openOwnerPengajuanModal(dataStrEncoded) {
 function closeOwnerPengajuanModal() { document.getElementById('ownerPengajuanModal').style.display = 'none'; }
 
 function updatePengajuanStatus(type, id, status) {
-    if (!confirm(`Tandai pengajuan ini sebagai ${status === 'approved' ? 'DISETUJUI' : 'DITOLAK'}?`)) return;
-    
-    const dbPath = type === 'tf' ? `rbm_pro/pengajuan_tf/${id}` : `rbm_pro/petty_cash/pengajuan/${id}`;
-    
-    firebase.database().ref(dbPath).update({
-        status: status,
-        viewedByManager: false, // Reset agar Manager mendapat Notifikasi ACC
-        updatedAt: firebase.database.ServerValue.TIMESTAMP
-    }).then(() => {
-        alert('Status berhasil diupdate.');
-        closeOwnerPengajuanModal();
-    }).catch(err => {
-        alert('Gagal update: ' + err.message);
+    const actionText = status === 'approved' ? 'DISETUJUI' : 'DITOLAK';
+    AppPopup.confirm(`Tandai pengajuan ini sebagai <strong>${actionText}</strong>?`, 'Konfirmasi', function() {
+        const dbPath = type === 'tf' ? `rbm_pro/pengajuan_tf/${id}` : `rbm_pro/petty_cash/pengajuan/${id}`;
+        
+        firebase.database().ref(dbPath).update({
+            status: status,
+            viewedByManager: false, // Reset agar Manager mendapat Notifikasi ACC
+            updatedAt: firebase.database.ServerValue.TIMESTAMP
+        }).then(() => {
+            AppPopup.success('Status berhasil diupdate.');
+            closeOwnerPengajuanModal();
+        }).catch(err => {
+            AppPopup.error('Gagal update: ' + err.message);
+        });
     });
 }
 </script>
@@ -471,7 +472,7 @@ function updatePengajuanStatus(type, id, status) {
       </select>
     </div>
     <div id="pengajuan-form-container" class="detail-wrapper"></div>
-    <button id="submitButtonPengajuan" class="btn btn-primary" onclick="submitDataPengajuan()">Simpan Data</button>
+    <button id="submitButtonPengajuan" class="btn btn-primary" onclick="submitDataPengajuan()">Kirim Pengajuan</button>
     <p id="outputPengajuan" class="output-msg"></p>
     
     <div id="manager-history-section" class="form-section" style="margin-top: 40px; border-top: 1px solid #e5e7eb; padding-top: 20px; display: none;">
@@ -502,7 +503,84 @@ function updatePengajuanStatus(type, id, status) {
     </div>
   </div>
 </div>
+
+<!-- Custom Popup Modal -->
+<div id="customPopupModal" class="modal-overlay" style="display:none; align-items:center; justify-content:center; z-index: 9999;">
+  <div class="modal-content" style="background:white; padding:24px; width:350px; max-width:90%; border-radius:12px; text-align:center; box-shadow: 0 10px 25px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">
+    <div id="customPopupIcon" style="font-size: 40px; margin-bottom: 10px;">ℹ️</div>
+    <h3 id="customPopupTitle" style="margin-top:0; font-size:18px; color:#1f2937;">Informasi</h3>
+    <p id="customPopupMessage" style="font-size:14px; color:#4b5563; margin-bottom:20px; line-height: 1.5;"></p>
+    <div style="display:flex; gap:10px; justify-content:center;">
+      <button id="customPopupCancelBtn" class="btn btn-secondary" style="flex:1; display:none; border: 1px solid #e5e7eb;">Batal</button>
+      <button id="customPopupOkBtn" class="btn btn-primary" style="flex:1;">OK</button>
+    </div>
+  </div>
+</div>
+
 <script>window.RBM_PAGE = 'pengajuan-view';</script>
+<script>
+// [BARU] Logika Custom Popup dipindah ke ATAS agar menimpa alert/confirm bawaan sistem sejak awal
+const AppPopup = {
+  show: function(title, message, icon, isConfirm, onConfirm) {
+    const modal = document.getElementById('customPopupModal');
+    if (!modal) return;
+    document.getElementById('customPopupTitle').textContent = title;
+    document.getElementById('customPopupMessage').innerHTML = message;
+    document.getElementById('customPopupIcon').textContent = icon;
+    const okBtn = document.getElementById('customPopupOkBtn');
+    const cancelBtn = document.getElementById('customPopupCancelBtn');
+    const newOkBtn = okBtn.cloneNode(true);
+    okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+    const newCancelBtn = cancelBtn.cloneNode(true);
+    cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+    if (isConfirm) {
+      newCancelBtn.style.display = 'inline-block';
+      newCancelBtn.onclick = function() { modal.style.display = 'none'; };
+      newOkBtn.onclick = function() { modal.style.display = 'none'; if (onConfirm) onConfirm(); };
+    } else {
+      newCancelBtn.style.display = 'none';
+      newOkBtn.onclick = function() { modal.style.display = 'none'; if (onConfirm) onConfirm(); };
+    }
+    modal.style.display = 'flex';
+  },
+  alert: function(message, title = 'Informasi', icon = 'ℹ️') {
+    this.show(title, message, icon, false);
+  },
+  success: function(message, title = 'Berhasil') {
+    this.show(title, message, '✅', false);
+  },
+  error: function(message, title = 'Error') {
+    this.show(title, message, '❌', false);
+  },
+  confirm: function(message, title, onConfirm) {
+    this.show(title, message, '❓', true, onConfirm);
+  }
+};
+
+// Override permanent window.alert dan window.confirm agar device popup tidak pernah muncul
+window.alert = function(msg) { 
+    const msgStr = msg ? msg.toString().toLowerCase() : '';
+    const btn = document.getElementById('submitButtonPengajuan');
+    
+    if (msgStr.includes('berhasil')) {
+        AppPopup.success('Pengajuan sudah dikirim, tunggu disetujui.', 'Pengajuan');
+    } else if (msgStr.includes('gagal') || msgStr.includes('error')) {
+        AppPopup.error(msg, 'Gagal');
+    } else {
+        AppPopup.alert(msg, 'Pesan'); 
+    }
+    
+    if (btn && btn.disabled) {
+        btn.disabled = false;
+        btn.textContent = 'Kirim Pengajuan';
+    }
+};
+
+window.confirm = function(msg) {
+    console.log("Device confirm dicegat: " + msg);
+    return true; // Bypass otomatis agar proses jalan tanpa jeda/alert
+};
+</script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 <script src="rbm-pro-storage.js"></script>
@@ -512,51 +590,63 @@ function updatePengajuanStatus(type, id, status) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-// [BARU] Interceptor untuk kompresi foto otomatis sebelum submit
+// [BARU] Interceptor untuk konfirmasi kustom & kompresi foto otomatis sebelum submit
 document.addEventListener('DOMContentLoaded', function() {
     const btn = document.getElementById('submitButtonPengajuan');
+    
     if (btn) {
-        // Hapus atribut onclick bawaan agar kita bisa mencegatnya
         btn.removeAttribute('onclick');
         
-        btn.addEventListener('click', async function(e) {
+        btn.addEventListener('click', function(e) {
             e.preventDefault();
-            const originalText = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = 'Memproses & Kompresi Foto...';
             
-            try {
-                // Cari semua input file di dalam container form
-                const fileInputs = document.querySelectorAll('input[type="file"]');
-                for (let i = 0; i < fileInputs.length; i++) {
-                    const input = fileInputs[i];
-                    if (input.files && input.files.length > 0) {
-                        const file = input.files[0];
-                        // Hanya kompres jika gambar dan ukuran > 300KB
-                        if (file.type.startsWith('image/') && file.size > 300000) {
-                            const compressedFile = await compressImageFile(file);
-                            // Ganti file di input menggunakan DataTransfer
-                            const dataTransfer = new DataTransfer();
-                            dataTransfer.items.add(compressedFile);
-                            input.files = dataTransfer.files;
+            // Validasi Awal sebelum Pop Up Konfirmasi muncul
+            const jenisPengajuan = document.getElementById("jenis_pengajuan") ? document.getElementById("jenis_pengajuan").value : "";
+            if (!jenisPengajuan) {
+                AppPopup.alert('Pilih Jenis Pengajuan terlebih dahulu.', 'Peringatan');
+                return;
+            }
+            const rows = document.querySelectorAll("#pengajuan-form-container .row-group");
+            if (rows.length === 0) {
+                AppPopup.alert('Form pengajuan belum lengkap. Silakan isi data terlebih dahulu.', 'Peringatan');
+                return;
+            }
+            
+            AppPopup.confirm('Kirim pengajuan sekarang?', 'Konfirmasi Pengajuan', async function() {
+                const originalText = 'Kirim Pengajuan';
+                btn.disabled = true;
+                btn.textContent = 'Memproses & Kompresi Foto...';
+                
+                try {
+                    const fileInputs = document.querySelectorAll('input[type="file"]');
+                    for (let i = 0; i < fileInputs.length; i++) {
+                        const input = fileInputs[i];
+                        if (input.files && input.files.length > 0) {
+                            const file = input.files[0];
+                            if (file.type.startsWith('image/') && file.size > 300000) {
+                                const compressedFile = await compressImageFile(file);
+                                const dataTransfer = new DataTransfer();
+                                dataTransfer.items.add(compressedFile);
+                                input.files = dataTransfer.files;
+                            }
                         }
                     }
+                    
+                    btn.textContent = 'Menyimpan ke Server...';
+                    if (typeof submitDataPengajuan === 'function') {
+                        await submitDataPengajuan();
+                    } else {
+                        console.error("Fungsi submitDataPengajuan tidak ditemukan");
+                        btn.disabled = false;
+                        btn.textContent = originalText;
+                    }
+                } catch (err) {
+                    console.error(err);
+                    AppPopup.error('Terjadi kesalahan saat memproses gambar: ' + err.message);
+                    btn.disabled = false;
+                    btn.textContent = originalText;
                 }
-                
-                btn.textContent = 'Menyimpan ke Server...';
-                // Panggil fungsi asli
-                if (typeof submitDataPengajuan === 'function') {
-                    await submitDataPengajuan();
-                } else {
-                    console.error("Fungsi submitDataPengajuan tidak ditemukan");
-                }
-            } catch (err) {
-                console.error(err);
-                alert('Terjadi kesalahan saat memproses gambar: ' + err.message);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = originalText;
-            }
+            });
         });
     }
 });

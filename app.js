@@ -382,7 +382,18 @@ class OnlineWidget {
             window.markManagerNotifRead = (type, key) => {
                 const path = type === 'tf' ? `rbm_pro/pengajuan_tf/${key}` : `rbm_pro/petty_cash/pengajuan/${key}`;
                 db.ref(path).update({ viewedByManager: true });
-                alert("Pesan dari Owner:\n\nTunggu pemrosesan dana dan kelola dana dengan sebaik-baiknya.");
+                
+                if (typeof CustomUI !== 'undefined') {
+                    CustomUI.alert("Tunggu pemrosesan dana dan kelola dana dengan sebaik-baiknya.", "Pesan dari Owner");
+                } else if (typeof UIHelper !== 'undefined') {
+                    UIHelper.showModal(
+                        'Pesan dari Owner',
+                        'Tunggu pemrosesan dana dan kelola dana dengan sebaik-baiknya.',
+                        [{ text: 'Tutup', action: 'close', class: 'btn-primary' }]
+                    );
+                } else {
+                    alert("Pesan dari Owner:\n\nTunggu pemrosesan dana dan kelola dana dengan sebaik-baiknya.");
+                }
             };
         };
         processNotifs();

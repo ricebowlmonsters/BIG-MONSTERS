@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pengaturan Jadwal & Absensi - RBM Pro</title>
   <link rel="stylesheet" href="rbm-pro.css">
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
 <script>
@@ -52,6 +53,7 @@
   }
   function onOutletChange() {
     if (typeof loadJamConfig === 'function') loadJamConfig();
+    if (typeof loadEmployeesForFaceReg === 'function') loadEmployeesForFaceReg();
   }
   window.onOutletChange = onOutletChange;
 })();
@@ -86,6 +88,32 @@
         </div>
         <button class="btn-secondary" onclick="saveJamConfig()" style="font-size:11px; padding:5px 10px; margin-top:10px;">Simpan Pengaturan Jam</button>
     </div>
+
+    <!-- Registrasi Wajah Karyawan -->
+    <div class="form-section" style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top:0; font-size:14px; color:#166534;">Registrasi Wajah Karyawan (Face ID)</h3>
+        <p style="font-size:11px; color:#64748b; margin:0 0 10px;">Daftarkan wajah karyawan untuk validasi absensi otomatis. Pastikan wajah terlihat jelas di kamera.</p>
+        <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:15px;">
+            <div style="flex:1; min-width:250px;">
+                <label style="font-size:12px; display:block; margin-bottom:5px;">Pilih Karyawan</label>
+                <select id="face_emp_select" style="width:100%; padding:8px; margin-bottom:10px; border:1px solid #ccc; border-radius:4px;"></select>
+                <button type="button" class="btn-secondary" onclick="startFaceRegistration()" id="btn_start_face_reg" style="font-size:12px; padding:8px 12px; width:100%; margin-bottom:10px;">Mulai Kamera</button>
+                <button type="button" class="btn-primary" onclick="captureAndSaveFace()" id="btn_capture_face" style="font-size:12px; padding:8px 12px; width:100%; display:none; background:#16a34a; color:white; border:none; border-radius:4px; margin-bottom:10px;">Ambil & Simpan Wajah</button>
+                <p id="face_status_msg" style="font-size:11px; font-weight:bold; margin:0;"></p>
+            </div>
+            <div style="flex:1; min-width:250px; text-align:center;">
+                <div style="position:relative; display:inline-block; width:100%; max-width:300px; background:#000; border-radius:8px; overflow:hidden; min-height:225px;">
+                    <video id="face_reg_video" autoplay playsinline style="width:100%; height:auto; display:none;"></video>
+                </div>
+            </div>
+        </div>
+        <div style="overflow-x:auto;">
+            <table class="data-table">
+                <thead><tr><th style="text-align:left;">Nama Karyawan</th><th style="text-align:center;">Status Wajah</th><th style="text-align:center;">Aksi</th></tr></thead>
+                <tbody id="face_registered_tbody"></tbody>
+            </table>
+        </div>
+    </div>
   </div>
   </main>
 </div>
@@ -97,8 +125,147 @@
 <script src="firebase-storage.js"></script>
 <script src="rbm-pro.js"></script>
 <script>
+let isFaceApiLoaded = false;
+let faceRegStream = null;
+
+async function loadFaceApiModels() {
+    if (isFaceApiLoaded) return;
+    const msgEl = document.getElementById('face_status_msg');
+    msgEl.textContent = "Memuat model AI (Harap tunggu)...";
+    msgEl.style.color = "#b45309";
+    try {
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        isFaceApiLoaded = true;
+        msgEl.textContent = "Model AI siap.";
+        msgEl.style.color = "#16a34a";
+    } catch (e) {
+        console.error(e);
+        msgEl.textContent = "Gagal memuat model AI.";
+        msgEl.style.color = "#dc2626";
+    }
+}
+
+function loadEmployeesForFaceReg() {
+    const empKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_EMPLOYEES') : 'RBM_EMPLOYEES';
+    const employees = JSON.parse(window.RBMStorage ? window.RBMStorage.getItem(empKey) : localStorage.getItem(empKey) || '[]');
+    const select = document.getElementById('face_emp_select');
+    if (select) {
+        select.innerHTML = '<option value="">-- Pilih Karyawan --</option>';
+        employees.forEach(emp => {
+            select.innerHTML += `<option value="${emp.name}">${emp.name} (${emp.jabatan || '-'})</option>`;
+        });
+    }
+    renderRegisteredFaces();
+}
+
+async function startFaceRegistration() {
+    const empName = document.getElementById('face_emp_select').value;
+    if (!empName) { alert("Pilih karyawan terlebih dahulu."); return; }
+
+    await loadFaceApiModels();
+    if (!isFaceApiLoaded) return;
+
+    const video = document.getElementById('face_reg_video');
+    try {
+        faceRegStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        video.srcObject = faceRegStream;
+        video.style.display = 'block';
+        document.getElementById('btn_start_face_reg').style.display = 'none';
+        document.getElementById('btn_capture_face').style.display = 'inline-block';
+        const msgEl = document.getElementById('face_status_msg');
+        msgEl.textContent = "Posisikan wajah di kamera lalu klik Ambil & Simpan.";
+        msgEl.style.color = "#1e40af";
+    } catch (err) {
+        alert("Gagal mengakses kamera: " + err.message);
+    }
+}
+
+async function captureAndSaveFace() {
+    const empName = document.getElementById('face_emp_select').value;
+    const video = document.getElementById('face_reg_video');
+    if (!empName || !video.srcObject) return;
+
+    const msgEl = document.getElementById('face_status_msg');
+    msgEl.textContent = "Mendeteksi wajah...";
+    msgEl.style.color = "#b45309";
+    document.getElementById('btn_capture_face').disabled = true;
+
+    try {
+        const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
+        const detection = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
+        
+        if (!detection) {
+            msgEl.textContent = "❌ Wajah tidak terdeteksi. Coba lagi.";
+            msgEl.style.color = "#dc2626";
+            document.getElementById('btn_capture_face').disabled = false;
+            return;
+        }
+
+        const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+        const faceData = JSON.parse((window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey)) || '{}');
+        faceData[empName] = Array.from(detection.descriptor);
+        if (window.RBMStorage) window.RBMStorage.setItem(faceKey, JSON.stringify(faceData)); else localStorage.setItem(faceKey, JSON.stringify(faceData));
+
+        msgEl.textContent = "✅ Wajah berhasil didaftarkan untuk " + empName;
+        msgEl.style.color = "#16a34a";
+        
+        if (faceRegStream) {
+            faceRegStream.getTracks().forEach(track => track.stop());
+            faceRegStream = null;
+        }
+        video.style.display = 'none';
+        document.getElementById('btn_start_face_reg').style.display = 'inline-block';
+        document.getElementById('btn_capture_face').style.display = 'none';
+        document.getElementById('btn_capture_face').disabled = false;
+
+        renderRegisteredFaces();
+    } catch (e) {
+        console.error(e);
+        msgEl.textContent = "Error: " + e.message;
+        msgEl.style.color = "#dc2626";
+        document.getElementById('btn_capture_face').disabled = false;
+    }
+}
+
+function renderRegisteredFaces() {
+    const empKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_EMPLOYEES') : 'RBM_EMPLOYEES';
+    const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+    const employees = JSON.parse(window.RBMStorage ? window.RBMStorage.getItem(empKey) : localStorage.getItem(empKey) || '[]');
+    const faceData = JSON.parse((window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey)) || '{}');
+    const tbody = document.getElementById('face_registered_tbody');
+    if (!tbody) return;
+    
+    let html = '';
+    employees.forEach(emp => {
+        const hasFace = !!faceData[emp.name];
+        html += `<tr>
+            <td style="padding:8px; border-bottom:1px solid #ccc; text-align:left;">${emp.name}</td>
+            <td style="padding:8px; border-bottom:1px solid #ccc; text-align:center;"><span style="padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; color:white; background:${hasFace ? '#16a34a' : '#dc2626'}">${hasFace ? 'Terdaftar' : 'Belum'}</span></td>
+            <td style="padding:8px; border-bottom:1px solid #ccc; text-align:center;">
+                ${hasFace ? `<button type="button" style="background:#dc2626; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px;" onclick="deleteFaceData('${emp.name}')">Hapus</button>` : '-'}
+            </td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+function deleteFaceData(empName) {
+    if (!confirm("Hapus data wajah untuk " + empName + "?")) return;
+    const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+    const faceData = JSON.parse((window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey)) || '{}');
+    delete faceData[empName];
+    if (window.RBMStorage) window.RBMStorage.setItem(faceKey, JSON.stringify(faceData)); else localStorage.setItem(faceKey, JSON.stringify(faceData));
+    renderRegisteredFaces();
+}
+
 (function() {
-  function runLoad() { if (typeof loadJamConfig === 'function') loadJamConfig(); }
+  function runLoad() { 
+      if (typeof loadJamConfig === 'function') loadJamConfig(); 
+      setTimeout(loadEmployeesForFaceReg, 500); 
+  }
   if (window.RBMStorage && typeof window.RBMStorage.ready === 'function') {
     window.RBMStorage.ready().then(runLoad).catch(runLoad);
   } else {

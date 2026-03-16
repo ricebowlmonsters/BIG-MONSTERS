@@ -1888,17 +1888,27 @@ function samakanTotal(input) {
 
 function submitDataPengajuan() {
   const button = document.getElementById("submitButtonPengajuan");
-  button.disabled = true;
-  button.innerText = "Menyimpan... ⏳";
+  if (button) {
+      button.disabled = true;
+      button.innerText = "Menyimpan... ⏳";
+  }
   const output = document.getElementById("outputPengajuan");
-  output.innerText = "";
+  if (output) output.innerText = "";
+
+  const showError = function(msg) {
+      if (typeof AppPopup !== 'undefined') {
+          AppPopup.alert(msg.replace(/⚠️|❌/g, '').trim(), 'Peringatan');
+      } else if (output) {
+          output.innerText = msg;
+      }
+      resetButton();
+  };
 
   const jenisPengajuan = document.getElementById("jenis_pengajuan").value;
   const tanggalPengajuanGlobal = document.getElementById("tanggal_pengajuan").value;
 
   if (!jenisPengajuan || !tanggalPengajuanGlobal) {
-    output.innerText = "⚠️ Pilih Jenis Pengajuan dan Tanggal Pengajuan terlebih dahulu.";
-    resetButton();
+    showError("⚠️ Pilih Jenis Pengajuan dan Tanggal Pengajuan terlebih dahulu.");
     return;
   }
 
@@ -1943,8 +1953,7 @@ function submitDataPengajuan() {
     });
 
     if (dataList.length === 0) {
-      output.innerText = "⚠️ Masukkan minimal 1 data (Suplier dan Nominal/Total wajib diisi).";
-      resetButton();
+      showError("⚠️ Masukkan minimal 1 data (Suplier dan Nominal/Total wajib diisi).");
       return;
     }
 
@@ -1961,8 +1970,7 @@ function submitDataPengajuan() {
         google.script.run.withSuccessHandler(showResultPengajuan).simpanDataPengajuanTF(payload);
       }
     }).catch(error => {
-      output.innerText = "❌ Gagal memproses file: " + error;
-      resetButton();
+      showError("❌ Gagal memproses file: " + error);
     });
 
   } else if (jenisPengajuan === 'pengajuan-petty-cash') {
@@ -1992,8 +2000,7 @@ function submitDataPengajuan() {
     });
 
     if (dataList.length === 0) {
-      output.innerText = "⚠️ Masukkan minimal 1 data (Nominal wajib diisi).";
-      resetButton();
+      showError("⚠️ Masukkan minimal 1 data (Nominal wajib diisi).");
       return;
     }
 
@@ -2010,8 +2017,7 @@ function submitDataPengajuan() {
         google.script.run.withSuccessHandler(showResultPengajuan).simpanDataPengajuanPC(payload);
       }
     }).catch(error => {
-      output.innerText = "❌ Gagal memproses file: " + error;
-      resetButton();
+      showError("❌ Gagal memproses file: " + error);
     });
 
   } else if (jenisPengajuan === 'sudah-tf') {
@@ -2032,8 +2038,7 @@ function submitDataPengajuan() {
     });
 
     if (dataList.length === 0) {
-      output.innerText = "⚠️ Masukkan minimal 1 file bukti transfer.";
-      resetButton();
+      showError("⚠️ Masukkan minimal 1 file bukti transfer.");
       return;
     }
     Promise.all(filePromises).then(() => {
@@ -2049,13 +2054,11 @@ function submitDataPengajuan() {
           google.script.run.withSuccessHandler(showResultPengajuan).simpanDataSudahTF(payload);
         }
     }).catch(error => {
-        output.innerText = "❌ Gagal memproses file: " + error;
-        resetButton();
+        showError("❌ Gagal memproses file: " + error);
     });
 
   } else {
-    output.innerText = `⚠️ Fitur untuk "${jenisPengajuan}" belum diimplementasikan.`;
-    resetButton();
+    showError(`⚠️ Fitur untuk "${jenisPengajuan}" belum diimplementasikan.`);
   }
 }
 
@@ -2073,8 +2076,10 @@ function readFileAsBase64(file) {
 
 function resetButton() {
   const button = document.getElementById("submitButtonPengajuan");
-  button.disabled = false;
-  button.innerText = "Simpan Data Pengajuan";
+  if (button) {
+      button.disabled = false;
+      button.innerText = "Kirim Pengajuan";
+  }
 }
 
 function applyKeteranganColor(selectElement) {
@@ -2087,12 +2092,26 @@ function applyKeteranganColor(selectElement) {
 }
 
 function showResultPengajuan(res) {
-  const output = document.getElementById("outputPengajuan");
-  output.innerText = res;
+  if (typeof AppPopup !== 'undefined') {
+      const msgLower = (res || '').toLowerCase();
+      if (msgLower.includes('berhasil') || msgLower.includes('✅')) {
+          AppPopup.success('Pengajuan sudah dikirim, tunggu disetujui.', 'Pengajuan Berhasil');
+      } else if (msgLower.includes('gagal') || msgLower.includes('error') || msgLower.includes('❌')) {
+          AppPopup.error(res.replace('❌', '').trim(), 'Gagal');
+      } else {
+          AppPopup.alert(res, 'Informasi');
+      }
+  } else {
+      const output = document.getElementById("outputPengajuan");
+      if (output) {
+          output.innerText = res;
+          setTimeout(() => { output.innerText = "" }, 4000);
+      }
+  }
   resetButton();
-  document.getElementById("jenis_pengajuan").value = "";
-  createPengajuanForm();
-  setTimeout(() => { output.innerText = "" }, 4000);
+  const jp = document.getElementById("jenis_pengajuan");
+  if (jp) jp.value = "";
+  if (typeof createPengajuanForm === 'function') createPengajuanForm();
 }
 
 function exportPettyCashToExcel() {
@@ -2384,7 +2403,7 @@ function closeEditPettyCashModal() {
 }
 
 function saveEditPettyCashModal() {
-  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
+  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat mengedit data.', 'Akses Ditolak', 'error'); return; }
   var source = document.getElementById('editPcSource').value;
   var parentIdx = parseInt(document.getElementById('editPcParentIdx').value, 10);
   var trxIdx = parseInt(document.getElementById('editPcTrxIdx').value, 10);
@@ -2394,11 +2413,11 @@ function saveEditPettyCashModal() {
   var tanggal = document.getElementById('editPcTanggal').value;
   var jenis = document.getElementById('editPcJenis').value;
   var nama = (document.getElementById('editPcNama').value || '').trim();
-  if (!nama) { alert('Nama / Keterangan wajib diisi.'); return; }
+  if (!nama) { showCustomAlert('Nama / Keterangan wajib diisi.', 'Peringatan', 'warning'); return; }
   if (source === 'local') {
     var key = getRbmStorageKey('RBM_PENDING_PETTY_CASH');
     var pending = safeParse(RBMStorage.getItem(key), []);
-    if (!pending[parentIdx] || !pending[parentIdx].payload || !pending[parentIdx].payload.transactions || !pending[parentIdx].payload.transactions[trxIdx]) { alert('Data tidak ditemukan.'); return; }
+    if (!pending[parentIdx] || !pending[parentIdx].payload || !pending[parentIdx].payload.transactions || !pending[parentIdx].payload.transactions[trxIdx]) { showCustomAlert('Data tidak ditemukan.', 'Peringatan', 'warning'); return; }
     var trx = pending[parentIdx].payload.transactions[trxIdx];
     pending[parentIdx].payload.tanggal = tanggal;
     pending[parentIdx].payload.jenis = jenis;
@@ -2451,13 +2470,13 @@ function saveEditPettyCashModal() {
       closeEditPettyCashModal();
       if (typeof loadPettyCashData === 'function') loadPettyCashData();
     }).catch(function(err) {
-      alert('Gagal menyimpan: ' + (err && err.message ? err.message : ''));
+      showCustomAlert('Gagal menyimpan: ' + (err && err.message ? err.message : ''), 'Error', 'error');
     });
   }
 }
 
 function editPettyCashItem(parentIdx, trxIdx) {
-  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
+  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat mengedit data.', 'Akses Ditolak', 'error'); return; }
   var key = getRbmStorageKey('RBM_PENDING_PETTY_CASH');
   var pending = safeParse(RBMStorage.getItem(key), []);
   if (!pending[parentIdx] || !pending[parentIdx].payload || !pending[parentIdx].payload.transactions || !pending[parentIdx].payload.transactions[trxIdx]) return;
@@ -2477,12 +2496,12 @@ function editPettyCashItem(parentIdx, trxIdx) {
 }
 
 function editPettyCashItemFirebase(firebaseDate, indexInDate) {
-  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
+  if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat mengedit data.', 'Akses Ditolak', 'error'); return; }
   var dataList = window._lastPettyCashData;
-  if (!Array.isArray(dataList)) { alert('Data tidak ditemukan. Silakan refresh tabel.'); return; }
+  if (!Array.isArray(dataList)) { showCustomAlert('Data tidak ditemukan. Silakan refresh tabel.', 'Peringatan', 'warning'); return; }
   var idx = parseInt(indexInDate, 10);
   var row = dataList.find(function(r) { return (r._firebaseDate === firebaseDate || r._firebaseDate === String(firebaseDate)) && (r._firebaseIndexInDate === idx || r._firebaseIndexInDate === indexInDate); });
-  if (!row) { alert('Data tidak ditemukan.'); return; }
+  if (!row) { showCustomAlert('Data tidak ditemukan.', 'Peringatan', 'warning'); return; }
   var data = {
     tanggal: row._firebaseDate || row.tanggal,
     nama: row.nama,
@@ -2980,121 +2999,115 @@ document.addEventListener('click', function(e) {
     showMemoPopup(text, el.ownerDocument || document);
 }, true);
 
-function deletePembukuanItem(parentIdx, type, subIdx) {
-    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
-    if(!confirm("Yakin ingin menghapus data ini?")) return;
-
-    var pending = window._lastPembukuanPending;
-    if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.deletePembukuanDay && pending && pending[parentIdx] && pending[parentIdx].payload) {
-        var p = pending[parentIdx].payload;
-        var kasMasuk = (p.kasMasuk || []).slice();
-        var kasKeluar = (p.kasKeluar || []).slice();
-        if (type === 'kasMasuk' && kasMasuk.length > subIdx) kasMasuk.splice(subIdx, 1);
-        else if (type === 'kasKeluar' && kasKeluar.length > subIdx) kasKeluar.splice(subIdx, 1);
-        var outlet = (window._lastPembukuanOutletKey !== undefined && window._lastPembukuanOutletKey !== '') ? window._lastPembukuanOutletKey : getRbmOutlet();
-        if (kasMasuk.length === 0 && kasKeluar.length === 0) {
-            FirebaseStorage.deletePembukuanDay(outlet, p.tanggal).then(function() { loadPembukuanData(); }).catch(function(err) { alert('Gagal hapus: ' + (err && err.message ? err.message : '')); loadPembukuanData(); });
-        } else {
-            FirebaseStorage.savePembukuan({ tanggal: p.tanggal, kasMasuk: kasMasuk, kasKeluar: kasKeluar }, outlet).then(function() { loadPembukuanData(); }).catch(function(err) { alert('Gagal update: ' + (err && err.message ? err.message : '')); loadPembukuanData(); });
+function deletePembukuanItem(parentIdx, type, subIdx, skipConfirm) {
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
+    
+    const executeDelete = function() {
+        var pending = window._lastPembukuanPending;
+        if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.deletePembukuanDay && pending && pending[parentIdx] && pending[parentIdx].payload) {
+            var p = pending[parentIdx].payload;
+            var kasMasuk = (p.kasMasuk || []).slice();
+            var kasKeluar = (p.kasKeluar || []).slice();
+            if (type === 'kasMasuk' && kasMasuk.length > subIdx) kasMasuk.splice(subIdx, 1);
+            else if (type === 'kasKeluar' && kasKeluar.length > subIdx) kasKeluar.splice(subIdx, 1);
+            var outlet = (window._lastPembukuanOutletKey !== undefined && window._lastPembukuanOutletKey !== '') ? window._lastPembukuanOutletKey : getRbmOutlet();
+            if (kasMasuk.length === 0 && kasKeluar.length === 0) {
+                FirebaseStorage.deletePembukuanDay(outlet, p.tanggal).then(function() { loadPembukuanData(); }).catch(function(err) { showCustomAlert('Gagal hapus: ' + (err && err.message ? err.message : ''), 'Error', 'error'); loadPembukuanData(); });
+            } else {
+                FirebaseStorage.savePembukuan({ tanggal: p.tanggal, kasMasuk: kasMasuk, kasKeluar: kasKeluar }, outlet).then(function() { loadPembukuanData(); }).catch(function(err) { showCustomAlert('Gagal update: ' + (err && err.message ? err.message : ''), 'Error', 'error'); loadPembukuanData(); });
+            }
+            return;
         }
-        return;
-    }
 
-    const key = getRbmStorageKey('RBM_PENDING_PEMBUKUAN');
-    let localPending = safeParse(RBMStorage.getItem(key), []);
-    if (localPending[parentIdx] && localPending[parentIdx].payload) {
-        const payload = localPending[parentIdx].payload;
-        if (type === 'kasMasuk' && payload.kasMasuk) payload.kasMasuk.splice(subIdx, 1);
-        else if (type === 'kasKeluar' && payload.kasKeluar) payload.kasKeluar.splice(subIdx, 1);
-        if ((!payload.kasMasuk || payload.kasMasuk.length === 0) && (!payload.kasKeluar || payload.kasKeluar.length === 0)) {
-            localPending.splice(parentIdx, 1);
+        const key = getRbmStorageKey('RBM_PENDING_PEMBUKUAN');
+        let localPending = safeParse(RBMStorage.getItem(key), []);
+        if (localPending[parentIdx] && localPending[parentIdx].payload) {
+            const payload = localPending[parentIdx].payload;
+            if (type === 'kasMasuk' && payload.kasMasuk) payload.kasMasuk.splice(subIdx, 1);
+            else if (type === 'kasKeluar' && payload.kasKeluar) payload.kasKeluar.splice(subIdx, 1);
+            if ((!payload.kasMasuk || payload.kasMasuk.length === 0) && (!payload.kasKeluar || payload.kasKeluar.length === 0)) {
+                localPending.splice(parentIdx, 1);
+            }
+            RBMStorage.setItem(key, JSON.stringify(localPending));
+            loadPembukuanData();
         }
-        RBMStorage.setItem(key, JSON.stringify(localPending));
-        loadPembukuanData();
-    }
+    };
+    
+    if (skipConfirm) { executeDelete(); } else { showCustomConfirm("Yakin ingin menghapus data ini?", "Konfirmasi Hapus", executeDelete); }
 }
 
 function editPembukuanItem(parentIdx, type, subIdx) {
-    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
-    if(!confirm("Edit data ini? Data akan dipindahkan ke form input dan dihapus dari daftar ini.")) return;
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat mengedit data.', 'Akses Ditolak', 'error'); return; }
+    showCustomConfirm("Edit data ini? Data akan dipindahkan ke form input dan dihapus dari daftar ini.", "Konfirmasi Edit", function() {
+        var pending = window._lastPembukuanPending;
+        if (!pending && !useFirebaseBackend()) {
+          var key = getRbmStorageKey('RBM_PENDING_PEMBUKUAN');
+          pending = safeParse(RBMStorage.getItem(key), []);
+        }
+        var item = pending && pending[parentIdx];
+        if (!item || !item.payload) return;
 
-    var pending = window._lastPembukuanPending;
-    if (!pending && !useFirebaseBackend()) {
-      var key = getRbmStorageKey('RBM_PENDING_PEMBUKUAN');
-      pending = safeParse(RBMStorage.getItem(key), []);
-    }
-    var item = pending && pending[parentIdx];
-    if (!item || !item.payload) return;
+        const p = item.payload;
+        let dataToEdit = null;
+        
+        if (type === 'kasMasuk' && p.kasMasuk && p.kasMasuk[subIdx]) {
+            dataToEdit = p.kasMasuk[subIdx];
+        } else if (type === 'kasKeluar' && p.kasKeluar && p.kasKeluar[subIdx]) {
+            dataToEdit = p.kasKeluar[subIdx];
+        }
+        
+        if (!dataToEdit) return;
 
-    const p = item.payload;
-    let dataToEdit = null;
-    
-    if (type === 'kasMasuk' && p.kasMasuk && p.kasMasuk[subIdx]) {
-        dataToEdit = p.kasMasuk[subIdx];
-    } else if (type === 'kasKeluar' && p.kasKeluar && p.kasKeluar[subIdx]) {
-        dataToEdit = p.kasKeluar[subIdx];
-    }
-    
-    if (!dataToEdit) return;
-
-    // Pindah ke view input
-    showView('pembukuan-keuangan-view');
-    
-    // Set tanggal
-    document.getElementById("tanggal_pembukuan").value = p.tanggal;
-    
-    // Set jenis dan generate rows
-    const jenisSelect = document.getElementById("jenis_transaksi_pembukuan");
-    jenisSelect.value = (type === 'kasMasuk') ? 'kas-masuk' : 'kas-keluar';
-    createPembukuanRows();
-    
-    // Isi data ke baris pertama
-    const container = document.getElementById("detail-container-pembukuan");
-    const firstRow = container.querySelector(type === 'kasMasuk' ? '.row-group-pembukuan' : '.row-group');
-    
-    if (firstRow) {
-        if (type === 'kasMasuk') {
-            if(firstRow.querySelector(".pembukuan_ket_masuk")) firstRow.querySelector(".pembukuan_ket_masuk").value = dataToEdit.keterangan || '';
-            if(firstRow.querySelector(".pembukuan_catatan")) firstRow.querySelector(".pembukuan_catatan").value = dataToEdit.catatan || '';
-            if(firstRow.querySelector(".pembukuan_fisik")) firstRow.querySelector(".pembukuan_fisik").value = dataToEdit.fisik || '';
-            if(firstRow.querySelector(".pembukuan_vcr")) firstRow.querySelector(".pembukuan_vcr").value = dataToEdit.vcr || '';
-            
-            // Trigger perhitungan selisih dan display logic
-            firstRow.querySelector(".pembukuan_ket_masuk").dispatchEvent(new Event('input'));
-            firstRow.querySelector(".pembukuan_fisik").dispatchEvent(new Event('input'));
-            
-            // Isi komentar jika ada
-            if (dataToEdit.komentarFisik) {
-                firstRow.querySelector(".pembukuan_komentar_fisik").value = dataToEdit.komentarFisik;
-                // Force show comment field logic if needed, simplified here
-            }
-            if (dataToEdit.komentarSelisih) {
-                firstRow.querySelector(".pembukuan_komentar_selisih").value = dataToEdit.komentarSelisih;
-            }
-        } else {
-            if(firstRow.querySelector(".pembukuan_ket_keluar")) firstRow.querySelector(".pembukuan_ket_keluar").value = dataToEdit.keterangan || '';
-            if(firstRow.querySelector(".pembukuan_setor")) firstRow.querySelector(".pembukuan_setor").value = dataToEdit.setor || '';
-            // Foto tidak bisa di-restore ke input file karena security browser
-            if (dataToEdit.foto) {
-                alert("Catatan: Foto sebelumnya tidak dapat dimuat kembali ke input file. Silakan upload ulang jika perlu.");
+        showView('pembukuan-keuangan-view');
+        document.getElementById("tanggal_pembukuan").value = p.tanggal;
+        
+        const jenisSelect = document.getElementById("jenis_transaksi_pembukuan");
+        jenisSelect.value = (type === 'kasMasuk') ? 'kas-masuk' : 'kas-keluar';
+        createPembukuanRows();
+        
+        const container = document.getElementById("detail-container-pembukuan");
+        const firstRow = container.querySelector(type === 'kasMasuk' ? '.row-group-pembukuan' : '.row-group');
+        
+        if (firstRow) {
+            if (type === 'kasMasuk') {
+                if(firstRow.querySelector(".pembukuan_ket_masuk")) firstRow.querySelector(".pembukuan_ket_masuk").value = dataToEdit.keterangan || '';
+                if(firstRow.querySelector(".pembukuan_catatan")) firstRow.querySelector(".pembukuan_catatan").value = dataToEdit.catatan || '';
+                if(firstRow.querySelector(".pembukuan_fisik")) firstRow.querySelector(".pembukuan_fisik").value = dataToEdit.fisik || '';
+                if(firstRow.querySelector(".pembukuan_vcr")) firstRow.querySelector(".pembukuan_vcr").value = dataToEdit.vcr || '';
+                
+                firstRow.querySelector(".pembukuan_ket_masuk").dispatchEvent(new Event('input'));
+                firstRow.querySelector(".pembukuan_fisik").dispatchEvent(new Event('input'));
+                
+                if (dataToEdit.komentarFisik) {
+                    firstRow.querySelector(".pembukuan_komentar_fisik").value = dataToEdit.komentarFisik;
+                }
+                if (dataToEdit.komentarSelisih) {
+                    firstRow.querySelector(".pembukuan_komentar_selisih").value = dataToEdit.komentarSelisih;
+                }
+            } else {
+                if(firstRow.querySelector(".pembukuan_ket_keluar")) firstRow.querySelector(".pembukuan_ket_keluar").value = dataToEdit.keterangan || '';
+                if(firstRow.querySelector(".pembukuan_setor")) firstRow.querySelector(".pembukuan_setor").value = dataToEdit.setor || '';
+                if (dataToEdit.foto) {
+                    showCustomAlert("Catatan: Foto sebelumnya tidak dapat dimuat kembali ke input file. Silakan upload ulang jika perlu.", "Info", "info");
+                }
             }
         }
-    }
 
-    if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && pending) {
-        var kasMasuk = (p.kasMasuk || []).slice();
-        var kasKeluar = (p.kasKeluar || []).slice();
-        if (type === 'kasMasuk' && kasMasuk.length > subIdx) kasMasuk.splice(subIdx, 1);
-        else if (type === 'kasKeluar' && kasKeluar.length > subIdx) kasKeluar.splice(subIdx, 1);
-        var outlet = (window._lastPembukuanOutletKey !== undefined && window._lastPembukuanOutletKey !== '') ? window._lastPembukuanOutletKey : getRbmOutlet();
-        if (kasMasuk.length === 0 && kasKeluar.length === 0) {
-            FirebaseStorage.deletePembukuanDay(outlet, p.tanggal).then(function() { loadPembukuanData(); }).catch(function() { loadPembukuanData(); });
+        if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && pending) {
+            var kasMasuk = (p.kasMasuk || []).slice();
+            var kasKeluar = (p.kasKeluar || []).slice();
+            if (type === 'kasMasuk' && kasMasuk.length > subIdx) kasMasuk.splice(subIdx, 1);
+            else if (type === 'kasKeluar' && kasKeluar.length > subIdx) kasKeluar.splice(subIdx, 1);
+            var outlet = (window._lastPembukuanOutletKey !== undefined && window._lastPembukuanOutletKey !== '') ? window._lastPembukuanOutletKey : getRbmOutlet();
+            if (kasMasuk.length === 0 && kasKeluar.length === 0) {
+                FirebaseStorage.deletePembukuanDay(outlet, p.tanggal).then(function() { loadPembukuanData(); }).catch(function() { loadPembukuanData(); });
+            } else {
+                FirebaseStorage.savePembukuan({ tanggal: p.tanggal, kasMasuk: kasMasuk, kasKeluar: kasKeluar }, outlet).then(function() { loadPembukuanData(); }).catch(function() { loadPembukuanData(); });
+            }
         } else {
-            FirebaseStorage.savePembukuan({ tanggal: p.tanggal, kasMasuk: kasMasuk, kasKeluar: kasKeluar }, outlet).then(function() { loadPembukuanData(); }).catch(function() { loadPembukuanData(); });
+            deletePembukuanItem(parentIdx, type, subIdx, true);
         }
-    } else {
-        deletePembukuanItem(parentIdx, type, subIdx);
-    }
+    });
 }
 
 function exportPembukuanToExcel() {
@@ -3668,21 +3681,22 @@ function closeEditInventaris() {
 }
 
 function saveEditInventaris() {
-    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat mengedit data.'); return; }
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat mengedit data.', 'Akses Ditolak', 'error'); return; }
     const nama = document.getElementById('editInvNama').value;
     const tanggal = document.getElementById('editInvTanggal').value;
     const jumlah = document.getElementById('editInvJumlah').value;
     
-    if (jumlah === '') { alert("Jumlah harus diisi"); return; }
+    if (jumlah === '') { showCustomAlert("Jumlah harus diisi", "Peringatan", "warning"); return; }
     processInventarisUpdate(nama, tanggal, jumlah);
 }
 
 function deleteEditInventaris() {
-    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
-    if (!confirm("Hapus data inventaris ini? (Jumlah akan di-set ke 0)")) return;
-    const nama = document.getElementById('editInvNama').value;
-    const tanggal = document.getElementById('editInvTanggal').value;
-    processInventarisUpdate(nama, tanggal, 0);
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
+    showCustomConfirm("Hapus data inventaris ini? (Jumlah akan di-set ke 0)", "Konfirmasi Hapus", function() {
+        const nama = document.getElementById('editInvNama').value;
+        const tanggal = document.getElementById('editInvTanggal').value;
+        processInventarisUpdate(nama, tanggal, 0);
+    });
 }
 
 function processInventarisUpdate(nama, tanggal, jumlah) {
@@ -3988,14 +4002,15 @@ function addEmployeeRow() {
 }
 
 function removeEmployee(index) {
-    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data karyawan.'); return; }
-    if(!confirm("Hapus karyawan ini?")) return;
-    if (window._absensiViewEmployees === undefined || !Array.isArray(window._absensiViewEmployees)) {
-        window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-    }
-    window._absensiViewEmployees.splice(index, 1);
-    saveAbsensiToFirebase(true); // [AUTO-SAVE] Simpan otomatis saat hapus
-    renderAbsensiTable();
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data karyawan.', 'Akses Ditolak', 'error'); return; }
+    showCustomConfirm("Hapus karyawan ini?", "Konfirmasi Hapus", function() {
+        if (window._absensiViewEmployees === undefined || !Array.isArray(window._absensiViewEmployees)) {
+            window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+        }
+        window._absensiViewEmployees.splice(index, 1);
+        saveAbsensiToFirebase(true);
+        renderAbsensiTable();
+    });
 }
 
 function saveAbsensiData() {
@@ -5746,13 +5761,14 @@ function loadReservasiData() {
 }
 
 function deleteReservasi(id) {
-    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
-    if(!confirm("Hapus data reservasi ini?")) return;
-    let allData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
-    allData = allData.filter(d => d.id !== id);
-    RBMStorage.setItem(getRbmStorageKey('RBM_RESERVASI_DATA'), JSON.stringify(allData));
-    loadReservasiData();
-    renderReservasiCalendar();
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
+    showCustomConfirm("Hapus data reservasi ini?", "Konfirmasi Hapus", function() {
+        let allData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
+        allData = allData.filter(d => d.id !== id);
+        RBMStorage.setItem(getRbmStorageKey('RBM_RESERVASI_DATA'), JSON.stringify(allData));
+        loadReservasiData();
+        renderReservasiCalendar();
+    });
 }
 
 function printReservasiBill(id) {
@@ -6552,14 +6568,15 @@ function addStokItem() {
 }
 
 function removeStokItem(idx) {
-    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
-    if(!confirm("Hapus item ini?")) return;
-    const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
-    const allItems = safeParse(RBMStorage.getItem(stokKey), {sales:[], fruits:[], notsales:[]});
-    if (Array.isArray(allItems[activeStokTab])) allItems[activeStokTab].splice(idx, 1);
-    RBMStorage.setItem(stokKey, JSON.stringify(allItems));
-    manageStokItems();
-    renderStokTable();
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
+    showCustomConfirm("Hapus item ini?", "Konfirmasi Hapus", function() {
+        const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
+        const allItems = safeParse(RBMStorage.getItem(stokKey), {sales:[], fruits:[], notsales:[]});
+        if (Array.isArray(allItems[activeStokTab])) allItems[activeStokTab].splice(idx, 1);
+        RBMStorage.setItem(stokKey, JSON.stringify(allItems));
+        manageStokItems();
+        renderStokTable();
+    });
 }
 
 
@@ -6758,19 +6775,20 @@ function toggleRiwayatBarangSelectAll(checkbox) {
 }
 
 function hapusRiwayatBarangYangDitandai() {
-    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
     const checked = document.querySelectorAll('#riwayat_barang_table_container .riwayat_barang_row_check:checked');
     if (!checked.length) {
-        alert('Tandai dulu item yang ingin dihapus (centang checkbox).');
+        showCustomAlert('Tandai dulu item yang ingin dihapus (centang checkbox).', 'Peringatan', 'warning');
         return;
     }
     const selections = Array.from(checked).map(cb => ({ parentIdx: parseInt(cb.dataset.parent, 10), itemIdx: parseInt(cb.dataset.item, 10) }));
-    if (!confirm('Hapus ' + selections.length + ' data yang ditandai? Stok akan diperbarui.')) return;
-    deleteRiwayatBarangBulk(selections);
+    showCustomConfirm('Hapus ' + selections.length + ' data yang ditandai? Stok akan diperbarui.', "Konfirmasi Hapus", function() {
+        deleteRiwayatBarangBulk(selections);
+    });
 }
 
 function deleteRiwayatBarangBulk(selections) {
-    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
     if (!selections.length) return;
     selections.sort((a, b) => (b.parentIdx - a.parentIdx) || (b.itemIdx - a.itemIdx));
     const key = getRbmStorageKey('RBM_PENDING_BARANG');
@@ -6832,94 +6850,90 @@ function deleteRiwayatBarangBulk(selections) {
 }
 
 function deleteRiwayatBarang(parentIdx, itemIdx) {
-    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
-    if(!confirm("Hapus data ini? Stok akan diperbarui.")) return;
-    
-    const key = getRbmStorageKey('RBM_PENDING_BARANG');
-    const pending = safeParse(RBMStorage.getItem(key), []);
-    const submission = pending[parentIdx];
-    if (!submission || !submission.payload || !submission.payload[itemIdx]) return;
-    
-    const p = submission.payload[itemIdx];
-    const itemInfo = findStokItemId(p.nama);
-    
-    if (itemInfo) {
-        const stokKeyBarang = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
-        let stokData = safeParse(RBMStorage.getItem(stokKeyBarang), {});
-        const dateKey = p.tanggal;
-        const jenis = p.jenis.toLowerCase().trim();
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
+    showCustomConfirm("Hapus data ini? Stok akan diperbarui.", "Konfirmasi Hapus", function() {
+        const key = getRbmStorageKey('RBM_PENDING_BARANG');
+        const pending = safeParse(RBMStorage.getItem(key), []);
+        const submission = pending[parentIdx];
+        if (!submission || !submission.payload || !submission.payload[itemIdx]) return;
         
-        if (jenis === 'barang masuk') {
-            const key = `${itemInfo.id}_in_${dateKey}`;
-            stokData[key] = (parseFloat(stokData[key]) || 0) - parseFloat(p.jumlah);
-        } else if (jenis === 'barang keluar') {
-            const keyOut = `${itemInfo.id}_out_${dateKey}`;
-            const keyOutPck = `${itemInfo.id}_outpck_${dateKey}`;
-            stokData[keyOut] = (parseFloat(stokData[keyOut]) || 0) - parseFloat(p.jumlah);
-            stokData[keyOutPck] = (parseFloat(stokData[keyOutPck]) || 0) - parseFloat(p.jumlah);
-            if (p.barangjadi) {
-                const keyFin = `${itemInfo.id}_fin_${dateKey}`;
-                stokData[keyFin] = (parseFloat(stokData[keyFin]) || 0) - parseFloat(p.barangjadi);
-            }
-        } else if (jenis === 'rusak') {
-            const key = `${itemInfo.id}_rusak_${dateKey}`;
-            stokData[key] = (parseFloat(stokData[key]) || 0) - parseFloat(p.jumlah);
-        } else if (jenis === 'sisa') {
-            const key = `${itemInfo.id}_sisa_${dateKey}`;
-            delete stokData[key];
-        }
-        RBMStorage.setItem(stokKeyBarang, JSON.stringify(stokData));
-    }
-    
-    submission.payload.splice(itemIdx, 1);
-    if (submission.payload.length === 0) pending.splice(parentIdx, 1);
-    
-    RBMStorage.setItem(key, JSON.stringify(pending));
-    
-    // Reload data and keep current filter active
-    const start = document.getElementById("riwayat_barang_start").value;
-    const end = document.getElementById("riwayat_barang_end").value;
-    
-    const pendingData = safeParse(RBMStorage.getItem(key), []);
-    
-    // Reset grouped data
-    riwayatBarangData = {
-        'barang masuk': [],
-        'barang keluar': [],
-        'sisa': [],
-        'rusak': []
-    };
-    
-    // Group data by jenis
-    pendingData.forEach((submission, parentIdx) => {
-        const items = submission.payload || [];
-        if (Array.isArray(items)) {
-            items.forEach((item, itemIdx) => {
-                if (item.tanggal >= start && item.tanggal <= end) {
-                    const jenis = item.jenis.toLowerCase().trim();
-                    const groupKey = jenis === 'barang masuk' ? 'barang masuk' :
-                                     jenis === 'barang keluar' ? 'barang keluar' :
-                                     jenis === 'sisa' ? 'sisa' :
-                                     jenis === 'rusak' ? 'rusak' : null;
-                    
-                    if (groupKey) {
-                        riwayatBarangData[groupKey].push({
-                            item: item,
-                            parentIdx: parentIdx,
-                            itemIdx: itemIdx
-                        });
-                    }
+        const p = submission.payload[itemIdx];
+        const itemInfo = findStokItemId(p.nama);
+        
+        if (itemInfo) {
+            const stokKeyBarang = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
+            let stokData = safeParse(RBMStorage.getItem(stokKeyBarang), {});
+            const dateKey = p.tanggal;
+            const jenis = p.jenis.toLowerCase().trim();
+            
+            if (jenis === 'barang masuk') {
+                const keyStr = `${itemInfo.id}_in_${dateKey}`;
+                stokData[keyStr] = (parseFloat(stokData[keyStr]) || 0) - parseFloat(p.jumlah);
+            } else if (jenis === 'barang keluar') {
+                const keyOut = `${itemInfo.id}_out_${dateKey}`;
+                const keyOutPck = `${itemInfo.id}_outpck_${dateKey}`;
+                stokData[keyOut] = (parseFloat(stokData[keyOut]) || 0) - parseFloat(p.jumlah);
+                stokData[keyOutPck] = (parseFloat(stokData[keyOutPck]) || 0) - parseFloat(p.jumlah);
+                if (p.barangjadi) {
+                    const keyFin = `${itemInfo.id}_fin_${dateKey}`;
+                    stokData[keyFin] = (parseFloat(stokData[keyFin]) || 0) - parseFloat(p.barangjadi);
                 }
-            });
+            } else if (jenis === 'rusak') {
+                const keyStr = `${itemInfo.id}_rusak_${dateKey}`;
+                stokData[keyStr] = (parseFloat(stokData[keyStr]) || 0) - parseFloat(p.jumlah);
+            } else if (jenis === 'sisa') {
+                const keyStr = `${itemInfo.id}_sisa_${dateKey}`;
+                delete stokData[keyStr];
+            }
+            RBMStorage.setItem(stokKeyBarang, JSON.stringify(stokData));
+        }
+        
+        submission.payload.splice(itemIdx, 1);
+        if (submission.payload.length === 0) pending.splice(parentIdx, 1);
+        
+        RBMStorage.setItem(key, JSON.stringify(pending));
+        
+        const start = document.getElementById("riwayat_barang_start").value;
+        const end = document.getElementById("riwayat_barang_end").value;
+        
+        const pendingData = safeParse(RBMStorage.getItem(key), []);
+        
+        riwayatBarangData = {
+            'barang masuk': [],
+            'barang keluar': [],
+            'sisa': [],
+            'rusak': []
+        };
+        
+        pendingData.forEach((subm, pIdx) => {
+            const items = subm.payload || [];
+            if (Array.isArray(items)) {
+                items.forEach((item, iIdx) => {
+                    if (item.tanggal >= start && item.tanggal <= end) {
+                        const jenis = item.jenis.toLowerCase().trim();
+                        const groupKey = jenis === 'barang masuk' ? 'barang masuk' :
+                                         jenis === 'barang keluar' ? 'barang keluar' :
+                                         jenis === 'sisa' ? 'sisa' :
+                                         jenis === 'rusak' ? 'rusak' : null;
+                        
+                        if (groupKey) {
+                            riwayatBarangData[groupKey].push({
+                                item: item,
+                                parentIdx: pIdx,
+                                itemIdx: iIdx
+                            });
+                        }
+                    }
+                });
+            }
+        });
+        
+        const activeBtn = document.querySelector('.riwayat-filter-btn.active');
+        if (activeBtn) {
+            const jenis = activeBtn.getAttribute('data-filter');
+            filterRiwayatBarang(jenis, activeBtn);
         }
     });
-    
-    // Refresh current active filter
-    const activeBtn = document.querySelector('.riwayat-filter-btn.active');
-    if (activeBtn) {
-        const jenis = activeBtn.getAttribute('data-filter');
-        filterRiwayatBarang(jenis, activeBtn);
-    }
 }
 
 function getRiwayatBarangDataForExport() {
@@ -7268,6 +7282,148 @@ function populateGpsNames() {
     updateGpsJadwalDisplay();
 }
 
+window._faceVerified = false;
+window._faceVerificationInterval = null;
+
+window.startLiveFaceVerification = function() {
+    if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
+    const nameSel = document.getElementById('gps_absen_name');
+    const name = nameSel ? nameSel.value : '';
+    if (!name) return;
+
+    // ===== PENGATURAN KEKETATAN FACE ID =====
+    // 0.40 = Sangat ketat (wajah dan cahaya harus sama persis)
+    // 0.45 = Standar / Ideal
+    // 0.50 = Agak longgar (lebih mudah mendeteksi, tapi berisiko tertukar)
+    const FACE_MATCH_THRESHOLD = 0.45; // <-- SILAKAN UBAH ANGKA INI
+
+    const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+    const faceData = safeParse(window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey), {});
+    const registeredDescriptorArr = faceData[name];
+
+    if (!registeredDescriptorArr || !window.isFaceApiLoaded || typeof faceapi === 'undefined') {
+        window._faceVerified = false;
+        if (typeof checkDistance === 'function') checkDistance();
+        return;
+    }
+
+    const registeredDescriptor = new Float32Array(registeredDescriptorArr);
+    const video = document.getElementById('gps_video');
+    const faceStatus = document.getElementById('face_id_status_info');
+
+    let isProcessing = false;
+
+    window._faceVerificationInterval = setInterval(async () => {
+        if (isProcessing) return;
+        if (!video || !video.videoWidth || video.paused || video.ended) return;
+        
+        isProcessing = true;
+        try {
+            // PENGATURAN AI UNTUK PENCAHAYAAN GELAP:
+            // inputSize: 320 (resolusi pemindaian lebih tinggi, default 224)
+            // scoreThreshold: 0.3 (lebih sensitif mendeteksi wajah samar, default 0.5)
+            const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
+            const detection = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
+            
+            if (!detection) {
+                window._faceVerified = false;
+                if (faceStatus) {
+                    faceStatus.innerHTML = "🔍 Wajah tidak terdeteksi di kamera...";
+                    faceStatus.style.color = "#b45309";
+                    faceStatus.style.background = "#fffbeb";
+                    faceStatus.style.borderColor = "#fde68a";
+                }
+            } else {
+                const distance = faceapi.euclideanDistance(detection.descriptor, registeredDescriptor);
+                if (distance > FACE_MATCH_THRESHOLD) {
+                    window._faceVerified = false;
+                    if (faceStatus) {
+                        faceStatus.innerHTML = `❌ Wajah tidak cocok!<br>Ini bukan wajah ${name}. (Skor Jarak: ${distance.toFixed(2)}/${FACE_MATCH_THRESHOLD})<br>Pastikan Anda memilih nama yang benar.`;
+                        faceStatus.style.color = "#b91c1c";
+                        faceStatus.style.background = "#fef2f2";
+                        faceStatus.style.borderColor = "#fecaca";
+                    }
+                } else {
+                    window._faceVerified = true;
+                    if (faceStatus) {
+                        faceStatus.innerHTML = "✅ Wajah Terverifikasi. Tombol Absen Aktif.";
+                        faceStatus.style.color = "#15803d";
+                        faceStatus.style.background = "#dcfce7";
+                        faceStatus.style.borderColor = "#bbf7d0";
+                    }
+                }
+            }
+            if (typeof checkDistance === 'function') checkDistance();
+        } catch (e) {
+            console.error(e);
+        }
+        isProcessing = false;
+    }, 1500); // Lakukan scan setiap 1.5 detik
+};
+
+window.stopLiveFaceVerification = function() {
+    if (window._faceVerificationInterval) {
+        clearInterval(window._faceVerificationInterval);
+        window._faceVerificationInterval = null;
+    }
+    window._faceVerified = false;
+};
+
+window.isFaceApiLoaded = window.isFaceApiLoaded || false;
+window.loadFaceApiModelsForAbsensi = async function() {
+    if (window.isFaceApiLoaded) return;
+    const faceStatus = document.getElementById('face_id_status_info');
+    if (faceStatus) {
+        faceStatus.innerHTML = "⏳ Memuat model AI Face ID...";
+        faceStatus.style.color = "#b45309";
+        faceStatus.style.background = "#fffbeb";
+        faceStatus.style.borderColor = "#fde68a";
+    }
+    try {
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+        if (typeof faceapi !== 'undefined') {
+            await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+            window.isFaceApiLoaded = true;
+            if (faceStatus) {
+                const nameSel = document.getElementById('gps_absen_name');
+                if (nameSel && nameSel.value) {
+                    const name = nameSel.value;
+                    const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+                    const faceData = safeParse(window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey), {});
+                    if (!faceData[name]) {
+                        faceStatus.innerHTML = "❌ Wajah belum terdaftar. Hubungi Manager.";
+                        faceStatus.style.color = "#b91c1c";
+                        faceStatus.style.background = "#fef2f2";
+                        faceStatus.style.borderColor = "#fecaca";
+                        if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
+                    } else {
+                        faceStatus.innerHTML = "⏳ Memulai pemindaian wajah...";
+                        faceStatus.style.color = "#1d4ed8";
+                        faceStatus.style.background = "#eff6ff";
+                        faceStatus.style.borderColor = "#bfdbfe";
+                        if (typeof window.startLiveFaceVerification === 'function') window.startLiveFaceVerification();
+                    }
+                } else {
+                    faceStatus.innerHTML = "✅ Sistem AI Siap. Silakan pilih nama Anda.";
+                    faceStatus.style.color = "#15803d";
+                    faceStatus.style.background = "#f0fdf4";
+                    faceStatus.style.borderColor = "#bbf7d0";
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Face API Load Error:", e);
+        if (faceStatus) {
+            faceStatus.innerHTML = "❌ Gagal memuat Face ID";
+            faceStatus.style.color = "#b91c1c";
+            faceStatus.style.background = "#fef2f2";
+            faceStatus.style.borderColor = "#fecaca";
+        }
+    }
+};
+
 function initAbsensiHardware() {
     if (window._gpsHardwareStarted) return; // Cegah double init
     window._gpsHardwareStarted = true;
@@ -7338,6 +7494,9 @@ function initAbsensiHardware() {
         var el = document.getElementById('gps_status_overlay');
         if(el) el.innerText = "Browser tidak support GPS";
     }
+
+    // Load Face API models if available
+    if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi();
 }
 
 // Stop camera/gps when leaving view (optional optimization)
@@ -7391,6 +7550,18 @@ function checkDistance() {
     var name = nameEl ? nameEl.value : '';
     
     var disableAll = !inRange || !name;
+
+    // Kunci tombol jika wajah belum terdaftar
+    if (name) {
+        var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+        var faceData = safeParse(window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey), {});
+        if (!faceData[name]) {
+            disableAll = true; 
+        } else if (typeof faceapi !== 'undefined' && window.isFaceApiLoaded) {
+            // Tombol hanya aktif jika wajah di kamera = true / cocok
+            if (!window._faceVerified) disableAll = true;
+        }
+    }
     var statusMsg = "";
 
     if (name) {
@@ -7670,37 +7841,37 @@ function deleteSingleGpsLog(logId) {
     var isOwner = u.role === 'owner';
     
     if (!isDev && !isOwner) {
-        alert('Akses ditolak. Hanya Owner atau Developer yang bisa menghapus data.');
+        showCustomAlert('Akses ditolak. Hanya Owner atau Developer yang bisa menghapus data.', 'Akses Ditolak', 'error');
         return;
     }
     
-    if (!confirm('Yakin ingin menghapus 1 data absensi ini?')) return;
-    
-    var key = getRbmStorageKey('RBM_GPS_LOGS');
-    var logs = safeParse(RBMStorage.getItem(key), []);
-    
-    var logToDelete = logs.find(l => l.id == logId);
-    if (!logToDelete) { alert('Data tidak ditemukan untuk dihapus.'); return; }
-
-    if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase() && logToDelete._firebaseKey) {
-        var sfx = getRbmOutlet() ? '_' + getRbmOutlet().toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
-        var refPath = 'rbm_pro/gps_logs' + sfx + '/' + logToDelete._firebaseKey;
-        window.RBMStorage._db.ref(refPath).remove().then(function() {
-            var newLogs = logs.filter(function(l) { return l.id != logId; });
-            try { localStorage.setItem(key, JSON.stringify(newLogs)); } catch(e){}
-            loadRekapAbsensiGPS();
-            alert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.');
-        });
-    } else {
-        var newLogs = logs.filter(function(l) {
-            return l.id != logId;
-        });
+    showCustomConfirm('Yakin ingin menghapus 1 data absensi ini?', "Konfirmasi Hapus", function() {
+        var key = getRbmStorageKey('RBM_GPS_LOGS');
+        var logs = safeParse(RBMStorage.getItem(key), []);
         
-        RBMStorage.setItem(key, JSON.stringify(newLogs)).then(function() {
-            loadRekapAbsensiGPS();
-            alert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.');
-        });
-    }
+        var logToDelete = logs.find(l => l.id == logId);
+        if (!logToDelete) { showCustomAlert('Data tidak ditemukan untuk dihapus.', 'Info', 'error'); return; }
+
+        if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase() && logToDelete._firebaseKey) {
+            var sfx = getRbmOutlet() ? '_' + getRbmOutlet().toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
+            var refPath = 'rbm_pro/gps_logs' + sfx + '/' + logToDelete._firebaseKey;
+            window.RBMStorage._db.ref(refPath).remove().then(function() {
+                var newLogs = logs.filter(function(l) { return l.id != logId; });
+                try { localStorage.setItem(key, JSON.stringify(newLogs)); } catch(e){}
+                loadRekapAbsensiGPS();
+                showCustomAlert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.', 'Berhasil', 'success');
+            });
+        } else {
+            var newLogs = logs.filter(function(l) {
+                return l.id != logId;
+            });
+            
+            RBMStorage.setItem(key, JSON.stringify(newLogs)).then(function() {
+                loadRekapAbsensiGPS();
+                showCustomAlert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.', 'Berhasil', 'success');
+            });
+        }
+    });
 }
 
 function populateRekapGpsFilterNama() {
@@ -7994,9 +8165,17 @@ function updateGpsJadwalDisplay() {
     const name = document.getElementById('gps_absen_name').value;
     const box = document.getElementById('gps_jadwal_display');
     const textEl = document.getElementById('gps_jadwal_text');
+    const faceStatus = document.getElementById('face_id_status_info');
     if (!box || !textEl) return;
     if (!name) {
         box.style.display = 'none';
+        if (faceStatus && window.isFaceApiLoaded) {
+            faceStatus.innerHTML = "✅ Sistem AI Siap. Silakan pilih nama Anda.";
+            faceStatus.style.color = "#15803d";
+            faceStatus.style.background = "#f0fdf4";
+            faceStatus.style.borderColor = "#bbf7d0";
+        }
+        if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
         return;
     }
     const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
@@ -8062,6 +8241,25 @@ function updateGpsJadwalDisplay() {
 
     textEl.innerHTML = (shift ? `<strong>${shift} (${label})</strong>` : `<strong>${label}</strong>`) + info + cutiInfo + quote;
     box.style.display = 'block';
+    
+    if (faceStatus && window.isFaceApiLoaded) {
+        const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+        const faceData = safeParse(window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey), {});
+        if (!faceData[name]) {
+            faceStatus.innerHTML = "❌ Wajah belum terdaftar. Hubungi Manager.";
+            faceStatus.style.color = "#b91c1c";
+            faceStatus.style.background = "#fef2f2";
+            faceStatus.style.borderColor = "#fecaca";
+            if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
+        } else {
+            faceStatus.innerHTML = "⏳ Memulai pemindaian wajah...";
+            faceStatus.style.color = "#1d4ed8";
+            faceStatus.style.background = "#eff6ff";
+            faceStatus.style.borderColor = "#bfdbfe";
+            if (typeof window.startLiveFaceVerification === 'function') window.startLiveFaceVerification();
+        }
+    }
+
     if (typeof checkDistance === 'function') checkDistance();
 }
 
@@ -8106,9 +8304,39 @@ function processAbsensiGPS(type) {
     }
 }
 
-function _executeAbsensiGPS(type) {
+async function _executeAbsensiGPS(type) {
     const name = document.getElementById('gps_absen_name').value;
     if (!currentPos) { showCustomAlert("Lokasi belum ditemukan! Pastikan GPS aktif.", "GPS Error", "error"); return; }
+
+    const video = document.getElementById('gps_video');
+    const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+    const faceData = safeParse(window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey), {});
+    const registeredDescriptorArr = faceData[name];
+
+    // ===== VERIFIKASI WAJAH =====
+    if (!registeredDescriptorArr) {
+        showCustomAlert(`❌ Data wajah untuk ${name} belum terdaftar! Silakan hubungi Admin/Manajer untuk mendaftarkan wajah Anda di menu Pengaturan.`, "Wajah Belum Terdaftar", "error");
+        return;
+    }
+
+    if (typeof faceapi !== 'undefined') {
+        let faceLoaded = window.isFaceApiLoaded;
+        if (typeof isFaceApiLoaded !== 'undefined') faceLoaded = faceLoaded || isFaceApiLoaded;
+        if (!faceLoaded) {
+            showCustomAlert("Sistem pengenalan wajah sedang dimuat atau gagal dimuat. Harap tunggu sebentar lalu coba lagi.", "Face ID Belum Siap", "warning");
+            return;
+        }
+        
+        // Cek flag verifikasi live (tidak memindai ulang untuk menghemat waktu)
+        if (!window._faceVerified) {
+            showCustomAlert("❌ Wajah belum terverifikasi! Pastikan wajah Anda cocok dan terlihat jelas di kamera sebelum menekan tombol.", "Gagal Verifikasi", "error");
+            return;
+        }
+    } else {
+        showCustomAlert("Sistem pengenalan wajah (Face API) tidak ditemukan!", "Error Sistem", "error");
+        return;
+    }
+    // ============================
 
     const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
     const emp = employees.find(e => e.name === name);
@@ -8117,7 +8345,6 @@ function _executeAbsensiGPS(type) {
     const now = new Date();
     const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
 
-    const video = document.getElementById('gps_video');
     const canvas = document.getElementById('gps_canvas');
     const context = canvas.getContext('2d');
 

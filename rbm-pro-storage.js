@@ -84,7 +84,7 @@
       } catch(e) {}
       var sfx = outlet ? '_' + outlet.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
 
-      var nodesToLoad = ['employees' + sfx, 'gps_config' + sfx, 'gps_jam_config' + sfx, 'employees']; 
+      var nodesToLoad = ['employees' + sfx, 'gps_config' + sfx, 'gps_jam_config' + sfx, 'face_data' + sfx, 'employees', 'face_data']; 
       if (outlet) nodesToLoad.push(outlet); // Load format lama rbm_pro/sidoarjo just in case
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
@@ -157,7 +157,11 @@
               
               var jamKey = 'gps_jam_config' + sfx;
               if (rootVal[jamKey]) localStorage.setItem('RBM_GPS_JAM_CONFIG' + sfx, JSON.stringify(rootVal[jamKey]));
+
+              var faceKey = 'face_data' + sfx;
+              if (rootVal[faceKey]) localStorage.setItem('RBM_FACE_DATA' + sfx, JSON.stringify(rootVal[faceKey]));
           }
+          if (rootVal.face_data) localStorage.setItem('RBM_FACE_DATA', JSON.stringify(rootVal.face_data));
         } catch(e) {}
       }).catch(function(err) {
         console.warn('RBM Storage: load failed', err);
@@ -237,6 +241,7 @@
         if (path.indexOf('stok_items_') === 0) { var fb = getFromCache('stok_items'); if (fb) return fb; }
         if (path.indexOf('gps_config_') === 0) { var fb = getFromCache('gps_config'); if (fb) return fb; }
         if (path.indexOf('gps_jam_config_') === 0) { var fb = getFromCache('gps_jam_config'); if (fb) return fb; }
+        if (path.indexOf('face_data_') === 0) { var fb = getFromCache('face_data'); if (fb) return fb; }
 
         return _origGetItem.call(localStorage, key);
       }
@@ -267,7 +272,7 @@
         
         // [PERBAIKAN] Simpan juga ke localStorage untuk cache offline/startup cepat
         // Khusus untuk data master yang sering dibaca (Karyawan, Config)
-        if (key.indexOf('RBM_EMPLOYEES') === 0 || key.indexOf('RBM_GPS_') === 0) {
+        if (key.indexOf('RBM_EMPLOYEES') === 0 || key.indexOf('RBM_GPS_') === 0 || key.indexOf('RBM_FACE_DATA') === 0) {
            try { localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); } catch(e) {}
         }
 
