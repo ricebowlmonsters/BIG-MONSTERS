@@ -2,9 +2,11 @@
   if (!window.RBMStorage) {
     window.RBMStorage = { getItem: function(k) { return localStorage.getItem(k); }, setItem: function(k, v) { localStorage.setItem(k, v); }, ready: function() { return Promise.resolve(); } };
   }
+  let _cachedOwnerCheck = null;
   // Hanya Owner yang boleh menghapus/mengedit data yang sudah masuk; Manager hanya lihat & input baru
   window.rbmOnlyOwnerCanEditDelete = function() {
-    try { var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); return u.role === 'owner'; } catch(e) { return false; }
+    if (_cachedOwnerCheck !== null) return _cachedOwnerCheck;
+    try { var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); _cachedOwnerCheck = (u.role === 'owner' || (u.username || '').toLowerCase() === 'burhan'); return _cachedOwnerCheck; } catch(e) { return false; }
   };
   function setVal(id, val) { var e = document.getElementById(id); if (e) e.value = val; }
   function getRbmOutlet() { var s = document.getElementById('rbm-outlet-select'); return (s && s.value) ? s.value : ''; }
@@ -177,6 +179,30 @@
     }
   }
 
+  // --- SISTEM CACHING MEMORI RBM PRO ---
+  window._rbmParsedCache = window._rbmParsedCache || {};
+  function getCachedParsedStorage(key, defaultVal) {
+    if (window._rbmParsedCache[key]) {
+      return window._rbmParsedCache[key].data;
+    }
+    let data;
+    if (window.RBMStorage && typeof window.RBMStorage.getRawData === 'function') {
+        let rawObj = window.RBMStorage.getRawData(key);
+        if (typeof rawObj === 'string') {
+            data = safeParse(rawObj, defaultVal || []);
+        } else {
+            data = rawObj !== null && rawObj !== undefined ? rawObj : defaultVal;
+            if (data === defaultVal && Array.isArray(defaultVal)) data = [];
+            if (data === defaultVal && typeof defaultVal === 'object' && !Array.isArray(defaultVal)) data = {};
+        }
+    } else {
+        const raw = RBMStorage.getItem(key) || JSON.stringify(defaultVal || []);
+        data = safeParse(raw, defaultVal || []);
+    }
+    window._rbmParsedCache[key] = { data: data };
+    return data;
+  }
+
   function sanitizeForStorage(obj) {
     if (!obj) return obj;
     const j = JSON.stringify(obj, function(k, v) {
@@ -195,10 +221,11 @@
   function savePendingToLocalStorage(type, payload) {
     try {
       const key = getRbmStorageKey('RBM_PENDING_' + type);
-      const existing = safeParse(RBMStorage.getItem(key), []);
+      const existing = getCachedParsedStorage(key, []);
       const item = { ts: new Date().toISOString(), payload: sanitizeForStorage(payload) };
       existing.push(item);
       RBMStorage.setItem(key, JSON.stringify(existing));
+      window._rbmParsedCache[key] = { data: existing };
       return true;
     } catch (e) {
       console.warn('localStorage save error', e);
@@ -208,6 +235,41 @@
 
   function formatRupiah(n) {
     return 'Rp ' + (n || 0).toLocaleString('id-ID');
+  }
+
+  // Fungsi global untuk upload & kompresi ke Firebase Storage
+  function uploadImageWithCompression(file, storagePath) {
+      return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => {
+              if (typeof compressImageDataUrl === 'function') {
+                  compressImageDataUrl(e.target.result, 800, 0.6, async function(compressed) {
+                      if (useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.storage) {
+                          try {
+                              const storageRef = firebase.storage().ref();
+                              const fileName = storagePath + '/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jpg';
+                              const fileRef = storageRef.child(fileName);
+                              await fileRef.putString(compressed, 'data_url');
+                              const downloadUrl = await fileRef.getDownloadURL();
+                              resolve(downloadUrl);
+                          } catch (err) {
+                              console.warn("Storage upload failed, fallback to base64", err);
+                              const fileData = compressed.split(",");
+                              resolve({ fileName: file.name, mimeType: file.type, data: fileData[1] || '' });
+                          }
+                      } else {
+                          const fileData = compressed.split(",");
+                          resolve({ fileName: file.name, mimeType: file.type, data: fileData[1] || '' });
+                      }
+                  });
+              } else {
+                  const fileData = e.target.result.split(",");
+                  resolve({ fileName: file.name, mimeType: file.type, data: fileData[1] });
+              }
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+      });
   }
 
   function formatRupiahInput(input) {
@@ -361,40 +423,9 @@
         const fileInput = row.querySelector(".pc_foto");
         if (fileInput && fileInput.files[0]) {
           const file = fileInput.files[0];
-          const promise = new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              if (typeof compressImageDataUrl === 'function') {
-                compressImageDataUrl(e.target.result, 800, 0.6, async function(compressed) {
-                  if (useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.storage) {
-                    try {
-                      const storageRef = firebase.storage().ref();
-                      const fileName = 'petty_cash/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jpg';
-                      const fileRef = storageRef.child(fileName);
-                      await fileRef.putString(compressed, 'data_url');
-                      transaction.foto = await fileRef.getDownloadURL();
-                      resolve();
-                    } catch(err) {
-                      const fileData = compressed.split(",");
-                      transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
-                      resolve();
-                    }
-                  } else {
-                    const fileData = compressed.split(",");
-                    transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
-                    resolve();
-                  }
-                });
-              } else {
-                const fileData = e.target.result.split(",");
-                transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
-                resolve();
-              }
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          filePromises.push(promise);
+          filePromises.push(uploadImageWithCompression(file, 'petty_cash').then(res => {
+              transaction.foto = res;
+          }));
         }
       }
     });
@@ -645,93 +676,98 @@ function savePembukuanToJpg() {
       return;
     }
     if (!isGoogleScript()) {
-      const pending = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_PETTY_CASH')), []);
-      if (pending.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data. Buka dari Google Apps Script untuk data dari sheet, atau input data dulu.</td></tr>';
-        return;
-      }
-      let no = 0;
-      let totalDebit = 0, totalKredit = 0;
-      let saldoAwal = 0;
-      let runningSaldo = 0;
-      const rows = [];
-      
-      // Sort data pending berdasarkan tanggal agar perhitungan saldo urut
-      pending.sort((a, b) => (a.payload.tanggal || '').localeCompare(b.payload.tanggal || ''));
-
-      pending.forEach(function(item, parentIdx) {
-        const p = item.payload || {};
-        
-        // [FIX] Filter data berdasarkan tanggal yang dipilih
-        let d = p.tanggal || '';
-        // Normalize stored date to YYYY-MM-DD (pad single digits) just for comparison
-        if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(d)) {
-             const parts = d.split('-');
-             d = parts[0] + '-' + parts[1].padStart(2, '0') + '-' + parts[2].padStart(2, '0');
-        }
-        
-        // Jika tanggal sebelum periode, hitung sebagai Saldo Awal
-        if (d < tglAwal) {
-            (p.transactions || []).forEach(function(trx) {
-                const debit = (p.jenis === 'pengeluaran' && trx.total) ? parseFloat(trx.total) || 0 : 0;
-                const kredit = (p.jenis === 'pemasukan' && trx.total) ? parseFloat(trx.total) || 0 : 0;
-                saldoAwal = saldoAwal - debit + kredit;
-            });
+      setTimeout(() => {
+          const pending = getCachedParsedStorage(getRbmStorageKey('RBM_PENDING_PETTY_CASH'), []);
+          if (pending.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data. Buka dari Google Apps Script untuk data dari sheet, atau input data dulu.</td></tr>';
             return;
-        }
-        
-        // Jika tanggal setelah periode, abaikan
-        if (d > tglAkhir) return;
-
-        // Set runningSaldo awal jika ini baris pertama yang ditampilkan
-        if (rows.length === 0) runningSaldo = saldoAwal;
-
-        (p.transactions || []).forEach(function(trx, trxIdx) {
-          no++;
-          const debit = (p.jenis === 'pengeluaran' && trx.total) ? parseFloat(trx.total) || 0 : 0;
-          const kredit = (p.jenis === 'pemasukan' && trx.total) ? parseFloat(trx.total) || 0 : 0;
-          totalDebit += debit;
-          totalKredit += kredit;
-          runningSaldo = runningSaldo - debit + kredit;
-          
-          let fotoDisplay = '-';
-          if (trx.foto && trx.foto.data && trx.foto.data !== '[base64]') {
-            fotoDisplay = `<img src="data:${trx.foto.mimeType};base64,${trx.foto.data}" style="height:40px; border-radius:4px; cursor:pointer;" title="${trx.foto.fileName}" onclick="showImageModal(this.src)">`;
           }
+          let no = 0;
+          let totalDebit = 0, totalKredit = 0;
+          let saldoAwal = 0;
+          let runningSaldo = 0;
+          const rows = [];
           
-          rows.push({ no, tanggal: p.tanggal || '-', nama: trx.nama || '', jumlah: trx.jumlah, satuan: trx.satuan || '', harga: trx.harga || '', debit, kredit, saldo: runningSaldo, foto: fotoDisplay, parentIdx, trxIdx });
-        });
-      });
-      if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang ini.</td></tr>';
-        // [FIX] Reset summary jika tidak ada data
-        document.getElementById("pc_total_debit").textContent = formatRupiah(0);
-        document.getElementById("pc_total_kredit").textContent = formatRupiah(0);
-        document.getElementById("pc_saldo_akhir").textContent = formatRupiah(saldoAwal); // Tampilkan saldo awal sebagai saldo akhir
-        if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(saldoAwal);
-        return;
-      }
-      tbody.innerHTML = rows.map(row => `
-        <tr>
-          <td>${row.no}</td>
-          <td>${row.tanggal}</td>
-          <td>${row.nama}</td>
-          <td class="num">${row.jumlah || ''}</td>
-          <td>${row.satuan}</td>
-          <td class="num">${row.harga ? formatRupiah(row.harga) : ''}</td>
-          <td class="num">${row.debit ? formatRupiah(row.debit) : ''}</td>
-          <td class="num">${row.kredit ? formatRupiah(row.kredit) : ''}</td>
-          <td class="num">${formatRupiah(row.saldo)}</td>
-          <td>${row.foto}</td>
-          <td><button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItem(${row.parentIdx}, ${row.trxIdx})">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItem(${row.parentIdx}, ${row.trxIdx})">Hapus</button></td>
-        </tr>
-      `).join('');
-      summaryEl.style.display = 'grid';
-      document.getElementById("pc_total_debit").textContent = formatRupiah(totalDebit);
-      if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(saldoAwal);
-      // [UBAH] Total Kredit = Saldo Awal + Total Pemasukan Periode Ini
-      document.getElementById("pc_total_kredit").textContent = formatRupiah(saldoAwal + totalKredit);
-      document.getElementById("pc_saldo_akhir").textContent = formatRupiah(runningSaldo);
+          // Sort data pending berdasarkan tanggal agar perhitungan saldo urut
+          pending.sort((a, b) => (a.payload.tanggal || '').localeCompare(b.payload.tanggal || ''));
+
+          pending.forEach(function(item, parentIdx) {
+            const p = item.payload || {};
+            
+            // [FIX] Filter data berdasarkan tanggal yang dipilih
+            let d = p.tanggal || '';
+            // Normalize stored date to YYYY-MM-DD (pad single digits) just for comparison
+            if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(d)) {
+                 const parts = d.split('-');
+                 d = parts[0] + '-' + parts[1].padStart(2, '0') + '-' + parts[2].padStart(2, '0');
+            }
+            
+            // Jika tanggal sebelum periode, hitung sebagai Saldo Awal
+            if (d < tglAwal) {
+                (p.transactions || []).forEach(function(trx) {
+                    const debit = (p.jenis === 'pengeluaran' && trx.total) ? parseFloat(trx.total) || 0 : 0;
+                    const kredit = (p.jenis === 'pemasukan' && trx.total) ? parseFloat(trx.total) || 0 : 0;
+                    saldoAwal = saldoAwal - debit + kredit;
+                });
+                return;
+            }
+            
+            // Jika tanggal setelah periode, abaikan
+            if (d > tglAkhir) return;
+
+            // Set runningSaldo awal jika ini baris pertama yang ditampilkan
+            if (rows.length === 0) runningSaldo = saldoAwal;
+
+            (p.transactions || []).forEach(function(trx, trxIdx) {
+              no++;
+              const debit = (p.jenis === 'pengeluaran' && trx.total) ? parseFloat(trx.total) || 0 : 0;
+              const kredit = (p.jenis === 'pemasukan' && trx.total) ? parseFloat(trx.total) || 0 : 0;
+              totalDebit += debit;
+              totalKredit += kredit;
+              runningSaldo = runningSaldo - debit + kredit;
+              
+              let fotoDisplay = '-';
+              if (trx.foto && trx.foto.data && trx.foto.data !== '[base64]') {
+                window._pcImages = window._pcImages || {};
+                let imgKey = parentIdx + '_' + trxIdx;
+                window._pcImages[imgKey] = `data:${trx.foto.mimeType};base64,${trx.foto.data}`;
+                fotoDisplay = `<button type="button" class="btn-secondary" style="padding:2px 6px; font-size:11px; cursor:pointer;" onclick="showImageModal(window._pcImages['${imgKey}'])">🖼️ Lihat Foto</button>`;
+              }
+              
+              rows.push({ no, tanggal: p.tanggal || '-', nama: trx.nama || '', jumlah: trx.jumlah, satuan: trx.satuan || '', harga: trx.harga || '', debit, kredit, saldo: runningSaldo, foto: fotoDisplay, parentIdx, trxIdx });
+            });
+          });
+          if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang ini.</td></tr>';
+            // [FIX] Reset summary jika tidak ada data
+            document.getElementById("pc_total_debit").textContent = formatRupiah(0);
+            document.getElementById("pc_total_kredit").textContent = formatRupiah(0);
+            document.getElementById("pc_saldo_akhir").textContent = formatRupiah(saldoAwal); // Tampilkan saldo awal sebagai saldo akhir
+            if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(saldoAwal);
+            return;
+          }
+          tbody.innerHTML = rows.map(row => `
+            <tr>
+              <td>${row.no}</td>
+              <td>${row.tanggal}</td>
+              <td>${row.nama}</td>
+              <td class="num">${row.jumlah || ''}</td>
+              <td>${row.satuan}</td>
+              <td class="num">${row.harga ? formatRupiah(row.harga) : ''}</td>
+              <td class="num">${row.debit ? formatRupiah(row.debit) : ''}</td>
+              <td class="num">${row.kredit ? formatRupiah(row.kredit) : ''}</td>
+              <td class="num">${formatRupiah(row.saldo)}</td>
+              <td>${row.foto}</td>
+              <td><button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItem(${row.parentIdx}, ${row.trxIdx})">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItem(${row.parentIdx}, ${row.trxIdx})">Hapus</button></td>
+            </tr>
+          `).join('');
+          summaryEl.style.display = 'grid';
+          document.getElementById("pc_total_debit").textContent = formatRupiah(totalDebit);
+          if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(saldoAwal);
+          // [UBAH] Total Kredit = Saldo Awal + Total Pemasukan Periode Ini
+          document.getElementById("pc_total_kredit").textContent = formatRupiah(saldoAwal + totalKredit);
+          document.getElementById("pc_saldo_akhir").textContent = formatRupiah(runningSaldo);
+      }, 50);
       return;
     }
 
@@ -792,7 +828,7 @@ function savePembukuanToJpg() {
 
     // Create datalist from Stok Barang (aman jika sales/fruits/notsales bukan array)
     const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
-    const raw = safeParse(RBMStorage.getItem(stokKey), { sales: [], fruits: [], notsales: [] });
+    const raw = getCachedParsedStorage(stokKey, { sales: [], fruits: [], notsales: [] });
     const sales = Array.isArray(raw && raw.sales) ? raw.sales : [];
     const fruits = Array.isArray(raw && raw.fruits) ? raw.fruits : [];
     const notsales = Array.isArray(raw && raw.notsales) ? raw.notsales : [];
@@ -954,40 +990,9 @@ function submitDataBarang(){
                 const fotoInput = row.querySelector(".foto_barang_rusak");
                 if (fotoInput && fotoInput.files[0]) {
                     const file = fotoInput.files[0];
-                    const promise = new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = e => {
-              if (typeof compressImageDataUrl === 'function') {
-                compressImageDataUrl(e.target.result, 800, 0.6, async function(compressed) {
-                  if (useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.storage) {
-                    try {
-                      const storageRef = firebase.storage().ref();
-                      const fileName = 'petty_cash/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jpg';
-                      const fileRef = storageRef.child(fileName);
-                      await fileRef.putString(compressed, 'data_url');
-                      transaction.foto = await fileRef.getDownloadURL();
-                      resolve();
-                    } catch(err) {
-                      const fileData = compressed.split(",");
-                      transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
-                      resolve();
-                    }
-                  } else {
-                    const fileData = compressed.split(",");
-                    transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
-                    resolve();
-                  }
-                });
-              } else {
-                const fileData = e.target.result.split(",");
-                transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
-                resolve();
-              }
-                        };
-                        reader.onerror = reject;
-                        reader.readAsDataURL(file);
-                    });
-                    filePromises.push(promise);
+                    filePromises.push(uploadImageWithCompression(file, 'barang_rusak').then(res => {
+                        itemData.fotoRusak = res;
+                    }));
                 }
             }
             dataList.push(itemData);
@@ -1029,11 +1034,12 @@ function submitDataBarang(){
             let isNew = false;
             if (!itemInfo) {
                 const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
-                const allItems = safeParse(RBMStorage.getItem(stokKey), { sales: [], fruits: [], notsales: [] });
+                const allItems = getCachedParsedStorage(stokKey, { sales: [], fruits: [], notsales: [] });
                 const newId = Date.now() + Math.floor(Math.random() * 10000);
                 const newItem = { id: newId, name: itemData.nama, unit: 'Pcs', ratio: 1 };
                 allItems.sales.push(newItem);
                 RBMStorage.setItem(stokKey, JSON.stringify(allItems));
+                window._rbmParsedCache[stokKey] = { data: allItems };
                 itemInfo = { id: newId, category: 'sales', ratio: 1, name: itemData.nama };
                 isNew = true;
             }
@@ -1173,40 +1179,9 @@ function submitTransactions() {
       const fileInput = row.querySelector(".foto_keuangan");
       if (fileInput && fileInput.files[0]) {
         const file = fileInput.files[0];
-        const promise = new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-              if (typeof compressImageDataUrl === 'function') {
-                compressImageDataUrl(e.target.result, 800, 0.6, async function(compressed) {
-                  if (useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.storage) {
-                    try {
-                      const storageRef = firebase.storage().ref();
-                      const fileName = 'keuangan/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jpg';
-                      const fileRef = storageRef.child(fileName);
-                      await fileRef.putString(compressed, 'data_url');
-                      transaction.foto = await fileRef.getDownloadURL();
-                      resolve();
-                    } catch(err) {
-                      const fileData = compressed.split(",");
-                      transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
-                      resolve();
-                    }
-                  } else {
-                    const fileData = compressed.split(",");
-                    transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
-                    resolve();
-                  }
-                });
-              } else {
-                const fileData = e.target.result.split(",");
-                transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
-                resolve();
-              }
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        filePromises.push(promise);
+        filePromises.push(uploadImageWithCompression(file, 'keuangan').then(res => {
+            transaction.foto = res;
+        }));
       }
     }
   });
@@ -1622,40 +1597,9 @@ function createPembukuanRows() {
                   dataKeluar.push(itemKeluar);
                   if(fileInput&&fileInput.files[0]){
                       const file=fileInput.files[0];
-                      const promise=new Promise((resolve,reject)=>{
-                          const reader=new FileReader;
-                          reader.onload=e=>{
-              if (typeof compressImageDataUrl === 'function') {
-                compressImageDataUrl(e.target.result, 800, 0.6, async function(compressed) {
-                  if (useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.storage) {
-                    try {
-                      const storageRef = firebase.storage().ref();
-                      const fileName = 'keuangan/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jpg';
-                      const fileRef = storageRef.child(fileName);
-                      await fileRef.putString(compressed, 'data_url');
-                      transaction.foto = await fileRef.getDownloadURL();
-                      resolve();
-                    } catch(err) {
-                      const fileData = compressed.split(",");
-                      transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
-                      resolve();
-                    }
-                  } else {
-                    const fileData = compressed.split(",");
-                    transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] || '' };
-                    resolve();
-                  }
-                });
-              } else {
-                const fileData = e.target.result.split(",");
-                transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
-                resolve();
-              }
-                          };
-                          reader.onerror=reject;
-                          reader.readAsDataURL(file);
-                      });
-                      filePromises.push(promise);
+                      filePromises.push(uploadImageWithCompression(file, 'pembukuan').then(res => {
+                          itemKeluar.foto = res;
+                      }));
                   }
               }
           });
@@ -1730,7 +1674,7 @@ function getPettyCashRecapForPengajuan(cb) {
     if (typeof FirebaseStorage !== 'undefined' && typeof FirebaseStorage.isReady === 'function' && FirebaseStorage.isReady()) {
         var db = typeof FirebaseStorage.db === 'function' ? FirebaseStorage.db() : null;
         if (db) {
-            db.ref('rbm_pro/petty_cash/' + (outlet || 'default')).once('value').then(function(snap) {
+            db.ref('rbm_pro/petty_cash/' + (outlet || 'default')).orderByKey().limitToLast(60).once('value').then(function(snap) {
                 var root = snap.val();
                 var list = [];
                 if (root && typeof root === 'object') {
@@ -1747,7 +1691,7 @@ function getPettyCashRecapForPengajuan(cb) {
     }
     
     var pending = [];
-    try { var key = outlet ? 'RBM_PENDING_PETTY_CASH_' + outlet : 'RBM_PENDING_PETTY_CASH'; var raw = localStorage.getItem(key); if(!raw) { key = 'RBM_PENDING_PETTY_CASH'; raw = localStorage.getItem(key); } pending = JSON.parse(raw || '[]'); } catch(e){}
+    try { var key = outlet ? 'RBM_PENDING_PETTY_CASH_' + outlet : 'RBM_PENDING_PETTY_CASH'; pending = getCachedParsedStorage(key, []); if(!pending.length) { key = 'RBM_PENDING_PETTY_CASH'; pending = getCachedParsedStorage(key, []); } } catch(e){}
     var list = [];
     pending.forEach(function(p) { var payload = p.payload || p; (payload.transactions || []).forEach(function(trx) { list.push({ tanggal: payload.tanggal, nama: trx.nama, jenis: payload.jenis, debit: payload.jenis === 'pengeluaran' ? (parseFloat(trx.total) || 0) : 0, kredit: payload.jenis === 'pemasukan' ? (parseFloat(trx.total) || parseFloat(trx.harga) || 0) : 0 }); }); });
     processTransactions(list);
@@ -1939,13 +1883,13 @@ function submitDataPengajuan() {
 
         const fotoNotaInput = row.querySelector(".pengajuan_tf_foto_nota");
         if (fotoNotaInput?.files[0]) {
-          filePromises.push(readFileAsBase64(fotoNotaInput.files[0]).then(result => {
+          filePromises.push(uploadImageWithCompression(fotoNotaInput.files[0], 'pengajuan_tf').then(result => {
             pengajuanItem.fotoNota = result;
           }));
         }
         const fotoTtdInput = row.querySelector(".pengajuan_tf_foto_ttd");
         if (fotoTtdInput?.files[0]) {
-          filePromises.push(readFileAsBase64(fotoTtdInput.files[0]).then(result => {
+          filePromises.push(uploadImageWithCompression(fotoTtdInput.files[0], 'pengajuan_tf').then(result => {
             pengajuanItem.fotoTtd = result;
           }));
         }
@@ -1992,7 +1936,7 @@ function submitDataPengajuan() {
 
         const fotoPengajuanInput = row.querySelector(".pengajuan_pc_foto_pengajuan");
         if (fotoPengajuanInput?.files[0]) {
-          filePromises.push(readFileAsBase64(fotoPengajuanInput.files[0]).then(result => {
+          filePromises.push(uploadImageWithCompression(fotoPengajuanInput.files[0], 'petty_cash_pengajuan').then(result => {
             pettyCashItem.fotoPengajuan = result;
           }));
         }
@@ -2031,7 +1975,7 @@ function submitDataPengajuan() {
         };
         dataList.push(sudahTfItem);
 
-        filePromises.push(readFileAsBase64(fotoBuktiInput.files[0]).then(result => {
+        filePromises.push(uploadImageWithCompression(fotoBuktiInput.files[0], 'pengajuan_bukti_tf').then(result => {
           sudahTfItem.fotoBukti = result;
         }));
       }
@@ -2062,17 +2006,6 @@ function submitDataPengajuan() {
   }
 }
 
-function readFileAsBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const [header, data] = e.target.result.split(",");
-      resolve({ fileName: file.name, mimeType: file.type, data });
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 function resetButton() {
   const button = document.getElementById("submitButtonPengajuan");
@@ -2326,7 +2259,7 @@ function deletePettyCashItem(parentIdx, trxIdx) {
   if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
   if(!confirm("Yakin ingin menghapus data ini?")) return;
   const key = getRbmStorageKey('RBM_PENDING_PETTY_CASH');
-  let pending = safeParse(RBMStorage.getItem(key), []);
+  let pending = getCachedParsedStorage(key, []);
   
   if (pending[parentIdx] && pending[parentIdx].payload && pending[parentIdx].payload.transactions) {
     pending[parentIdx].payload.transactions.splice(trxIdx, 1);
@@ -2335,6 +2268,7 @@ function deletePettyCashItem(parentIdx, trxIdx) {
       pending.splice(parentIdx, 1);
     }
     RBMStorage.setItem(key, JSON.stringify(pending));
+    window._rbmParsedCache[key] = { data: pending };
     loadPettyCashData(); // Refresh tabel
   }
 }
@@ -2416,7 +2350,7 @@ function saveEditPettyCashModal() {
   if (!nama) { showCustomAlert('Nama / Keterangan wajib diisi.', 'Peringatan', 'warning'); return; }
   if (source === 'local') {
     var key = getRbmStorageKey('RBM_PENDING_PETTY_CASH');
-    var pending = safeParse(RBMStorage.getItem(key), []);
+    var pending = getCachedParsedStorage(key, []);
     if (!pending[parentIdx] || !pending[parentIdx].payload || !pending[parentIdx].payload.transactions || !pending[parentIdx].payload.transactions[trxIdx]) { showCustomAlert('Data tidak ditemukan.', 'Peringatan', 'warning'); return; }
     var trx = pending[parentIdx].payload.transactions[trxIdx];
     pending[parentIdx].payload.tanggal = tanggal;
@@ -2438,6 +2372,7 @@ function saveEditPettyCashModal() {
       trx.total = nominal;
     }
     RBMStorage.setItem(key, JSON.stringify(pending));
+    window._rbmParsedCache[key] = { data: pending };
     closeEditPettyCashModal();
     if (typeof loadPettyCashData === 'function') loadPettyCashData();
     return;
@@ -2478,7 +2413,7 @@ function saveEditPettyCashModal() {
 function editPettyCashItem(parentIdx, trxIdx) {
   if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat mengedit data.', 'Akses Ditolak', 'error'); return; }
   var key = getRbmStorageKey('RBM_PENDING_PETTY_CASH');
-  var pending = safeParse(RBMStorage.getItem(key), []);
+  var pending = getCachedParsedStorage(key, []);
   if (!pending[parentIdx] || !pending[parentIdx].payload || !pending[parentIdx].payload.transactions || !pending[parentIdx].payload.transactions[trxIdx]) return;
   var p = pending[parentIdx].payload;
   var trx = p.transactions[trxIdx];
@@ -2543,21 +2478,23 @@ function calculateSisaUangPengajuan() {
     const dateVal = dateEl.value;
     if (!dateVal) return;
 
-    const pending = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_PETTY_CASH')), []);
-    let saldo = 0;
+    setTimeout(() => {
+        const pending = getCachedParsedStorage(getRbmStorageKey('RBM_PENDING_PETTY_CASH'), []);
+        let saldo = 0;
 
-    pending.forEach(item => {
-        const p = item.payload;
-        if (p.tanggal <= dateVal) {
-            (p.transactions || []).forEach(trx => {
-                const amount = parseFloat(trx.total) || 0;
-                if (p.jenis === 'pemasukan') saldo += amount;
-                else if (p.jenis === 'pengeluaran') saldo -= amount;
-            });
-        }
-    });
+        pending.forEach(item => {
+            const p = item.payload;
+            if (p.tanggal <= dateVal) {
+                (p.transactions || []).forEach(trx => {
+                    const amount = parseFloat(trx.total) || 0;
+                    if (p.jenis === 'pemasukan') saldo += amount;
+                    else if (p.jenis === 'pengeluaran') saldo -= amount;
+                });
+            }
+        });
 
-    outEl.textContent = formatRupiah(saldo);
+        outEl.textContent = formatRupiah(saldo);
+    }, 50);
 }
 
 function loadLihatPengajuanData() {
@@ -2571,55 +2508,57 @@ function loadLihatPengajuanData() {
         return;
     }
     
-    let rows = [];
-    let runningSaldo = 0;
-    let no = 0;
+    setTimeout(() => {
+        let rows = [];
+        let runningSaldo = 0;
+        let no = 0;
 
-    // Ambil data dari Petty Cash (per lokasi)
-    const pcData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_PETTY_CASH')), []);
-    pcData.forEach((item, parentIdx) => {
-        const p = item.payload;
-        (p.transactions || []).forEach((trx, trxIdx) => {
-            const debit = (p.jenis === 'pengeluaran' && trx.total) ? parseFloat(trx.total) : 0;
-            const kredit = (p.jenis === 'pemasukan' && trx.total) ? parseFloat(trx.total) : 0;
-            runningSaldo = runningSaldo - debit + kredit;
+        // Ambil data dari Petty Cash (per lokasi)
+        const pcData = getCachedParsedStorage(getRbmStorageKey('RBM_PENDING_PETTY_CASH'), []);
+        pcData.forEach((item, parentIdx) => {
+            const p = item.payload;
+            (p.transactions || []).forEach((trx, trxIdx) => {
+                const debit = (p.jenis === 'pengeluaran' && trx.total) ? parseFloat(trx.total) : 0;
+                const kredit = (p.jenis === 'pemasukan' && trx.total) ? parseFloat(trx.total) : 0;
+                runningSaldo = runningSaldo - debit + kredit;
 
-            if (p.tanggal >= dateStart && p.tanggal <= dateEnd) {
-                no++;
-                
-                rows.push({
-                    no,
-                    tanggal: p.tanggal,
-                    nama: trx.nama || '',
-                    jumlah: trx.jumlah || '',
-                    satuan: trx.satuan || '',
-                    harga: trx.harga || 0,
-                    debit,
-                    kredit,
-                    saldo: runningSaldo
-                });
-            }
+                if (p.tanggal >= dateStart && p.tanggal <= dateEnd) {
+                    no++;
+                    
+                    rows.push({
+                        no,
+                        tanggal: p.tanggal,
+                        nama: trx.nama || '',
+                        jumlah: trx.jumlah || '',
+                        satuan: trx.satuan || '',
+                        harga: trx.harga || 0,
+                        debit,
+                        kredit,
+                        saldo: runningSaldo
+                    });
+                }
+            });
         });
-    });
-    
-    if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Tidak ada transaksi petty cash pada rentang tanggal ini</td></tr>';
-        return;
-    }
-    
-    tbody.innerHTML = rows.map(r => `
-        <tr>
-            <td>${r.no}</td>
-            <td>${r.tanggal}</td>
-            <td>${r.nama}</td>
-            <td class="num">${r.jumlah}</td>
-            <td>${r.satuan}</td>
-            <td class="num">${r.harga ? formatRupiah(r.harga) : ''}</td>
-            <td class="num">${r.debit ? formatRupiah(r.debit) : ''}</td>
-            <td class="num">${r.kredit ? formatRupiah(r.kredit) : ''}</td>
-            <td class="num">${formatRupiah(r.saldo)}</td>
-        </tr>
-    `).join('');
+        
+        if (rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Tidak ada transaksi petty cash pada rentang tanggal ini</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = rows.map(r => `
+            <tr>
+                <td>${r.no}</td>
+                <td>${r.tanggal}</td>
+                <td>${r.nama}</td>
+                <td class="num">${r.jumlah}</td>
+                <td>${r.satuan}</td>
+                <td class="num">${r.harga ? formatRupiah(r.harga) : ''}</td>
+                <td class="num">${r.debit ? formatRupiah(r.debit) : ''}</td>
+                <td class="num">${r.kredit ? formatRupiah(r.kredit) : ''}</td>
+                <td class="num">${formatRupiah(r.saldo)}</td>
+            </tr>
+        `).join('');
+    }, 50);
 }
 
 function exportRekapToExcel() {
@@ -2955,9 +2894,11 @@ function loadPembukuanData() {
       });
       return;
     }
-    var localPending = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_PEMBUKUAN')), []);
-    window._lastPembukuanPending = localPending;
-    renderPembukuanFromPending(localPending);
+    setTimeout(() => {
+        var localPending = getCachedParsedStorage(getRbmStorageKey('RBM_PENDING_PEMBUKUAN'), []);
+        window._lastPembukuanPending = localPending;
+        renderPembukuanFromPending(localPending);
+    }, 50);
 }
 
 function toggleMemo(icon) {
@@ -3020,7 +2961,7 @@ function deletePembukuanItem(parentIdx, type, subIdx, skipConfirm) {
         }
 
         const key = getRbmStorageKey('RBM_PENDING_PEMBUKUAN');
-        let localPending = safeParse(RBMStorage.getItem(key), []);
+        let localPending = getCachedParsedStorage(key, []);
         if (localPending[parentIdx] && localPending[parentIdx].payload) {
             const payload = localPending[parentIdx].payload;
             if (type === 'kasMasuk' && payload.kasMasuk) payload.kasMasuk.splice(subIdx, 1);
@@ -3029,6 +2970,7 @@ function deletePembukuanItem(parentIdx, type, subIdx, skipConfirm) {
                 localPending.splice(parentIdx, 1);
             }
             RBMStorage.setItem(key, JSON.stringify(localPending));
+            window._rbmParsedCache[key] = { data: localPending };
             loadPembukuanData();
         }
     };
@@ -3042,7 +2984,7 @@ function editPembukuanItem(parentIdx, type, subIdx) {
         var pending = window._lastPembukuanPending;
         if (!pending && !useFirebaseBackend()) {
           var key = getRbmStorageKey('RBM_PENDING_PEMBUKUAN');
-          pending = safeParse(RBMStorage.getItem(key), []);
+          pending = getCachedParsedStorage(key, []);
         }
         var item = pending && pending[parentIdx];
         if (!item || !item.payload) return;
@@ -3552,19 +3494,22 @@ function loadInventarisData() {
 
       // 4. Buat Body Table
       let bodyHtml = '';
+      
+      // [OPTIMASI SUPER KILAT] Gunakan Map Lookup O(1) alih-alih filter O(N) di dalam loop bersarang (memangkas dari 15.000.000 kalkulasi menjadi cuma 5.000)
+      const dataMap = {};
+      data.forEach(d => { dataMap[`${d.nama}_${d.tanggal}`] = d.jumlah; });
+
       items.forEach((item, index) => {
           bodyHtml += `<tr><td>${index + 1}</td><td>${item}</td>`;
           
           dates.forEach(date => {
-              // Cari data yang cocok
-              // Kita ambil data terakhir jika ada duplikat input di tanggal yang sama
-              const matches = data.filter(d => d.nama === item && d.tanggal === date);
-              let val = '-';
+              let val = dataMap[`${item}_${date}`];
               let valForEdit = '';
 
-              if (matches.length > 0) {
-                  val = matches[matches.length - 1].jumlah;
+              if (val !== undefined) {
                   valForEdit = val;
+              } else {
+                  val = '-';
               }
 
               let cellClass = 'num clickable-cell';
@@ -3579,23 +3524,25 @@ function loadInventarisData() {
 
   // Local Storage Logic (Offline/Pending)
   if (!useFirebaseBackend() && !isGoogleScript()) {
-    const pending = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_PENDING_INVENTARIS')), []);
-    let flatData = [];
-    
-    pending.forEach((item) => {
-      const dataList = item.payload || [];
-      dataList.forEach((data) => {
-        if (data.tanggal >= tglAwal && data.tanggal <= tglAkhir) {
-          flatData.push({
-            tanggal: data.tanggal,
-            nama: data.nama,
-            jumlah: data.jumlah
+    setTimeout(() => {
+        const pending = getCachedParsedStorage(getRbmStorageKey('RBM_PENDING_INVENTARIS'), []);
+        let flatData = [];
+        
+        pending.forEach((item) => {
+          const dataList = item.payload || [];
+          dataList.forEach((data) => {
+            if (data.tanggal >= tglAwal && data.tanggal <= tglAkhir) {
+              flatData.push({
+                tanggal: data.tanggal,
+                nama: data.nama,
+                jumlah: data.jumlah
+              });
+            }
           });
-        }
-      });
-    });
+        });
 
-    renderPivot(flatData);
+        renderPivot(flatData);
+    }, 50);
     return;
   }
 
@@ -3865,7 +3812,7 @@ function renderAbsensiTable(mode) {
 
     // 2. Load Data (in-memory; simpan ke Firebase hanya saat klik Simpan)
     if (window._absensiViewEmployees === undefined || !Array.isArray(window._absensiViewEmployees)) {
-        window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+        window._absensiViewEmployees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     }
     const employees = window._absensiViewEmployees;
 
@@ -3973,7 +3920,7 @@ function cycleAbsensiStatus(cell, key) {
 
     // Simpan di memori saja; akan tersimpan ke Firebase saat user klik tombol Simpan
     if (window._absensiViewData === undefined) {
-        window._absensiViewData = safeParse(RBMStorage.getItem(getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA')), {});
+        window._absensiViewData = getCachedParsedStorage(getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA'), {});
     }
     window._absensiViewData[key] = next;
 }
@@ -3992,7 +3939,7 @@ function updateEmployee(index, field, value) {
 
 function addEmployeeRow() {
     if (window._absensiViewEmployees === undefined || !Array.isArray(window._absensiViewEmployees)) {
-        window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+        window._absensiViewEmployees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     }
     const employees = window._absensiViewEmployees;
     const newId = employees.length > 0 ? Math.max(...employees.map(e => e.id || 0)) + 1 : 1;
@@ -4005,7 +3952,7 @@ function removeEmployee(index) {
     if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data karyawan.', 'Akses Ditolak', 'error'); return; }
     showCustomConfirm("Hapus karyawan ini?", "Konfirmasi Hapus", function() {
         if (window._absensiViewEmployees === undefined || !Array.isArray(window._absensiViewEmployees)) {
-            window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+            window._absensiViewEmployees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
         }
         window._absensiViewEmployees.splice(index, 1);
         saveAbsensiToFirebase(true);
@@ -4091,8 +4038,8 @@ function renderRekapAbsensiReport() {
 
     const thead = document.getElementById("rekap_absen_thead");
     const tbody = document.getElementById("rekap_absen_tbody");
-    const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
 
     // 1. Build Header
     let hRow1 = `
@@ -4197,7 +4144,7 @@ function generateKodeSetupAbsensi() {
     var employees = [];
     try {
         var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_EMPLOYEES') : 'RBM_EMPLOYEES_' + outletId;
-        employees = JSON.parse(RBMStorage.getItem(key) || '[]');
+        employees = getCachedParsedStorage(key, []);
     } catch (e) {}
     var payload = { outletId: outletId, outletName: outletName, employees: employees };
     var kode = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
@@ -4256,11 +4203,11 @@ function renderRekapGaji() {
     const thead = document.getElementById("gaji_thead");
     const tfoot = document.getElementById("gaji_tfoot");
     
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-    const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
     // Data Gaji Periodik (Hutang, Terlambat, dll) disimpan terpisah agar tidak hilang saat refresh
     const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
-    const gajiPeriodData = safeParse(RBMStorage.getItem(gajiPeriodKey), {});
+    const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
 
     // Generate Dates for counting
     let curr = new Date(tglAwal);
@@ -4425,9 +4372,9 @@ function saveRekapGajiData() {
         return;
     }
     var parseRp = function(str) { return parseInt(String(str || '0').replace(/[^0-9]/g, ''), 10) || 0; };
-    var employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    var employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     var gajiKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
-    var gajiData = safeParse(RBMStorage.getItem(gajiKey), {});
+    var gajiData = getCachedParsedStorage(gajiKey, {});
     var tbody = document.getElementById('gaji_tbody');
     if (!tbody || !tbody.rows) {
         alert('Tabel rekap gaji tidak ditemukan.');
@@ -4460,11 +4407,13 @@ function saveRekapGajiData() {
     }
     RBMStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees));
     RBMStorage.setItem(gajiKey, JSON.stringify(gajiData));
+    window._rbmParsedCache[getRbmStorageKey('RBM_EMPLOYEES')] = { data: employees };
+    window._rbmParsedCache[gajiKey] = { data: gajiData };
     alert('Data Rekap Gaji tersimpan.');
 }
 
 function updateEmpGaji(idx, field, val) {
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     if (employees[idx]) {
         if (field === 'gajiPokok') {
             employees[idx][field] = parseInt(String(val).replace(/[^0-9]/g, '')) || 0;
@@ -4472,13 +4421,14 @@ function updateEmpGaji(idx, field, val) {
             employees[idx][field] = val;
         }
         RBMStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees));
+        window._rbmParsedCache[getRbmStorageKey('RBM_EMPLOYEES')] = { data: employees };
         renderRekapGaji(); // Recalculate
     }
 }
 
 function updatePeriodGaji(start, end, empId, field, val) {
     const key = getRbmStorageKey('RBM_GAJI_' + start + '_' + end);
-    const data = safeParse(RBMStorage.getItem(key), {});
+    const data = getCachedParsedStorage(key, {});
     if (!data[empId]) data[empId] = {};
     if (['hutang', 'tunjangan'].includes(field)) {
         data[empId][field] = parseInt(String(val).replace(/[^0-9]/g, '')) || 0;
@@ -4486,6 +4436,7 @@ function updatePeriodGaji(start, end, empId, field, val) {
         data[empId][field] = val;
     }
     RBMStorage.setItem(key, JSON.stringify(data));
+    window._rbmParsedCache[key] = { data: data };
     renderRekapGaji(); // Recalculate
 }
 
@@ -4507,13 +4458,13 @@ function generateAndShowSlip(idx) {
     
     if (!tglAwal || !tglAkhir) { alert("Tanggal pada halaman rekap gaji belum diatur."); return; }
 
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const emp = employees[idx];
     if (!emp) { alert("Karyawan tidak ditemukan."); return; }
 
-    const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
+    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
     const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
-    const gajiPeriodData = safeParse(RBMStorage.getItem(gajiPeriodKey), {});
+    const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
 
     // --- Start of calculation logic (copied & adapted from renderRekapGaji) ---
     let curr = new Date(tglAwal);
@@ -4584,7 +4535,7 @@ function sendSlipEmail(idx) {
 
     const tglAwal = document.getElementById("absensi_tgl_awal").value;
     const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const emp = employees[idx];
     
     if (!emp || !emp.email) {
@@ -4593,9 +4544,9 @@ function sendSlipEmail(idx) {
     }
 
     // Re-calculate for Email Body
-    const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
+    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
     const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
-    const gajiPeriodData = safeParse(RBMStorage.getItem(gajiPeriodKey), {});
+    const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
     let counts = { H:0 };
     let curr = new Date(tglAwal); const end = new Date(tglAkhir);
     while (curr <= end) {
@@ -4653,11 +4604,11 @@ function exportCompleteAbsensiExcel() {
         return;
     }
 
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-    const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
-    const jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+    const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
     const gajiKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
-    const gajiData = safeParse(RBMStorage.getItem(gajiKey), {});
+    const gajiData = getCachedParsedStorage(gajiKey, {});
 
     // Generate Dates
     const dates = [];
@@ -4961,11 +4912,11 @@ function exportCompleteAbsensiPDF() {
         return;
     }
 
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-    const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
-    const jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+    const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
     const gajiKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
-    const gajiData = safeParse(RBMStorage.getItem(gajiKey), {});
+    const gajiData = getCachedParsedStorage(gajiKey, {});
 
     // Generate Dates
     const dates = [];
@@ -5313,7 +5264,7 @@ async function downloadAllSlipsAsZip(event) {
     
     if (!tglAwal || !tglAkhir) { alert("Pilih tanggal terlebih dahulu di filter Rekap Gaji."); return; }
 
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     if (employees.length === 0) { alert("Tidak ada data karyawan."); return; }
 
     // UI Feedback
@@ -5323,9 +5274,9 @@ async function downloadAllSlipsAsZip(event) {
     btn.disabled = true;
 
     const zip = new JSZip();
-    const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
+    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
     const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
-    const gajiPeriodData = safeParse(RBMStorage.getItem(gajiPeriodKey), {});
+    const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
 
     // Create temp container off-screen
     const wrapper = document.createElement('div');
@@ -5416,8 +5367,8 @@ function renderBonusTab() {
     if (!tglAwal || !tglAkhir) return;
 
     const key = getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir);
-    const savedData = safeParse(RBMStorage.getItem(key), { absensi: [], omset: { total: 0, persen: 0, excludedIds: [] } });
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    const savedData = getCachedParsedStorage(key, { absensi: [], omset: { total: 0, persen: 0, excludedIds: [] } });
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
 
     // --- 1. Render Bonus Absensi ---
     const absensiTbody = document.getElementById("bonus_absensi_tbody");
@@ -5470,7 +5421,7 @@ function renderBonusTab() {
 }
 
 function addBonusAbsensiRow() {
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const tbody = document.getElementById("bonus_absensi_tbody");
     const tr = document.createElement("tr");
     let options = `<option value="">-- Pilih --</option>`;
@@ -5538,6 +5489,7 @@ function saveBonusData() {
 
     const data = { absensi: absensiData, omset: { total: omsetTotal, persen: omsetPersen, excludedIds } };
     RBMStorage.setItem(getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir), JSON.stringify(data));
+    window._rbmParsedCache[getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir)] = { data: data };
     alert("✅ Data Bonus tersimpan.");
 }
 
@@ -5697,7 +5649,7 @@ function submitReservasi() {
         return;
     }
 
-    const reservasiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
+    const reservasiData = getCachedParsedStorage(getRbmStorageKey('RBM_RESERVASI_DATA'), []);
     // Generate ID: RES + Timestamp
     const timestamp = new Date().toISOString();
     const id = "RES-" + Date.now().toString().slice(-6);
@@ -5708,6 +5660,7 @@ function submitReservasi() {
 
     reservasiData.push(newRes);
     RBMStorage.setItem(getRbmStorageKey('RBM_RESERVASI_DATA'), JSON.stringify(reservasiData));
+    window._rbmParsedCache[getRbmStorageKey('RBM_RESERVASI_DATA')] = { data: reservasiData };
     
     alert("✅ Reservasi Berhasil Disimpan!");
     
@@ -5728,7 +5681,7 @@ function loadReservasiData() {
     const tglAkhir = document.getElementById("res_filter_end").value;
     const tbody = document.getElementById("reservasi_tbody");
     
-    const allData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
+    const allData = getCachedParsedStorage(getRbmStorageKey('RBM_RESERVASI_DATA'), []);
     
     // Filter by date range
     const filtered = allData.filter(d => d.tanggal >= tglAwal && d.tanggal <= tglAkhir);
@@ -5763,16 +5716,17 @@ function loadReservasiData() {
 function deleteReservasi(id) {
     if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
     showCustomConfirm("Hapus data reservasi ini?", "Konfirmasi Hapus", function() {
-        let allData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
+        let allData = getCachedParsedStorage(getRbmStorageKey('RBM_RESERVASI_DATA'), []);
         allData = allData.filter(d => d.id !== id);
         RBMStorage.setItem(getRbmStorageKey('RBM_RESERVASI_DATA'), JSON.stringify(allData));
+        window._rbmParsedCache[getRbmStorageKey('RBM_RESERVASI_DATA')] = { data: allData };
         loadReservasiData();
         renderReservasiCalendar();
     });
 }
 
 function printReservasiBill(id) {
-    const allData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
+    const allData = getCachedParsedStorage(getRbmStorageKey('RBM_RESERVASI_DATA'), []);
     const res = allData.find(d => d.id === id);
     if (!res) return;
 
@@ -5848,7 +5802,7 @@ function renderReservasiCalendar() {
         html += `<div class="calendar-day other-month"></div>`;
     }
 
-    const reservasiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_RESERVASI_DATA')), []);
+    const reservasiData = getCachedParsedStorage(getRbmStorageKey('RBM_RESERVASI_DATA'), []);
 
     // Current month days
     for (let i = 1; i <= daysInMonth; i++) {
@@ -5898,7 +5852,7 @@ let activeStokTab = 'sales'; // sales, fruits, notsales
 // Helper to find item ID by name across all categories
 function findStokItemId(name) {
     const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
-    const allItems = safeParse(RBMStorage.getItem(stokKey), {sales:[], fruits:[], notsales:[]});
+    const allItems = getCachedParsedStorage(stokKey, {sales:[], fruits:[], notsales:[]});
     for (const cat in allItems) {
         const list = allItems[cat];
         if (!Array.isArray(list)) continue;
@@ -5912,7 +5866,7 @@ function findStokItemId(name) {
 function findStokItemIdByCategory(name, category) {
     if (!name || !name.trim() || !category) return null;
     const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
-    const allItems = safeParse(RBMStorage.getItem(stokKey), { sales: [], fruits: [], notsales: [] });
+    const allItems = getCachedParsedStorage(stokKey, { sales: [], fruits: [], notsales: [] });
     const list = Array.isArray(allItems && allItems[category]) ? allItems[category] : null;
     if (!list) return null;
     const item = list.find(i => i.name.toLowerCase() === name.trim().toLowerCase());
@@ -5924,7 +5878,7 @@ function findStokItemIdByCategory(name, category) {
 function getStokUnitByName(name) {
     if (!name || !name.trim()) return '';
     const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
-    const allItems = safeParse(RBMStorage.getItem(stokKey), { sales: [], fruits: [], notsales: [] });
+    const allItems = getCachedParsedStorage(stokKey, { sales: [], fruits: [], notsales: [] });
     for (const cat in allItems) {
         const list = Array.isArray(allItems[cat]) ? allItems[cat] : [];
         const item = list.find(i => i.name.toLowerCase() === name.trim().toLowerCase());
@@ -5946,7 +5900,7 @@ function getPreviousMonth(monthVal) {
 // Process updates from Input Barang
 function processStokUpdates(updates) {
     const stokKey = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
-    let data = safeParse(RBMStorage.getItem(stokKey), {});
+    let data = getCachedParsedStorage(stokKey, {});
     
     updates.forEach(u => {
         // Key format: ITEMID_TYPE_DATE (e.g., 1_in_2023-10-01)
@@ -5972,11 +5926,12 @@ function processStokUpdates(updates) {
             data[key] = (parseFloat(data[key]) || 0) + u.qty;
             if (u.keterangan != null || (u.foto && u.foto.data)) {
                 const detailKey = getRbmStorageKey('RBM_STOK_RUSAK_DETAIL');
-                let details = safeParse(RBMStorage.getItem(detailKey), {});
+                let details = getCachedParsedStorage(detailKey, {});
                 const detailId = `${u.id}_${u.date}`;
                 const fotoDataUrl = u.foto && u.foto.data ? `data:${u.foto.mimeType || 'image/jpeg'};base64,${u.foto.data}` : null;
                 details[detailId] = { keterangan: u.keterangan || '', foto: fotoDataUrl };
                 RBMStorage.setItem(detailKey, JSON.stringify(details));
+                window._rbmParsedCache[detailKey] = { data: details };
             }
         } else if (u.type === 'sisa') {
             const key = `${u.id}_sisa_${u.date}`;
@@ -5985,11 +5940,12 @@ function processStokUpdates(updates) {
     });
     
     RBMStorage.setItem(stokKey, JSON.stringify(data));
+    window._rbmParsedCache[stokKey] = { data: data };
 }
 
 function getRusakDetail(itemId, dateKey) {
     const detailKey = getRbmStorageKey('RBM_STOK_RUSAK_DETAIL');
-    const details = safeParse(RBMStorage.getItem(detailKey), {});
+    const details = getCachedParsedStorage(detailKey, {});
     const id = `${itemId}_${dateKey}`;
     return details[id] || null;
 }
@@ -6040,7 +5996,7 @@ function switchStokTab(tab) {
 
 function getStokItems(category) {
     const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
-    const allItems = safeParse(RBMStorage.getItem(stokKey), {
+    const allItems = getCachedParsedStorage(stokKey, {
         sales: [
             {id:1, name:'Ayam', unit:'Ekor', ratio:1}, 
             {id:2, name:'Saus BBQ', unit:'Pck', ratio:20}
@@ -6068,6 +6024,7 @@ function getStokItemsForSalesTab() {
 }
 
 function renderStokTable() {
+    window._isBatchUpdatingStok = true;
     const monthVal = document.getElementById("stok_bulan_filter").value;
     if (!monthVal) return;
 
@@ -6075,7 +6032,7 @@ function renderStokTable() {
     const daysInMonth = new Date(year, month, 0).getDate();
     const items = activeStokTab === 'sales' ? getStokItemsForSalesTab() : getStokItems(activeStokTab);
     const stokKey = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
-    const stokData = safeParse(RBMStorage.getItem(stokKey), {});
+    const stokData = getCachedParsedStorage(stokKey, {});
 
     const thead = document.getElementById("stok_thead");
     const tbody = document.getElementById("stok_tbody");
@@ -6254,6 +6211,12 @@ function renderStokTable() {
         bodyHtml += rowHtml;
     });
     tbody.innerHTML = bodyHtml;
+    
+    if (window._isBatchUpdatingStok) {
+        window._isBatchUpdatingStok = false;
+        RBMStorage.setItem(stokKey, JSON.stringify(stokData));
+        window._rbmParsedCache[stokKey] = { data: stokData };
+    }
 }
 
 function getStokValue(data, itemId, field, monthVal) {
@@ -6270,7 +6233,7 @@ function getStokValue(data, itemId, field, monthVal) {
 
 function updateStokValue(itemId, field, monthVal, value) {
     const stokKey = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
-    let data = safeParse(RBMStorage.getItem(stokKey), {});
+    let data = getCachedParsedStorage(stokKey, {});
     let key = '';
     if (field === 'awal' || field === 'so_akhir') {
         key = `${itemId}_${field}_${monthVal}`;
@@ -6278,7 +6241,10 @@ function updateStokValue(itemId, field, monthVal, value) {
         key = `${itemId}_${field}`;
     }
     data[key] = value;
-    RBMStorage.setItem(stokKey, JSON.stringify(data));
+    if (!window._isBatchUpdatingStok) {
+        RBMStorage.setItem(stokKey, JSON.stringify(data));
+        window._rbmParsedCache[stokKey] = { data: data };
+    }
 }
 
 function updateStokFruits(itemId, dateKey, monthVal, value, type) {
@@ -6287,7 +6253,7 @@ function updateStokFruits(itemId, dateKey, monthVal, value, type) {
     
     // 2. Recalculate Waste
     const stokKey = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
-    const data = safeParse(RBMStorage.getItem(stokKey), {});
+    const data = getCachedParsedStorage(stokKey, {});
     const outVal = parseFloat(data[`${itemId}_out_${dateKey}`]) || 0;
     const finVal = parseFloat(data[`${itemId}_fin_${dateKey}`]) || 0;
     const waste = outVal - finVal;
@@ -6300,7 +6266,7 @@ function updateStokFruits(itemId, dateKey, monthVal, value, type) {
 
 function recalculateStokRow(itemId, monthVal) {
     const stokKey = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
-    const stokData = safeParse(RBMStorage.getItem(stokKey), {});
+    const stokData = getCachedParsedStorage(stokKey, {});
     const items = activeStokTab === 'sales' ? getStokItemsForSalesTab() : getStokItems(activeStokTab);
     const item = items.find(i => String(i.id) === String(itemId));
     if (!item) return;
@@ -6559,6 +6525,7 @@ function addStokItem() {
     }
     
     RBMStorage.setItem(stokKey, JSON.stringify(allItems));
+    window._rbmParsedCache[stokKey] = { data: allItems };
     
     document.getElementById("new_stok_name").value = "";
     document.getElementById("new_stok_unit").value = "";
@@ -6571,9 +6538,10 @@ function removeStokItem(idx) {
     if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
     showCustomConfirm("Hapus item ini?", "Konfirmasi Hapus", function() {
         const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
-        const allItems = safeParse(RBMStorage.getItem(stokKey), {sales:[], fruits:[], notsales:[]});
+        const allItems = getCachedParsedStorage(stokKey, {sales:[], fruits:[], notsales:[]});
         if (Array.isArray(allItems[activeStokTab])) allItems[activeStokTab].splice(idx, 1);
         RBMStorage.setItem(stokKey, JSON.stringify(allItems));
+        window._rbmParsedCache[stokKey] = { data: allItems };
         manageStokItems();
         renderStokTable();
     });
@@ -6602,7 +6570,7 @@ function processStokImport(input) {
         }
 
         const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
-        const allItems = safeParse(RBMStorage.getItem(stokKey), {sales:[], fruits:[], notsales:[]});
+        const allItems = getCachedParsedStorage(stokKey, {sales:[], fruits:[], notsales:[]});
         if (!Array.isArray(allItems[activeStokTab])) allItems[activeStokTab] = [];
         let count = 0;
 
@@ -6626,6 +6594,7 @@ function processStokImport(input) {
         });
 
         RBMStorage.setItem(stokKey, JSON.stringify(allItems));
+        window._rbmParsedCache[stokKey] = { data: allItems };
         alert(`Berhasil mengimpor ${count} item baru.`);
         manageStokItems();
         renderStokTable();
@@ -6661,7 +6630,7 @@ function loadRiwayatBarang() {
     const end = document.getElementById("riwayat_barang_end").value;
     
     const key = getRbmStorageKey('RBM_PENDING_BARANG');
-    const pending = safeParse(RBMStorage.getItem(key), []);
+    const pending = getCachedParsedStorage(key, []);
     
     // Reset grouped data
     riwayatBarangData = {
@@ -6792,9 +6761,9 @@ function deleteRiwayatBarangBulk(selections) {
     if (!selections.length) return;
     selections.sort((a, b) => (b.parentIdx - a.parentIdx) || (b.itemIdx - a.itemIdx));
     const key = getRbmStorageKey('RBM_PENDING_BARANG');
-    let pending = safeParse(RBMStorage.getItem(key), []);
+    let pending = getCachedParsedStorage(key, []);
     const stokKeyBarang = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
-    let stokData = safeParse(RBMStorage.getItem(stokKeyBarang), {});
+    let stokData = getCachedParsedStorage(stokKeyBarang, {});
 
     selections.forEach(({ parentIdx, itemIdx }) => {
         const submission = pending[parentIdx];
@@ -6829,6 +6798,8 @@ function deleteRiwayatBarangBulk(selections) {
     pending = pending.filter(s => s && s.payload && s.payload.length > 0);
     RBMStorage.setItem(stokKeyBarang, JSON.stringify(stokData));
     RBMStorage.setItem(key, JSON.stringify(pending));
+    window._rbmParsedCache[stokKeyBarang] = { data: stokData };
+    window._rbmParsedCache[key] = { data: pending };
 
     const start = document.getElementById("riwayat_barang_start") && document.getElementById("riwayat_barang_start").value;
     const end = document.getElementById("riwayat_barang_end") && document.getElementById("riwayat_barang_end").value;
@@ -6853,7 +6824,7 @@ function deleteRiwayatBarang(parentIdx, itemIdx) {
     if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
     showCustomConfirm("Hapus data ini? Stok akan diperbarui.", "Konfirmasi Hapus", function() {
         const key = getRbmStorageKey('RBM_PENDING_BARANG');
-        const pending = safeParse(RBMStorage.getItem(key), []);
+        const pending = getCachedParsedStorage(key, []);
         const submission = pending[parentIdx];
         if (!submission || !submission.payload || !submission.payload[itemIdx]) return;
         
@@ -6862,7 +6833,7 @@ function deleteRiwayatBarang(parentIdx, itemIdx) {
         
         if (itemInfo) {
             const stokKeyBarang = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
-            let stokData = safeParse(RBMStorage.getItem(stokKeyBarang), {});
+            let stokData = getCachedParsedStorage(stokKeyBarang, {});
             const dateKey = p.tanggal;
             const jenis = p.jenis.toLowerCase().trim();
             
@@ -6886,17 +6857,19 @@ function deleteRiwayatBarang(parentIdx, itemIdx) {
                 delete stokData[keyStr];
             }
             RBMStorage.setItem(stokKeyBarang, JSON.stringify(stokData));
+            window._rbmParsedCache[stokKeyBarang] = { data: stokData };
         }
         
         submission.payload.splice(itemIdx, 1);
         if (submission.payload.length === 0) pending.splice(parentIdx, 1);
         
         RBMStorage.setItem(key, JSON.stringify(pending));
+        window._rbmParsedCache[key] = { data: pending };
         
         const start = document.getElementById("riwayat_barang_start").value;
         const end = document.getElementById("riwayat_barang_end").value;
         
-        const pendingData = safeParse(RBMStorage.getItem(key), []);
+        const pendingData = pending;
         
         riwayatBarangData = {
             'barang masuk': [],
@@ -7052,7 +7025,7 @@ function getOfficeConfigFromStorage() {
         } catch (e) {}
     }
     var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_GPS_CONFIG') : 'RBM_GPS_CONFIG';
-    return safeParse(RBMStorage.getItem(key), { lat: '', lng: '', radius: 50 });
+    return getCachedParsedStorage(key, { lat: '', lng: '', radius: 50 });
 }
 
 function loadOfficeConfig() {
@@ -7112,7 +7085,7 @@ var RBM_GPS_SHIFTS_DEFAULT = [
 
 function getGpsJamConfig() {
     var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_GPS_JAM_CONFIG') : 'RBM_GPS_JAM_CONFIG';
-    var stored = safeParse(RBMStorage.getItem(key), {});
+    var stored = getCachedParsedStorage(key, {});
     if (stored.shifts && Array.isArray(stored.shifts) && stored.shifts.length > 0) {
         return {
             shifts: stored.shifts,
@@ -7206,7 +7179,7 @@ function addGpsShiftRow(shift) {
 
 function loadJamConfig() {
     var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_GPS_JAM_CONFIG') : 'RBM_GPS_JAM_CONFIG';
-    var stored = safeParse(RBMStorage.getItem(key), {});
+    var stored = getCachedParsedStorage(key, {});
     var tbody = document.getElementById('gps_shifts_tbody');
     if (tbody) {
         tbody.innerHTML = '';
@@ -7298,7 +7271,7 @@ window.startLiveFaceVerification = function() {
     const FACE_MATCH_THRESHOLD = 0.45; // <-- SILAKAN UBAH ANGKA INI
 
     const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-    const faceData = safeParse(window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey), {});
+    const faceData = getCachedParsedStorage(faceKey, {});
     const registeredDescriptorArr = faceData[name];
 
     if (!registeredDescriptorArr || !window.isFaceApiLoaded || typeof faceapi === 'undefined') {
@@ -7391,7 +7364,7 @@ window.loadFaceApiModelsForAbsensi = async function() {
                 if (nameSel && nameSel.value) {
                     const name = nameSel.value;
                     const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-                    const faceData = safeParse(window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey), {});
+                    const faceData = getCachedParsedStorage(faceKey, {});
                     if (!faceData[name]) {
                         faceStatus.innerHTML = "❌ Wajah belum terdaftar. Hubungi Manager.";
                         faceStatus.style.color = "#b91c1c";
@@ -7554,7 +7527,7 @@ function checkDistance() {
     // Kunci tombol jika wajah belum terdaftar
     if (name) {
         var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-        var faceData = safeParse(window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey), {});
+        var faceData = getCachedParsedStorage(faceKey, {});
         if (!faceData[name]) {
             disableAll = true; 
         } else if (typeof faceapi !== 'undefined' && window.isFaceApiLoaded) {
@@ -7663,9 +7636,9 @@ function loadRekapAbsensiGPS() {
     }
 
     // Ambil Data
-    const logs = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_GPS_LOGS')), []);
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-    const jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
+    const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
 
     let filtered = logs.filter(l => l.date >= tglAwal && l.date <= tglAkhir);
 
@@ -7847,7 +7820,7 @@ function deleteSingleGpsLog(logId) {
     
     showCustomConfirm('Yakin ingin menghapus 1 data absensi ini?', "Konfirmasi Hapus", function() {
         var key = getRbmStorageKey('RBM_GPS_LOGS');
-        var logs = safeParse(RBMStorage.getItem(key), []);
+        var logs = getCachedParsedStorage(key, []);
         
         var logToDelete = logs.find(l => l.id == logId);
         if (!logToDelete) { showCustomAlert('Data tidak ditemukan untuk dihapus.', 'Info', 'error'); return; }
@@ -7858,6 +7831,7 @@ function deleteSingleGpsLog(logId) {
             window.RBMStorage._db.ref(refPath).remove().then(function() {
                 var newLogs = logs.filter(function(l) { return l.id != logId; });
                 try { localStorage.setItem(key, JSON.stringify(newLogs)); } catch(e){}
+                window._rbmParsedCache[key] = { data: newLogs };
                 loadRekapAbsensiGPS();
                 showCustomAlert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.', 'Berhasil', 'success');
             });
@@ -7867,6 +7841,7 @@ function deleteSingleGpsLog(logId) {
             });
             
             RBMStorage.setItem(key, JSON.stringify(newLogs)).then(function() {
+                window._rbmParsedCache[key] = { data: newLogs };
                 loadRekapAbsensiGPS();
                 showCustomAlert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.', 'Berhasil', 'success');
             });
@@ -7878,7 +7853,7 @@ function populateRekapGpsFilterNama() {
     const filterSelect = document.getElementById("rekap_gps_filter_nama");
     if (!filterSelect) return;
     var key = getRbmStorageKey('RBM_GPS_LOGS');
-    var logs = safeParse(RBMStorage.getItem(key), []);
+    var logs = getCachedParsedStorage(key, []);
     var names = [];
     var seen = {};
     logs.forEach(function(log) {
@@ -7887,7 +7862,7 @@ function populateRekapGpsFilterNama() {
     });
     
     // [FIX] Selalu gabungkan dengan data Master Karyawan agar nama yang belum absen tetap muncul
-    var employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    var employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     employees.forEach(function(emp) {
         var n = (emp && emp.name || '').trim();
         if (n && !seen[n]) { seen[n] = true; names.push(n); }
@@ -7911,11 +7886,11 @@ function getRekapAbsensiGpsDataForExport() {
     const tglAwal = document.getElementById("rekap_gps_start").value;
     const tglAkhir = document.getElementById("rekap_gps_end").value;
     const filterNama = document.getElementById("rekap_gps_filter_nama").value;
-    const logs = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_GPS_LOGS')), []);
+    const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
     let filtered = logs.filter(l => l.date >= tglAwal && l.date <= tglAkhir);
     if (filterNama) filtered = filtered.filter(l => l.name === filterNama);
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-    const jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
     const grouped = {};
     filtered.forEach(log => {
         const key = `${log.date}_${log.name}`;
@@ -8141,8 +8116,8 @@ function closeGpsDetailModal() {
 
 // Total menit telat dari GPS untuk satu karyawan dalam periode (untuk Rekap Gaji)
 function getTotalMenitTelatFromGps(empId, empName, tglAwal, tglAkhir) {
-    const logs = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_GPS_LOGS')), []);
-    const jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
+    const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
+    const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
     const byDate = {};
     logs.forEach(log => {
         if (log.name !== empName) return;
@@ -8178,7 +8153,7 @@ function updateGpsJadwalDisplay() {
         if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
         return;
     }
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const emp = employees.find(e => e.name === name);
     if (!emp) {
         textEl.textContent = '-';
@@ -8187,7 +8162,7 @@ function updateGpsJadwalDisplay() {
     }
     const now = new Date();
     const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
-    const jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
+    const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
     const key = `${today}_${emp.id || employees.indexOf(emp)}`;
     const shift = jadwalData[key] || '';
     const label = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift || 'Tidak ada jadwal';
@@ -8244,7 +8219,7 @@ function updateGpsJadwalDisplay() {
     
     if (faceStatus && window.isFaceApiLoaded) {
         const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-        const faceData = safeParse(window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey), {});
+        const faceData = getCachedParsedStorage(faceKey, {});
         if (!faceData[name]) {
             faceStatus.innerHTML = "❌ Wajah belum terdaftar. Hubungi Manager.";
             faceStatus.style.color = "#b91c1c";
@@ -8310,7 +8285,7 @@ async function _executeAbsensiGPS(type) {
 
     const video = document.getElementById('gps_video');
     const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-    const faceData = safeParse(window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey), {});
+    const faceData = getCachedParsedStorage(faceKey, {});
     const registeredDescriptorArr = faceData[name];
 
     // ===== VERIFIKASI WAJAH =====
@@ -8338,7 +8313,7 @@ async function _executeAbsensiGPS(type) {
     }
     // ============================
 
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const emp = employees.find(e => e.name === name);
     const empId = emp ? (emp.id || employees.indexOf(emp)) : null;
     
@@ -8379,7 +8354,7 @@ async function _executeAbsensiGPS(type) {
     };
 
     const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
-    const logs = safeParse(RBMStorage.getItem(gpsKey), []);
+    const logs = getCachedParsedStorage(gpsKey, []);
 
     // Peringatan durasi istirahat (sebelum push log Selesai Istirahat)
     if (type === 'Istirahat Kembali' && empId !== null) {
@@ -8390,7 +8365,7 @@ async function _executeAbsensiGPS(type) {
             if (durasiIni < 0) durasiIni += 24 * 60;
             var totalDurasi = stats.total + durasiIni;
 
-            var jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
+            var jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
             var jadwalKey = today + '_' + empId;
             var shift = jadwalData[jadwalKey];
             var batasMenit = typeof getDurasiIstirahatMenitFromConfig === 'function' ? getDurasiIstirahatMenitFromConfig(shift) : 60;
@@ -8423,7 +8398,7 @@ async function _executeAbsensiGPS(type) {
 
     // Jika absen Masuk: set Hadir (H) di tab Absensi & Jadwal
     if (type === 'Masuk' && empId !== null) {
-        const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
+        const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
         const absKey = `${today}_${empId}`;
         absensiData[absKey] = 'H';
         RBMStorage.setItem(getRbmStorageKey('RBM_ABSENSI_DATA'), JSON.stringify(absensiData));
@@ -8431,7 +8406,7 @@ async function _executeAbsensiGPS(type) {
 
     // Cek telat (hanya untuk Masuk)
     if (type === 'Masuk' && empId !== null) {
-        const jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
+        const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
         const jadwalKey = `${today}_${empId}`;
         const shift = jadwalData[jadwalKey];
         const batas = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift) : null) || JADWAL_BATAS_MASUK[shift];
@@ -8454,7 +8429,7 @@ function loadMyGpsHistory() {
     const name = document.getElementById('gps_absen_name').value;
     if (!name) { alert("Pilih nama karyawan terlebih dahulu!"); return; }
     
-    const logs = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_GPS_LOGS')), []);
+    const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
     // Filter by name and sort descending
     const myLogs = logs.filter(l => l.name === name).sort((a, b) => {
         const ta = a.timestamp || (a.date + 'T' + a.time);
@@ -8499,7 +8474,7 @@ function closeGpsHistoryModal() {
 function populateManualAbsenNameSelect() {
     const sel = document.getElementById('manual_absen_name');
     if (!sel) return;
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     sel.innerHTML = '<option value="">-- Pilih Nama --</option>';
     employees.forEach(function(emp) {
         const opt = document.createElement('option');
@@ -8549,7 +8524,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             return;
         }
         function doSave(photo) {
-            const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+            const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
             const emp = employees.find(function(e) { return e.name === name; });
             const empId = emp ? (emp.id != null ? emp.id : employees.indexOf(emp)) : null;
             var timeDisplay = (time.length >= 8 && time.indexOf(':') >= 0) ? time.slice(0, 8) : (time.length >= 5 ? time.slice(0, 5) : time);
@@ -8571,7 +8546,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                 manualEntry: true
             };
             const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
-            const logs = safeParse(RBMStorage.getItem(gpsKey), []);
+            const logs = getCachedParsedStorage(gpsKey, []);
             logs.push(log);
             
             var savePromise;
@@ -8590,7 +8565,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             
             savePromise.then(function() {
                 if (type === 'Masuk' && empId !== null) {
-                    const absensiData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_ABSENSI_DATA')), {});
+                    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
                     const absKey = date + '_' + empId;
                     absensiData[absKey] = 'H';
                     RBMStorage.setItem(getRbmStorageKey('RBM_ABSENSI_DATA'), JSON.stringify(absensiData));

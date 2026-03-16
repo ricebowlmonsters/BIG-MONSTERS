@@ -85,19 +85,25 @@
       var sfx = outlet ? '_' + outlet.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
 
       var nodesToLoad = ['employees' + sfx, 'gps_config' + sfx, 'gps_jam_config' + sfx, 'face_data' + sfx, 'employees', 'face_data']; 
-      if (outlet) nodesToLoad.push(outlet); // Load format lama rbm_pro/sidoarjo just in case
+      if (outlet) {
+          // [OPTIMASI SUPER KILAT] JANGAN PERNAH meload seluruh node cabang (outlet) secara utuh, karena akan menarik data bertahun-tahun (Pembukuan, Petty Cash, dll) sebesar ratusan Megabyte!
+          nodesToLoad.push(outlet + '/employees'); 
+      }
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
       if (page === 'absensi-gps-view') {
           // [OPTIMASI KILAT] Di HP karyawan, JANGAN load data berat seperti absensi_data, gaji, bonus
           nodesToLoad.push('jadwal_data' + sfx, 'gps_logs' + sfx);
+          if (outlet) nodesToLoad.push(outlet + '/jadwal_data', outlet + '/gps_logs');
       } else if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
           // [FIX] Gunakan absensi_data & jadwal_data agar cocok dengan nama saat disimpan
           nodesToLoad.push('absensi_data' + sfx, 'jadwal_data' + sfx, 'jadwal_notes', 'gaji', 'bonus', 'gps_logs' + sfx, 'gps_logs');
+          if (outlet) nodesToLoad.push(outlet + '/absensi_data', outlet + '/jadwal_data', outlet + '/gps_logs');
       } else if (page.indexOf('petty-cash') >= 0) {
           // [OPTIMASI KILAT] Jangan load seluruh petty_cash karena data sangat besar dan sudah diload otomatis sesuai tanggal
       } else if (page.indexOf('barang') >= 0 || page.indexOf('stok') >= 0) {
           nodesToLoad.push('stok_items' + sfx);
+          if (outlet) nodesToLoad.push(outlet + '/stok_items');
       } else if (page.indexOf('pembukuan') >= 0 || page.indexOf('keuangan') >= 0) {
           nodesToLoad.push('bank');
       } else if (page.indexOf('inventaris') >= 0) {
@@ -114,7 +120,7 @@
 
       var promises = uniqueNodes.map(function(node) {
           // [OPTIMASI KILAT] Batasi unduhan foto GPS maksimal 500 data terakhir agar loading instan
-          if (node.indexOf('gps_logs') === 0) {
+          if (node.indexOf('gps_logs') === 0 || node.indexOf('/gps_logs') > 0) {
               var limit = (page === 'absensi-gps-view') ? 50 : 200; // HP Karyawan cukup 50 data terakhir agar kilat
               return self._db.ref('rbm_pro/' + node).limitToLast(limit).once('value').then(function(snap) {
                   var data = snap.val();
@@ -177,6 +183,70 @@
       return this.loadFromFirebase();
     },
 
+    getRawData: function(key) {
+      if (!key || key.indexOf('RBM_') !== 0) {
+        var str = _origGetItem.call(localStorage, key);
+        try { return JSON.parse(str); } catch(e) { return str; }
+      }
+      var path = keyToPath(key);
+      if (this._useFirebase) {
+        var self = this;
+        var getFromCache = function(targetPath) {
+            var parts = targetPath.split('/');
+            var curr = self._cache;
+            for (var i = 0; i < parts.length; i++) {
+                if (curr && typeof curr === 'object' && curr.hasOwnProperty(parts[i])) {
+                    curr = curr[parts[i]];
+                } else {
+                    return null;
+                }
+            }
+            var v = curr;
+            if (v === undefined || v === null || (Array.isArray(v) && v.length === 0) || (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0)) return null;
+            if (typeof v === 'object' && !Array.isArray(v)) {
+                if (v._rbm_transformed) return v._rbm_data;
+                var ks = Object.keys(v);
+                var isArrayLike = ks.length > 0 && ks.every(function(k) { return !isNaN(k); });
+                var transformed = null;
+                if (isArrayLike) {
+                    var arr = [];
+                    ks.forEach(function(k) { arr[Number(k)] = v[k]; });
+                    transformed = arr.filter(function(x) { return x !== null && x !== undefined; });
+                } else if (targetPath.indexOf('employees') >= 0 || targetPath.indexOf('gps_logs') >= 0) {
+                    var arr2 = [];
+                    ks.forEach(function(k) { 
+                        var item = v[k];
+                        if (item && typeof item === 'object' && targetPath.indexOf('gps_logs') >= 0) item._firebaseKey = k;
+                        arr2.push(item); 
+                    });
+                    transformed = arr2;
+                }
+                if (transformed) {
+                    var p = self._cache;
+                    for (var j = 0; j < parts.length - 1; j++) { p = p[parts[j]]; }
+                    p[parts[parts.length - 1]] = { _rbm_transformed: true, _rbm_data: transformed };
+                    return transformed;
+                }
+            }
+            return v;
+        };
+        var val = getFromCache(path);
+        if (val !== null) return val;
+        var rawOutlet = '';
+        try { var el = typeof document !== 'undefined' ? document.getElementById('rbm-outlet-select') : null; rawOutlet = (el && el.value) ? el.value : (localStorage.getItem('rbm_last_selected_outlet') || ''); } catch(e) {}
+        if (rawOutlet) {
+            if (path.indexOf('employees_') === 0) { var fb = getFromCache(rawOutlet + '/employees'); if (fb) return fb; }
+            if (path.indexOf('absensi_data_') === 0) { var fb = getFromCache(rawOutlet + '/absensi_data'); if (fb) return fb; }
+            if (path.indexOf('jadwal_data_') === 0) { var fb = getFromCache(rawOutlet + '/jadwal_data'); if (fb) return fb; }
+            if (path.indexOf('gps_logs_') === 0) { var fb = getFromCache(rawOutlet + '/gps_logs'); if (fb) return fb; }
+        }
+        if (path.indexOf('employees_') === 0) { var fb = getFromCache('employees'); if (fb) return fb; }
+        if (path.indexOf('stok_items_') === 0) { var fb = getFromCache('stok_items'); if (fb) return fb; }
+      }
+      var str = _origGetItem.call(localStorage, key);
+      try { return JSON.parse(str); } catch(e) { return str; }
+    },
+
     getItem: function(key) {
       if (!key || key.indexOf('RBM_') !== 0) return _origGetItem.call(localStorage, key);
       var path = keyToPath(key);
@@ -198,6 +268,8 @@
               (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
             if (isEmpty) return null;
             
+            if (v && v._rbm_transformed) return JSON.stringify(v._rbm_data);
+
             // Perbaikan Krusial: Transformasi Object Firebase kembali menjadi Array
             if (typeof v === 'object' && !Array.isArray(v)) {
                 var ks = Object.keys(v);

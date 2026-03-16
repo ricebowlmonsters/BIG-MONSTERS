@@ -198,8 +198,16 @@
     var tglAwalStr = normalizeDateKeyToYyyyMmDd(tanggalAwal) || '';
     var tglAkhirStr = (tanggalAkhir || '').toString().trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(tglAkhirStr)) tglAkhirStr = normalizeDateKeyToYyyyMmDd(tglAkhirStr) || '';
+    
     var query = db.ref(path).orderByKey();
-    if (tglAwalStr) query = query.startAt(tglAwalStr);
+    
+    // [OPTIMASI] Batasi unduhan data mundur 1 bulan saja agar tidak mendownload foto bertahun-tahun
+    if (tglAwalStr) {
+        var dObj = new Date(tglAwalStr);
+        dObj.setMonth(dObj.getMonth() - 1);
+        var startBulanLalu = dObj.getFullYear() + '-' + ('0' + (dObj.getMonth() + 1)).slice(-2) + '-01';
+        query = query.startAt(startBulanLalu);
+    }
     if (tglAkhirStr) query = query.endAt(tglAkhirStr); // Filter data masa depan agar query lebih cepat
     
     return query.once('value').then(function(snap) {
@@ -541,7 +549,16 @@
     var isTrosobo = outLower.indexOf('trosobo') >= 0;
     // Untuk Trosobo: baca path flat DULU agar data lama + baru (yang sekarang disimpan ke flat) tetap utuh
     if (isTrosobo && db) {
-      return db.ref('rbm_pro/pembukuan').once('value').then(function(rootSnap) {
+      var queryTros = db.ref('rbm_pro/pembukuan');
+      if (tglAwal && tglAkhir) {
+          var dObjTros = new Date(tglAwal);
+          dObjTros.setMonth(dObjTros.getMonth() - 1);
+          var startBulanLaluTros = dObjTros.getFullYear() + '-' + ('0' + (dObjTros.getMonth() + 1)).slice(-2) + '-01';
+          queryTros = queryTros.orderByKey().startAt(startBulanLaluTros).endAt(tglAkhir);
+      } else if (tglAkhir) {
+          queryTros = queryTros.orderByKey().endAt(tglAkhir);
+      }
+      return queryTros.once('value').then(function(rootSnap) {
         var root = rootSnap.val();
         if (!root || typeof root !== 'object') return [];
         var keys = Object.keys(root);
@@ -552,7 +569,11 @@
             all[k] = root[k];
           } else if (outLower.indexOf(k.toLowerCase()) >= 0 || k.toLowerCase().indexOf(outLower) >= 0) {
             var sub = root[k];
-            if (sub && typeof sub === 'object') Object.keys(sub).forEach(function(d) { all[d] = sub[d]; });
+            if (sub && typeof sub === 'object') Object.keys(sub).forEach(function(d) { 
+                if (tglAwal && d < tglAwal) return;
+                if (tglAkhir && d > tglAkhir) return;
+                all[d] = sub[d]; 
+            });
           }
         });
         if (Object.keys(all).length === 0) return [];
@@ -563,38 +584,33 @@
     }
     var path = getPembukuanPath(outletId);
     var query = db.ref(path);
-    if (tglAwal || tglAkhir) {
-        query = query.orderByKey();
-        if (tglAwal) query = query.startAt(tglAwal);
-        if (tglAkhir) query = query.endAt(tglAkhir);
+    if (tglAwal && tglAkhir) {
+        var dObjPath = new Date(tglAwal);
+        dObjPath.setMonth(dObjPath.getMonth() - 1);
+        var startBulanLaluPath = dObjPath.getFullYear() + '-' + ('0' + (dObjPath.getMonth() + 1)).slice(-2) + '-01';
+        query = query.orderByKey().startAt(startBulanLaluPath).endAt(tglAkhir);
+    } else if (tglAkhir) {
+        query = query.orderByKey().endAt(tglAkhir);
     }
     return query.once('value').then(function(snap) {
       var all = snap.val();
       var effectiveKey = outletId || '_default';
       if ((!all || typeof all !== 'object' || Object.keys(all).length === 0) && db) {
-        return db.ref('rbm_pro/pembukuan').once('value').then(function(rootSnap) {
+        if (window._rbmHasCheckedPembukuanRoot) return [];
+        window._rbmHasCheckedPembukuanRoot = true;
+        
+        var queryFallback = db.ref('rbm_pro/pembukuan/' + effectiveKey);
+        if (tglAwal && tglAkhir) {
+            var dObjFallback = new Date(tglAwal);
+            dObjFallback.setMonth(dObjFallback.getMonth() - 1);
+            var startBulanLaluFb = dObjFallback.getFullYear() + '-' + ('0' + (dObjFallback.getMonth() + 1)).slice(-2) + '-01';
+            queryFallback = queryFallback.orderByKey().startAt(startBulanLaluFb).endAt(tglAkhir);
+        } else if (tglAkhir) {
+            queryFallback = queryFallback.orderByKey().endAt(tglAkhir);
+        }
+        return queryFallback.once('value').then(function(rootSnap) {
           var root = rootSnap.val();
-          if (!root || typeof root !== 'object') return [];
-          var keys = Object.keys(root);
-          if (keys.length === 0) return [];
-          var firstKey = keys[0];
-          if (isDateKey(firstKey)) {
-            return [];
-          }
-          all = root[outletId];
-          if (!all && outletId) {
-            var matchedKey = keys.filter(function(k) {
-              var lower = k.toLowerCase();
-              var ol = (outletId || '').toLowerCase();
-              return lower === ol || ol.indexOf(lower) >= 0 || lower.indexOf(ol) >= 0;
-            })[0];
-            if (matchedKey && root[matchedKey] && typeof root[matchedKey] === 'object') {
-              all = root[matchedKey];
-              effectiveKey = matchedKey;
-            }
-          } else if (all) {
-            effectiveKey = outletId;
-          }
+          all = root;
           if (!all || typeof all !== 'object') return [];
           var g = typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : {});
           g._lastPembukuanOutletKey = effectiveKey;
@@ -646,8 +662,8 @@
       var arr = snap.val();
       if (!Array.isArray(arr)) arr = [];
       details.forEach(function(item) {
-        var fotoNota = item.fotoNotaUrl || (item.fotoNota && item.fotoNota.data ? 'data:' + (item.fotoNota.mimeType || 'image/png') + ';base64,' + item.fotoNota.data : '');
-        var fotoTtd = item.fotoTtdUrl || (item.fotoTtd && item.fotoTtd.data ? 'data:' + (item.fotoTtd.mimeType || 'image/png') + ';base64,' + item.fotoTtd.data : '');
+        var fotoNota = item.fotoNotaUrl || (typeof item.fotoNota === 'string' ? item.fotoNota : (item.fotoNota && item.fotoNota.data ? 'data:' + (item.fotoNota.mimeType || 'image/png') + ';base64,' + item.fotoNota.data : ''));
+        var fotoTtd = item.fotoTtdUrl || (typeof item.fotoTtd === 'string' ? item.fotoTtd : (item.fotoTtd && item.fotoTtd.data ? 'data:' + (item.fotoTtd.mimeType || 'image/png') + ';base64,' + item.fotoTtd.data : ''));
         arr.push({
           tanggal: item.tanggal,
           suplier: item.suplier,
@@ -680,7 +696,8 @@
       var arr = snap.val();
       if (!Array.isArray(arr)) arr = [];
       details.forEach(function(item) {
-        var foto = item.fotoBuktiUrl || (item.fotoBukti && item.fotoBukti.data ? 'data:' + (item.fotoBukti.mimeType || 'image/png') + ';base64,' + item.fotoBukti.data : '') || '';
+        var foto = item.fotoBuktiUrl || (typeof item.fotoBukti === 'string' ? item.fotoBukti : (item.fotoBukti && item.fotoBukti.data ? 'data:' + (item.fotoBukti.mimeType || 'image/png') + ';base64,' + item.fotoBukti.data : '')) || '';
+        var foto = item.fotoPengajuanUrl || (typeof item.fotoPengajuan === 'string' ? item.fotoPengajuan : (item.fotoPengajuan && item.fotoPengajuan.data ? 'data:' + (item.fotoPengajuan.mimeType || 'image/png') + ';base64,' + item.fotoPengajuan.data : '')) || '';
         arr.push({
           tanggalPengajuan: item.tanggalPengajuan,
           fotoBuktiUrl: foto,
@@ -741,7 +758,18 @@
   function syncAppStateFromFirebase() {
     if (!init()) return Promise.resolve();
     var promises = [];
+    var isRbmProPage = typeof window !== 'undefined' && window.RBM_PAGE;
     Object.keys(APP_STATE_KEYS).forEach(function(key) {
+      // [OPTIMASI KILAT] Jangan buang waktu download konfigurasi kasir saat berada di Dashboard Backoffice RBM
+      if (isRbmProPage && (
+          key === 'rbm_points_history' || 
+          key === 'rbm_vouchers' ||
+          key === 'rbm_menu_categories' ||
+          key === 'rbm_printer_groups' ||
+          key === 'rbm_printer_config' ||
+          key === 'rbm_payment_methods' ||
+          key === 'rbm_quick_memos'
+      )) return; 
       var path = APP_STATE_KEYS[key];
       promises.push(db.ref(path).once('value').then(function(snap) {
         var v = snap.val();

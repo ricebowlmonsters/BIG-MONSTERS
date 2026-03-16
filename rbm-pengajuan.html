@@ -203,10 +203,11 @@
               const statusColor = status === 'approved' ? '#059669' : (status === 'rejected' ? '#dc2626' : '#d97706');
               const statusText = status === 'approved' ? 'Disetujui' : (status === 'rejected' ? 'Ditolak' : 'Menunggu');
               
-              const dataStr = encodeURIComponent(JSON.stringify(sub)).replace(/'/g, "%27");
+              window._pengajuanDataMap = window._pengajuanDataMap || {};
+              window._pengajuanDataMap[sub.id] = sub;
               
           html += `
-                  <div class="rbm-outlet-card" onclick="openOwnerPengajuanModal('${dataStr}')" style="cursor:pointer; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; border-left: 4px solid ${statusColor};">
+                  <div class="rbm-outlet-card" onclick="openOwnerPengajuanModal('${sub.id}')" style="cursor:pointer; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; border-left: 4px solid ${statusColor};">
                     <div>
                       <div style="font-size:11px; font-weight:bold; color:#4C2A85; text-transform:uppercase; margin-bottom:4px; letter-spacing: 0.5px;">📍 ${outletName} | 👤 ${submittedBy}</div>
                       <strong style="display:block; margin-bottom:4px; font-size:15px; color:#1f2937;">${title}</strong>
@@ -227,8 +228,8 @@
 
       // [OPTIMASI] Gunakan once() alih-alih on() agar browser tidak hang karena ukuran payload yang raksasa
       Promise.all([
-          db.ref('rbm_pro/pengajuan_tf').orderByKey().limitToLast(50).once('value'),
-          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(50).once('value')
+          db.ref('rbm_pro/pengajuan_tf').orderByKey().limitToLast(10).once('value'),
+          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(10).once('value')
       ]).then(snaps => {
           tfData = snaps[0].val();
           pcData = snaps[1].val();
@@ -319,8 +320,8 @@
 
       // [OPTIMASI] Gunakan once() agar tidak berat.
       Promise.all([
-          db.ref('rbm_pro/pengajuan_tf').orderByKey().limitToLast(50).once('value'),
-          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(50).once('value')
+          db.ref('rbm_pro/pengajuan_tf').orderByKey().limitToLast(10).once('value'),
+          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(10).once('value')
       ]).then(snaps => {
           tfData = snaps[0].val();
           pcData = snaps[1].val();
@@ -333,8 +334,8 @@
   }
 })();
 
-function openOwnerPengajuanModal(dataStrEncoded) {
-  const sub = JSON.parse(decodeURIComponent(dataStrEncoded));
+function openOwnerPengajuanModal(id) {
+  const sub = window._pengajuanDataMap[id];
   const d = sub.data;
   const isTf = sub.type === 'tf';
   
@@ -617,113 +618,8 @@ window.confirm = function(msg) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js"></script>
 <script>
-// [BARU] Interceptor untuk konfirmasi kustom & kompresi foto otomatis sebelum submit
-document.addEventListener('DOMContentLoaded', function() {
-    const btn = document.getElementById('submitButtonPengajuan');
-    
-    if (btn) {
-        btn.removeAttribute('onclick');
-        
-        btn.addEventListener('click', function(e) {
-            e.preventDefault();
-            
-            // Validasi Awal sebelum Pop Up Konfirmasi muncul
-            const jenisPengajuan = document.getElementById("jenis_pengajuan") ? document.getElementById("jenis_pengajuan").value : "";
-            if (!jenisPengajuan) {
-                AppPopup.alert('Pilih Jenis Pengajuan terlebih dahulu.', 'Peringatan');
-                return;
-            }
-            const rows = document.querySelectorAll("#pengajuan-form-container .row-group");
-            if (rows.length === 0) {
-                AppPopup.alert('Form pengajuan belum lengkap. Silakan isi data terlebih dahulu.', 'Peringatan');
-                return;
-            }
-            
-            AppPopup.confirm('Kirim pengajuan sekarang?', 'Konfirmasi Pengajuan', async function() {
-                const originalText = 'Kirim Pengajuan';
-                btn.disabled = true;
-                btn.textContent = 'Memproses & Kompresi Foto...';
-                
-                try {
-                    const fileInputs = document.querySelectorAll('input[type="file"]');
-                    for (let i = 0; i < fileInputs.length; i++) {
-                        const input = fileInputs[i];
-                        if (input.files && input.files.length > 0) {
-                            const file = input.files[0];
-                            if (file.type.startsWith('image/') && file.size > 300000) {
-                                const compressedFile = await compressImageFile(file);
-                                const dataTransfer = new DataTransfer();
-                                dataTransfer.items.add(compressedFile);
-                                input.files = dataTransfer.files;
-                            }
-                        }
-                    }
-                    
-                    btn.textContent = 'Menyimpan ke Server...';
-                    if (typeof submitDataPengajuan === 'function') {
-                        await submitDataPengajuan();
-                    } else {
-                        console.error("Fungsi submitDataPengajuan tidak ditemukan");
-                        btn.disabled = false;
-                        btn.textContent = originalText;
-                    }
-                } catch (err) {
-                    console.error(err);
-                    AppPopup.error('Terjadi kesalahan saat memproses gambar: ' + err.message);
-                    btn.disabled = false;
-                    btn.textContent = originalText;
-                }
-            });
-        });
-    }
-});
-
-function compressImageFile(file) {
-    return new Promise(function(resolve) {
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            const img = new Image();
-            img.onload = function() {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
-                const MAX_DIM = 800; // Max resolusi 800px agar ringan
-                
-                if (width > height && width > MAX_DIM) {
-                    height *= MAX_DIM / width;
-                    width = MAX_DIM;
-                } else if (height > MAX_DIM) {
-                    width *= MAX_DIM / height;
-                    height = MAX_DIM;
-                }
-                
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                
-                canvas.toBlob(function(blob) {
-                    // Jika kompresi berhasil dan file menjadi lebih kecil
-                    if (blob && blob.size < file.size) {
-                        const newFile = new File([blob], file.name, {
-                            type: 'image/jpeg',
-                            lastModified: Date.now()
-                        });
-                        resolve(newFile);
-                    } else {
-                        resolve(file); // Jika gagal, pakai file asli
-                    }
-                }, 'image/jpeg', 0.6); // Kualitas JPEG 60%
-            };
-            img.onerror = function() { resolve(file); };
-            img.src = event.target.result;
-        };
-        reader.onerror = function() { resolve(file); };
-        reader.readAsDataURL(file);
-    });
-}
-
 // [BARU] Patch untuk mengatasi error "Write too large" saat menyimpan pengajuan Petty Cash
 (function() {
     function patchFirebaseWriteSize() {
