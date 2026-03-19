@@ -811,6 +811,14 @@
                  CustomUI.success(`Data di /${deleteTargetKey} berhasil dihapus.`);
                  analyzeNode(deleteTargetKey);
             }
+            // [SYNC] Hapus cache lokal RBM agar halaman lain tidak menampilkan data lama.
+            try {
+                Object.keys(localStorage).forEach(function(k) {
+                    if (k.indexOf('RBM_') === 0) localStorage.removeItem(k);
+                    // cache petty cash client/server
+                    if (k.indexOf('rbm_pc_cache_v1') === 0) localStorage.removeItem(k);
+                });
+            } catch(e) {}
             closeDeleteModal();
         } catch (e) {
             console.error(e);

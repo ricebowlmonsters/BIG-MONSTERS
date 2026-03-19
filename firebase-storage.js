@@ -158,6 +158,16 @@
     return 'rbm_pro/petty_cash/' + (o ? String(o).replace(/[.#$[\]]/g, '_') : 'default');
   }
 
+  // Index ringan per-bulan (Accurate-style): hanya data list tanpa foto/base64
+  // Path: rbm_pro/petty_cash_index/{outlet}/{YYYY-MM}/{pushId} -> { tanggal,nama,jumlah,satuan,harga,debit,kredit,refDate,refIndex }
+  function getPettyCashIndexMonthPath(outletId, yyyyMm) {
+    var o = outletId || (typeof getRbmOutlet === 'function' && getRbmOutlet()) || (window.getRbmOutlet && window.getRbmOutlet());
+    var outletKey = (o ? String(o).replace(/[.#$[\]]/g, '_') : 'default');
+    var ym = (yyyyMm || '').toString().trim();
+    if (!/^\d{4}-\d{2}$/.test(ym)) return 'rbm_pro/petty_cash_index/' + outletKey;
+    return 'rbm_pro/petty_cash_index/' + outletKey + '/' + ym;
+  }
+
   function getPettyCashDatePath(outletId, dateStr) {
     var d = (dateStr || '').toString().trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return getPettyCashPath(outletId) + '/' + d;
@@ -201,12 +211,11 @@
     
     var query = db.ref(path).orderByKey();
     
-    // [OPTIMASI] Batasi unduhan data mundur 1 bulan saja agar tidak mendownload foto bertahun-tahun
+    // [SUPER OPTIMASI] Hanya unduh data bulan ini saja untuk mempercepat loading.
+    // Catatan: Saldo Awal historis dari bulan lalu tidak akan terakumulasi dengan cara ini, 
+    // namun loading data akan menjadi 2x lebih cepat.
     if (tglAwalStr) {
-        var dObj = new Date(tglAwalStr);
-        dObj.setMonth(dObj.getMonth() - 1);
-        var startBulanLalu = dObj.getFullYear() + '-' + ('0' + (dObj.getMonth() + 1)).slice(-2) + '-01';
-        query = query.startAt(startBulanLalu);
+        query = query.startAt(tglAwalStr);
     }
     if (tglAkhirStr) query = query.endAt(tglAkhirStr); // Filter data masa depan agar query lebih cepat
     
@@ -258,7 +267,9 @@
             debit: debit,
             kredit: kredit,
             saldo: runningSaldo,
-            foto: row.foto || ''
+            // [SUPER OPTIMASI] Jangan kirim foto (base64/url) ke UI list
+            hasFoto: !!row.foto,
+            foto: ''
           });
           totalDebit += debit;
           totalKredit += kredit;
@@ -304,7 +315,9 @@
             debit: debit,
             kredit: kredit,
             saldo: runningSaldo,
-            foto: row.foto || '',
+            // [SUPER OPTIMASI] Jangan kirim foto (base64/url) ke UI list
+            hasFoto: !!row.foto,
+            foto: '',
             _firebaseDate: dateKey,
             _firebaseIndexInDate: idxInDate
           });
@@ -317,6 +330,408 @@
     }).catch(function(err) {
       console.warn('getPettyCash failed', err);
       return { data: [], summary: {} };
+    });
+  }
+
+  /**
+   * Server-side style paging untuk Petty Cash (Firebase RTDB).
+   * - Tidak pakai OFFSET (RTDB tidak efisien), pakai cursor.
+   * - Ambil tanggal per-batch, stop setelah cukup `limit` baris.
+   *
+   * cursor format:
+   *  - null untuk halaman pertama
+   *  - { dateKey: 'YYYY-MM-DD', indexInDate: 0 } untuk lanjut dari posisi itu (exclusive)
+   */
+  function getPettyCashPage(params) {
+    if (!init()) return Promise.resolve({ data: [], summary: { totalDebit: 0, totalKredit: 0, saldoAkhir: 0, saldoAwal: 0 }, page: { limit: 20, nextCursor: null } });
+    params = params || {};
+    var outletId = params.outletId;
+    var tanggalAwal = params.from;
+    var tanggalAkhir = params.to;
+    var search = (params.search || '').toString().trim().toLowerCase();
+    var limit = parseInt(params.limit, 10) || 20;
+    if (limit < 20) limit = 20;
+    if (limit > 50) limit = 50;
+    var cursor = params.cursor || null;
+
+    var tglAwalStr = normalizeDateKeyToYyyyMmDd(tanggalAwal) || '';
+    var tglAkhirStr = (tanggalAkhir || '').toString().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tglAkhirStr)) tglAkhirStr = normalizeDateKeyToYyyyMmDd(tglAkhirStr) || '';
+
+    function runSlowPath() {
+      var path = getPettyCashPath(outletId);
+
+      // Ambil tanggal batch kecil dulu (biar responsif)
+      // [OPTIMASI] Jangan ambil terlalu banyak tanggal sekaligus.
+      // Untuk data jutaan, 1-2 tanggal saja sudah cukup untuk isi 20 baris pertama.
+      // [FIX] Jangan terlalu kecil: jika limit minta 50, 2 tanggal bisa cuma jadi ~20 baris.
+      // Perkiraan kepadatan transaksi per tanggal bervariasi, jadi pakai scaling sederhana dan cap agar aman.
+      var batchDates = Math.min(10, Math.max(2, Math.ceil(limit / 20) * 2));
+      var q = db.ref(path).orderByKey();
+      // [FIX] Firebase query hanya boleh punya satu startAt
+      // Kalau cursor aktif, startAt harus dari cursor saja.
+      if (tglAwalStr && !(cursor && cursor.dateKey)) q = q.startAt(tglAwalStr);
+      if (tglAkhirStr) q = q.endAt(tglAkhirStr);
+
+      // cursor paging berbasis dateKey: mulai dari cursor.dateKey (inclusive), nanti kita skip manual
+      if (cursor && cursor.dateKey) q = q.startAt(cursor.dateKey);
+      q = q.limitToFirst(batchDates);
+
+      function slimRow(row, runningSaldo, dateKey, idxInDate, no) {
+        var nama = (row.nama || '').toString();
+        var debit = parseFloat(row.debit || row.keluar || 0) || 0;
+        var kredit = parseFloat(row.kredit || row.masuk || 0) || 0;
+        return {
+          no: no,
+          tanggal: row.tanggalStr || row.tanggal || row.date || dateKey,
+          nama: nama,
+          jumlah: row.jumlah,
+          satuan: row.satuan || '',
+          harga: row.harga,
+          debit: debit,
+          kredit: kredit,
+          saldo: runningSaldo,
+          hasFoto: !!row.foto,
+          foto: '',
+          _firebaseDate: dateKey,
+          _firebaseIndexInDate: idxInDate
+        };
+      }
+
+      return q.once('value').then(function(snap) {
+        var root = snap.val();
+        if (!root || typeof root !== 'object') root = {};
+
+        // Normalisasi kalau outlet nested
+        var oid = (outletId || '').toString().trim();
+        if (oid && root[oid] && typeof root[oid] === 'object') root = root[oid];
+        else if (!Array.isArray(root.transactions) && Object.keys(root).length === 1) {
+          var onlyKey = Object.keys(root)[0];
+          if (root[onlyKey] && typeof root[onlyKey] === 'object') root = root[onlyKey];
+        }
+
+        var dateKeys = Object.keys(root).filter(function(k) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return false;
+          var node = root[k];
+          if (!node || typeof node !== 'object') return false;
+          var hasTransactions = Array.isArray(node.transactions) || (node.transactions && typeof node.transactions === 'object');
+          return !!hasTransactions;
+        }).sort();
+
+        if (dateKeys.length === 0) return { data: [], summary: { totalDebit: 0, totalKredit: 0, saldoAkhir: 0, saldoAwal: 0 }, page: { limit: limit, nextCursor: null } };
+
+        var rows = [];
+        var totalDebit = 0, totalKredit = 0;
+        var runningSaldo = 0; // saldo berjalan untuk halaman ini (bukan seluruh histori)
+        var started = !cursor;
+        var nextCursor = null;
+
+        for (var dkIdx = 0; dkIdx < dateKeys.length; dkIdx++) {
+          var dateKey = dateKeys[dkIdx];
+          var node = root[dateKey];
+          var arr = node && Array.isArray(node.transactions) ? node.transactions : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
+          for (var i = 0; i < arr.length; i++) {
+            if (!started) {
+              if (dateKey === cursor.dateKey) {
+                if (i <= (parseInt(cursor.indexInDate, 10) || 0)) continue;
+                started = true;
+              } else {
+                started = true;
+              }
+            }
+
+            var r = arr[i] || {};
+            var namaLower = ((r.nama || '') + '').toLowerCase();
+            var debit = parseFloat(r.debit || r.keluar || 0) || 0;
+            var kredit = parseFloat(r.kredit || r.masuk || 0) || 0;
+            runningSaldo = (parseFloat(r.saldo) || runningSaldo) - debit + kredit;
+            totalDebit += debit;
+            totalKredit += kredit;
+
+            if (search && namaLower.indexOf(search) < 0) continue;
+            rows.push(slimRow(r, runningSaldo, dateKey, i, rows.length + 1));
+            nextCursor = { dateKey: dateKey, indexInDate: i };
+            if (rows.length >= limit) break;
+          }
+          if (rows.length >= limit) break;
+        }
+
+        if (rows.length === 0) nextCursor = null;
+
+        return {
+          data: rows,
+          summary: { totalDebit: totalDebit, totalKredit: totalKredit, saldoAkhir: rows.length ? (rows[rows.length - 1].saldo || 0) : 0, saldoAwal: 0 },
+          page: { limit: limit, nextCursor: nextCursor }
+        };
+      }).catch(function(err) {
+        console.warn('getPettyCashPage failed', err);
+        return { data: [], summary: {}, page: { limit: limit, nextCursor: null } };
+      });
+    }
+
+    // ===== FAST PATH: baca index ringan per-bulan (muat bulan jadi sangat cepat) =====
+    var ym = (tglAwalStr && /^\d{4}-\d{2}-\d{2}$/.test(tglAwalStr)) ? tglAwalStr.slice(0, 7) : '';
+    if (ym && /^\d{4}-\d{2}$/.test(ym)) {
+      var idxPath = getPettyCashIndexMonthPath(outletId, ym);
+      var idxQ = db.ref(idxPath).orderByKey();
+      if (cursor && cursor.key) idxQ = idxQ.startAt(cursor.key);
+      // ambil lebih banyak supaya search tidak cepat habis
+      idxQ = idxQ.limitToFirst(limit * 8);
+
+      return idxQ.once('value').then(function(snap) {
+        var obj = snap.val();
+        if (!obj || typeof obj !== 'object') return null; // fallback ke slow path
+
+        // [FIX] Kalau index masih pakai format lama (i tidak di-padding), cursor berbasis orderByKey bisa loncat.
+        // Deteksi cepat: semua suffix setelah '_' harus panjang 6.
+        var keysRaw = Object.keys(obj);
+        for (var qi = 0; qi < keysRaw.length; qi++) {
+          var k = keysRaw[qi];
+          var parts = String(k).split('_');
+          if (parts.length !== 2) return null;
+          // parts[1] = refIndex
+          if (!/^\d{6}$/.test(parts[1])) return null;
+        }
+
+        var keys = keysRaw.sort();
+        // cursor inclusive -> skip satu
+        if (cursor && cursor.key) {
+          var pos = keys.indexOf(cursor.key);
+          if (pos >= 0) keys = keys.slice(pos + 1);
+        }
+
+        var rows = [];
+        var totalDebit = 0, totalKredit = 0;
+        var runningSaldo = 0;
+        var nextCursor = null;
+
+        for (var i = 0; i < keys.length; i++) {
+          var k = keys[i];
+          var r = obj[k] || {};
+          var tgl = normalizeDateKeyToYyyyMmDd(r.tanggal || '');
+          if (tglAwalStr && tgl && tgl < tglAwalStr) continue;
+          if (tglAkhirStr && tgl && tgl > tglAkhirStr) continue;
+          var nama = (r.nama || '').toString();
+          if (search && nama.toLowerCase().indexOf(search) < 0) continue;
+          var debit = parseFloat(r.debit || 0) || 0;
+          var kredit = parseFloat(r.kredit || 0) || 0;
+          runningSaldo = (parseFloat(r.saldo) || runningSaldo) - debit + kredit;
+          totalDebit += debit;
+          totalKredit += kredit;
+          rows.push({
+            no: rows.length + 1,
+            tanggal: r.tanggal || tgl,
+            nama: nama,
+            jumlah: r.jumlah,
+            satuan: r.satuan || '',
+            harga: r.harga,
+            debit: debit,
+            kredit: kredit,
+            saldo: runningSaldo,
+            hasFoto: false,
+            foto: '',
+            _firebaseDate: r.refDate || tgl,
+            _firebaseIndexInDate: (r.refIndex != null ? r.refIndex : 0),
+            _indexKey: k
+          });
+          nextCursor = { key: k };
+          if (rows.length >= limit) break;
+        }
+
+        return {
+          data: rows,
+          summary: { totalDebit: totalDebit, totalKredit: totalKredit, saldoAkhir: rows.length ? (rows[rows.length - 1].saldo || 0) : 0, saldoAwal: 0 },
+          page: { limit: limit, nextCursor: nextCursor }
+        };
+      }).then(function(res) {
+        return res || runSlowPath();
+      }).catch(function() {
+        return runSlowPath();
+      });
+    }
+
+    return runSlowPath();
+  }
+
+  // ---------- Admin Tools: Purge Foto/Bukti (hapus permanen) ----------
+  function _isOwnerOrDev() {
+    try {
+      var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+      var un = (u.username || '').toString().toLowerCase();
+      return u.role === 'owner' || un === 'burhan';
+    } catch (e) { return false; }
+  }
+
+  function purgePettyCashPhotos(tglAwal, tglAkhir, outletId) {
+    if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    if (!_isOwnerOrDev()) return Promise.reject(new Error('Akses ditolak (Owner/Developer saja)'));
+    var path = getPettyCashPath(outletId);
+    var from = normalizeDateKeyToYyyyMmDd(tglAwal) || '';
+    var to = normalizeDateKeyToYyyyMmDd(tglAkhir) || '';
+    var q = db.ref(path).orderByKey();
+    if (from) q = q.startAt(from);
+    if (to) q = q.endAt(to);
+    return q.once('value').then(function(snap) {
+      var root = snap.val();
+      if (!root || typeof root !== 'object') return { updated: 0 };
+      var updates = {};
+      var updated = 0;
+      Object.keys(root).forEach(function(dateKey) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+        var node = root[dateKey];
+        if (!node || typeof node !== 'object') return;
+        var tx = node.transactions;
+        if (Array.isArray(tx)) {
+          for (var i = 0; i < tx.length; i++) {
+            if (tx[i] && tx[i].foto) {
+              updates[path + '/' + dateKey + '/transactions/' + i + '/foto'] = null;
+              updated++;
+            }
+          }
+        } else if (tx && typeof tx === 'object') {
+          Object.keys(tx).forEach(function(k) {
+            if (tx[k] && tx[k].foto) {
+              updates[path + '/' + dateKey + '/transactions/' + k + '/foto'] = null;
+              updated++;
+            }
+          });
+        }
+      });
+      if (Object.keys(updates).length === 0) return { updated: 0 };
+      return db.ref().update(updates).then(function() { return { updated: updated }; });
+    });
+  }
+
+  // Bangun index ringan untuk data LAMA agar "muat bulan" instan.
+  // Idempotent: key index = YYYY-MM-DD_idxInDate (aman dijalankan ulang).
+  function buildPettyCashMonthIndex(yyyyMm, outletId) {
+    if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    if (!_isOwnerOrDev()) return Promise.reject(new Error('Akses ditolak (Owner/Developer saja)'));
+    var ym = (yyyyMm || '').toString().trim();
+    if (!/^\d{4}-\d{2}$/.test(ym)) return Promise.reject(new Error('Format bulan harus YYYY-MM'));
+
+    var from = ym + '-01';
+    var endDay = new Date(parseInt(ym.slice(0, 4), 10), parseInt(ym.slice(5, 7), 10), 0).getDate();
+    var to = ym + '-' + ('0' + endDay).slice(-2);
+
+    var path = getPettyCashPath(outletId);
+    var idxBase = getPettyCashIndexMonthPath(outletId, ym);
+    var q = db.ref(path).orderByKey().startAt(from).endAt(to);
+
+    return q.once('value').then(function(snap) {
+      var root = snap.val();
+      if (!root || typeof root !== 'object') return { indexed: 0, dates: 0 };
+
+      var updates = {};
+      var indexed = 0;
+      var dates = 0;
+      var runningSaldo = 0;
+
+      Object.keys(root).sort().forEach(function(dateKey) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+        var node = root[dateKey];
+        if (!node || typeof node !== 'object') return;
+        var arr = node && Array.isArray(node.transactions) ? node.transactions : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
+        if (!arr || arr.length === 0) return;
+        dates++;
+
+        for (var i = 0; i < arr.length; i++) {
+          var r = arr[i] || {};
+          var debit = parseFloat(r.debit || r.keluar || 0) || 0;
+          var kredit = parseFloat(r.kredit || r.masuk || 0) || 0;
+          runningSaldo = (parseFloat(r.saldo) || runningSaldo) - debit + kredit;
+
+          // Idempotent & urut: pad angka biar lexicographic == chronological
+          var refIndexPadded = ('000000' + i).slice(-6);
+          var key = dateKey + '_' + refIndexPadded;
+          updates[idxBase + '/' + key] = {
+            tanggal: dateKey,
+            nama: (r.nama || '').toString(),
+            jumlah: r.jumlah,
+            satuan: r.satuan || '',
+            harga: r.harga,
+            debit: debit,
+            kredit: kredit,
+            saldo: runningSaldo,
+            refDate: dateKey,
+            refIndex: i
+          };
+          indexed++;
+        }
+      });
+
+      if (Object.keys(updates).length === 0) return { indexed: 0, dates: 0 };
+
+      // Batasi ukuran update per batch untuk menghindari request terlalu besar
+      var keys = Object.keys(updates);
+      var batchSize = 800;
+      var idx = 0;
+      function next() {
+        if (idx >= keys.length) return Promise.resolve({ indexed: indexed, dates: dates });
+        var part = {};
+        for (var j = 0; j < batchSize && idx < keys.length; j++, idx++) {
+          var k = keys[idx];
+          part[k] = updates[k];
+        }
+        return db.ref().update(part).then(next);
+      }
+      return next();
+    });
+  }
+
+  function purgePembukuanPhotos(tglAwal, tglAkhir, outletId) {
+    if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    if (!_isOwnerOrDev()) return Promise.reject(new Error('Akses ditolak (Owner/Developer saja)'));
+    var base = getPembukuanPath(outletId);
+    var from = normalizeDateKeyToYyyyMmDd(tglAwal) || '';
+    var to = normalizeDateKeyToYyyyMmDd(tglAkhir) || '';
+    var q = db.ref(base).orderByKey();
+    if (from) q = q.startAt(from);
+    if (to) q = q.endAt(to);
+    return q.once('value').then(function(snap) {
+      var all = snap.val();
+      if (!all || typeof all !== 'object') return { updated: 0 };
+      var updates = {};
+      var updated = 0;
+      Object.keys(all).forEach(function(dateKey) {
+        var p = all[dateKey];
+        if (!p || typeof p !== 'object') return;
+        var arr = p.kasKeluar;
+        if (Array.isArray(arr)) {
+          for (var i = 0; i < arr.length; i++) {
+            var it = arr[i];
+            if (it && (it.foto || it.fotoUrl)) {
+              updates[base + '/' + dateKey + '/kasKeluar/' + i + '/foto'] = null;
+              updates[base + '/' + dateKey + '/kasKeluar/' + i + '/fotoUrl'] = null;
+              updated++;
+            }
+          }
+        }
+      });
+      if (Object.keys(updates).length === 0) return { updated: 0 };
+      return db.ref().update(updates).then(function() { return { updated: updated }; });
+    });
+  }
+
+  function purgeGpsLogPhotos(outletId) {
+    if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    if (!_isOwnerOrDev()) return Promise.reject(new Error('Akses ditolak (Owner/Developer saja)'));
+    var o = outletId || (typeof getRbmOutlet === 'function' && getRbmOutlet()) || '';
+    var sfx = o ? '_' + String(o).toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
+    var refPath = 'rbm_pro/gps_logs' + sfx;
+    return db.ref(refPath).once('value').then(function(snap) {
+      var obj = snap.val();
+      if (!obj || typeof obj !== 'object') return { updated: 0 };
+      var updates = {};
+      var updated = 0;
+      Object.keys(obj).forEach(function(k) {
+        if (obj[k] && obj[k].photo) {
+          updates[refPath + '/' + k + '/photo'] = null;
+          updated++;
+        }
+      });
+      if (Object.keys(updates).length === 0) return { updated: 0 };
+      return db.ref().update(updates).then(function() { return { updated: updated }; });
     });
   }
 
@@ -342,18 +757,46 @@
         masuk: data.jenis === 'pemasukan' ? nominalPemasukan : 0,
         debit: data.jenis === 'pengeluaran' ? nominalPengeluaran : 0,
         kredit: data.jenis === 'pemasukan' ? nominalPemasukan : 0,
-        foto: trx.fotoUrl || trx.foto || '',
+        // Petty Cash tidak pakai foto lagi: selalu kosongkan
+        foto: '',
         createdAt: firebase.database.ServerValue.TIMESTAMP
       };
     });
     return db.ref(path).once('value').then(function(snap) {
       var existing = snap.val();
       var existingArr = existing && Array.isArray(existing.transactions) ? existing.transactions : (existing && existing.transactions && typeof existing.transactions === 'object' ? Object.values(existing.transactions) : []);
+      var startIdx = existingArr.length;
       existingArr = existingArr.concat(newList);
       return db.ref(path).set({
         tanggal: dateStr,
         transactions: existingArr,
         createdAt: (existing && existing.createdAt) || firebase.database.ServerValue.TIMESTAMP
+      }).then(function() {
+        // [BARU] Simpan index ringan per-bulan agar "muat bulan" jadi sangat cepat
+        var ym = dateStr.slice(0, 7);
+        var idxBase = getPettyCashIndexMonthPath(outletId, ym);
+        var updates = {};
+        for (var i = 0; i < newList.length; i++) {
+          var it = newList[i] || {};
+          // [FIX] Index key harus urut berdasarkan tanggal+index transaksi
+          // agar paging tidak loncat dan per-urutan sesuai awal bulan.
+          var refIndex = startIdx + i;
+          var refIndexPadded = ('000000' + refIndex).slice(-6);
+          var key = dateStr + '_' + refIndexPadded;
+          updates[idxBase + '/' + key] = {
+            tanggal: dateStr,
+            nama: it.nama || '',
+            jumlah: it.jumlah,
+            satuan: it.satuan || '',
+            harga: it.harga,
+            debit: it.debit || 0,
+            kredit: it.kredit || 0,
+            refDate: dateStr,
+            refIndex: refIndex
+          };
+        }
+        if (Object.keys(updates).length === 0) return;
+        return db.ref().update(updates).catch(function(e) { console.warn('petty_cash_index update failed', e); });
       });
     }).then(function() { return '✅ Transaksi petty cash disimpan di Firebase.'; });
   }
@@ -411,7 +854,8 @@
         kredit: data.kredit != null ? parseFloat(data.kredit) : (parseFloat(existing.kredit) || 0),
         keluar: data.debit != null ? parseFloat(data.debit) : (parseFloat(existing.keluar) || 0),
         masuk: data.kredit != null ? parseFloat(data.kredit) : (parseFloat(existing.masuk) || 0),
-        foto: data.foto !== undefined ? data.foto : (existing.foto || ''),
+        // Petty Cash tidak pakai foto lagi: selalu kosongkan
+        foto: '',
         createdAt: existing.createdAt || firebase.database.ServerValue.TIMESTAMP
       };
       return db.ref(path).set({
@@ -526,10 +970,8 @@
   function savePembukuan(data, outletId) {
     if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
     var o = outletId || '';
-    var isTrosoboFlat = (o && String(o).toLowerCase().indexOf('trosobo') >= 0);
-    var key = isTrosoboFlat
-      ? 'rbm_pro/pembukuan/' + (data.tanggal || Date.now())
-      : getPembukuanPath(outletId) + '/' + (data.tanggal || Date.now());
+    // [FIX PERFORMA/STRUKTUR] selalu simpan per-outlet (hapus jalur flat)
+    var key = getPembukuanPath(outletId) + '/' + (data.tanggal || Date.now());
     return db.ref(key).set({
       tanggal: data.tanggal,
       kasMasuk: data.kasMasuk || [],
@@ -545,43 +987,7 @@
 
   function getPembukuan(tglAwal, tglAkhir, outletId) {
     if (!init()) return Promise.resolve([]);
-    var outLower = (outletId || '').toLowerCase();
-    var isTrosobo = outLower.indexOf('trosobo') >= 0;
-    // Untuk Trosobo: baca path flat DULU agar data lama + baru (yang sekarang disimpan ke flat) tetap utuh
-    if (isTrosobo && db) {
-      var queryTros = db.ref('rbm_pro/pembukuan');
-      if (tglAwal && tglAkhir) {
-          var dObjTros = new Date(tglAwal);
-          dObjTros.setMonth(dObjTros.getMonth() - 1);
-          var startBulanLaluTros = dObjTros.getFullYear() + '-' + ('0' + (dObjTros.getMonth() + 1)).slice(-2) + '-01';
-          queryTros = queryTros.orderByKey().startAt(startBulanLaluTros).endAt(tglAkhir);
-      } else if (tglAkhir) {
-          queryTros = queryTros.orderByKey().endAt(tglAkhir);
-      }
-      return queryTros.once('value').then(function(rootSnap) {
-        var root = rootSnap.val();
-        if (!root || typeof root !== 'object') return [];
-        var keys = Object.keys(root);
-        if (keys.length === 0) return [];
-        var all = {};
-        keys.forEach(function(k) {
-          if (isDateKey(k)) {
-            all[k] = root[k];
-          } else if (outLower.indexOf(k.toLowerCase()) >= 0 || k.toLowerCase().indexOf(outLower) >= 0) {
-            var sub = root[k];
-            if (sub && typeof sub === 'object') Object.keys(sub).forEach(function(d) { 
-                if (tglAwal && d < tglAwal) return;
-                if (tglAkhir && d > tglAkhir) return;
-                all[d] = sub[d]; 
-            });
-          }
-        });
-        if (Object.keys(all).length === 0) return [];
-        var g = typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : {});
-        g._lastPembukuanOutletKey = 'Trosobo';
-        return parsePembukuanAll(all, tglAwal, tglAkhir);
-      }).catch(function() { return []; });
-    }
+    // [FIX PERFORMA/STRUKTUR] hanya baca format per-outlet (hapus jalur flat)
     var path = getPembukuanPath(outletId);
     var query = db.ref(path);
     if (tglAwal && tglAkhir) {
@@ -594,31 +1000,6 @@
     }
     return query.once('value').then(function(snap) {
       var all = snap.val();
-      var effectiveKey = outletId || '_default';
-      if ((!all || typeof all !== 'object' || Object.keys(all).length === 0) && db) {
-        if (window._rbmHasCheckedPembukuanRoot) return [];
-        window._rbmHasCheckedPembukuanRoot = true;
-        
-        var queryFallback = db.ref('rbm_pro/pembukuan/' + effectiveKey);
-        if (tglAwal && tglAkhir) {
-            var dObjFallback = new Date(tglAwal);
-            dObjFallback.setMonth(dObjFallback.getMonth() - 1);
-            var startBulanLaluFb = dObjFallback.getFullYear() + '-' + ('0' + (dObjFallback.getMonth() + 1)).slice(-2) + '-01';
-            queryFallback = queryFallback.orderByKey().startAt(startBulanLaluFb).endAt(tglAkhir);
-        } else if (tglAkhir) {
-            queryFallback = queryFallback.orderByKey().endAt(tglAkhir);
-        }
-        return queryFallback.once('value').then(function(rootSnap) {
-          var root = rootSnap.val();
-          all = root;
-          if (!all || typeof all !== 'object') return [];
-          var g = typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : {});
-          g._lastPembukuanOutletKey = effectiveKey;
-          return parsePembukuanAll(all, tglAwal, tglAkhir);
-        }).catch(function() { return []; });
-      }
-      var g = typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : {});
-      g._lastPembukuanOutletKey = effectiveKey;
       return parsePembukuanAll(all, tglAwal, tglAkhir);
     }).catch(function() { return []; });
   }
@@ -632,7 +1013,17 @@
       var t = p.tanggal;
       if (tglAwal && t < tglAwal) return;
       if (tglAkhir && t > tglAkhir) return;
-      result.push({ payload: { tanggal: p.tanggal, kasMasuk: p.kasMasuk || [], kasKeluar: p.kasKeluar || [] } });
+      // [SUPER OPTIMASI] Jangan bawa foto bukti setor (base64/url) saat load list pembukuan.
+      // Foto hanya perlu saat user benar-benar membuka detail tertentu.
+      var kasMasuk = p.kasMasuk || [];
+      var kasKeluar = (p.kasKeluar || []).map(function(kk) {
+        if (!kk || typeof kk !== 'object') return kk;
+        var o = Object.assign({}, kk);
+        if (o.foto) o.foto = '';
+        if (o.fotoUrl) o.fotoUrl = '';
+        return o;
+      });
+      result.push({ payload: { tanggal: p.tanggal, kasMasuk: kasMasuk, kasKeluar: kasKeluar } });
     });
     result.sort(function(a, b) { return (a.payload.tanggal || '').localeCompare(b.payload.tanggal || ''); });
     return result;
@@ -641,10 +1032,8 @@
   function deletePembukuanDay(outletId, tanggal) {
     if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
     var tg = tanggal || '';
-    var isTrosoboFlat = (outletId && String(outletId).toLowerCase().indexOf('trosobo') >= 0);
-    var path = isTrosoboFlat
-      ? 'rbm_pro/pembukuan/' + tg
-      : getPembukuanPath(outletId) + '/' + tg;
+    // [FIX PERFORMA/STRUKTUR] selalu hapus per-outlet (hapus jalur flat)
+    var path = getPembukuanPath(outletId) + '/' + tg;
     return db.ref(path).remove().then(function() { return '✅ Data pembukuan dihapus.'; });
   }
 
@@ -846,6 +1235,158 @@
     syncAppStateFromFirebase().then(function() { patchLocalStorageForFirebase(); }).catch(function() { patchLocalStorageForFirebase(); });
   }
 
+  // -----------------------------
+  // Pengajuan Gaji (ke Owner & Manager)
+  // -----------------------------
+  function _safeOutletKey(s) {
+    return String(s || '').trim().replace(/[.#$[\]]/g, '_') || 'default';
+  }
+
+  function _validateMonthKey(ym) {
+    return typeof ym === 'string' && /^\d{4}-\d{2}$/.test(ym);
+  }
+
+  function getGajiPengajuanSummaryPath(outletId, monthKey) {
+    return 'rbm_pro/gaji_pengajuan/' + _safeOutletKey(outletId) + '/' + monthKey;
+  }
+
+  function getGajiPengajuanItemsPath(outletId, requestId) {
+    return 'rbm_pro/gaji_pengajuan_items/' + _safeOutletKey(outletId) + '/' + requestId;
+  }
+
+  function _getUserRole() {
+    try {
+      var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+      return u && u.role ? String(u.role).toLowerCase() : '';
+    } catch (e) { return ''; }
+  }
+
+  async function saveGajiPengajuan(summary, items) {
+    if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    if (!summary) return Promise.reject(new Error('Ringkasan pengajuan kosong'));
+
+    var outletId = summary.outletId || '';
+    var monthKey = summary.monthKey || '';
+    if (!_validateMonthKey(monthKey)) return Promise.reject(new Error('monthKey wajib YYYY-MM'));
+
+    var requestId = Date.now() + '_' + Math.random().toString(36).slice(2);
+    var createdAt = Date.now();
+
+    var setSummary = {
+      periodStart: summary.periodStart || '',
+      periodEnd: summary.periodEnd || '',
+      requester: summary.requester || '',
+      note: summary.note || '',
+      totalGrand: summary.totalGrand || 0,
+      statusOwner: 'pending',
+      statusManager: 'pending',
+      approvedOwnerBy: '',
+      approvedManagerBy: '',
+      approvedOwnerAt: 0,
+      approvedManagerAt: 0,
+      createdAt: createdAt
+    };
+
+    var pathSummary = getGajiPengajuanSummaryPath(outletId, monthKey) + '/' + requestId;
+    await db.ref(pathSummary).set(setSummary);
+
+    // Simpan item detail terpisah supaya riwayat tidak lambat karena data besar
+    var pathItems = getGajiPengajuanItemsPath(outletId, requestId);
+    var updatesItems = {};
+    if (Array.isArray(items)) {
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i] || {};
+        var empId = it.empId != null ? String(it.empId) : '';
+        if (!empId) continue;
+        updatesItems[empId] = {
+          nama: it.nama || '',
+          jabatan: it.jabatan || '',
+          grandTotal: it.grandTotal || 0,
+          metodeBayar: it.metodeBayar || 'TF'
+        };
+      }
+    }
+    if (Object.keys(updatesItems).length) {
+      await db.ref(pathItems).set(updatesItems);
+    }
+
+    return { requestId: requestId };
+  }
+
+  async function getGajiPengajuanPage(outletId, monthKey, limit, cursorKey) {
+    if (!init()) return Promise.resolve({ items: [], nextCursorKey: null, hasMore: false });
+    if (!_validateMonthKey(monthKey)) return Promise.resolve({ items: [], nextCursorKey: null, hasMore: false });
+
+    limit = parseInt(limit, 10) || 15;
+
+    var pathSummary = getGajiPengajuanSummaryPath(outletId, monthKey);
+    var query = db.ref(pathSummary).orderByKey();
+    var fetchLimit = limit;
+
+    if (cursorKey) {
+      fetchLimit = limit + 1; // untuk deteksi ada data lebih
+      query = query.endAt(cursorKey);
+    }
+
+    query = query.limitToLast(fetchLimit);
+
+    var snap = await query.once('value');
+    var obj = snap.val() || {};
+    var entries = Object.keys(obj).map(function(k) { return [k, obj[k]]; });
+    entries.sort(function(a, b) { return String(a[0]).localeCompare(String(b[0])); });
+
+    if (cursorKey) entries = entries.filter(function(e) { return e[0] !== cursorKey; });
+
+    var hasMore = entries.length > limit;
+    var pageEntries = hasMore ? entries.slice(entries.length - limit) : entries;
+
+    var items = pageEntries.map(function(e) {
+      var key = e[0];
+      var v = e[1] || {};
+      v.requestId = key;
+      return v;
+    });
+
+    var nextCursorKey = items.length ? items[0].requestId : null;
+    return { items: items, nextCursorKey: nextCursorKey, hasMore: hasMore };
+  }
+
+  async function setGajiPengajuanApproval(outletId, monthKey, requestId, role) {
+    if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    if (!_validateMonthKey(monthKey)) return Promise.reject(new Error('monthKey wajib YYYY-MM'));
+    if (!requestId) return Promise.reject(new Error('requestId kosong'));
+
+    role = String(role || '').toLowerCase();
+    var currentRole = _getUserRole();
+    if (currentRole !== 'owner' && currentRole !== 'manager') {
+      return Promise.reject(new Error('Akses ditolak (owner/manager saja)'));
+    }
+    if ((role === 'owner' && currentRole !== 'owner') || (role === 'manager' && currentRole !== 'manager')) {
+      return Promise.reject(new Error('Role tidak cocok untuk approval'));
+    }
+
+    var pathSummary = getGajiPengajuanSummaryPath(outletId, monthKey) + '/' + requestId;
+    var uName = '';
+    try { uName = (JSON.parse(localStorage.getItem('rbm_user') || '{}').username) || ''; } catch(e) {}
+    var nowMs = Date.now();
+
+    var updates = {};
+    if (role === 'owner') {
+      updates.statusOwner = 'approved';
+      updates.approvedOwnerBy = uName;
+      updates.approvedOwnerAt = nowMs;
+    } else if (role === 'manager') {
+      updates.statusManager = 'approved';
+      updates.approvedManagerBy = uName;
+      updates.approvedManagerAt = nowMs;
+    } else {
+      return Promise.reject(new Error('role approval tidak valid'));
+    }
+
+    await db.ref(pathSummary).update(updates);
+    return { ok: true };
+  }
+
   // ---------- Export ----------
 
   var FirebaseStorage = {
@@ -854,6 +1395,9 @@
     syncAppStateFromFirebase: syncAppStateFromFirebase,
     patchLocalStorageForFirebase: patchLocalStorageForFirebase,
     enableFirebaseForAllStorage: enableFirebaseForAllStorage,
+    saveGajiPengajuan: saveGajiPengajuan,
+    getGajiPengajuanPage: getGajiPengajuanPage,
+    setGajiPengajuanApproval: setGajiPengajuanApproval,
     getAppState: getAppState,
     setAppState: setAppState,
     removeAppState: removeAppState,
@@ -861,6 +1405,11 @@
     setActiveSession: setActiveSession,
     trackPresence: trackPresence,
     getPettyCash: getPettyCash,
+    getPettyCashPage: getPettyCashPage,
+    purgePettyCashPhotos: purgePettyCashPhotos,
+    buildPettyCashMonthIndex: buildPettyCashMonthIndex,
+    purgePembukuanPhotos: purgePembukuanPhotos,
+    purgeGpsLogPhotos: purgeGpsLogPhotos,
     savePettyCashTransactions: savePettyCashTransactions,
     deletePettyCashByDateAndIndex: deletePettyCashByDateAndIndex,
     getPettyCashFullList: getPettyCashFullList,

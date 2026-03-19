@@ -129,7 +129,7 @@
       }
   };
 
-  var isOwnerOrDev = u.role === 'owner' || (u.username || '').toLowerCase() === 'burhan';
+  var isOwnerOrDev = String(u.role || '').toLowerCase() === 'owner' || (u.username || '').toLowerCase() === 'burhan';
   // --- OWNER WORKFLOW ---
   if (isOwnerOrDev) {
     document.querySelector('.rbm-page-title').textContent = 'Persetujuan Pengajuan';
@@ -254,7 +254,7 @@
         opt.textContent = names[id] || (id.charAt(0).toUpperCase() + id.slice(1));
         sel.appendChild(opt);
       });
-      if (u.role === 'manager' && u.outlet) {
+      if (String(u.role || '').toLowerCase() === 'manager' && u.outlet) {
         sel.value = u.outlet;
         sel.disabled = true;
       } else {
@@ -345,7 +345,7 @@ function openOwnerPengajuanModal(id) {
   
   // [BARU] Tandai bahwa Owner sudah membaca pengajuan ini agar notifikasi hilang
   var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-  var isOwnerOrDev = u.role === 'owner' || (u.username || '').toLowerCase() === 'burhan';
+  var isOwnerOrDev = String(u.role || '').toLowerCase() === 'owner' || (u.username || '').toLowerCase() === 'burhan';
   if (isOwnerOrDev && !d.viewedByOwner) {
       const dbPath = isTf ? `rbm_pro/pengajuan_tf/${sub.id}` : `rbm_pro/petty_cash/pengajuan/${sub.id}`;
       firebase.database().ref(dbPath).update({ viewedByOwner: true });
@@ -379,7 +379,18 @@ function openOwnerPengajuanModal(id) {
       `;
       
       if (d.recapData) {
-          const recap = d.recapData;
+          // recapData bisa jadi object (baru) atau string JSON (lama) → normalisasi biar Owner tidak crash
+          var recap = d.recapData;
+          if (typeof recap === 'string') {
+            try { recap = JSON.parse(recap); } catch(e) { recap = {}; }
+          }
+          if (!recap || typeof recap !== 'object') recap = {};
+          var detailsSince = [];
+          if (Array.isArray(recap.detailsSince)) {
+            detailsSince = recap.detailsSince;
+          } else if (recap.detailsSince && typeof recap.detailsSince === 'object') {
+            detailsSince = Object.values(recap.detailsSince);
+          }
           html += `
             <div style="display: flex; justify-content: space-around; margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9fa;">
               <div style="text-align: center;">
@@ -396,7 +407,7 @@ function openOwnerPengajuanModal(id) {
                 <div style="font-size: 16px; font-weight: bold; color: #059669; margin-top: 4px;">Rp ${parseInt(recap.sisa||0).toLocaleString('id-ID')}</div>
               </div>
             </div>`;
-          if (recap.detailsSince && recap.detailsSince.length > 0) {
+          if (detailsSince.length > 0) {
               html += `<div class="scrollable-table-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
                     <table style="width:100%; border-collapse:collapse; font-size:12px;">
                     <thead style="position: sticky; top: 0; z-index: 1;"><tr style="background:#1e40af; color:white;">
@@ -411,7 +422,7 @@ function openOwnerPengajuanModal(id) {
                     </tr></thead><tbody>`;
               let no = 1;
               let currentSaldo = parseFloat(recap.lastKredit) || 0;
-              recap.detailsSince.forEach(detail => {
+              detailsSince.forEach(detail => {
                   const nm = detail.nama || detail.keterangan || '-';
                   const qty = detail.jumlah || '';
                   const satuan = detail.satuan || '';
@@ -475,7 +486,9 @@ function updatePengajuanStatus(type, id, status) {
             AppPopup.success('Status berhasil diupdate.');
             closeOwnerPengajuanModal();
         }).catch(err => {
-            AppPopup.error('Gagal update: ' + err.message);
+            console.error(err);
+            var msg = (err && (err.message || err.code)) ? (err.message || err.code) : (err ? String(err) : 'unknown error');
+            AppPopup.error('Gagal update: ' + msg);
         });
     });
 }

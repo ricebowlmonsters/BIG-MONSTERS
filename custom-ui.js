@@ -167,12 +167,23 @@ class LocalDB {
 }
 
 class ServerDB {
-    constructor(apiUrl) { this.url = apiUrl || "http://localhost:3001/db"; }
-    async _r(method, data = null) {
+    constructor(apiUrl) {
+        this.url = apiUrl || "http://localhost:3001/db";
+        this._etag = null;
+        this._cache = {}; // cache per path agar 304 tetap bisa serve data
+    }
+    _baseUrl() {
+        return (this.url || '').toString().replace(/\/db\/?$/, '');
+    }
+    async _r(method, data = null, urlOverride = null) {
         try {
             const opts = { method, headers: { "Content-Type": "application/json" } };
+            if (method === "GET" && this._etag) opts.headers["If-None-Match"] = this._etag;
             if (data) opts.body = JSON.stringify(data);
-            const res = await fetch(this.url, opts);
+            const res = await fetch(urlOverride || this.url, opts);
+            const etag = res.headers && res.headers.get ? res.headers.get("ETag") : null;
+            if (etag) this._etag = etag;
+            if (res.status === 304) return "__NOT_MODIFIED__";
             return await res.json();
         } catch (e) { return null; }
     }
@@ -181,27 +192,57 @@ class ServerDB {
         const n = (!path || path === "/") ? "" : path.replace(/^\/|\/$/g, "");
         return {
             once: (eventType) => new Promise(async resolve => {
-                const f = await t._r("GET") || {};
-                let v = f;
-                if (n) { for (const p of n.split("/")) { if (v && typeof v === "object" && p in v) v = v[p]; else { v = null; break; } } }
-                resolve({ val: () => v, exists: () => v !== null, forEach: (cb) => { if(v && typeof v === 'object') Object.entries(v).forEach(([k,val]) => cb({key:k, val:()=>val})); } });
+                // [OPTIMASI] Ambil hanya subtree yang dibutuhkan: /db?path=a/b/c
+                if (n) {
+                    const url = t.url + "?path=" + encodeURIComponent(n);
+                    const v = await t._r("GET", null, url);
+                    if (v !== null && v !== "__NOT_MODIFIED__") t._cache[n] = v;
+                    const outVal = (v === "__NOT_MODIFIED__") ? (t._cache.hasOwnProperty(n) ? t._cache[n] : null) : v;
+                    resolve({
+                        val: () => outVal,
+                        exists: () => outVal !== null,
+                        forEach: (cb) => { if (outVal && typeof outVal === 'object') Object.entries(outVal).forEach(([k,val]) => cb({key:k, val:()=>val})); }
+                    });
+                    return;
+                }
+                const f = await t._r("GET");
+                if (f !== null && f !== "__NOT_MODIFIED__") t._cache[""] = f;
+                const outRoot = (f === "__NOT_MODIFIED__") ? (t._cache.hasOwnProperty("") ? t._cache[""] : null) : (f || {});
+                resolve({
+                    val: () => outRoot,
+                    exists: () => outRoot !== null,
+                    forEach: (cb) => { if (outRoot && typeof outRoot === 'object') Object.entries(outRoot).forEach(([k,val]) => cb({key:k, val:()=>val})); }
+                });
             }),
             on: function(eventType, cb) { this.once(eventType).then(s => cb(s)); },
             off: () => {},
             set: (data) => new Promise(async resolve => {
-                const f = await t._r("GET") || {};
-                if (!n) await t._r("POST", data);
-                else {
-                    const p = n.split("/");
-                    let c = f;
-                    for (let i = 0; i < p.length - 1; i++) { if (!c[p[i]] || typeof c[p[i]] !== "object") c[p[i]] = {}; c = c[p[i]]; }
-                    c[p[p.length - 1]] = data;
-                    await t._r("POST", f);
+                if (!n) {
+                    await t._r("POST", data);
+                    resolve();
+                    return;
                 }
+                // [OPTIMASI] Set per-path: POST /db/path {path,value}
+                const base = t._baseUrl();
+                await t._r("POST", { path: n, value: data, mode: "set" }, base + "/db/path");
                 resolve();
             }),
-            update: function(data) { return this.set(data); },
-            remove: function() { return this.set(null); },
+            update: function(data) {
+                if (!n) return this.set(data);
+                const base = t._baseUrl();
+                return new Promise(async resolve => {
+                    await t._r("POST", { path: n, value: data, mode: "merge" }, base + "/db/path");
+                    resolve();
+                });
+            },
+            remove: function() {
+                if (!n) return this.set(null);
+                const base = t._baseUrl();
+                return new Promise(async resolve => {
+                    await t._r("DELETE", null, base + "/db/path?path=" + encodeURIComponent(n));
+                    resolve();
+                });
+            },
             push: (data) => new Promise(resolve => {
                 const k = "id_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9);
                 t.ref(n ? n + "/" + k : k).set(data).then(() => resolve({ key: k }));

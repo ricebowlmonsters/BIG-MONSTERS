@@ -11,6 +11,24 @@
 <script>
 (function(){ var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); if (u.role === 'staff') { window.location.href = 'index.html'; } })();
 </script>
+<script>
+// [UX] Set bulan aktif secepat mungkin (tanpa nunggu rbm-pro.js).
+(function(){
+  function setMonthNow() {
+    try {
+      var el = document.getElementById('pc_bulan_filter');
+      if (!el) return;
+      var saved = localStorage.getItem('rbm_pc_last_month');
+      var now = new Date();
+      var ym = now.getFullYear() + '-' + ('0' + (now.getMonth()+1)).slice(-2);
+      if (saved && /^\d{4}-\d{2}$/.test(saved)) ym = saved;
+      if (!el.value) el.value = ym;
+    } catch(e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setMonthNow);
+  else setMonthNow();
+})();
+</script>
 <header class="rbm-page-header">
   <a href="index.html" class="rbm-back-btn">&#8249;</a>
   <h1 class="rbm-page-title">Lihat Petty Cash</h1>
@@ -99,25 +117,18 @@
       <input type="file" id="import_petty_cash_file" accept=".xlsx,.xls" style="display:none" onchange="processImportPettyCashExcel(this)">
       <button type="button" class="btn btn-secondary" onclick="printPettyCashReport()" style="background: #0d6efd; color: white; border-color: #0d6efd; margin-left: 8px;">Print</button>
       <button type="button" class="btn btn-secondary" onclick="showView('rekap-petty-cash-view')" style="background: #6c757d; color: white; border-color: #6c757d; margin-left: 8px;">Rekap Petty Cash & Sisa Uang</button>
+        <!-- Placeholder agar layout tidak berubah saat JS inject -->
+        <div class="filter-group" id="pc_search_container" style="margin-left:8px; min-width: 220px;">
+          <label>Cari Keterangan</label>
+          <input type="text" id="pc_search" placeholder="Ketik kata kunci..." style="padding:6px; border:1px solid #ccc; border-radius:4px; width: 100%;" disabled>
+        </div>
+        <div class="filter-group" id="pc_admin_container" style="margin-left:8px; min-width: 200px;">
+          <label style="color:#b91c1c;">Admin</label>
+        </div>
     </div>
 
-    <div class="summary-grid" id="pc_summary" style="display:none">
-      <div class="summary-card" style="background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);">
-        <div class="label">Saldo Awal Periode</div>
-        <div class="value" id="pc_saldo_awal">Rp 0</div>
-      </div>
-      <div class="summary-card">
-        <div class="label">Total Debit (Pengeluaran)</div>
-        <div class="value" id="pc_total_debit">Rp 0</div>
-      </div>
-      <div class="summary-card">
-        <div class="label">Total Kredit (Saldo Awal + Masuk)</div>
-        <div class="value" id="pc_total_kredit">Rp 0</div>
-      </div>
-      <div class="summary-card">
-        <div class="label">Saldo Akhir</div>
-        <div class="value" id="pc_saldo_akhir">Rp 0</div>
-      </div>
+    <!-- Summary Petty Cash dinonaktifkan untuk mempercepat loading -->
+    <div class="summary-grid" id="pc_summary" style="display:none !important;">
     </div>
 
     <div class="table-card">
@@ -134,12 +145,11 @@
               <th class="num">Debit</th>
               <th class="num">Kredit</th>
               <th class="num">Saldo</th>
-              <th>Foto</th>
               <th>Aksi</th>
             </tr>
           </thead>
           <tbody id="pc_tbody">
-            <tr><td colspan="11" class="table-empty">Pilih rentang tanggal lalu klik "Tampilkan Data"</td></tr>
+            <tr><td colspan="10" class="table-empty">Pilih rentang tanggal lalu klik "Tampilkan Data"</td></tr>
           </tbody>
         </table>
       </div>
@@ -300,9 +310,6 @@
 <script src="rbm-pro-storage.js"></script>
 <script src="firebase-storage.js"></script>
 <script src="rbm-pro.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 // [BARU] Helper functions untuk memastikan import berjalan di mode online/offline
 function useFirebaseBackend() {
@@ -338,20 +345,38 @@ function savePendingToLocalStorage(type, payload) {
 }
 // [BARU] Override fungsi untuk menangani format tanggal Excel dengan lebih baik
 window.downloadTemplatePettyCashExcel = function() {
-    const wb = XLSX.utils.book_new();
-    const wsData = [
-        ["Tanggal", "Keterangan", "Jenis", "Jumlah", "Satuan", "Harga", "Total Masuk"],
-        ["2026-03-08", "Contoh: Beli Sabun", "Pengeluaran", 2, "Pcs", 5000, ""],
-        ["2026-03-08", "Contoh: Tambahan Modal", "Pemasukan", "", "", "", 100000]
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    ws['!cols'] = [{wch:15}, {wch:30}, {wch:12}, {wch:8}, {wch:8}, {wch:12}, {wch:15}];
-    XLSX.utils.book_append_sheet(wb, ws, "Template Petty Cash");
-    XLSX.writeFile(wb, "Template_Petty_Cash_RBM.xlsx");
+    // Lazy-load XLSX agar halaman tidak lag saat awal masuk
+    const run = () => {
+        const wb = XLSX.utils.book_new();
+        const wsData = [
+            ["Tanggal", "Keterangan", "Jenis", "Jumlah", "Satuan", "Harga", "Total Masuk"],
+            ["2026-03-08", "Contoh: Beli Sabun", "Pengeluaran", 2, "Pcs", 5000, ""],
+            ["2026-03-08", "Contoh: Tambahan Modal", "Pemasukan", "", "", "", 100000]
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws['!cols'] = [{wch:15}, {wch:30}, {wch:12}, {wch:8}, {wch:8}, {wch:12}, {wch:15}];
+        XLSX.utils.book_append_sheet(wb, ws, "Template Petty Cash");
+        XLSX.writeFile(wb, "Template_Petty_Cash_RBM.xlsx");
+    };
+    if (typeof XLSX !== 'undefined') { run(); return; }
+    const s = document.createElement('script');
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload = run;
+    s.onerror = () => alert('Gagal memuat library Excel. Cek koneksi internet.');
+    document.head.appendChild(s);
 };
 
 window.processImportPettyCashExcel = function(input) {
     if (!input.files || !input.files[0]) return;
+    if (typeof XLSX === 'undefined') {
+        // Lazy-load XLSX dulu
+        const s = document.createElement('script');
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+        s.onload = () => window.processImportPettyCashExcel(input);
+        s.onerror = () => alert('Gagal memuat library Excel. Cek koneksi internet.');
+        document.head.appendChild(s);
+        return;
+    }
     const file = input.files[0];
     const reader = new FileReader();
     reader.onload = function(e) {

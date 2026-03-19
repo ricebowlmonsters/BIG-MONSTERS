@@ -143,13 +143,12 @@
       const hargaInput = `<div class="col-harga"><input type="number" class="pc_harga" placeholder="Harga Satuan" oninput="calculatePettyCashRowTotal(this)"></div>`;
       const totalInput = `<div class="col-total"><input type="text" class="pc_total" placeholder="Total Rp" readonly style="background: #f0f0f0; font-weight: bold;"></div>`;
       const satuanInput = `<div class="col-satuan"><input type="text" class="pc_satuan" placeholder="Satuan"></div>`;
-      const fotoInput = `<div class="col-foto"><input type="file" class="pc_foto" accept="image/*"></div>`;
       const nominalPemasukanInput = `<div class="col-jumlah" style="flex: 1.5;"><input type="number" class="pc_nominal_pemasukan" placeholder="Nominal (Rp)"></div>`;
 
       if (isPengeluaran) {
-        row.innerHTML = namaInput + jumlahInput + satuanInput + hargaInput + totalInput + fotoInput;
+        row.innerHTML = namaInput + jumlahInput + satuanInput + hargaInput + totalInput;
       } else {
-        row.innerHTML = namaInput + nominalPemasukanInput + fotoInput;
+        row.innerHTML = namaInput + nominalPemasukanInput;
       }
 
       container.appendChild(row);
@@ -186,7 +185,6 @@
 
     const rows = document.querySelectorAll("#input-petty-cash-view .row-group");
     const transactionList = [];
-    const filePromises = [];
 
     rows.forEach(row => {
       const namaInput = row.querySelector(".pc_nama");
@@ -204,8 +202,7 @@
             metode: "",
             satuan: row.querySelector(".pc_satuan")?.value.trim() || "",
             harga: row.querySelector(".pc_harga")?.value.trim() || "",
-            total: total,
-            foto: null
+            total: total
           };
         }
       } else {
@@ -218,30 +215,13 @@
             metode: "",
             satuan: "",
             harga: total,
-            total: total,
-            foto: null
+            total: total
           };
         }
       }
 
       if (transaction) {
         transactionList.push(transaction);
-
-        const fileInput = row.querySelector(".pc_foto");
-        if (fileInput && fileInput.files[0]) {
-          const file = fileInput.files[0];
-          const promise = new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const fileData = e.target.result.split(",");
-              transaction.foto = { fileName: file.name, mimeType: file.type, data: fileData[1] };
-              resolve();
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          filePromises.push(promise);
-        }
       }
     });
 
@@ -252,19 +232,13 @@
       return;
     }
 
-    Promise.all(filePromises).then(() => {
-      const dataToSend = { tanggal: tanggal, jenis: jenis, transactions: transactionList };
-      if (!isGoogleScript()) {
-        savePendingToLocalStorage('PETTY_CASH', dataToSend);
-        showResultPettyCash('✅ Data disimpan sementara di perangkat. Buka dari Google Apps Script untuk sinkron ke sheet.');
-        return;
-      }
-      google.script.run.withSuccessHandler(showResultPettyCash).simpanTransaksiBatch(dataToSend);
-    }).catch(error => {
-      setOutput(output, "❌ Gagal memproses file: " + error, false);
-      button.disabled = false;
-      button.innerText = "Simpan Data";
-    });
+    const dataToSend = { tanggal: tanggal, jenis: jenis, transactions: transactionList };
+    if (!isGoogleScript()) {
+      savePendingToLocalStorage('PETTY_CASH', dataToSend);
+      showResultPettyCash('✅ Data disimpan sementara di perangkat. Buka dari Google Apps Script untuk sinkron ke sheet.');
+      return;
+    }
+    google.script.run.withSuccessHandler(showResultPettyCash).simpanTransaksiBatch(dataToSend);
   }
 
   function showResultPettyCash(res) {
@@ -282,7 +256,7 @@
     const tbody = document.getElementById("pc_tbody");
     const summaryEl = document.getElementById("pc_summary");
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="11" class="table-loading">Memuat data...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="table-loading">Memuat data...</td></tr>';
     if (summaryEl) summaryEl.style.display = 'none';
 
     let tglAwal = "", tglAkhir = "";
@@ -298,7 +272,7 @@
     }
 
     if (!tglAwal || !tglAkhir) {
-        tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Pilih rentang tanggal/bulan terlebih dahulu.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Pilih rentang tanggal/bulan terlebih dahulu.</td></tr>';
         return;
     }
 
@@ -306,7 +280,7 @@
       setTimeout(() => {
         const pending = getCachedParsedStorage('RBM_PENDING_PETTY_CASH');
         if (pending.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data. Buka dari Google Apps Script untuk data dari sheet, atau input data dulu.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data. Buka dari Google Apps Script untuk data dari sheet, atau input data dulu.</td></tr>';
           return;
         }
         let no = 0;
@@ -323,19 +297,11 @@
             totalKredit += kredit;
             runningSaldo = runningSaldo - debit + kredit;
             
-            let fotoDisplay = '-';
-            if (trx.foto && trx.foto.data && trx.foto.data !== '[base64]') {
-              window._pcImages = window._pcImages || {};
-              let imgKey = parentIdx + '_' + trxIdx;
-              window._pcImages[imgKey] = `data:${trx.foto.mimeType};base64,${trx.foto.data}`;
-              fotoDisplay = `<button type="button" class="btn-secondary" style="padding:2px 6px; font-size:11px; cursor:pointer;" onclick="showImageModal(window._pcImages['${imgKey}'])">🖼️ Lihat Foto</button>`;
-            }
-            
-            rows.push({ no, tanggal: p.tanggal || '-', nama: trx.nama || '', jumlah: trx.jumlah, satuan: trx.satuan || '', harga: trx.harga || '', debit, kredit, saldo: runningSaldo, foto: fotoDisplay, parentIdx, trxIdx });
+            rows.push({ no, tanggal: p.tanggal || '-', nama: trx.nama || '', jumlah: trx.jumlah, satuan: trx.satuan || '', harga: trx.harga || '', debit, kredit, saldo: runningSaldo, parentIdx, trxIdx });
           });
         });
         if (rows.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang ini.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data untuk rentang ini.</td></tr>';
           return;
         }
         tbody.innerHTML = rows.map(row => `
@@ -349,7 +315,6 @@
             <td class="num">${row.debit ? formatRupiah(row.debit) : ''}</td>
             <td class="num">${row.kredit ? formatRupiah(row.kredit) : ''}</td>
             <td class="num">${formatRupiah(row.saldo)}</td>
-            <td>${row.foto}</td>
             <td><button class="btn-small-danger" onclick="deletePettyCashItem(${row.parentIdx}, ${row.trxIdx})">Hapus</button></td>
           </tr>
         `).join('');
@@ -364,14 +329,14 @@
     google.script.run
       .withSuccessHandler(function(result) {
         if (result.error) {
-          tbody.innerHTML = '<tr><td colspan="11" class="table-empty">' + result.error + '</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" class="table-empty">' + result.error + '</td></tr>';
           return;
         }
         const data = result.data || [];
         const summary = result.summary || {};
 
         if (data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang tanggal ini.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data untuk rentang tanggal ini.</td></tr>';
         } else {
           tbody.innerHTML = data.map(row => `
             <tr>
@@ -384,7 +349,6 @@
               <td class="num">${row.debit ? formatRupiah(row.debit) : ''}</td>
               <td class="num">${row.kredit ? formatRupiah(row.kredit) : ''}</td>
               <td class="num">${row.saldo ? formatRupiah(row.saldo) : ''}</td>
-              <td>${row.foto ? '<a class="foto-link" href="' + row.foto + '" target="_blank">Lihat</a>' : '-'}</td>
               <td>-</td>
             </tr>
           `).join('');
@@ -396,7 +360,7 @@
         document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir);
       })
       .withFailureHandler(function(err) {
-        tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Gagal memuat: ' + err.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Gagal memuat: ' + err.message + '</td></tr>';
       })
       .getDataPettyCash(tglAwal, tglAkhir);
   }
@@ -1731,7 +1695,9 @@ function loadPembukuanData() {
                         totalKasKeluar += setor;
 
                         let fotoDisplay = '-';
-                        if (kk.foto && kk.foto.data && kk.foto.mimeType) {
+                        if (typeof kk.foto === 'string' && kk.foto.startsWith('http')) {
+                             fotoDisplay = `<button type="button" class="btn-secondary" style="padding:2px 6px; font-size:11px; cursor:pointer;" onclick="showImageModal('${kk.foto}')">🖼️ Lihat Foto</button>`;
+                        } else if (kk.foto && kk.foto.data && kk.foto.mimeType) {
                              window._pbImages = window._pbImages || {};
                              let imgKey = parentIdx + '_' + subIdx;
                              window._pbImages[imgKey] = `data:${kk.foto.mimeType};base64,${kk.foto.data}`;

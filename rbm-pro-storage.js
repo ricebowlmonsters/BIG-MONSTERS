@@ -84,21 +84,29 @@
       } catch(e) {}
       var sfx = outlet ? '_' + outlet.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
 
-      var nodesToLoad = ['employees' + sfx, 'gps_config' + sfx, 'gps_jam_config' + sfx, 'face_data' + sfx, 'employees', 'face_data']; 
-      if (outlet) {
-          // [OPTIMASI SUPER KILAT] JANGAN PERNAH meload seluruh node cabang (outlet) secara utuh, karena akan menarik data bertahun-tahun (Pembukuan, Petty Cash, dll) sebesar ratusan Megabyte!
-          nodesToLoad.push(outlet + '/employees'); 
-      }
+      // [PERFORMA KRUSIAL]
+      // Sebelumnya kita selalu meload employees/face_data saat buka halaman apa pun.
+      // Akibatnya: Petty Cash / Inventaris / Pembukuan bisa LEMOT walau outlet kosong (karena node ini bisa sangat besar).
+      // Sekarang: default minimal, lalu tambah node hanya jika halaman memang butuh.
+      var nodesToLoad = ['gps_config' + sfx, 'gps_jam_config' + sfx];
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
       if (page === 'absensi-gps-view') {
+          // Absensi GPS butuh employees + face_data untuk validasi/nama
+          // [PERFORMA] Jangan load node global besar (employees/face_data tanpa outlet).
+          // Karyawan hanya butuh data untuk outlet yang dikunci (employees_{outlet} & face_data_{outlet}).
+          nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
           // [OPTIMASI KILAT] Di HP karyawan, JANGAN load data berat seperti absensi_data, gaji, bonus
           nodesToLoad.push('jadwal_data' + sfx, 'gps_logs' + sfx);
-          if (outlet) nodesToLoad.push(outlet + '/jadwal_data', outlet + '/gps_logs');
+          // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
       } else if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
+          // Halaman absensi/jadwal butuh employees + face_data
+          // [PERFORMA] Hindari muat global employees/face_data.
+          nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
+          // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
           // [FIX] Gunakan absensi_data & jadwal_data agar cocok dengan nama saat disimpan
           nodesToLoad.push('absensi_data' + sfx, 'jadwal_data' + sfx, 'jadwal_notes', 'gaji', 'bonus', 'gps_logs' + sfx, 'gps_logs');
-          if (outlet) nodesToLoad.push(outlet + '/absensi_data', outlet + '/jadwal_data', outlet + '/gps_logs');
+          // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
       } else if (page.indexOf('petty-cash') >= 0) {
           // [OPTIMASI KILAT] Jangan load seluruh petty_cash karena data sangat besar dan sudah diload otomatis sesuai tanggal
       } else if (page.indexOf('barang') >= 0 || page.indexOf('stok') >= 0) {
@@ -111,7 +119,7 @@
       } else if (page.indexOf('pengajuan') >= 0) {
           // Jangan load pengajuan secara global
       } else {
-          nodesToLoad.push('stok_items' + sfx, 'absensi' + sfx); // Fallback standar
+          // Fallback minimal: jangan load node berat
       }
 
       // Hapus duplikat node jika ada
@@ -124,9 +132,11 @@
               var limit = (page === 'absensi-gps-view') ? 50 : 200; // HP Karyawan cukup 50 data terakhir agar kilat
               return self._db.ref('rbm_pro/' + node).limitToLast(limit).once('value').then(function(snap) {
                   var data = snap.val();
-                  if (page === 'absensi-gps-view' && data) {
+                  // [SUPER OPTIMASI] Jangan pernah mendownload/menyimpan foto di list GPS (foto membuat browser hang untuk data besar).
+                  // Foto akan diambil on-demand saat user klik detail (jika diperlukan).
+                  if (data) {
                       Object.keys(data).forEach(function(k) {
-                          if (data[k]) data[k].photo = ''; // Hapus foto base64 agar browser HP tidak lemot/hang
+                          if (data[k]) data[k].photo = '';
                       });
                   }
                   return { key: node, val: data };

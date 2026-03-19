@@ -13,7 +13,119 @@
   window.getRbmOutlet = getRbmOutlet;
   function getRbmStorageKey(baseKey) { var o = getRbmOutlet(); return o ? baseKey + '_' + o : baseKey; }
   window.getRbmStorageKey = getRbmStorageKey;
-  window.addEventListener('load', function() {
+  // [PERFORMA] Jangan tunggu window.load (yang menunggu semua script eksternal selesai).
+  // Banyak halaman memuat Firebase/XLSX/html2canvas yang bisa lambat, bikin UI terlihat hang.
+  // DOMContentLoaded cukup untuk set default filter + mulai fetch data.
+  function _rbmOnDomReady(fn) {
+    try {
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
+      else fn();
+    } catch (e) { try { fn(); } catch(_) {} }
+  }
+  _rbmOnDomReady(function() {
+    // [UX/PERFORMA] Set nilai default tanggal/bulan SEGERA agar input type="month" tidak lama tampil "----"
+    // Jangan menunggu RBMStorage.ready() (yang bisa lama saat Firebase/ServerDB loading).
+    try {
+      var nowFast = new Date();
+      var fmtFast = function(d) { return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); };
+      var todayFast = fmtFast(nowFast);
+      var firstDayFast = fmtFast(new Date(nowFast.getFullYear(), nowFast.getMonth(), 1));
+      var payrollStartFast = fmtFast(new Date(nowFast.getFullYear(), nowFast.getMonth() - 1, 26));
+      var payrollEndFast = fmtFast(new Date(nowFast.getFullYear(), nowFast.getMonth(), 25));
+      setVal("pc_bulan_filter", todayFast.slice(0, 7));
+      setVal("pembukuan_bulan_filter", todayFast.slice(0, 7));
+      setVal("stok_bulan_filter", todayFast.slice(0, 7));
+      setVal("pc_input_tanggal", todayFast);
+      setVal("tanggal_barang", todayFast);
+      setVal("tanggal_keuangan", todayFast);
+      setVal("tanggal_inventaris", todayFast);
+      setVal("tanggal_pembukuan", todayFast);
+      setVal("inv_tanggal_awal", firstDayFast);
+      setVal("inv_tanggal_akhir", todayFast);
+      setVal("absensi_tgl_awal", payrollStartFast);
+      setVal("absensi_tgl_akhir", payrollEndFast);
+      setVal("bonus_start_date", payrollStartFast);
+      setVal("bonus_end_date", payrollEndFast);
+      setVal("res_filter_start", firstDayFast);
+      setVal("res_filter_end", todayFast);
+      setVal("rekap_gps_start", payrollStartFast);
+      setVal("rekap_gps_end", payrollEndFast);
+      setVal("riwayat_barang_start", firstDayFast);
+      setVal("riwayat_barang_end", todayFast);
+    } catch(e) {}
+
+    // [PERFORMA] Auto-load halaman "lihat" tanpa menunggu RBMStorage.ready()
+    // Agar tabel tidak stuck di placeholder "klik tampilkan" saat bulan sudah terpilih.
+    try {
+      var pageFast = window.RBM_PAGE || '';
+
+      // Anti-freeze: tunggu outlet & filter siap, dan cegah load dobel (race) saat runInit juga memanggil load.
+      function waitUntilReadyAndRun(opts) {
+        opts = opts || {};
+        var flag = opts.flag;
+        var fn = opts.fn;
+        var maxTries = opts.maxTries || 80; // ~4 detik @ 50ms
+        var tries = 0;
+        if (window[flag]) return;
+        window[flag] = 'pending';
+
+        var tick = function() {
+          tries++;
+          try {
+            // cek outlet siap (select terisi & punya value)
+            var outletSel = document.getElementById('rbm-outlet-select');
+            var outletOk = !outletSel || (!!outletSel.value && outletSel.options && outletSel.options.length > 0);
+
+            // cek filter bulan/tanggal siap (terisi)
+            var monthOk = true;
+            if (pageFast === 'lihat-petty-cash-view') {
+              var m = document.getElementById('pc_bulan_filter');
+              monthOk = !!(m && m.value);
+            } else if (pageFast === 'lihat-pembukuan-view') {
+              var m2 = document.getElementById('pembukuan_bulan_filter');
+              monthOk = !!(m2 && m2.value);
+            } else if (pageFast === 'stok-barang-view') {
+              var m3 = document.getElementById('stok_bulan_filter');
+              monthOk = !!(m3 && m3.value);
+            } else if (pageFast === 'lihat-inventaris-view') {
+              var a = document.getElementById('inv_tanggal_awal');
+              var b = document.getElementById('inv_tanggal_akhir');
+              monthOk = !!(a && a.value && b && b.value);
+            }
+
+            if (outletOk && monthOk && typeof fn === 'function') {
+              // cegah pemanggilan berulang
+              window[flag] = true;
+              // beri kesempatan UI render dulu supaya tidak terlihat "hang"
+              setTimeout(function() {
+                try { fn(); } catch (e) {}
+              }, 0);
+              return;
+            }
+          } catch (e) {}
+
+          if (tries >= maxTries) {
+            // jika gagal siap, jangan spam; biarkan runInit yang handle
+            window[flag] = false;
+            return;
+          }
+          setTimeout(tick, 50);
+        };
+
+        setTimeout(tick, 0);
+      }
+
+      if (pageFast === 'lihat-petty-cash-view' && typeof loadPettyCashData === 'function') {
+        waitUntilReadyAndRun({ flag: '_rbmAutoLoadedPc', fn: loadPettyCashData });
+      } else if (pageFast === 'lihat-inventaris-view' && typeof loadInventarisData === 'function') {
+        waitUntilReadyAndRun({ flag: '_rbmAutoLoadedInv', fn: loadInventarisData });
+      } else if (pageFast === 'lihat-pembukuan-view' && typeof loadPembukuanData === 'function') {
+        waitUntilReadyAndRun({ flag: '_rbmAutoLoadedPb', fn: loadPembukuanData });
+      } else if (pageFast === 'stok-barang-view' && typeof renderStokTable === 'function') {
+        waitUntilReadyAndRun({ flag: '_rbmAutoLoadedStok', fn: renderStokTable });
+      }
+    } catch(e) {}
+
     var runInit = function() {
     var now = new Date();
     var fmt = function(d) { return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); };
@@ -304,40 +416,16 @@
       const hargaInput = `<div class="col-harga"><input type="number" class="pc_harga" name="pc_harga_${i}" aria-label="Harga" placeholder="Harga Satuan" oninput="calculatePettyCashRowTotal(this)"></div>`;
       const totalInput = `<div class="col-total"><input type="text" class="pc_total" name="pc_total_${i}" aria-label="Total" placeholder="Total Rp" readonly style="background: #f0f0f0; font-weight: bold;"></div>`;
       const satuanInput = `<div class="col-satuan"><input type="text" class="pc_satuan" name="pc_satuan_${i}" aria-label="Satuan" placeholder="Satuan"></div>`;
-      const fotoInput = `<div class="col-foto" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
-        <input type="file" class="pc_foto" name="pc_foto_${i}" aria-label="Foto Transaksi" accept="image/*" style="display:none">
-        <button type="button" class="btn btn-secondary" aria-label="Kamera" onclick="triggerPcFoto(this, true)" style="font-size:12px;padding:4px 8px;">Kamera</button>
-        <button type="button" class="btn btn-secondary" aria-label="Pilih Foto" onclick="triggerPcFoto(this, false)" style="font-size:12px;padding:4px 8px;">Pilih Foto</button>
-        <span class="pc_foto_label" style="font-size:12px;color:#666;">-</span>
-      </div>`;
       const nominalPemasukanInput = `<div class="col-jumlah" style="flex: 1.5;"><input type="number" class="pc_nominal_pemasukan" name="pc_nominal_${i}" aria-label="Nominal Pemasukan" placeholder="Nominal (Rp)"></div>`;
 
       if (isPengeluaran) {
-        row.innerHTML = namaInput + jumlahInput + satuanInput + hargaInput + totalInput + fotoInput;
+        row.innerHTML = namaInput + jumlahInput + satuanInput + hargaInput + totalInput;
       } else {
-        row.innerHTML = namaInput + nominalPemasukanInput + fotoInput;
+        row.innerHTML = namaInput + nominalPemasukanInput;
       }
 
       container.appendChild(row);
-      var fileInput = row.querySelector(".pc_foto");
-      if (fileInput) {
-        fileInput.addEventListener("change", function() {
-          var label = row.querySelector(".pc_foto_label");
-          if (label) label.textContent = this.files[0] ? this.files[0].name : "-";
-        });
-      }
     }
-  }
-
-  function triggerPcFoto(btn, useCamera) {
-    var row = btn.closest(".row-group");
-    if (!row) return;
-    var input = row.querySelector(".pc_foto");
-    if (!input) return;
-    if (useCamera) input.setAttribute("capture", "environment");
-    else input.removeAttribute("capture");
-    input.value = "";
-    input.click();
   }
 
   function removePettyCashInputRow(btn) {
@@ -379,7 +467,6 @@
 
     const rows = document.querySelectorAll("#input-petty-cash-view .row-group");
     const transactionList = [];
-    const filePromises = [];
 
     rows.forEach(row => {
       const namaInput = row.querySelector(".pc_nama");
@@ -397,8 +484,7 @@
             metode: "",
             satuan: row.querySelector(".pc_satuan")?.value.trim() || "",
             harga: row.querySelector(".pc_harga")?.value.trim() || "",
-            total: total,
-            foto: null
+            total: total
           };
         }
       } else {
@@ -411,22 +497,13 @@
             metode: "",
             satuan: "",
             harga: total,
-            total: total,
-            foto: null
+            total: total
           };
         }
       }
 
       if (transaction) {
         transactionList.push(transaction);
-
-        const fileInput = row.querySelector(".pc_foto");
-        if (fileInput && fileInput.files[0]) {
-          const file = fileInput.files[0];
-          filePromises.push(uploadImageWithCompression(file, 'petty_cash').then(res => {
-              transaction.foto = res;
-          }));
-        }
       }
     });
 
@@ -437,25 +514,19 @@
       return;
     }
 
-    Promise.all(filePromises).then(() => {
-      const dataToSend = { tanggal: tanggal, jenis: jenis, transactions: transactionList };
-      if (useFirebaseBackend()) {
-        FirebaseStorage.savePettyCashTransactions(dataToSend, getRbmOutlet()).then(showResultPettyCash).catch(function(err) {
-          showResultPettyCash('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.'));
-        });
-        return;
-      }
-      if (!isGoogleScript()) {
-        savePendingToLocalStorage('PETTY_CASH', dataToSend);
-        showResultPettyCash('✅ Data disimpan sementara di perangkat. Buka dari Google Apps Script untuk sinkron ke sheet.');
-        return;
-      }
-      google.script.run.withSuccessHandler(showResultPettyCash).simpanTransaksiBatch(dataToSend);
-    }).catch(error => {
-      setOutput(output, "❌ Gagal memproses file: " + error, false);
-      button.disabled = false;
-      button.innerText = "Simpan Data";
-    });
+    const dataToSend = { tanggal: tanggal, jenis: jenis, transactions: transactionList };
+    if (useFirebaseBackend()) {
+      FirebaseStorage.savePettyCashTransactions(dataToSend, getRbmOutlet()).then(showResultPettyCash).catch(function(err) {
+        showResultPettyCash('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.'));
+      });
+      return;
+    }
+    if (!isGoogleScript()) {
+      savePendingToLocalStorage('PETTY_CASH', dataToSend);
+      showResultPettyCash('✅ Data disimpan sementara di perangkat. Buka dari Google Apps Script untuk sinkron ke sheet.');
+      return;
+    }
+    google.script.run.withSuccessHandler(showResultPettyCash).simpanTransaksiBatch(dataToSend);
   }
 
   function showResultPettyCash(res) {
@@ -626,60 +697,336 @@ function savePembukuanToJpg() {
     const summaryEl = document.getElementById("pc_summary");
     if (!tbody || !summaryEl) return;
 
-    tbody.innerHTML = '<tr><td colspan="11" class="table-loading">Memuat data...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="table-loading">Memuat data...</td></tr>';
     summaryEl.style.display = 'none';
 
     const monthFilter = document.getElementById("pc_bulan_filter");
     const monthVal = monthFilter ? monthFilter.value : '';
     if (!monthVal) {
-        tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Pilih bulan terlebih dahulu.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Pilih bulan terlebih dahulu.</td></tr>';
         summaryEl.style.display = 'none';
         return;
     }
+    try { localStorage.setItem('rbm_pc_last_month', monthVal); } catch(e) {}
     const [year, month] = monthVal.split('-');
     const tglAwal = `${year}-${month}-01`;
     const lastDay = new Date(year, parseInt(month, 10), 0).getDate();
     const tglAkhir = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
 
+    // --- Search UI: selalu ada (placeholder di HTML), hanya aktifkan handler ---
+    const pcSearchEl = document.getElementById("pc_search");
+    if (pcSearchEl && !pcSearchEl._rbmBound) {
+        pcSearchEl._rbmBound = true;
+        pcSearchEl.disabled = false;
+        pcSearchEl.oninput = function() {
+            window._pcCurrentPage = 1;
+            if (window._pcUseServerPaging) loadPettyCashData();
+            else if (typeof window.renderPettyCashPage === 'function') window.renderPettyCashPage();
+        };
+    } else if (pcSearchEl) {
+        pcSearchEl.disabled = false;
+    }
+
+    // Tombol hapus foto Petty Cash dihilangkan sesuai permintaan admin.
+
+    // --- [BARU] State Pagination Client-Side ---
+    window._pcCurrentPage = 1;
+    // [PERFORMA] Biar tidak terasa "tiap scroll baru loading 20 baris lagi",
+    // naikkan ukuran halaman (server juga clamp max 50).
+    const rowsPerPage = 50;
+
+    window.renderPettyCashPage = function() {
+        const data = window._lastPettyCashData || [];
+        const summary = window._lastPettyCashSummary || { totalDebit: 0, totalKredit: 0, saldoAkhir: 0, saldoAwal: 0 };
+        
+        // 1. Filter Pencarian (Simulasi LIKE '%keyword%')
+        const searchVal = document.getElementById("pc_search") ? document.getElementById("pc_search").value.toLowerCase() : "";
+        const filteredData = searchVal ? data.filter(r => (r.nama || '').toLowerCase().includes(searchVal)) : data;
+
+        // 2. Logika Pagination
+        const totalPages = Math.ceil(filteredData.length / rowsPerPage) || 1;
+        if (window._pcCurrentPage > totalPages) window._pcCurrentPage = totalPages;
+        
+        const startIdx = (window._pcCurrentPage - 1) * rowsPerPage;
+        const pageData = filteredData.slice(startIdx, startIdx + rowsPerPage);
+
+        // 3. Render Baris HTML yang sudah dipotong (Sangat Ringan!)
+        if (pageData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data ditemukan.</td></tr>';
+        } else {
+            tbody.innerHTML = pageData.map(function(row) {
+                var aksiBtn = (row._firebaseDate != null && row._firebaseIndexInDate != null)
+                    ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Hapus</button>'
+                    : '-';
+                return '<tr><td>' + (row.no || '') + '</td><td>' + (row.tanggal || '') + '</td><td>' + (row.nama || '') + '</td><td class="num">' + (row.jumlah || '') + '</td><td>' + (row.satuan || '') + '</td><td class="num">' + (row.harga ? formatRupiah(row.harga) : '') + '</td><td class="num">' + (row.debit ? formatRupiah(row.debit) : '') + '</td><td class="num">' + (row.kredit ? formatRupiah(row.kredit) : '') + '</td><td class="num">' + (row.saldo ? formatRupiah(row.saldo) : '') + '</td><td>' + aksiBtn + '</td></tr>';
+            }).join('');
+        }
+
+        // 4. Render Tombol Navigasi Pagination
+        let paginationEl = document.getElementById("pc_pagination");
+        if (!paginationEl) {
+            paginationEl = document.createElement("div");
+            paginationEl.id = "pc_pagination";
+            paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+            tbody.closest('.table-card').appendChild(paginationEl); // Tambahkan di bawah tabel
+        }
+        // Kamu bilang tidak pakai Prev/Next, jadi disembunyikan.
+        paginationEl.style.display = 'none';
+        paginationEl.innerHTML = `
+            <button class="btn btn-secondary" ${window._pcCurrentPage === 1 ? 'disabled' : ''} onclick="window._pcCurrentPage--; window.renderPettyCashPage()">⬅️ Prev</button>
+            <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${window._pcCurrentPage} dari ${totalPages}</span>
+            <button class="btn btn-secondary" ${window._pcCurrentPage === totalPages ? 'disabled' : ''} onclick="window._pcCurrentPage++; window.renderPettyCashPage()">Next ➡️</button>
+        `;
+
+        // 5. Update Rekap Saldo
+        summaryEl.style.display = 'grid';
+        if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
+        var totalDana = (summary.saldoAwal || 0) + (summary.totalKredit || 0);
+        if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(totalDana);
+        if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
+        if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
+    }
+
     function renderPettyCashFromResult(result) {
-      var data = result && result.data ? result.data : [];
-      var summary = (result && result.summary) ? result.summary : { totalDebit: 0, totalKredit: 0, saldoAkhir: 0 };
-      window._lastPettyCashData = data;
-      if (data.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang tanggal ini.</td></tr>';
-      } else {
-        tbody.innerHTML = data.map(function(row) {
-          var aksiBtn = (row._firebaseDate != null && row._firebaseIndexInDate != null)
-            ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Hapus</button>'
-            : '-';
-          return '<tr><td>' + (row.no || '') + '</td><td>' + (row.tanggal || '') + '</td><td>' + (row.nama || '') + '</td><td class="num">' + (row.jumlah || '') + '</td><td>' + (row.satuan || '') + '</td><td class="num">' + (row.harga ? formatRupiah(row.harga) : '') + '</td><td class="num">' + (row.debit ? formatRupiah(row.debit) : '') + '</td><td class="num">' + (row.kredit ? formatRupiah(row.kredit) : '') + '</td><td class="num">' + (row.saldo ? formatRupiah(row.saldo) : '') + '</td><td>' + (row.foto ? '<a class="foto-link" href="' + row.foto + '" target="_blank">Lihat</a>' : '-') + '</td><td>' + aksiBtn + '</td></tr>';
-        }).join('');
-      }
-      summaryEl.style.display = 'grid';
-      var totalDebitEl = document.getElementById("pc_total_debit");
-      var saldoAwalEl = document.getElementById("pc_saldo_awal");
-      var totalKreditEl = document.getElementById("pc_total_kredit");
-      var saldoAkhirEl = document.getElementById("pc_saldo_akhir");
-      if (totalDebitEl) totalDebitEl.textContent = formatRupiah(summary.totalDebit || 0);
-      // [UBAH] Total Kredit = Saldo Awal + Total Pemasukan Periode Ini
-      var totalDana = (summary.saldoAwal || 0) + (summary.totalKredit || 0);
-      if (totalKreditEl) totalKreditEl.textContent = formatRupiah(totalDana);
-      if (saldoAkhirEl) saldoAkhirEl.textContent = formatRupiah(summary.saldoAkhir || 0);
-      if (saldoAwalEl) saldoAwalEl.textContent = formatRupiah(summary.saldoAwal || 0);
+      window._lastPettyCashData = result && result.data ? result.data : [];
+      window._lastPettyCashSummary = result && result.summary ? result.summary : { totalDebit: 0, totalKredit: 0, saldoAkhir: 0, saldoAwal: 0 };
+      window._pcCurrentPage = 1; // Reset ke halaman 1 setiap ganti filter
+      window.renderPettyCashPage(); // Panggil fungsi render ringan
+    }
+
+    // --- [BARU] Server-Side Pagination & Filtering (Mode: ServerDB) ---
+    // Jika koneksi aktif adalah "server" (http://localhost:3001/db), maka pencarian + paging dilakukan oleh server (JSON ringan).
+    window._pcUseServerPaging = false;
+    try {
+        if (typeof getRbmActiveConfig === 'function') {
+            const cfg = getRbmActiveConfig();
+            // [FIX] Jangan bergantung pada cfg.apiUrl; jika type=server tapi apiUrl kosong, fallback ke localhost.
+            if (cfg && cfg.type === 'server') window._pcUseServerPaging = true;
+        }
+    } catch(e) {}
+
+    if (window._pcUseServerPaging) {
+        const cfg = (typeof getRbmActiveConfig === 'function') ? getRbmActiveConfig() : null;
+        const apiUrl = (cfg && cfg.apiUrl) ? cfg.apiUrl : 'http://localhost:3001/db';
+        const baseUrl = apiUrl.replace(/\/db\/?$/, '');
+        const outlet = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+        const searchVal = document.getElementById("pc_search") ? (document.getElementById("pc_search").value || '') : '';
+        const page = window._pcCurrentPage || 1;
+        const limit = rowsPerPage;
+
+        const url = `${baseUrl}/api/petty-cash?outlet=${encodeURIComponent(outlet)}&from=${encodeURIComponent(tglAwal)}&to=${encodeURIComponent(tglAkhir)}&search=${encodeURIComponent(searchVal)}&page=${encodeURIComponent(page)}&limit=${encodeURIComponent(limit)}`;
+
+        fetch(url).then(r => r.json()).then(function(result) {
+            if (!result || result.error) {
+                tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Gagal memuat dari server.</td></tr>';
+                summaryEl.style.display = 'none';
+                return;
+            }
+
+            // Render rows (sudah dipotong di server)
+            const data = result.data || [];
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data ditemukan.</td></tr>';
+            } else {
+                tbody.innerHTML = data.map(function(row) {
+                    return '<tr><td>' + (row.no || '') + '</td><td>' + (row.tanggal || '') + '</td><td>' + (row.nama || '') + '</td><td class="num">' + (row.jumlah || '') + '</td><td>' + (row.satuan || '') + '</td><td class="num">' + (row.harga ? formatRupiah(row.harga) : '') + '</td><td class="num">' + (row.debit ? formatRupiah(row.debit) : '') + '</td><td class="num">' + (row.kredit ? formatRupiah(row.kredit) : '') + '</td><td class="num">' + (row.saldo ? formatRupiah(row.saldo) : '') + '</td><td>-</td></tr>';
+                }).join('');
+            }
+
+            // Pagination controls (server)
+            const meta = result.meta || {};
+            const totalPages = meta.totalPages || 1;
+            let paginationEl = document.getElementById("pc_pagination");
+            if (!paginationEl) {
+                paginationEl = document.createElement("div");
+                paginationEl.id = "pc_pagination";
+                paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+                tbody.closest('.table-card').appendChild(paginationEl);
+            }
+            // Kamu tidak pakai Prev/Next, jadi tombol disembunyikan.
+            paginationEl.style.display = 'none';
+            paginationEl.innerHTML = `
+                <button class="btn btn-secondary" ${(page === 1) ? 'disabled' : ''} onclick="window._pcCurrentPage=(window._pcCurrentPage||1)-1; loadPettyCashData()">⬅️ Prev</button>
+                <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${page} dari ${totalPages}</span>
+                <button class="btn btn-secondary" ${(page === totalPages) ? 'disabled' : ''} onclick="window._pcCurrentPage=(window._pcCurrentPage||1)+1; loadPettyCashData()">Next ➡️</button>
+            `;
+
+            // Summary (server)
+            const summary = result.summary || {};
+            summaryEl.style.display = 'grid';
+            if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
+            var totalDana = (summary.saldoAwal || 0) + (summary.totalKredit || 0);
+            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(totalDana);
+            if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
+            if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
+        }).catch(function(err) {
+            tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
+            summaryEl.style.display = 'none';
+        });
+        return;
     }
 
     if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPettyCash) {
-      FirebaseStorage.getPettyCash(tglAwal, tglAkhir, getRbmOutlet()).then(renderPettyCashFromResult).catch(function(err) {
-        tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
-        summaryEl.style.display = 'none';
-      });
+      // [SUPER OPTIMASI] Firebase paging: jangan load 1 bulan penuh sekaligus (bisa 1.000.000+ data).
+      if (FirebaseStorage.getPettyCashPage) {
+        const limit = rowsPerPage;
+        const outlet = getRbmOutlet();
+        const searchNow = (document.getElementById("pc_search") ? (document.getElementById("pc_search").value || '') : '');
+        const queryKey = [outlet || '', tglAwal || '', tglAkhir || '', (searchNow || '').trim().toLowerCase(), limit].join('|');
+
+        // Reset paging jika query berubah (ganti outlet/bulan/search)
+        if (window._pcFbQueryKey !== queryKey) {
+          window._pcFbQueryKey = queryKey;
+          window._pcFbCursor = null;
+          window._pcFbCursorStack = [];
+        }
+        window._pcFbSearch = searchNow;
+
+        // Cache lokal: tampil instan saat masuk ulang halaman, lalu refresh di background.
+        const cacheKey = (function(){
+          const o = (outlet || '').toString().toLowerCase().replace(/[^a-z0-9_]/g, '_') || 'default';
+          const ym = (monthVal || '').toString().trim();
+          const s = (searchNow || '').toString().trim().toLowerCase();
+          return 'rbm_pc_cache_v1|' + o + '|' + ym + '|' + encodeURIComponent(s) + '|limit=' + limit;
+        })();
+        const cacheTtlMs = 5 * 60 * 1000; // 5 menit
+
+        function tryRenderCacheIfFirstPage() {
+          if (window._pcFbCursor) return; // hanya page pertama
+          try {
+            const raw = localStorage.getItem(cacheKey);
+            if (!raw) return;
+            const cached = JSON.parse(raw);
+            if (!cached || !cached.ts || (Date.now() - cached.ts) > cacheTtlMs) return;
+            if (!cached.data || !Array.isArray(cached.data)) return;
+            window._lastPettyCashData = cached.data;
+            window._lastPettyCashSummary = cached.summary || window._lastPettyCashSummary;
+            // Render cepat dari cache
+            const data = cached.data;
+            tbody.innerHTML = data.length === 0
+              ? '<tr><td colspan="10" class="table-empty">Tidak ada data ditemukan.</td></tr>'
+              : data.map(function(row) {
+                  var aksiBtn = (row._firebaseDate != null && row._firebaseIndexInDate != null)
+                    ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Hapus</button>'
+                    : '-';
+                  return '<tr><td>' + (row.no || '') + '</td><td>' + (row.tanggal || '') + '</td><td>' + (row.nama || '') + '</td><td class="num">' + (row.jumlah || '') + '</td><td>' + (row.satuan || '') + '</td><td class="num">' + (row.harga ? formatRupiah(row.harga) : '') + '</td><td class="num">' + (row.debit ? formatRupiah(row.debit) : '') + '</td><td class="num">' + (row.kredit ? formatRupiah(row.kredit) : '') + '</td><td class="num">' + (row.saldo ? formatRupiah(row.saldo) : '') + '</td><td>' + aksiBtn + '</td></tr>';
+                }).join('');
+            const summary = cached.summary || {};
+            summaryEl.style.display = 'grid';
+            if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
+            var totalDana = (summary.saldoAwal || 0) + (summary.totalKredit || 0);
+            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(totalDana);
+            if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
+            if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
+          } catch(e) {}
+        }
+
+        function saveCacheIfFirstPage(result) {
+          if (window._pcFbCursor) return;
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({
+              ts: Date.now(),
+              data: (result && result.data) ? result.data : [],
+              summary: (result && result.summary) ? result.summary : {}
+            }));
+          } catch(e) {}
+        }
+
+        function loadPage(cursor, opts) {
+          const silent = opts && opts.silent;
+          // [FIX] cegah request dobel (sering terasa seperti "auto load" saat UI scroll/re-render)
+          if (window._pcFbLoading) return;
+          window._pcFbLoading = true;
+          if (!silent) {
+            tbody.innerHTML = '<tr><td colspan="10" class="table-loading">Memuat data...</td></tr>';
+            summaryEl.style.display = 'none';
+          }
+          FirebaseStorage.getPettyCashPage({
+            outletId: outlet,
+            from: tglAwal,
+            to: tglAkhir,
+            search: window._pcFbSearch || '',
+            limit: limit,
+            cursor: cursor || null
+          }).then(function(result) {
+            saveCacheIfFirstPage(result);
+            window._lastPettyCashData = result && result.data ? result.data : [];
+            window._lastPettyCashSummary = result && result.summary ? result.summary : { totalDebit: 0, totalKredit: 0, saldoAkhir: 0, saldoAwal: 0 };
+            window._pcFbCursor = result && result.page ? result.page.nextCursor : null;
+
+            // render rows directly (server-style page)
+            const data = window._lastPettyCashData || [];
+            if (data.length === 0) {
+              tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data ditemukan.</td></tr>';
+            } else {
+              tbody.innerHTML = data.map(function(row) {
+                var aksiBtn = (row._firebaseDate != null && row._firebaseIndexInDate != null)
+                  ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Hapus</button>'
+                  : '-';
+                return '<tr><td>' + (row.no || '') + '</td><td>' + (row.tanggal || '') + '</td><td>' + (row.nama || '') + '</td><td class="num">' + (row.jumlah || '') + '</td><td>' + (row.satuan || '') + '</td><td class="num">' + (row.harga ? formatRupiah(row.harga) : '') + '</td><td class="num">' + (row.debit ? formatRupiah(row.debit) : '') + '</td><td class="num">' + (row.kredit ? formatRupiah(row.kredit) : '') + '</td><td class="num">' + (row.saldo ? formatRupiah(row.saldo) : '') + '</td><td>' + aksiBtn + '</td></tr>';
+              }).join('');
+            }
+
+            // lightweight pagination controls: Next only (cursor-based). Prev requires cursor stack.
+            let paginationEl = document.getElementById("pc_pagination");
+            if (!paginationEl) {
+              paginationEl = document.createElement("div");
+              paginationEl.id = "pc_pagination";
+              paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+              tbody.closest('.table-card').appendChild(paginationEl);
+            }
+            // Kamu tidak pakai Prev/Next, jadi tombol disembunyikan.
+            paginationEl.style.display = 'none';
+            // Expose lightweight handlers (tidak inject function besar ke HTML)
+            window.pettyCashFbPrevPage = function() {
+              if (!window._pcFbCursorStack || window._pcFbCursorStack.length === 0) return;
+              const prev = window._pcFbCursorStack.pop();
+              window._pcFbCursor = prev || null;
+              loadPage(window._pcFbCursor);
+            };
+            window.pettyCashFbNextPage = function() {
+              if (!window._pcFbCursor) return;
+              window._pcFbCursorStack = window._pcFbCursorStack || [];
+              window._pcFbCursorStack.push(window._pcFbCursor);
+              loadPage(window._pcFbCursor);
+            };
+            paginationEl.innerHTML = `
+              <button class="btn btn-secondary" ${(window._pcFbCursorStack && window._pcFbCursorStack.length > 0) ? '' : 'disabled'} onclick="window.pettyCashFbPrevPage()">⬅️ Prev</button>
+              <button class="btn btn-secondary" ${window._pcFbCursor ? '' : 'disabled'} onclick="window.pettyCashFbNextPage()">Next ➡️</button>
+            `;
+
+            // summary
+            const summary = window._lastPettyCashSummary || {};
+            summaryEl.style.display = 'grid';
+            if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
+            var totalDana = (summary.saldoAwal || 0) + (summary.totalKredit || 0);
+            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(totalDana);
+            if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
+            if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
+          }).catch(function(err) {
+            console.error(err);
+            tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
+            summaryEl.style.display = 'none';
+          }).finally(function() { window._pcFbLoading = false; });
+        }
+
+        // gunakan cursor jika ada (next page), kalau tidak (page 1)
+        tryRenderCacheIfFirstPage();
+        // refresh dari network (silent jika cache sudah tampil)
+        loadPage(window._pcFbCursor || null, { silent: true });
+      } else {
+        FirebaseStorage.getPettyCash(tglAwal, tglAkhir, getRbmOutlet()).then(renderPettyCashFromResult).catch(function(err) {
+          tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
+          summaryEl.style.display = 'none';
+        });
+      }
       return;
     }
     if (!isGoogleScript()) {
       setTimeout(() => {
           const pending = getCachedParsedStorage(getRbmStorageKey('RBM_PENDING_PETTY_CASH'), []);
           if (pending.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data. Buka dari Google Apps Script untuk data dari sheet, atau input data dulu.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data. Buka dari Google Apps Script untuk data dari sheet, atau input data dulu.</td></tr>';
             return;
           }
           let no = 0;
@@ -726,19 +1073,11 @@ function savePembukuanToJpg() {
               totalKredit += kredit;
               runningSaldo = runningSaldo - debit + kredit;
               
-              let fotoDisplay = '-';
-              if (trx.foto && trx.foto.data && trx.foto.data !== '[base64]') {
-                window._pcImages = window._pcImages || {};
-                let imgKey = parentIdx + '_' + trxIdx;
-                window._pcImages[imgKey] = `data:${trx.foto.mimeType};base64,${trx.foto.data}`;
-                fotoDisplay = `<button type="button" class="btn-secondary" style="padding:2px 6px; font-size:11px; cursor:pointer;" onclick="showImageModal(window._pcImages['${imgKey}'])">🖼️ Lihat Foto</button>`;
-              }
-              
-              rows.push({ no, tanggal: p.tanggal || '-', nama: trx.nama || '', jumlah: trx.jumlah, satuan: trx.satuan || '', harga: trx.harga || '', debit, kredit, saldo: runningSaldo, foto: fotoDisplay, parentIdx, trxIdx });
+              rows.push({ no, tanggal: p.tanggal || '-', nama: trx.nama || '', jumlah: trx.jumlah, satuan: trx.satuan || '', harga: trx.harga || '', debit, kredit, saldo: runningSaldo, parentIdx, trxIdx });
             });
           });
           if (rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang ini.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data untuk rentang ini.</td></tr>';
             // [FIX] Reset summary jika tidak ada data
             document.getElementById("pc_total_debit").textContent = formatRupiah(0);
             document.getElementById("pc_total_kredit").textContent = formatRupiah(0);
@@ -746,27 +1085,12 @@ function savePembukuanToJpg() {
             if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(saldoAwal);
             return;
           }
-          tbody.innerHTML = rows.map(row => `
-            <tr>
-              <td>${row.no}</td>
-              <td>${row.tanggal}</td>
-              <td>${row.nama}</td>
-              <td class="num">${row.jumlah || ''}</td>
-              <td>${row.satuan}</td>
-              <td class="num">${row.harga ? formatRupiah(row.harga) : ''}</td>
-              <td class="num">${row.debit ? formatRupiah(row.debit) : ''}</td>
-              <td class="num">${row.kredit ? formatRupiah(row.kredit) : ''}</td>
-              <td class="num">${formatRupiah(row.saldo)}</td>
-              <td>${row.foto}</td>
-              <td><button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItem(${row.parentIdx}, ${row.trxIdx})">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItem(${row.parentIdx}, ${row.trxIdx})">Hapus</button></td>
-            </tr>
-          `).join('');
-          summaryEl.style.display = 'grid';
-          document.getElementById("pc_total_debit").textContent = formatRupiah(totalDebit);
-          if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(saldoAwal);
-          // [UBAH] Total Kredit = Saldo Awal + Total Pemasukan Periode Ini
-          document.getElementById("pc_total_kredit").textContent = formatRupiah(saldoAwal + totalKredit);
-          document.getElementById("pc_saldo_akhir").textContent = formatRupiah(runningSaldo);
+          
+          // Panggil logic render dengan format yang sama
+          window._lastPettyCashData = rows;
+          window._lastPettyCashSummary = { totalDebit: totalDebit, totalKredit: totalKredit, saldoAkhir: runningSaldo, saldoAwal: saldoAwal };
+          window._pcCurrentPage = 1;
+          window.renderPettyCashPage();
       }, 50);
       return;
     }
@@ -774,14 +1098,14 @@ function savePembukuanToJpg() {
     google.script.run
       .withSuccessHandler(function(result) {
         if (result.error) {
-          tbody.innerHTML = '<tr><td colspan="11" class="table-empty">' + result.error + '</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" class="table-empty">' + result.error + '</td></tr>';
           return;
         }
         const data = result.data || [];
         const summary = result.summary || {};
 
         if (data.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="11" class="table-empty">Tidak ada data untuk rentang tanggal ini.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data untuk rentang tanggal ini.</td></tr>';
         } else {
           tbody.innerHTML = data.map(row => `
             <tr>
@@ -794,7 +1118,6 @@ function savePembukuanToJpg() {
               <td class="num">${row.debit ? formatRupiah(row.debit) : ''}</td>
               <td class="num">${row.kredit ? formatRupiah(row.kredit) : ''}</td>
               <td class="num">${row.saldo ? formatRupiah(row.saldo) : ''}</td>
-              <td>${row.foto ? '<a class="foto-link" href="' + row.foto + '" target="_blank">Lihat</a>' : '-'}</td>
               <td>-</td>
             </tr>
           `).join('');
@@ -2508,6 +2831,52 @@ function loadLihatPengajuanData() {
         return;
     }
     
+    // [BARU] Jika mode ServerDB aktif, ambil dari server dengan paging (bukan scan 1.000.000 data di browser)
+    try {
+        if (typeof getRbmActiveConfig === 'function') {
+            const cfg = getRbmActiveConfig();
+            if (cfg && cfg.type === 'server' && cfg.apiUrl) {
+                const baseUrl = cfg.apiUrl.replace(/\/db\/?$/, '');
+                window._pgnCurrentPage = window._pgnCurrentPage || 1;
+                const page = window._pgnCurrentPage;
+                const limit = 20;
+                const outlet = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+                const url = `${baseUrl}/api/petty-cash?outlet=${encodeURIComponent(outlet)}&from=${encodeURIComponent(dateStart)}&to=${encodeURIComponent(dateEnd)}&search=&page=${encodeURIComponent(page)}&limit=${encodeURIComponent(limit)}`;
+                tbody.innerHTML = '<tr><td colspan="9" class="table-loading">Memuat data...</td></tr>';
+                fetch(url).then(r => r.json()).then(function(result) {
+                    if (!result || result.error) {
+                        tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Gagal memuat dari server.</td></tr>';
+                        return;
+                    }
+                    const data = result.data || [];
+                    if (data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Tidak ada transaksi pada rentang tanggal ini</td></tr>';
+                    } else {
+                        tbody.innerHTML = data.map(r => `<tr><td>${r.no || ''}</td><td>${r.tanggal || ''}</td><td>${r.nama || ''}</td><td class="num">${r.jumlah || ''}</td><td>${r.satuan || ''}</td><td class="num">${r.harga ? formatRupiah(r.harga) : ''}</td><td class="num">${r.debit ? formatRupiah(r.debit) : ''}</td><td class="num">${r.kredit ? formatRupiah(r.kredit) : ''}</td><td class="num">${formatRupiah(r.saldo || 0)}</td></tr>`).join('');
+                    }
+
+                    const meta = result.meta || {};
+                    const totalPages = meta.totalPages || 1;
+                    let paginationEl = document.getElementById("pgn_pagination");
+                    if (!paginationEl) {
+                        paginationEl = document.createElement("div");
+                        paginationEl.id = "pgn_pagination";
+                        paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+                        tbody.closest('.table-card').appendChild(paginationEl);
+                    }
+                    paginationEl.innerHTML = `
+                        <button class="btn btn-secondary" ${(page === 1) ? 'disabled' : ''} onclick="window._pgnCurrentPage=(window._pgnCurrentPage||1)-1; loadLihatPengajuanData()">⬅️ Prev</button>
+                        <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${page} dari ${totalPages}</span>
+                        <button class="btn btn-secondary" ${(page === totalPages) ? 'disabled' : ''} onclick="window._pgnCurrentPage=(window._pgnCurrentPage||1)+1; loadLihatPengajuanData()">Next ➡️</button>
+                    `;
+                }).catch(function(err) {
+                    tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
+                });
+                return;
+            }
+        }
+    } catch(e) {}
+
     setTimeout(() => {
         let rows = [];
         let runningSaldo = 0;
@@ -2545,19 +2914,33 @@ function loadLihatPengajuanData() {
             return;
         }
         
-        tbody.innerHTML = rows.map(r => `
-            <tr>
-                <td>${r.no}</td>
-                <td>${r.tanggal}</td>
-                <td>${r.nama}</td>
-                <td class="num">${r.jumlah}</td>
-                <td>${r.satuan}</td>
-                <td class="num">${r.harga ? formatRupiah(r.harga) : ''}</td>
-                <td class="num">${r.debit ? formatRupiah(r.debit) : ''}</td>
-                <td class="num">${r.kredit ? formatRupiah(r.kredit) : ''}</td>
-                <td class="num">${formatRupiah(r.saldo)}</td>
-            </tr>
-        `).join('');
+        // --- [OPTIMASI 1000X] Virtual Pagination untuk Sisa Uang / Pengajuan ---
+        window._pgnCurrentPage = 1;
+        const rowsPerPage = 20;
+        
+        window.renderPengajuanPage = function() {
+            const totalPages = Math.ceil(rows.length / rowsPerPage) || 1;
+            if (window._pgnCurrentPage > totalPages) window._pgnCurrentPage = totalPages;
+            
+            const startIdx = (window._pgnCurrentPage - 1) * rowsPerPage;
+            const pageData = rows.slice(startIdx, startIdx + rowsPerPage);
+            
+            tbody.innerHTML = pageData.map(r => `<tr><td>${r.no}</td><td>${r.tanggal}</td><td>${r.nama}</td><td class="num">${r.jumlah}</td><td>${r.satuan}</td><td class="num">${r.harga ? formatRupiah(r.harga) : ''}</td><td class="num">${r.debit ? formatRupiah(r.debit) : ''}</td><td class="num">${r.kredit ? formatRupiah(r.kredit) : ''}</td><td class="num">${formatRupiah(r.saldo)}</td></tr>`).join('');
+            
+            let paginationEl = document.getElementById("pgn_pagination");
+            if (!paginationEl) {
+                paginationEl = document.createElement("div");
+                paginationEl.id = "pgn_pagination";
+                paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+                tbody.closest('.table-card').appendChild(paginationEl);
+            }
+            paginationEl.innerHTML = `
+                <button class="btn btn-secondary" ${window._pgnCurrentPage === 1 ? 'disabled' : ''} onclick="window._pgnCurrentPage--; window.renderPengajuanPage()">⬅️ Prev</button>
+                <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${window._pgnCurrentPage} dari ${totalPages}</span>
+                <button class="btn btn-secondary" ${window._pgnCurrentPage === totalPages ? 'disabled' : ''} onclick="window._pgnCurrentPage++; window.renderPengajuanPage()">Next ➡️</button>
+            `;
+        };
+        window.renderPengajuanPage();
     }, 50);
 }
 
@@ -2662,6 +3045,150 @@ function loadPembukuanData() {
     const lastDay = new Date(year, parseInt(month, 10), 0).getDate();
     const tglAkhir = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
 
+    // [PERFORMA] Mode Server PC: ambil 7 hari per halaman dari server (hindari proses data besar di browser)
+    try {
+        if (typeof getRbmActiveConfig === 'function') {
+            const cfg = getRbmActiveConfig();
+            if (cfg && cfg.type === 'server') {
+                const apiUrl = cfg.apiUrl ? cfg.apiUrl : 'http://localhost:3001/db';
+                const baseUrl = apiUrl.replace(/\/db\/?$/, '');
+                const outlet = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || '_default';
+                const daysPerPage = 7;
+                window._pbServerPage = window._pbServerPage || 1;
+                const page = window._pbServerPage;
+                const url = `${baseUrl}/api/pembukuan?outlet=${encodeURIComponent(outlet)}&from=${encodeURIComponent(tglAwal)}&to=${encodeURIComponent(tglAkhir)}&page=${encodeURIComponent(page)}&daysPerPage=${encodeURIComponent(daysPerPage)}`;
+
+                fetch(url).then(r => r.json()).then(function(result) {
+                    if (!result || result.error) {
+                        tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Gagal memuat dari server.</td></tr>';
+                        summaryEl.style.display = 'none';
+                        return;
+                    }
+                    const meta = result.meta || {};
+                    const totalPages = meta.totalPages || 1;
+                    const days = Array.isArray(result.data) ? result.data : [];
+
+                    // Render tabel ringan: kasMasuk + subtotal + kasKeluar (tanpa foto base64)
+                    let html = '';
+                    let subtotalMasuk = 0;
+                    let subtotalKeluar = 0;
+
+                    days.forEach(function(day) {
+                        const tgl = day.tanggal || '';
+                        const kasMasuk = Array.isArray(day.kasMasuk) ? day.kasMasuk : [];
+                        const kasKeluar = Array.isArray(day.kasKeluar) ? day.kasKeluar : [];
+
+                        let subCatatan = 0;
+                        let subFisik = 0;
+                        let subSelisih = 0;
+
+                        // Kas Masuk rows
+                        if (kasMasuk.length > 0) {
+                            kasMasuk.forEach(function(km, i) {
+                                const ket = km.keterangan || '';
+                                const catatanVal = parseFloat(km.catatan) || 0;
+                                let fisikVal = parseFloat(km.fisik) || 0;
+                                let selisihVal = 0;
+                                let fisikDisplay = km.fisik || '';
+                                if (ket && ket.toString().toUpperCase() === 'VCR') {
+                                    const jmlVcr = parseFloat(km.vcr) || 0;
+                                    fisikVal = jmlVcr * 20000;
+                                    fisikDisplay = (km.vcr || '') + ' (VCR)';
+                                } else {
+                                    selisihVal = fisikVal - catatanVal;
+                                }
+                                subCatatan += catatanVal;
+                                subFisik += fisikVal;
+                                subSelisih += selisihVal;
+                                if (ket && ket.toString().toUpperCase() === 'CASH') subtotalMasuk += fisikVal;
+
+                                html += '<tr>';
+                                if (i === 0) {
+                                    html += `<td rowspan="${kasMasuk.length}" style="vertical-align: middle; text-align: center; background-color: #f1f5f9; font-weight: 500;">${tgl}</td>`;
+                                }
+                                html += `
+                                    <td>${ket}</td>
+                                    <td class="num">${catatanVal ? formatRupiah(catatanVal) : '-'}</td>
+                                    <td class="num">${fisikDisplay ? fisikDisplay : '-'}</td>
+                                    <td class="num">${(km.fisik || km.catatan) ? formatRupiah(selisihVal) : '-'}</td>
+                                    <td>-</td>
+                                    <td>-</td>
+                                `;
+                                html += '</tr>';
+                            });
+                        }
+
+                        // Subtotal row (Kas Masuk)
+                        if (kasMasuk.length > 0) {
+                            html += `
+                                <tr style="background: #e2e8f0; font-weight: bold;">
+                                    <td colspan="2" style="text-align: center;">TOTAL ${tgl}</td>
+                                    <td class="num">${formatRupiah(subCatatan)}</td>
+                                    <td class="num">${formatRupiah(subFisik)}</td>
+                                    <td class="num">${formatRupiah(subSelisih)}</td>
+                                    <td></td>
+                                    <td></td>
+                                </tr>
+                            `;
+                        }
+
+                        // Kas Keluar rows (tanpa foto)
+                        if (kasKeluar.length > 0) {
+                            kasKeluar.forEach(function(kk) {
+                                const setor = parseFloat(kk.setor) || 0;
+                                subtotalKeluar += setor;
+                                html += `
+                                    <tr style="background-color: #d1fae5;">
+                                        <td style="vertical-align: middle; text-align: center; background-color: #d1fae5; font-weight: 500;">${tgl}</td>
+                                        <td>${kk.keterangan || ''}</td>
+                                        <td class="num">-</td>
+                                        <td class="num">${setor ? formatRupiah(setor) : '-'}</td>
+                                        <td class="num">-</td>
+                                        <td>${kk.hasFoto ? '📷' : '-'}</td>
+                                        <td>-</td>
+                                    </tr>
+                                `;
+                            });
+                        }
+                    });
+
+                    if (!html) {
+                        tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Tidak ada data.</td></tr>';
+                    } else {
+                        tbody.innerHTML = html;
+                    }
+
+                    // Pagination controls (server)
+                    let paginationEl = document.getElementById("pembukuan_pagination");
+                    if (!paginationEl) {
+                        paginationEl = document.createElement("div");
+                        paginationEl.id = "pembukuan_pagination";
+                        paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+                        tbody.closest('.table-card').appendChild(paginationEl);
+                    }
+                    paginationEl.innerHTML = `
+                        <button class="btn btn-secondary" ${(page === 1) ? 'disabled' : ''} onclick="window._pbServerPage=(window._pbServerPage||1)-1; loadPembukuanData()">⬅️ Prev</button>
+                        <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${page} dari ${totalPages}</span>
+                        <button class="btn btn-secondary" ${(page === totalPages) ? 'disabled' : ''} onclick="window._pbServerPage=(window._pbServerPage||1)+1; loadPembukuanData()">Next ➡️</button>
+                    `;
+
+                    // Summary (subtotal halaman; saldo awal historis tidak dihitung di jalur cepat ini)
+                    const saldoAwal = 0;
+                    const saldoAkhir = saldoAwal + subtotalMasuk - subtotalKeluar;
+                    document.getElementById("pembukuan_saldo_awal").textContent = formatRupiah(saldoAwal);
+                    document.getElementById("pembukuan_total_cash").textContent = formatRupiah(subtotalMasuk);
+                    document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(subtotalKeluar);
+                    document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(saldoAkhir);
+                    summaryEl.style.display = 'grid';
+                }).catch(function(err) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
+                    summaryEl.style.display = 'none';
+                });
+                return;
+            }
+        }
+    } catch(e) {}
+
     function renderPembukuanFromPending(pending) {
         if (!Array.isArray(pending)) pending = [];
 
@@ -2752,7 +3279,9 @@ function loadPembukuanData() {
                     totalKasKeluar += setor;
     
                     let fotoDisplay = '-';
-                    if (kk.foto && kk.foto.data && kk.foto.mimeType) {
+                    if (typeof kk.foto === 'string' && kk.foto.startsWith('http')) {
+                         fotoDisplay = `<img src="${kk.foto}" style="height:40px; border-radius:4px; cursor:pointer;" onclick="showImageModal(this.src)">`;
+                    } else if (kk.foto && kk.foto.data && kk.foto.mimeType) {
                          fotoDisplay = `<img src="data:${kk.foto.mimeType};base64,${kk.foto.data}" style="height:40px; border-radius:4px; cursor:pointer;" onclick="showImageModal(this.src)">`;
                     }
                     rows.push({
@@ -2804,9 +3333,21 @@ function loadPembukuanData() {
         }
     });
 
-    // build HTML using grouped data
-    let html = '';
-    Object.keys(grouped).sort().forEach(date => {
+        // --- [OPTIMASI 1000X] Virtual Pagination untuk Pembukuan Harian ---
+        const sortedDates = Object.keys(grouped).sort();
+        window._pbCurrentPage = 1;
+        const datesPerPage = 7; // Batasi render 7 tanggal per halaman
+        
+        window.renderPembukuanPage = function() {
+            const totalPages = Math.ceil(sortedDates.length / datesPerPage) || 1;
+            if (window._pbCurrentPage > totalPages) window._pbCurrentPage = totalPages;
+            if (window._pbCurrentPage < 1) window._pbCurrentPage = 1;
+            
+            const startIdx = (window._pbCurrentPage - 1) * datesPerPage;
+            const pageDates = sortedDates.slice(startIdx, startIdx + datesPerPage);
+            
+            let html = '';
+            pageDates.forEach(date => {
         const group = grouped[date];
         
         // 1. Render Kas Masuk
@@ -2873,15 +3414,31 @@ function loadPembukuanData() {
             `;
             html += '</tr>';
         });
-    });
-
-    // do not include a global total row; only per-date subtotals are needed
-    tbody.innerHTML = html;
-    document.getElementById("pembukuan_saldo_awal").textContent = formatRupiah(saldoAwal);
-    document.getElementById("pembukuan_total_cash").textContent = formatRupiah(totalCashMasuk);
-    document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(totalKasKeluar);
-    document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(saldoAkhir);
-    summaryEl.style.display = 'grid';
+            });
+            
+            tbody.innerHTML = html;
+            
+            let paginationEl = document.getElementById("pb_pagination");
+            if (!paginationEl) {
+                paginationEl = document.createElement("div");
+                paginationEl.id = "pb_pagination";
+                paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+                tbody.closest('.table-card').appendChild(paginationEl);
+            }
+            paginationEl.innerHTML = `
+                <button class="btn btn-secondary" ${window._pbCurrentPage === 1 ? 'disabled' : ''} onclick="window._pbCurrentPage--; window.renderPembukuanPage()">⬅️ Prev</button>
+                <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${window._pbCurrentPage} dari ${totalPages}</span>
+                <button class="btn btn-secondary" ${window._pbCurrentPage === totalPages ? 'disabled' : ''} onclick="window._pbCurrentPage++; window.renderPembukuanPage()">Next ➡️</button>
+            `;
+            
+            document.getElementById("pembukuan_saldo_awal").textContent = formatRupiah(saldoAwal);
+            document.getElementById("pembukuan_total_cash").textContent = formatRupiah(totalCashMasuk);
+            document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(totalKasKeluar);
+            document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(saldoAkhir);
+            summaryEl.style.display = 'grid';
+        };
+        
+        window.renderPembukuanPage();
     }
 
     if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPembukuan && useFirebaseBackend()) {
@@ -3465,11 +4022,102 @@ function loadInventarisData() {
   const tglAwal = document.getElementById("inv_tanggal_awal").value;
   const tglAkhir = document.getElementById("inv_tanggal_akhir").value;
 
+  // [BARU] Jika mode ServerDB aktif, pakai server-side paging + search (tabel list cepat).
+  try {
+    if (typeof getRbmActiveConfig === 'function') {
+      const cfg = getRbmActiveConfig();
+      if (cfg && cfg.type === 'server') {
+        window._invCurrentPage = window._invCurrentPage || 1;
+        const page = window._invCurrentPage;
+        const limit = 20;
+        const apiUrl = cfg.apiUrl ? cfg.apiUrl : 'http://localhost:3001/db';
+        const baseUrl = apiUrl.replace(/\/db\/?$/, '');
+        const outlet = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || '_default';
+        const searchVal = (document.getElementById('inv_search') && document.getElementById('inv_search').value) || '';
+
+        // inject search UI once
+        if (!document.getElementById('inv_search')) {
+          const wrap = document.querySelector("#lihat-inventaris-view .filter-row") || document.querySelector("#lihat-inventaris-view");
+          if (wrap) {
+            const el = document.createElement('div');
+            el.className = 'filter-group';
+            el.style.marginLeft = '8px';
+            el.innerHTML = `<label>Cari Barang</label><input type="text" id="inv_search" placeholder="Ketik nama barang..." style="padding:6px; border:1px solid #ccc; border-radius:4px;" oninput="window._invCurrentPage=1; loadInventarisData()">`;
+            wrap.appendChild(el);
+          }
+        }
+
+        thead.innerHTML = '<tr><th>No</th><th>Tanggal</th><th>Nama Barang</th><th class="num">Jumlah</th></tr>';
+        const url = `${baseUrl}/api/inventaris?outlet=${encodeURIComponent(outlet)}&from=${encodeURIComponent(tglAwal)}&to=${encodeURIComponent(tglAkhir)}&search=${encodeURIComponent(searchVal)}&page=${encodeURIComponent(page)}&limit=${encodeURIComponent(limit)}`;
+
+        fetch(url).then(r => r.json()).then(function(result) {
+          if (!result || result.error) {
+            tbody.innerHTML = '<tr><td colspan="4" class="table-empty">Gagal memuat dari server.</td></tr>';
+            return;
+          }
+          const data = result.data || [];
+          if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="table-empty">Tidak ada data.</td></tr>';
+          } else {
+            tbody.innerHTML = data.map(function(r, idx) {
+              return `<tr><td>${(idx + 1) + ((page - 1) * limit)}</td><td>${r.tanggal || ''}</td><td>${r.nama || ''}</td><td class="num">${r.jumlah || ''}</td></tr>`;
+            }).join('');
+          }
+          const meta = result.meta || {};
+          const totalPages = meta.totalPages || 1;
+          let paginationEl = document.getElementById("inv_pagination");
+          if (!paginationEl) {
+            paginationEl = document.createElement("div");
+            paginationEl.id = "inv_pagination";
+            paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+            tbody.closest('.table-card').appendChild(paginationEl);
+          }
+          paginationEl.innerHTML = `
+            <button class="btn btn-secondary" ${(page === 1) ? 'disabled' : ''} onclick="window._invCurrentPage=(window._invCurrentPage||1)-1; loadInventarisData()">⬅️ Prev</button>
+            <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${page} dari ${totalPages}</span>
+            <button class="btn btn-secondary" ${(page === totalPages) ? 'disabled' : ''} onclick="window._invCurrentPage=(window._invCurrentPage||1)+1; loadInventarisData()">Next ➡️</button>
+          `;
+        }).catch(function(err) {
+          tbody.innerHTML = '<tr><td colspan="4" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
+        });
+        return;
+      }
+    }
+  } catch(e) {}
+
   // Fungsi untuk merender data menjadi Matrix (Pivot)
   const renderPivot = (data) => {
       if (!data || data.length === 0) {
           thead.innerHTML = '<tr><th>No</th><th>Nama Barang</th><th>Status</th></tr>';
           tbody.innerHTML = '<tr><td colspan="3" class="table-empty">Tidak ada data ditemukan.</td></tr>';
+          return;
+      }
+
+      // [SUPER OPTIMASI] Jika data terlalu besar, jangan buat pivot (matrix bisa jutaan sel -> hang).
+      // Fallback: tampilkan list paginated sederhana.
+      if (data.length > 5000) {
+          thead.innerHTML = '<tr><th>No</th><th>Tanggal</th><th>Nama Barang</th><th class="num">Jumlah</th></tr>';
+          window._invLocalPage = window._invLocalPage || 1;
+          const rowsPerPage = 20;
+          const totalPages = Math.ceil(data.length / rowsPerPage) || 1;
+          if (window._invLocalPage > totalPages) window._invLocalPage = totalPages;
+          const startIdx = (window._invLocalPage - 1) * rowsPerPage;
+          const pageData = data.slice(startIdx, startIdx + rowsPerPage);
+          tbody.innerHTML = pageData.map(function(r, i) {
+              return `<tr><td>${startIdx + i + 1}</td><td>${r.tanggal || ''}</td><td>${r.nama || ''}</td><td class="num">${r.jumlah || ''}</td></tr>`;
+          }).join('');
+          let paginationEl = document.getElementById("inv_pagination");
+          if (!paginationEl) {
+              paginationEl = document.createElement("div");
+              paginationEl.id = "inv_pagination";
+              paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+              tbody.closest('.table-card').appendChild(paginationEl);
+          }
+          paginationEl.innerHTML = `
+              <button class="btn btn-secondary" ${window._invLocalPage === 1 ? 'disabled' : ''} onclick="window._invLocalPage--; loadInventarisData()">⬅️ Prev</button>
+              <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${window._invLocalPage} dari ${totalPages}</span>
+              <button class="btn btn-secondary" ${window._invLocalPage === totalPages ? 'disabled' : ''} onclick="window._invLocalPage++; loadInventarisData()">Next ➡️</button>
+          `;
           return;
       }
 
@@ -3729,6 +4377,10 @@ function switchAbsensiTab(mode) {
     } else if (mode === 'gaji') {
         document.getElementById('tab-content-gaji').style.display = 'block';
         renderRekapGaji();
+        if (typeof loadRiwayatGajiPengajuan === 'function') {
+            // muat riwayat agar owner/manager bisa lihat tanpa reload
+            try { loadRiwayatGajiPengajuan({ reset: true }); } catch(e) {}
+        }
     } else if (mode === 'bonus') {
         document.getElementById('tab-content-bonus').style.display = 'block';
         renderBonusTab();
@@ -3933,7 +4585,9 @@ function updateEmployee(index, field, value) {
     if (employees[index]) {
         employees[index][field] = value;
     }
-    saveAbsensiToFirebase(true); // [AUTO-SAVE] Simpan otomatis saat edit
+    // [NO AUTO-SAVE] perubahan master karyawan harus disimpan manual
+    window._absensiEmployeesDirty = true;
+    markAbsensiEmployeesDirtyUI();
     renderAbsensiTable();
 }
 
@@ -3944,7 +4598,9 @@ function addEmployeeRow() {
     const employees = window._absensiViewEmployees;
     const newId = employees.length > 0 ? Math.max(...employees.map(e => e.id || 0)) + 1 : 1;
     employees.push({ id: newId, name: "Nama Baru", jabatan: "-", email: "", joinDate: "", sisaAL:0, sisaDP:0, sisaPH:0 });
-    saveAbsensiToFirebase(true); // [AUTO-SAVE] Simpan otomatis saat tambah
+    // [NO AUTO-SAVE] harus disimpan manual
+    window._absensiEmployeesDirty = true;
+    markAbsensiEmployeesDirtyUI();
     renderAbsensiTable();
 }
 
@@ -3955,7 +4611,9 @@ function removeEmployee(index) {
             window._absensiViewEmployees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
         }
         window._absensiViewEmployees.splice(index, 1);
-        saveAbsensiToFirebase(true);
+        // [NO AUTO-SAVE] harus disimpan manual
+        window._absensiEmployeesDirty = true;
+        markAbsensiEmployeesDirtyUI();
         renderAbsensiTable();
     });
 }
@@ -3995,14 +4653,65 @@ function saveAbsensiToFirebase(silent) {
         }
     }
     if (msg && !silent) msg.textContent = 'Menyimpan...';
-    var p1 = RBMStorage.setItem(keyEmployees, JSON.stringify(employees));
-    var p2 = RBMStorage.setItem(keyData, JSON.stringify(data));
-    Promise.all([p1, p2]).then(function() {
+    var promises = [];
+    // [PERFORMA] jika karyawan belum diubah, jangan rewrite node karyawan
+    var shouldSaveEmployees = window._absensiEmployeesDirty === true;
+    if (shouldSaveEmployees) {
+        promises.push(RBMStorage.setItem(keyEmployees, JSON.stringify(employees)));
+    }
+    promises.push(RBMStorage.setItem(keyData, JSON.stringify(data)));
+
+    Promise.all(promises).then(function() {
+        window._absensiEmployeesDirty = false;
+        if (msg && !silent) msg.textContent = 'Data tersimpan.';
         showSuccess();
     }).catch(function(err) {
         console.warn('saveAbsensiToFirebase failed', err);
+        // Tampilkan pesan lebih jelas jika ada
+        if (msg && !silent) {
+            msg.textContent = 'Gagal menyimpan: ' + ((err && err.message) ? err.message : 'cek koneksi');
+            msg.style.color = '#dc2626';
+        }
         showError();
     });
+}
+
+// [NEW] Simpan hanya master karyawan (nama, jabatan, joinDate, sisa cuti).
+function saveAbsensiEmployeesToFirebase(silent) {
+    var employees = window._absensiViewEmployees;
+    if (!employees || !Array.isArray(employees)) {
+        if (!silent) alert('Tidak ada data karyawan untuk disimpan.');
+        return;
+    }
+    var keyEmployees = getRbmStorageKey('RBM_EMPLOYEES');
+    var msg = document.getElementById('absensi-save-feedback');
+    if (msg && !silent) msg.textContent = 'Menyimpan karyawan...';
+
+    return RBMStorage.setItem(keyEmployees, JSON.stringify(employees)).then(function() {
+        window._absensiEmployeesDirty = false;
+        if (msg) {
+            msg.textContent = 'Karyawan tersimpan.';
+            msg.style.color = '#16a34a';
+            setTimeout(function() { msg.textContent = ''; }, 2500);
+        } else if (!silent) {
+            alert('Karyawan tersimpan.');
+        }
+    }).catch(function(err) {
+        console.warn('saveAbsensiEmployeesToFirebase failed', err);
+        if (msg) {
+            msg.textContent = 'Gagal menyimpan karyawan: ' + ((err && err.message) ? err.message : 'cek koneksi');
+            msg.style.color = '#dc2626';
+        } else if (!silent) {
+            alert('Gagal menyimpan karyawan.');
+        }
+    });
+}
+
+function markAbsensiEmployeesDirtyUI() {
+    const msg = document.getElementById('absensi-save-feedback');
+    if (!msg) return;
+    msg.textContent = 'Perubahan karyawan belum tersimpan. Klik "Simpan".';
+    msg.style.color = '#f59e0b';
 }
 
 function renderRekapAbsensiReport() {
@@ -4410,6 +5119,250 @@ function saveRekapGajiData() {
     window._rbmParsedCache[getRbmStorageKey('RBM_EMPLOYEES')] = { data: employees };
     window._rbmParsedCache[gajiKey] = { data: gajiData };
     alert('Data Rekap Gaji tersimpan.');
+}
+
+// -----------------------------
+// PENGAJUAN GAJI (Owner & Manager)
+// -----------------------------
+function _getAbsensiGajiPeriod() {
+    const tglAwal = document.getElementById('absensi_tgl_awal') ? document.getElementById('absensi_tgl_awal').value : '';
+    const tglAkhir = document.getElementById('absensi_tgl_akhir') ? document.getElementById('absensi_tgl_akhir').value : '';
+    if (!tglAwal || !tglAkhir) return null;
+    return { tglAwal, tglAkhir, monthKey: String(tglAkhir).slice(0, 7) };
+}
+
+function _getCurrentUser() {
+    try { return JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch(e) { return {}; }
+}
+
+async function submitGajiPengajuan() {
+    try {
+        const period = _getAbsensiGajiPeriod();
+        if (!period) return alert('Pilih periode tanggal terlebih dahulu (Absensi Tanggal Mulai/Selesai).');
+
+        if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.init || !FirebaseStorage.init()) {
+            return alert('Pengajuan Gaji hanya tersedia di mode Online (Firebase).');
+        }
+
+        const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+        const { tglAwal, tglAkhir, monthKey } = period;
+
+        const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+        const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+        const gajiKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
+        const gajiPeriodData = getCachedParsedStorage(gajiKey, {});
+
+        if (!Array.isArray(employees) || employees.length === 0) return alert('Tidak ada data karyawan untuk periode ini.');
+
+        // hitung ringkas per karyawan (untuk total grand request)
+        const end = new Date(tglAkhir);
+        let curr = new Date(tglAwal);
+        const dates = [];
+        while (curr <= end) {
+            dates.push(new Date(curr));
+            curr.setDate(curr.getDate() + 1);
+        }
+
+        let totalGrand = 0;
+        const items = [];
+
+        employees.forEach((emp, idx) => {
+            const empKey = emp.id != null ? emp.id : idx;
+            const pData = gajiPeriodData[empKey] || {};
+
+            const gajiPokok = parseInt(emp.gajiPokok) || 0;
+            const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+            const jamTerlambat = pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : 0;
+            const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
+            const tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : 0;
+            const metodeBayar = pData.metodeBayar || 'TF';
+
+            // uang makan hanya dari jumlah H
+            let jumlahH = 0;
+            dates.forEach(d => {
+                const dateKey = d.toISOString().split('T')[0];
+                const absKey = `${dateKey}_${empKey}`;
+                if (absensiData[absKey] === 'H') jumlahH++;
+            });
+
+            const gajiPerHari = Math.round(gajiPokok / 30);
+            const potTerlambatPerJam = Math.round(gajiPokok / 240);
+            const uangMakan = jumlahH * 10000;
+
+            const totalPotKehadiran = Math.round(potHari * gajiPerHari);
+            const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
+
+            const totalPendapatan = gajiPokok + tunjangan + uangMakan;
+            const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
+
+            items.push({
+                empId: empKey,
+                nama: emp.name || '',
+                jabatan: emp.jabatan || '',
+                grandTotal: grandTotal,
+                metodeBayar: metodeBayar
+            });
+            totalGrand += Number(grandTotal) || 0;
+        });
+
+        const u = _getCurrentUser();
+        const requester = (u && (u.username || u.nama)) ? (u.username || u.nama) : 'unknown';
+        const note = `Pengajuan gaji periode ${tglAwal} s/d ${tglAkhir}`;
+
+        const feedbackEl = document.getElementById('gaji_pengajuan_feedback');
+        if (feedbackEl) {
+            feedbackEl.textContent = 'Mengajukan...';
+            feedbackEl.style.color = '#1d4ed8';
+        }
+
+        const res = await FirebaseStorage.saveGajiPengajuan({
+            outletId: outletId,
+            monthKey: monthKey,
+            periodStart: tglAwal,
+            periodEnd: tglAkhir,
+            requester: requester,
+            totalGrand: totalGrand,
+            note: note
+        }, items);
+
+        if (feedbackEl) {
+            feedbackEl.textContent = 'Sukses mengajukan. ID: ' + (res && res.requestId ? res.requestId : '-');
+            feedbackEl.style.color = '#16a34a';
+        }
+
+        loadRiwayatGajiPengajuan({ reset: true });
+    } catch (e) {
+        console.error(e);
+        const feedbackEl = document.getElementById('gaji_pengajuan_feedback');
+        if (feedbackEl) {
+            feedbackEl.textContent = 'Gagal mengajukan: ' + (e && e.message ? e.message : String(e));
+            feedbackEl.style.color = '#dc2626';
+        } else {
+            alert('Gagal mengajukan: ' + (e && e.message ? e.message : String(e)));
+        }
+    }
+}
+
+async function loadRiwayatGajiPengajuan(opts) {
+    opts = opts || {};
+    const feedbackEl = document.getElementById('gaji_pengajuan_feedback');
+    const tbody = document.getElementById('gaji_pengajuan_tbody');
+    const btnMore = document.getElementById('gaji_pengajuan_load_more_btn');
+    if (!tbody) return;
+
+    const period = _getAbsensiGajiPeriod();
+    if (!period) {
+        tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Pilih periode tanggal dulu.</td></tr>';
+        return;
+    }
+
+    const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+    const { monthKey } = period;
+    const limit = 15;
+
+    if (opts.reset) {
+        window._gajiPengajuanCursorKey = null;
+        tbody.innerHTML = '<tr><td colspan="6" class="table-loading">Memuat riwayat...</td></tr>';
+    }
+
+    if (feedbackEl) {
+        feedbackEl.textContent = opts && opts.loadMore ? 'Memuat lebih lama...' : 'Memuat riwayat...';
+        feedbackEl.style.color = '#64748b';
+    }
+
+    if (btnMore) btnMore.disabled = true;
+
+    try {
+        const cursorKey = window._gajiPengajuanCursorKey || null;
+        const result = await FirebaseStorage.getGajiPengajuanPage(outletId, monthKey, limit, cursorKey);
+        const rows = (result && result.items) ? result.items : [];
+
+        if (opts.reset && rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Belum ada riwayat pengajuan.</td></tr>';
+        } else {
+            const html = rows.map(r => {
+                const d = r.createdAt ? new Date(r.createdAt) : null;
+                const tgl = d ? d.toLocaleDateString('id-ID') : '-';
+                const statusOwner = r.statusOwner || '-';
+                const statusManager = r.statusManager || '-';
+                const canApproveOwner = (function() {
+                    const u = _getCurrentUser();
+                    return u && String(u.role || '').toLowerCase() === 'owner' && statusOwner !== 'approved';
+                })();
+                const canApproveManager = (function() {
+                    const u = _getCurrentUser();
+                    return u && String(u.role || '').toLowerCase() === 'manager' && statusManager !== 'approved';
+                })();
+
+                const approveBtns = [];
+                if (canApproveOwner) approveBtns.push(`<button class="btn btn-secondary" style="padding:5px 8px; margin-right:6px;" onclick="approveGajiPengajuan('${r.requestId}','owner')">Setujui Owner</button>`);
+                if (canApproveManager) approveBtns.push(`<button class="btn btn-secondary" style="padding:5px 8px;" onclick="approveGajiPengajuan('${r.requestId}','manager')">Setujui Manager</button>`);
+
+                return `
+                  <tr>
+                    <td>${tgl}</td>
+                    <td>${r.periodStart || '-'} s/d ${r.periodEnd || '-'}</td>
+                    <td style="text-align:right; font-weight:600;">${formatRupiah(r.totalGrand || 0)}</td>
+                    <td>${statusOwner}</td>
+                    <td>${statusManager}</td>
+                    <td>${approveBtns.length ? approveBtns.join('') : '-'}</td>
+                  </tr>
+                `;
+            }).join('');
+
+            if (opts.reset) tbody.innerHTML = html;
+            else tbody.insertAdjacentHTML('beforeend', html);
+        }
+
+        // set cursor for pagination older
+        if (result && result.nextCursorKey) {
+            window._gajiPengajuanCursorKey = result.nextCursorKey;
+        }
+        // Hide "Muat Lebih Lama" kalau ternyata tidak ada data tambahan.
+        if (btnMore) {
+            var hasMore = !!(result && result.hasMore);
+            btnMore.disabled = !hasMore;
+            btnMore.style.display = hasMore ? '' : 'none';
+        }
+
+        if (feedbackEl) {
+            feedbackEl.textContent = 'Selesai.';
+            feedbackEl.style.color = '#16a34a';
+        }
+    } catch (e) {
+        console.error(e);
+        if (feedbackEl) {
+            feedbackEl.textContent = 'Gagal memuat riwayat: ' + (e && e.message ? e.message : String(e));
+            feedbackEl.style.color = '#dc2626';
+        }
+        if (btnMore) {
+            btnMore.disabled = true;
+            btnMore.style.display = 'none';
+        }
+    }
+}
+
+async function approveGajiPengajuan(requestId, role) {
+    try {
+        const period = _getAbsensiGajiPeriod();
+        if (!period) return alert('Pilih periode dulu.');
+        const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+        const monthKey = period.monthKey;
+        if (!requestId) return;
+
+        const feedbackEl = document.getElementById('gaji_pengajuan_feedback');
+        if (feedbackEl) { feedbackEl.textContent = 'Memproses approval...'; feedbackEl.style.color = '#1d4ed8'; }
+
+        await FirebaseStorage.setGajiPengajuanApproval(outletId, monthKey, requestId, role);
+
+        if (feedbackEl) { feedbackEl.textContent = 'Approval berhasil.'; feedbackEl.style.color = '#16a34a'; }
+        loadRiwayatGajiPengajuan({ reset: true });
+    } catch (e) {
+        console.error(e);
+        const feedbackEl = document.getElementById('gaji_pengajuan_feedback');
+        if (feedbackEl) { feedbackEl.textContent = 'Gagal approval: ' + (e && e.message ? e.message : String(e)); feedbackEl.style.color = '#dc2626'; }
+        else alert('Gagal approval: ' + (e && e.message ? e.message : String(e)));
+    }
 }
 
 function updateEmpGaji(idx, field, val) {
@@ -5928,7 +6881,7 @@ function processStokUpdates(updates) {
                 const detailKey = getRbmStorageKey('RBM_STOK_RUSAK_DETAIL');
                 let details = getCachedParsedStorage(detailKey, {});
                 const detailId = `${u.id}_${u.date}`;
-                const fotoDataUrl = u.foto && u.foto.data ? `data:${u.foto.mimeType || 'image/jpeg'};base64,${u.foto.data}` : null;
+            const fotoDataUrl = (typeof u.foto === 'string' && u.foto.startsWith('http')) ? u.foto : (u.foto && u.foto.data ? `data:${u.foto.mimeType || 'image/jpeg'};base64,${u.foto.data}` : null);
                 details[detailId] = { keterangan: u.keterangan || '', foto: fotoDataUrl };
                 RBMStorage.setItem(detailKey, JSON.stringify(details));
                 window._rbmParsedCache[detailKey] = { data: details };
@@ -6030,12 +6983,112 @@ function renderStokTable() {
 
     const [year, month] = monthVal.split('-');
     const daysInMonth = new Date(year, month, 0).getDate();
-    const items = activeStokTab === 'sales' ? getStokItemsForSalesTab() : getStokItems(activeStokTab);
+    let items = activeStokTab === 'sales' ? getStokItemsForSalesTab() : getStokItems(activeStokTab);
     const stokKey = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
     const stokData = getCachedParsedStorage(stokKey, {});
 
     const thead = document.getElementById("stok_thead");
     const tbody = document.getElementById("stok_tbody");
+
+    // [PERFORMA] Tabel stok itu matrix besar (hari x item). Supaya tidak hang:
+    // - render hanya range hari (default 7 hari)
+    // - pagination item (default 20 item)
+    // - search item
+    window._stokDayStart = window._stokDayStart || 1;
+    window._stokDaysPerPage = window._stokDaysPerPage || 7;
+    window._stokItemPage = window._stokItemPage || 1;
+    window._stokItemLimit = window._stokItemLimit || 20;
+    const dayStart = Math.max(1, Math.min(daysInMonth, parseInt(window._stokDayStart, 10) || 1));
+    const daysPerPage = Math.max(3, Math.min(15, parseInt(window._stokDaysPerPage, 10) || 7));
+    const dayEnd = Math.min(daysInMonth, dayStart + daysPerPage - 1);
+
+    // Inject controls once
+    try {
+        if (!document.getElementById('stok_perf_controls')) {
+            const wrap = document.querySelector("#stok-barang-view .filter-row") || document.querySelector("#stok-barang-view");
+            if (wrap) {
+                const el = document.createElement('div');
+                el.id = 'stok_perf_controls';
+                el.className = 'filter-row';
+                el.style.cssText = 'display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-top:10px;';
+                el.innerHTML = `
+                    <div class="filter-group">
+                        <label>Cari Item</label>
+                        <input type="text" id="stok_search" placeholder="Ketik nama..." style="padding:6px; border:1px solid #ccc; border-radius:4px;" />
+                    </div>
+                    <div class="filter-group">
+                        <label>Item / halaman</label>
+                        <select id="stok_item_limit" style="padding:6px; border:1px solid #ccc; border-radius:4px;">
+                            <option value="10">10</option>
+                            <option value="20" selected>20</option>
+                            <option value="30">30</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Hari / tampilan</label>
+                        <select id="stok_days_per_page" style="padding:6px; border:1px solid #ccc; border-radius:4px;">
+                            <option value="7" selected>7 hari</option>
+                            <option value="10">10 hari</option>
+                            <option value="15">15 hari</option>
+                        </select>
+                    </div>
+                    <div class="filter-group" style="min-width:220px;">
+                        <label>Range Hari</label>
+                        <div style="display:flex; gap:6px; align-items:center;">
+                            <button class="btn btn-secondary" type="button" onclick="window._stokDayStart=Math.max(1,(window._stokDayStart||1)- (window._stokDaysPerPage||7)); renderStokTable()">⬅️</button>
+                            <span id="stok_day_range" style="font-weight:bold; color:#1e40af;">${dayStart}-${dayEnd}</span>
+                            <button class="btn btn-secondary" type="button" onclick="window._stokDayStart=Math.min(${daysInMonth},(window._stokDayStart||1)+ (window._stokDaysPerPage||7)); renderStokTable()">➡️</button>
+                        </div>
+                    </div>
+                    <div class="filter-group" style="min-width:220px;">
+                        <label>Halaman Item</label>
+                        <div style="display:flex; gap:6px; align-items:center;">
+                            <button class="btn btn-secondary" type="button" onclick="window._stokItemPage=Math.max(1,(window._stokItemPage||1)-1); renderStokTable()">⬅️</button>
+                            <span id="stok_item_page_label" style="font-weight:bold; color:#1e40af;">1</span>
+                            <button class="btn btn-secondary" type="button" onclick="window._stokItemPage=(window._stokItemPage||1)+1; renderStokTable()">➡️</button>
+                        </div>
+                    </div>
+                `;
+                wrap.appendChild(el);
+
+                const searchEl = el.querySelector('#stok_search');
+                const itemLimitEl = el.querySelector('#stok_item_limit');
+                const daysLimitEl = el.querySelector('#stok_days_per_page');
+                if (searchEl) {
+                    searchEl.addEventListener('input', function() { window._stokItemPage = 1; renderStokTable(); });
+                }
+                if (itemLimitEl) {
+                    itemLimitEl.addEventListener('change', function() { window._stokItemLimit = parseInt(itemLimitEl.value, 10) || 20; window._stokItemPage = 1; renderStokTable(); });
+                }
+                if (daysLimitEl) {
+                    daysLimitEl.addEventListener('change', function() {
+                        window._stokDaysPerPage = parseInt(daysLimitEl.value, 10) || 7;
+                        window._stokDayStart = 1;
+                        renderStokTable();
+                    });
+                }
+            }
+        } else {
+            const rangeLabel = document.getElementById('stok_day_range');
+            if (rangeLabel) rangeLabel.textContent = `${dayStart}-${dayEnd}`;
+            const itemLimitEl = document.getElementById('stok_item_limit');
+            if (itemLimitEl && String(itemLimitEl.value) !== String(window._stokItemLimit)) itemLimitEl.value = String(window._stokItemLimit);
+            const daysLimitEl = document.getElementById('stok_days_per_page');
+            if (daysLimitEl && String(daysLimitEl.value) !== String(window._stokDaysPerPage)) daysLimitEl.value = String(window._stokDaysPerPage);
+        }
+    } catch(e) {}
+
+    // Filter + pagination items
+    const searchVal = (document.getElementById('stok_search') && document.getElementById('stok_search').value || '').toString().trim().toLowerCase();
+    if (searchVal) items = items.filter(it => (it && it.name ? it.name.toLowerCase() : '').includes(searchVal));
+    const itemLimit = Math.max(5, Math.min(50, parseInt(window._stokItemLimit, 10) || 20));
+    const totalItemPages = Math.max(1, Math.ceil(items.length / itemLimit));
+    if (window._stokItemPage > totalItemPages) window._stokItemPage = totalItemPages;
+    if (window._stokItemPage < 1) window._stokItemPage = 1;
+    const itemStartIdx = (window._stokItemPage - 1) * itemLimit;
+    const itemsPage = items.slice(itemStartIdx, itemStartIdx + itemLimit);
+    const pageLabel = document.getElementById('stok_item_page_label');
+    if (pageLabel) pageLabel.textContent = `Hal ${window._stokItemPage}/${totalItemPages} (${items.length} item)`;
 
     // --- BUILD HEADER ---
     let hRow1 = `<tr>
@@ -6060,7 +7113,7 @@ function renderStokTable() {
         colLabels = ['In', 'Out', 'Rusak', 'Total'];
     }
 
-    for (let d = 1; d <= daysInMonth; d++) {
+    for (let d = dayStart; d <= dayEnd; d++) {
         hRow1 += `<th colspan="${colsPerDay}">${d}</th>`;
         colLabels.forEach(lbl => hRow2 += `<th>${lbl}</th>`);
     }
@@ -6074,7 +7127,7 @@ function renderStokTable() {
     // --- BUILD BODY ---
     const prevMonth = getPreviousMonth(monthVal);
     let bodyHtml = '';
-    items.forEach(item => {
+    itemsPage.forEach(item => {
         // Stok awal: jika kosong, ambil dari SO Akhir bulan lalu (rollover otomatis)
         let awalVal = getStokValue(stokData, item.id, 'awal', monthVal);
         if (awalVal === '' || awalVal === undefined || awalVal === null) {
@@ -6110,6 +7163,7 @@ function renderStokTable() {
             let valIn = parseFloat(getStokValue(stokData, item.id, `in_${dateKey}`)) || 0;
             const valRusak = parseFloat(getStokValue(stokData, item.id, `rusak_${dateKey}`)) || 0;
             let valOut = 0;
+            const shouldRender = (d >= dayStart && d <= dayEnd);
             
             if (activeStokTab === 'sales') {
                 // Logic: In comes from Input Barang. 
@@ -6151,13 +7205,15 @@ function renderStokTable() {
                 const rusakCell = valRusak > 0
                     ? `<td style="cursor:pointer; background:#fef3c7; font-weight:bold; padding:6px; text-align:center;" onclick="showRusakDetailModal('${item.id}','${dateKey}','${(item.name||'').replace(/'/g,"\\'")}')" title="Klik untuk lihat keterangan dan foto">${valRusak}</td>`
                     : `<td><input type="number" class="stok-input" value="${valRusak || ''}" readonly style="background:#d1d5db; font-weight:bold;"></td>`;
-                rowHtml += `
-                    <td><input type="number" class="stok-input" value="${valIn || ''}" ${inStyle} onchange=""></td>
-                    <td><input type="number" class="stok-input" id="outpck_${item.id}_${dateKey}" value="${outEffective || ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
-                    <td><input type="number" class="stok-input" id="outpor_${item.id}_${dateKey}" value="${valOutPor || ''}" readonly style="background:#e5e7eb;"></td>
-                    ${rusakCell}
-                    <td><input type="number" class="stok-input" id="total_${item.id}_${dateKey}" value="${(valTotalClamped === 0 || valTotalClamped) ? valTotalClamped : ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
-                `;
+                if (shouldRender) {
+                    rowHtml += `
+                        <td><input type="number" class="stok-input" value="${valIn || ''}" ${inStyle} onchange=""></td>
+                        <td><input type="number" class="stok-input" id="outpck_${item.id}_${dateKey}" value="${outEffective || ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
+                        <td><input type="number" class="stok-input" id="outpor_${item.id}_${dateKey}" value="${valOutPor || ''}" readonly style="background:#e5e7eb;"></td>
+                        ${rusakCell}
+                        <td><input type="number" class="stok-input" id="total_${item.id}_${dateKey}" value="${(valTotalClamped === 0 || valTotalClamped) ? valTotalClamped : ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
+                    `;
+                }
             } else if (activeStokTab === 'fruits') {
                 const valOut = parseFloat(getStokValue(stokData, item.id, `out_${dateKey}`)) || 0;
                 const valFin = getStokValue(stokData, item.id, `fin_${dateKey}`);
@@ -6171,14 +7227,16 @@ function renderStokTable() {
                 const rusakCellF = valRusak > 0
                     ? `<td style="cursor:pointer; background:#fef3c7; font-weight:bold; padding:6px; text-align:center;" onclick="showRusakDetailModal('${item.id}','${dateKey}','${(item.name||'').replace(/'/g,"\\'")}')" title="Klik untuk lihat keterangan dan foto">${valRusak}</td>`
                     : `<td><input type="number" class="stok-input" value="${valRusak || ''}" readonly style="background:#d1d5db; font-weight:bold;"></td>`;
-                rowHtml += `
-                    <td><input type="number" class="stok-input" value="${valIn || ''}" readonly style="background:#d1d5db; font-weight:bold;"></td>
-                    <td><input type="number" class="stok-input" value="${valOut || ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
-                    <td><input type="number" class="stok-input" value="${valFin || ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
-                    <td><input type="number" class="stok-input" id="waste_${item.id}_${dateKey}" value="${valWaste}" readonly style="background:#e5e7eb; font-weight:bold;"></td>
-                    ${rusakCellF}
-                    <td><input type="number" class="stok-input total-stok-${item.id}" id="total_${item.id}_${dateKey}" value="${(currentStock === 0 || currentStock) ? currentStock : ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
-                `;
+                if (shouldRender) {
+                    rowHtml += `
+                        <td><input type="number" class="stok-input" value="${valIn || ''}" readonly style="background:#d1d5db; font-weight:bold;"></td>
+                        <td><input type="number" class="stok-input" value="${valOut || ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
+                        <td><input type="number" class="stok-input" value="${valFin || ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
+                        <td><input type="number" class="stok-input" id="waste_${item.id}_${dateKey}" value="${valWaste}" readonly style="background:#e5e7eb; font-weight:bold;"></td>
+                        ${rusakCellF}
+                        <td><input type="number" class="stok-input total-stok-${item.id}" id="total_${item.id}_${dateKey}" value="${(currentStock === 0 || currentStock) ? currentStock : ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
+                    `;
+                }
             } else {
                 const valOut = parseFloat(getStokValue(stokData, item.id, `out_${dateKey}`)) || 0;
                 
@@ -6190,12 +7248,14 @@ function renderStokTable() {
                 const rusakCellN = valRusak > 0
                     ? `<td style="cursor:pointer; background:#fef3c7; font-weight:bold; padding:6px; text-align:center;" onclick="showRusakDetailModal('${item.id}','${dateKey}','${(item.name||'').replace(/'/g,"\\'")}')" title="Klik untuk lihat keterangan dan foto">${valRusak}</td>`
                     : `<td><input type="number" class="stok-input" value="${valRusak || ''}" readonly style="background:#d1d5db; font-weight:bold;"></td>`;
-                rowHtml += `
-                    <td><input type="number" class="stok-input" value="${valIn || ''}" readonly style="background:#d1d5db; font-weight:bold;"></td>
-                    <td><input type="number" class="stok-input" value="${valOut || ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
-                    ${rusakCellN}
-                    <td><input type="number" class="stok-input total-stok-${item.id}" id="total_${item.id}_${dateKey}" value="${(currentStock === 0 || currentStock) ? currentStock : ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
-                `;
+                if (shouldRender) {
+                    rowHtml += `
+                        <td><input type="number" class="stok-input" value="${valIn || ''}" readonly style="background:#d1d5db; font-weight:bold;"></td>
+                        <td><input type="number" class="stok-input" value="${valOut || ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
+                        ${rusakCellN}
+                        <td><input type="number" class="stok-input total-stok-${item.id}" id="total_${item.id}_${dateKey}" value="${(currentStock === 0 || currentStock) ? currentStock : ''}" readonly style="background:#bfdbfe; font-weight:bold;"></td>
+                    `;
+                }
             }
         }
 
@@ -7635,7 +8695,7 @@ function loadRekapAbsensiGPS() {
         toggleBtn.style.opacity = showEmpty ? '1' : '0.7';
     }
 
-    // Ambil Data
+    // Ambil Data (foto sudah di-strip saat loadFromFirebase untuk mencegah hang)
     const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
@@ -7651,24 +8711,23 @@ function loadRekapAbsensiGPS() {
         curr.setDate(curr.getDate() + 1);
     }
 
-    // Grouping: Inisialisasi slot untuk SEMUA karyawan di SEMUA tanggal
+    // --- [SUPER OPTIMASI] Jangan buat matrix (tanggal x karyawan) untuk semua periode.
+    // Paginate berdasarkan TANGGAL (mis. 3 hari per halaman), baru generate rows untuk halaman itu.
+    window._rekapGpsPage = window._rekapGpsPage || 1;
+    const daysPerPage = 3;
+    const totalPages = Math.ceil(dates.length / daysPerPage) || 1;
+    if (window._rekapGpsPage > totalPages) window._rekapGpsPage = totalPages;
+    if (window._rekapGpsPage < 1) window._rekapGpsPage = 1;
+    const pageStart = (window._rekapGpsPage - 1) * daysPerPage;
+    const pageDates = dates.slice(pageStart, pageStart + daysPerPage);
+
     const grouped = {};
-    dates.forEach(d => {
-        employees.forEach(emp => {
-            const key = `${d}_${emp.name}`;
-            grouped[key] = { date: d, name: emp.name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: false };
-        });
-    });
-
-    // Isi dengan data Log yang ada
+    // Isi hanya untuk tanggal di halaman ini
     filtered.forEach(log => {
+        if (pageDates.indexOf(log.date) < 0) return;
         const key = `${log.date}_${log.name}`;
-        // Jika ada log dari nama yg tidak ada di master karyawan, tetap buat entry
-        if (!grouped[key]) {
-            grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: true };
-        }
+        if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: true };
         grouped[key].hasLog = true;
-
         if (log.type === 'Masuk' && !grouped[key].masuk) grouped[key].masuk = log;
         else if (log.type === 'Pulang') grouped[key].pulang = log;
         else if (log.type === 'Istirahat Keluar') grouped[key].breakOuts.push(log);
@@ -7677,23 +8736,41 @@ function loadRekapAbsensiGPS() {
 
     const canDelete = window.rbmOnlyOwnerCanEditDelete && (window.rbmOnlyOwnerCanEditDelete() || (JSON.parse(localStorage.getItem('rbm_user')||'{}').username||'').toLowerCase() === 'burhan');
 
-    // Filter & Sort Keys
-    let keys = Object.keys(grouped);
-    if (filterNama) keys = keys.filter(k => grouped[k].name === filterNama);
-    
+    // Build keys untuk halaman ini: kalau showEmpty, buat semua (tanggal x karyawan) untuk pageDates saja.
+    let keys = [];
+    if (showEmpty) {
+        pageDates.forEach(function(d) {
+            employees.forEach(function(emp) {
+                const name = emp && emp.name ? emp.name : '';
+                if (!name) return;
+                const key = `${d}_${name}`;
+                if (!grouped[key]) grouped[key] = { date: d, name: name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: false };
+                keys.push(key);
+            });
+        });
+    } else {
+        keys = Object.keys(grouped);
+    }
+
+    if (filterNama) keys = keys.filter(k => grouped[k] && grouped[k].name === filterNama);
     keys.sort((a, b) => {
-        if (grouped[a].date !== grouped[b].date) return grouped[b].date.localeCompare(grouped[a].date); // Tanggal Desc
-        return grouped[a].name.localeCompare(grouped[b].name); // Nama Asc
+        if (grouped[a].date !== grouped[b].date) return grouped[b].date.localeCompare(grouped[a].date);
+        return grouped[a].name.localeCompare(grouped[b].name);
     });
 
     if (keys.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data karyawan/absensi.</td></tr>';
-        return;
-    }
+        tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data pada halaman ini.</td></tr>';
+    } else {
+
+    // --- [OPTIMASI 1000X] Hash Map O(1) untuk Bypass Loop Bersarang Array.find ---
+    const empMap = {};
+    employees.forEach(e => {
+        empMap[e.name] = e;
+    });
 
     function isTelat(date, name, masukLog) {
         if (!masukLog || !masukLog.time) return false;
-        const emp = employees.find(e => e.name === name);
+        const emp = empMap[name];
         const empId = emp ? (emp.id != null ? emp.id : employees.indexOf(emp)) : null;
         if (empId === null) return false;
         const jadwalKey = `${date}_${empId}`;
@@ -7705,7 +8782,7 @@ function loadRekapAbsensiGPS() {
         return menitMasuk > menitBatas;
     }
     function hasTelatAtauPulangCepat(item, date, name) {
-        const d = getDetailTelatUntukRekap(date, name, item, employees, jadwalData);
+        const d = getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMap);
         return d.totalMenit > 0;
     }
 
@@ -7740,9 +8817,9 @@ function loadRekapAbsensiGPS() {
         const renderCell = (logOrArray) => {
             const renderSingleLog = (log) => {
                 if (!log || log.id == null) return '<span>-</span>';
-                const photoEsc = (log.photo || '').replace(/'/g, "\\'");
                 const captionEsc = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                const timeHtml = `<span style="cursor:pointer; color:blue; text-decoration:underline;" onclick="showImageModal('${photoEsc}', '${captionEsc}')">${log.time}</span>`;
+                // Foto di-strip untuk performa. Jika suatu saat mau foto on-demand, endpoint/fetch bisa ditambahkan.
+                const timeHtml = `<span title="${captionEsc.replace(/&quot;/g,'"')}" style="color:#0f172a;">${log.time}</span>`;
                 const deleteHtml = canDelete ? ` <span style="cursor:pointer; color:#dc3545; font-size:14px; vertical-align:middle; margin-left:4px;" onclick="deleteSingleGpsLog(${log.id})" title="Hapus absensi ini">&#x2715;</span>` : '';
                 return `<div style="white-space:nowrap; display:flex; align-items:center; justify-content:flex-start;">${timeHtml}${deleteHtml}</div>`;
             };
@@ -7751,7 +8828,7 @@ function loadRekapAbsensiGPS() {
             return renderSingleLog(logOrArray);
         };
         const telat = isTelat(item.date, item.name, item.masuk);
-        const detailTelat = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData);
+        const detailTelat = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData, empMap);
         const punyaTelatPulangCepat = detailTelat.totalMenit > 0;
         const lupaAbsen = getLupaAbsen(item);
         const lupaMasuk = !item.masuk;
@@ -7761,27 +8838,7 @@ function loadRekapAbsensiGPS() {
         const detailTelatEsc = JSON.stringify({ lines: detailTelat.lines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const telatHtml = (telat || punyaTelatPulangCepat) ? '<span style="color:#b91c1c; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailTelatModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', \'' + detailTelatEsc + '\')">Ya</span>' : '-';
         const lupaHtml = lupaAbsen !== '-' ? '<span style="color:#b45309; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailLupaModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', ' + lupaMasuk + ', ' + lupaPulang + ', ' + lupaBreakOut + ', ' + lupaBreakIn + ')">' + lupaAbsen + '</span>' : '-';
-        let photosHtml = '';
-        if (item.masuk) {
-            const capMasuk = buildGpsLogCaption(item.masuk).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            photosHtml += `<img src="${item.masuk.photo}" style="height:30px; margin:1px; cursor:pointer;" onclick="showImageModal(this.src, '${capMasuk}')" title="Masuk">`;
-        }
-        if (item.breakOuts.length > 0) {
-            item.breakOuts.forEach(log => {
-                const cap = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                photosHtml += `<img src="${log.photo}" style="height:30px; margin:1px; cursor:pointer;" onclick="showImageModal(this.src, '${cap}')" title="Istirahat Keluar">`;
-            });
-        }
-        if (item.breakIns.length > 0) {
-            item.breakIns.forEach(log => {
-                const cap = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                photosHtml += `<img src="${log.photo}" style="height:30px; margin:1px; cursor:pointer;" onclick="showImageModal(this.src, '${cap}')" title="Istirahat Kembali">`;
-            });
-        }
-        if (item.pulang) {
-            const capPulang = buildGpsLogCaption(item.pulang).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            photosHtml += `<img src="${item.pulang.photo}" style="height:30px; margin:1px; cursor:pointer;" onclick="showImageModal(this.src, '${capPulang}')" title="Pulang">`;
-        }
+        const photosHtml = '-'; // Foto dihapus dari list untuk performa (data bisa 1.000.000+)
         const breakStats = getBreakStats(filtered, item.name, item.date);
         const totalIstirahat = breakStats.total > 0 ? breakStats.total + ' menit' : '-';
         html += `<tr${telat || punyaTelatPulangCepat || lupaAbsen !== '-' ? ' style="background:#fef2f2;"' : ''}>
@@ -7798,6 +8855,22 @@ function loadRekapAbsensiGPS() {
         </tr>`;
     });
     tbody.innerHTML = html;
+    }
+
+    // Pagination UI (berdasarkan halaman tanggal)
+    let paginationEl = document.getElementById('rekap_gps_pagination');
+    if (!paginationEl) {
+        paginationEl = document.createElement('div');
+        paginationEl.id = 'rekap_gps_pagination';
+        paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+        const tableCard = tbody.closest('.table-card') || tbody.parentElement;
+        if (tableCard) tableCard.appendChild(paginationEl);
+    }
+    paginationEl.innerHTML = `
+        <button class="btn btn-secondary" ${window._rekapGpsPage === 1 ? 'disabled' : ''} onclick="window._rekapGpsPage--; loadRekapAbsensiGPS()">⬅️ Prev</button>
+        <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${window._rekapGpsPage} dari ${totalPages} (per ${daysPerPage} hari)</span>
+        <button class="btn btn-secondary" ${window._rekapGpsPage === totalPages ? 'disabled' : ''} onclick="window._rekapGpsPage++; loadRekapAbsensiGPS()">Next ➡️</button>
+    `;
     const legend = document.getElementById('rekap_gps_legend');
     if (legend) legend.style.display = 'block';
 }
@@ -7891,6 +8964,9 @@ function getRekapAbsensiGpsDataForExport() {
     if (filterNama) filtered = filtered.filter(l => l.name === filterNama);
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
+    const empMap = {};
+    employees.forEach(e => empMap[e.name] = e);
+
     const grouped = {};
     filtered.forEach(log => {
         const key = `${log.date}_${log.name}`;
@@ -7904,7 +8980,7 @@ function getRekapAbsensiGpsDataForExport() {
     const rows = [];
     keys.forEach(k => {
         const item = grouped[k];
-        const telatDetail = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData);
+        const telatDetail = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData, empMap);
         const telat = telatDetail.totalMenit > 0 ? 'Ya (' + telatDetail.totalMenit + ' menit)' : '-';
         let lupa = [];
         if (!item.masuk) lupa.push('Masuk');
@@ -8045,8 +9121,8 @@ function parseTimeToMinutes(timeStr) {
     return h * 60 + m;
 }
 
-function getDetailTelatUntukRekap(date, name, item, employees, jadwalData) {
-    const emp = employees.find(e => e.name === name);
+function getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMap) {
+    const emp = empMap ? empMap[name] : employees.find(e => e.name === name);
     const empId = emp ? (emp.id != null ? emp.id : employees.indexOf(emp)) : null;
     if (empId === null) return { totalMenit: 0, lines: [], jamUntukGaji: 0 };
     const jadwalKey = `${date}_${empId}`;
@@ -8118,6 +9194,10 @@ function closeGpsDetailModal() {
 function getTotalMenitTelatFromGps(empId, empName, tglAwal, tglAkhir) {
     const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
     const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
+    const empMap = {};
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    employees.forEach(e => empMap[e.name] = e);
+    
     const byDate = {};
     logs.forEach(log => {
         if (log.name !== empName) return;
@@ -8130,7 +9210,7 @@ function getTotalMenitTelatFromGps(empId, empName, tglAwal, tglAkhir) {
     let totalMenit = 0;
     Object.keys(byDate).forEach(date => {
         const item = byDate[date];
-        const d = getDetailTelatUntukRekap(date, empName, item, [{ id: empId, name: empName }], jadwalData);
+        const d = getDetailTelatUntukRekap(date, empName, item, employees, jadwalData, empMap);
         totalMenit += d.totalMenit;
     });
     return totalMenit;
@@ -8600,6 +9680,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof createPembukuanRows !== 'undefined') window.createPembukuanRows = createPembukuanRows;
   if (typeof saveAbsensiData !== 'undefined') window.saveAbsensiData = saveAbsensiData;
   if (typeof saveAbsensiToFirebase !== 'undefined') window.saveAbsensiToFirebase = saveAbsensiToFirebase;
+  if (typeof saveAbsensiEmployeesToFirebase !== 'undefined') window.saveAbsensiEmployeesToFirebase = saveAbsensiEmployeesToFirebase;
   if (typeof updateEmployee !== 'undefined') window.updateEmployee = updateEmployee;
   if (typeof addEmployeeRow !== 'undefined') window.addEmployeeRow = addEmployeeRow;
   if (typeof removeEmployee !== 'undefined') window.removeEmployee = removeEmployee;
@@ -8617,6 +9698,9 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof printRekapAbsensiArea !== 'undefined') window.printRekapAbsensiArea = printRekapAbsensiArea;
   if (typeof printRekapGaji !== 'undefined') window.printRekapGaji = printRekapGaji;
   if (typeof saveRekapGajiData !== 'undefined') window.saveRekapGajiData = saveRekapGajiData;
+  if (typeof submitGajiPengajuan !== 'undefined') window.submitGajiPengajuan = submitGajiPengajuan;
+  if (typeof loadRiwayatGajiPengajuan !== 'undefined') window.loadRiwayatGajiPengajuan = loadRiwayatGajiPengajuan;
+  if (typeof approveGajiPengajuan !== 'undefined') window.approveGajiPengajuan = approveGajiPengajuan;
   if (typeof downloadAllSlipsAsZip !== 'undefined') window.downloadAllSlipsAsZip = downloadAllSlipsAsZip;
   if (typeof submitReservasi !== 'undefined') window.submitReservasi = submitReservasi;
   if (typeof loadReservasiData !== 'undefined') window.loadReservasiData = loadReservasiData;
