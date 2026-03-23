@@ -10047,8 +10047,13 @@ function loadMyGpsHistory() {
     if (!name) { alert("Pilih nama karyawan terlebih dahulu!"); return; }
     
     const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
-    // Filter by name and sort descending
-    const myLogs = logs.filter(l => l.name === name).sort((a, b) => {
+    
+    // Dapatkan tanggal hari ini dengan format YYYY-MM-DD
+    const now = new Date();
+    const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+
+    // Filter hanya berdasarkan nama DAN tanggal hari ini saja, lalu urutkan menurun (terbaru di atas)
+    const myLogs = logs.filter(l => l.name === name && l.date === today).sort((a, b) => {
         const ta = a.timestamp || (a.date + 'T' + a.time);
         const tb = b.timestamp || (b.date + 'T' + b.time);
         return tb.localeCompare(ta);
@@ -10058,12 +10063,12 @@ function loadMyGpsHistory() {
     if (!listContainer) return;
     
     if (myLogs.length === 0) {
-        listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">Belum ada riwayat absensi untuk ' + name + '.</div>';
+        listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">Belum ada riwayat absensi untuk ' + name + ' pada hari ini.</div>';
     } else {
         let html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
         html += '<thead style="background:#f8fafc; color:#64748b;"><tr><th style="padding:10px; text-align:left; border-bottom:1px solid #e2e8f0;">Tanggal</th><th style="padding:10px; text-align:left; border-bottom:1px solid #e2e8f0;">Jam</th><th style="padding:10px; text-align:left; border-bottom:1px solid #e2e8f0;">Status</th></tr></thead><tbody>';
         
-        myLogs.slice(0, 50).forEach(log => {
+        myLogs.forEach(log => {
             let color = '#334155';
             let bg = 'transparent';
             if (log.type === 'Masuk') { color = '#15803d'; bg = '#f0fdf4'; }
@@ -10073,9 +10078,24 @@ function loadMyGpsHistory() {
             html += `<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:10px; color:#334155;">${log.date}</td><td style="padding:10px; color:#334155;">${log.time}</td><td style="padding:10px;"><span style="color:${color}; background:${bg}; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600;">${log.type}</span></td></tr>`;
         });
         html += '</tbody></table>';
-        if (myLogs.length > 50) {
-            html += '<div style="text-align:center; padding:10px; font-size:11px; color:#94a3b8;">Menampilkan 50 data terakhir</div>';
+
+        // Hitung akumulasi total istirahat hari ini
+        const ascendingLogs = [...myLogs].reverse(); // Kembalikan ke urutan kronologis untuk hitungan
+        const stats = getBreakStats(ascendingLogs, name, today);
+        let totalBreak = stats.total;
+        let isOngoing = false;
+        if (stats.lastOut !== null) {
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+            let currentDur = currentMinutes - stats.lastOut;
+            if (currentDur < 0) currentDur += 24 * 60;
+            totalBreak += currentDur;
+            isOngoing = true;
         }
+
+        if (totalBreak > 0 || isOngoing) {
+            html += `<div style="margin-top:15px; padding:12px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; text-align:center; color:#b45309; font-size:13px; font-weight:600;">☕ Total Istirahat Hari Ini: ${totalBreak} menit ${isOngoing ? '<span style="font-size:11px; color:#d97706; font-style:italic;">(sedang berlangsung...)</span>' : ''}</div>`;
+        }
+
         listContainer.innerHTML = html;
     }
 

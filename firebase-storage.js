@@ -276,31 +276,26 @@
   // ---------- GPS Logs (Struktur Partisi Per Bulan) ----------
   function loadGpsLogs(outlet, tglAwal, tglAkhir) {
     if (!init()) return Promise.resolve([]);
-    var migKey = 'rbm_pro/migrated_gps_logs/' + (outlet || 'default');
-    return db.ref(migKey).once('value').then(function(migSnap) {
-        if (!migSnap.val()) {
-            var oldKey = 'rbm_pro/gps_logs' + (outlet && outlet !== 'default' ? '_' + outlet.replace(/[^a-z0-9_]/g, '_') : '');
-            return db.ref(oldKey).once('value').then(function(oldSnap) {
-                var oldData = oldSnap.val();
-                if (oldData && typeof oldData === 'object') {
-                    var updates = {};
-                    Object.keys(oldData).forEach(function(k) {
-                        var log = oldData[k];
-                        if (log && log.date) {
-                            var ym = log.date.substring(0, 7);
-                            if (/^\d{4}-\d{2}$/.test(ym)) {
-                                updates['rbm_pro/gps_logs_partitioned/' + (outlet || 'default') + '/' + ym + '/' + k] = log;
-                            }
-                        }
-                    });
-                    if (Object.keys(updates).length > 0) {
-                        return db.ref().update(updates).then(function() { return db.ref(migKey).set(true); });
+    
+    // Auto-catch-up migration: Pindahkan data yang tersesat (dari cache lama yang belum ter-refresh) ke sistem partisi.
+    var oldKey = 'rbm_pro/gps_logs' + (outlet && outlet !== 'default' ? '_' + outlet.toLowerCase().replace(/[^a-z0-9_]/g, '_') : '');
+    return db.ref(oldKey).once('value').then(function(oldSnap) {
+        var oldData = oldSnap.val();
+        if (oldData && typeof oldData === 'object') {
+            var updates = {};
+            Object.keys(oldData).forEach(function(k) {
+                var log = oldData[k];
+                if (log && log.date) {
+                    var ym = log.date.substring(0, 7);
+                    if (/^\d{4}-\d{2}$/.test(ym)) {
+                        updates['rbm_pro/gps_logs_partitioned/' + (outlet || 'default') + '/' + ym + '/' + k] = log;
+                        updates[oldKey + '/' + k] = null; // Bersihkan dari sarang lama
                     }
                 }
-                return db.ref(migKey).set(true);
             });
+            if (Object.keys(updates).length > 0) return db.ref().update(updates);
         }
-    }).then(function() {
+    }).catch(function(){}).then(function() {
         var ymStart = (tglAwal || '').substring(0, 7);
         var ymEnd = (tglAkhir || '').substring(0, 7);
         if (!ymStart || !ymEnd) return [];

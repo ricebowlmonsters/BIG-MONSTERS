@@ -97,20 +97,23 @@
           // Karyawan hanya butuh data untuk outlet yang dikunci (employees_{outlet} & face_data_{outlet}).
           nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
           // [OPTIMASI KILAT] Di HP karyawan, JANGAN load data berat seperti absensi_data, gaji, bonus
-          nodesToLoad.push('jadwal_data' + sfx, 'gps_logs' + sfx);
+          var dDate = new Date();
+          var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
+          nodesToLoad.push('jadwal/' + (outlet || 'default') + '/' + currYm);
           // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
       } else if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
           // Halaman absensi/jadwal butuh employees + face_data
           // [PERFORMA] Hindari muat global employees/face_data.
           nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
           // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
-          // [FIX] Gunakan absensi_data & jadwal_data agar cocok dengan nama saat disimpan
-          nodesToLoad.push('absensi_data' + sfx, 'jadwal_data' + sfx, 'jadwal_notes', 'gaji', 'bonus', 'gps_logs' + sfx, 'gps_logs');
+          // [OPTIMASI KILAT] Jangan muat absensi_data, jadwal_data, dan gps_logs secara penuh saat awal. Biarkan syncAbsensiPeriodAndRefresh yang meload sesuai rentang bulan untuk menghemat memori drastis.
+          nodesToLoad.push('jadwal_notes', 'gaji', 'bonus');
           // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
       } else if (page.indexOf('petty-cash') >= 0) {
           // [OPTIMASI KILAT] Jangan load seluruh petty_cash karena data sangat besar dan sudah diload otomatis sesuai tanggal
       } else if (page.indexOf('barang') >= 0 || page.indexOf('stok') >= 0) {
           nodesToLoad.push('stok_items' + sfx);
+          nodesToLoad.push('stok_transactions' + sfx);
           if (outlet) nodesToLoad.push(outlet + '/stok_items');
       } else if (page.indexOf('pembukuan') >= 0 || page.indexOf('keuangan') >= 0) {
           nodesToLoad.push('bank');
@@ -128,8 +131,9 @@
 
       var promises = uniqueNodes.map(function(node) {
           if (node.indexOf('gps_logs_partitioned') === 0) {
-              // Ambil sebulan ini untuk absen harian
-              return self._db.ref('rbm_pro/' + node).once('value').then(function(snap) {
+              // [OPTIMASI KILAT] Ambil sebulan ini untuk absen harian, TAPI batasi hanya 250 log terakhir.
+              // Ini memastikan HP karyawan tidak mendownload puluhan MB data foto jika belum dipisah (migrasi).
+              return self._db.ref('rbm_pro/' + node).orderByKey().limitToLast(250).once('value').then(function(snap) {
                   var data = snap.val();
                   if (data) {
                       Object.keys(data).forEach(function(k) {
@@ -248,6 +252,20 @@
             if (path.indexOf('jadwal_data_') === 0) { var fb = getFromCache(rawOutlet + '/jadwal_data'); if (fb) return fb; }
             if (path.indexOf('gps_logs_') === 0) { var fb = getFromCache(rawOutlet + '/gps_logs'); if (fb) return fb; }
         }
+        if (path === 'gps_logs' || path.indexOf('gps_logs_') === 0) {
+            var o = rawOutlet || 'default';
+            var dDate = new Date();
+            var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
+            var fb = getFromCache('gps_logs_partitioned/' + o + '/' + currYm);
+            if (fb) return fb;
+        }
+        if (path === 'jadwal_data' || path.indexOf('jadwal_data_') === 0) {
+            var o = rawOutlet || 'default';
+            var dDate = new Date();
+            var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
+            var fb = getFromCache('jadwal/' + o + '/' + currYm);
+            if (fb) return fb;
+        }
         if (path.indexOf('employees_') === 0) { var fb = getFromCache('employees'); if (fb) return fb; }
         if (path.indexOf('stok_items_') === 0) { var fb = getFromCache('stok_items'); if (fb) return fb; }
       }
@@ -320,6 +338,14 @@
             var dDate = new Date();
             var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
             var fb = getFromCache('gps_logs_partitioned/' + o + '/' + currYm);
+            if (fb) return fb;
+        }
+
+        if (path === 'jadwal_data' || path.indexOf('jadwal_data_') === 0) {
+            var o = rawOutlet || 'default';
+            var dDate = new Date();
+            var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
+            var fb = getFromCache('jadwal/' + o + '/' + currYm);
             if (fb) return fb;
         }
 
