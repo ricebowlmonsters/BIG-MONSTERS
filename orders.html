@@ -109,6 +109,14 @@
             border-color: var(--primary, #4C2A85);
         }
     </style>
+    <script>
+        // Otomatis sembunyikan header ganda saat dibuka dari file:///
+        if (window.self !== window.top) {
+            document.addEventListener('DOMContentLoaded', function() {
+                document.body.classList.add('in-iframe');
+            });
+        }
+    </script>
 </head>
 <body>
     <div class="app-container">

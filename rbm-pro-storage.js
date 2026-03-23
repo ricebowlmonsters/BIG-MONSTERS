@@ -127,15 +127,13 @@
       nodesToLoad.forEach(function(n) { if (uniqueNodes.indexOf(n) === -1) uniqueNodes.push(n); });
 
       var promises = uniqueNodes.map(function(node) {
-          // [OPTIMASI KILAT] Batasi unduhan foto GPS maksimal 500 data terakhir agar loading instan
-          if (node.indexOf('gps_logs') === 0 || node.indexOf('/gps_logs') > 0) {
-              var limit = (page === 'absensi-gps-view') ? 50 : 200; // HP Karyawan cukup 50 data terakhir agar kilat
-              return self._db.ref('rbm_pro/' + node).limitToLast(limit).once('value').then(function(snap) {
+          if (node.indexOf('gps_logs_partitioned') === 0) {
+              // Ambil sebulan ini untuk absen harian
+              return self._db.ref('rbm_pro/' + node).once('value').then(function(snap) {
                   var data = snap.val();
-                  // [SUPER OPTIMASI] Jangan pernah mendownload/menyimpan foto di list GPS (foto membuat browser hang untuk data besar).
-                  // Foto akan diambil on-demand saat user klik detail (jika diperlukan).
                   if (data) {
                       Object.keys(data).forEach(function(k) {
+                          // Strip photo for memory
                           if (data[k]) data[k].photo = '';
                       });
                   }
@@ -315,7 +313,14 @@
             if (path.indexOf('employees_') === 0) { var fb = getFromCache(rawOutlet + '/employees'); if (fb) return fb; }
             if (path.indexOf('absensi_data_') === 0) { var fb = getFromCache(rawOutlet + '/absensi_data'); if (fb) return fb; }
             if (path.indexOf('jadwal_data_') === 0) { var fb = getFromCache(rawOutlet + '/jadwal_data'); if (fb) return fb; }
-            if (path.indexOf('gps_logs_') === 0) { var fb = getFromCache(rawOutlet + '/gps_logs'); if (fb) return fb; }
+        }
+        
+        if (path === 'gps_logs' || path.indexOf('gps_logs_') === 0) {
+            var o = rawOutlet || 'default';
+            var dDate = new Date();
+            var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
+            var fb = getFromCache('gps_logs_partitioned/' + o + '/' + currYm);
+            if (fb) return fb;
         }
 
         // Auto-Fallback ke Data Master jika cabang baru

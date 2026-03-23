@@ -44,8 +44,6 @@
       setVal("inv_tanggal_akhir", todayFast);
       setVal("absensi_tgl_awal", payrollStartFast);
       setVal("absensi_tgl_akhir", payrollEndFast);
-      setVal("bonus_start_date", payrollStartFast);
-      setVal("bonus_end_date", payrollEndFast);
       setVal("res_filter_start", firstDayFast);
       setVal("res_filter_end", todayFast);
       setVal("rekap_gps_start", payrollStartFast);
@@ -149,8 +147,6 @@
     setVal("inv_tanggal_akhir", today);
     setVal("absensi_tgl_awal", payrollStart);
     setVal("absensi_tgl_akhir", payrollEnd);
-    setVal("bonus_start_date", payrollStart);
-    setVal("bonus_end_date", payrollEnd);
     setVal("res_filter_start", firstDay);
     setVal("res_filter_end", today);
     setVal("stok_bulan_filter", today.slice(0, 7));
@@ -163,7 +159,10 @@
     if (containers.length === 1) {
       containers[0].style.display = 'block';
       var viewId = containers[0].id;
-      if (viewId === 'absensi-view') renderAbsensiTable();
+      if (viewId === 'absensi-view') {
+          if (typeof syncAbsensiPeriodAndRefresh === 'function') syncAbsensiPeriodAndRefresh();
+          else renderAbsensiTable();
+      }
       else if (viewId === 'reservasi-view') renderReservasiCalendar();
       else if (viewId === 'stok-barang-view') renderStokTable();
       else if (viewId === 'absensi-gps-view') { initAbsensiGPS(); loadOfficeConfig(); if (typeof loadJamConfig === 'function') loadJamConfig(); }
@@ -196,7 +195,8 @@
       if (page === 'absensi-view' && typeof renderAbsensiTable === 'function') {
         window._absensiViewData = undefined;
         window._absensiViewEmployees = undefined;
-        renderAbsensiTable();
+        if (typeof syncAbsensiPeriodAndRefresh === 'function') syncAbsensiPeriodAndRefresh();
+        else renderAbsensiTable();
       }
       else if (page === 'rekap-absensi-gps-view') {
         if (typeof populateRekapGpsFilterNama === 'function') { populateRekapGpsFilterNama(); }
@@ -230,7 +230,8 @@
     const activeBtn = document.querySelector('[onclick="showView(\'' + viewId + '\')"]');
     if (activeBtn) activeBtn.classList.add('active');
     if (viewId === 'absensi-view') {
-        renderAbsensiTable();
+        if (typeof syncAbsensiPeriodAndRefresh === 'function') syncAbsensiPeriodAndRefresh();
+        else renderAbsensiTable();
     }
     if (viewId === 'reservasi-view' || viewId === 'lihat-reservasi-view') {
         renderReservasiCalendar();
@@ -814,7 +815,7 @@ function savePembukuanToJpg() {
         const page = window._pcCurrentPage || 1;
         const limit = rowsPerPage;
 
-        const url = `${baseUrl}/api/petty-cash?outlet=${encodeURIComponent(outlet)}&from=${encodeURIComponent(tglAwal)}&to=${encodeURIComponent(tglAkhir)}&search=${encodeURIComponent(searchVal)}&page=${encodeURIComponent(page)}&limit=${encodeURIComponent(limit)}`;
+        const url = `${baseUrl}/api/petty-cash?outlet=${encodeURIComponent(outlet)}&from=${encodeURIComponent(tglAwal)}&to=${encodeURIComponent(tglAkhir)}&search=${encodeURIComponent(searchVal)}&page=${encodeURIComponent(page)}&limit=${encodeURIComponent(limit)}&order=desc`;
 
         fetch(url).then(r => r.json()).then(function(result) {
             if (!result || result.error) {
@@ -873,14 +874,35 @@ function savePembukuanToJpg() {
         const outlet = getRbmOutlet();
         const searchNow = (document.getElementById("pc_search") ? (document.getElementById("pc_search").value || '') : '');
         const queryKey = [outlet || '', tglAwal || '', tglAkhir || '', (searchNow || '').trim().toLowerCase(), limit].join('|');
+        const ym = (monthVal || '').toString().trim();
 
         // Reset paging jika query berubah (ganti outlet/bulan/search)
         if (window._pcFbQueryKey !== queryKey) {
           window._pcFbQueryKey = queryKey;
           window._pcFbCursor = null;
-          window._pcFbCursorStack = [];
+          window._pcFbPageIndex = 1;
+          window._pcFbPageCursors = [null]; // cursor untuk tiap halaman yang sudah dikunjungi
         }
         window._pcFbSearch = searchNow;
+
+        // [BARU] Summary per-bulan: ambil dari node ringkas (cepat).
+        if (FirebaseStorage.getPettyCashMonthSummary && /^\d{4}-\d{2}$/.test(ym)) {
+          FirebaseStorage.getPettyCashMonthSummary(ym, outlet).then(function(ms) {
+            ms = ms && typeof ms === 'object' ? ms : {};
+            window._lastPettyCashSummary = {
+              saldoAwal: parseFloat(ms.saldoAwal) || 0,
+              totalDebit: parseFloat(ms.totalDebit) || 0,
+              totalKredit: parseFloat(ms.totalKredit) || 0,
+              saldoAkhir: parseFloat(ms.saldoAkhir) || 0
+            };
+            // Tampilkan summary walau list masih paging
+            summaryEl.style.display = 'grid';
+            if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(window._lastPettyCashSummary.totalDebit || 0);
+            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(window._lastPettyCashSummary.totalKredit || 0);
+            if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(window._lastPettyCashSummary.saldoAkhir || 0);
+            if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(window._lastPettyCashSummary.saldoAwal || 0);
+          }).catch(function(){});
+        }
 
         // Cache lokal: tampil instan saat masuk ulang halaman, lalu refresh di background.
         const cacheKey = (function(){
@@ -947,11 +969,12 @@ function savePembukuanToJpg() {
             to: tglAkhir,
             search: window._pcFbSearch || '',
             limit: limit,
-            cursor: cursor || null
+            cursor: cursor || null,
+            order: 'desc' // data terbaru dulu
           }).then(function(result) {
             saveCacheIfFirstPage(result);
             window._lastPettyCashData = result && result.data ? result.data : [];
-            window._lastPettyCashSummary = result && result.summary ? result.summary : { totalDebit: 0, totalKredit: 0, saldoAkhir: 0, saldoAwal: 0 };
+            // Summary halaman tidak dipakai; summary bulanan diambil dari node ringkas.
             window._pcFbCursor = result && result.page ? result.page.nextCursor : null;
 
             // render rows directly (server-style page)
@@ -978,29 +1001,49 @@ function savePembukuanToJpg() {
             // Kamu tidak pakai Prev/Next, jadi tombol disembunyikan.
             paginationEl.style.display = 'none';
             // Expose lightweight handlers (tidak inject function besar ke HTML)
+            window.pettyCashFbGoToPage = function(pageNum) {
+              pageNum = parseInt(pageNum, 10) || 1;
+              if (!window._pcFbPageCursors || pageNum < 1 || pageNum > (window._pcFbPageIndex || 1)) return;
+              window._pcFbPageIndex = pageNum;
+              const cursorParam = window._pcFbPageCursors[pageNum - 1];
+              loadPage(cursorParam || null);
+            };
             window.pettyCashFbPrevPage = function() {
-              if (!window._pcFbCursorStack || window._pcFbCursorStack.length === 0) return;
-              const prev = window._pcFbCursorStack.pop();
-              window._pcFbCursor = prev || null;
-              loadPage(window._pcFbCursor);
+              if ((window._pcFbPageIndex || 1) <= 1) return;
+              window._pcFbPageIndex = (window._pcFbPageIndex || 1) - 1;
+              const cursorParam = window._pcFbPageCursors[window._pcFbPageIndex - 1];
+              loadPage(cursorParam || null);
             };
             window.pettyCashFbNextPage = function() {
-              if (!window._pcFbCursor) return;
-              window._pcFbCursorStack = window._pcFbCursorStack || [];
-              window._pcFbCursorStack.push(window._pcFbCursor);
+              if (!window._pcFbCursor) return; // belum ada halaman berikutnya
+              window._pcFbPageIndex = (window._pcFbPageIndex || 1) + 1;
+              window._pcFbPageCursors = window._pcFbPageCursors || [];
+              window._pcFbPageCursors[window._pcFbPageIndex - 1] = window._pcFbCursor; // cursor untuk halaman yang akan tampil
               loadPage(window._pcFbCursor);
             };
-            paginationEl.innerHTML = `
-              <button class="btn btn-secondary" ${(window._pcFbCursorStack && window._pcFbCursorStack.length > 0) ? '' : 'disabled'} onclick="window.pettyCashFbPrevPage()">⬅️ Prev</button>
-              <button class="btn btn-secondary" ${window._pcFbCursor ? '' : 'disabled'} onclick="window.pettyCashFbNextPage()">Next ➡️</button>
-            `;
+
+            // Tampilkan kotak nomor halaman di bagian bawah
+            paginationEl.style.display = 'flex';
+            (function renderPageBoxes() {
+              const cur = window._pcFbPageIndex || 1;
+              const max = cur; // hanya tampilkan halaman yang sudah dikunjungi
+              let html = '';
+              for (let i = 1; i <= max; i++) {
+                const active = i === cur;
+                html += `<button class="btn ${active ? 'btn-primary' : 'btn-secondary'}" style="min-width:44px;" ${active ? 'disabled' : ''} onclick="window.pettyCashFbGoToPage(${i})">${i}</button>`;
+              }
+              // Prev/Next kecil (opsional) tetap ada, tapi nomor utama sudah kelihatan.
+              html += `<span style="width:10px"></span>`;
+              html += `<button class="btn btn-secondary" ${cur <= 1 ? 'disabled' : ''} onclick="window.pettyCashFbPrevPage()">⬅</button>`;
+              html += `<button class="btn btn-secondary" ${window._pcFbCursor ? '' : 'disabled'} onclick="window.pettyCashFbNextPage()">➡</button>`;
+              paginationEl.innerHTML = html;
+            })();
 
             // summary
             const summary = window._lastPettyCashSummary || {};
             summaryEl.style.display = 'grid';
             if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
-            var totalDana = (summary.saldoAwal || 0) + (summary.totalKredit || 0);
-            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(totalDana);
+            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(summary.totalKredit || 0);
             if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
             if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
           }).catch(function(err) {
@@ -2097,9 +2140,47 @@ function createPengajuanForm() {
             </div>
             <input type="hidden" id="pengajuan_pc_recap_data" value='${JSON.stringify(recap).replace(/'/g, "&#39;")}'>
         `;
+
+        const outletId = typeof getRbmOutlet === 'function' ? getRbmOutlet() : 'default';
+        let savedRek = {bank: '', rekening: '', atasnama: ''};
+        try { savedRek = JSON.parse(localStorage.getItem('RBM_PC_REK_INFO_' + outletId)) || savedRek; } catch(e){}
+
+        var bankHtml = `
+            <div class="row-group" style="align-items:flex-start; background:white; padding:15px; border:1px solid #e2e8f0; border-radius:8px; margin-top:15px;">
+                <div style="flex:1;">
+                    <label style="font-size:12px; font-weight:bold;">Bank Tujuan Transfer</label>
+                    <input type="text" id="pengajuan_pc_bank" class="form-input" placeholder="Belum disetting" value="${savedRek.bank || ''}" readonly style="background:#f1f5f9;">
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:12px; font-weight:bold;">No. Rekening</label>
+                    <input type="text" id="pengajuan_pc_rekening" class="form-input" placeholder="Belum disetting" value="${savedRek.rekening || ''}" readonly style="background:#f1f5f9;">
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:12px; font-weight:bold;">Atas Nama</label>
+                    <input type="text" id="pengajuan_pc_atasnama" class="form-input" placeholder="Belum disetting" value="${savedRek.atasnama || ''}" readonly style="background:#f1f5f9;">
+                </div>
+            </div>
+            <p style="font-size:11px; color:#64748b; margin-top:5px;">*Rekening pencairan diatur secara terpusat oleh Owner di Pengaturan Web (Manajemen Outlet).</p>
+        `;
+        html += bankHtml;
+
         var loadingEl = document.getElementById('pc_recap_loading');
         if (loadingEl) {
             loadingEl.outerHTML = html;
+        }
+        
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            firebase.database().ref('customer_app_settings/outlets').once('value').then(function(snap) {
+                var o = snap.val();
+                var list = o ? (Array.isArray(o) ? o : Object.values(o)) : [];
+                var data = list.find(function(i) { return i && i.id === outletId; });
+                if (data) {
+                    if (document.getElementById('pengajuan_pc_bank')) document.getElementById('pengajuan_pc_bank').value = data.bank || '';
+                    if (document.getElementById('pengajuan_pc_rekening')) document.getElementById('pengajuan_pc_rekening').value = data.rekening || '';
+                    if (document.getElementById('pengajuan_pc_atasnama')) document.getElementById('pengajuan_pc_atasnama').value = data.atasnama || '';
+                    localStorage.setItem('RBM_PC_REK_INFO_' + outletId, JSON.stringify({ bank: data.bank || '', rekening: data.rekening || '', atasnama: data.atasnama || '' }));
+                }
+            }).catch(function(){});
         }
     });
   } else if (jenisPengajuan === 'sudah-tf') {
@@ -2236,6 +2317,7 @@ function submitDataPengajuan() {
       } else {
         google.script.run.withSuccessHandler(showResultPengajuan).simpanDataPengajuanTF(payload);
       }
+      if (window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
     }).catch(error => {
       showError("❌ Gagal memproses file: " + error);
     });
@@ -2245,6 +2327,11 @@ function submitDataPengajuan() {
     let recapData = null;
     try { recapData = JSON.parse(recapDataStr); } catch(e) {}
 
+    const bank = document.getElementById("pengajuan_pc_bank") ? document.getElementById("pengajuan_pc_bank").value.trim() : '';
+    const rekening = document.getElementById("pengajuan_pc_rekening") ? document.getElementById("pengajuan_pc_rekening").value.trim() : '';
+    const atasnama = document.getElementById("pengajuan_pc_atasnama") ? document.getElementById("pengajuan_pc_atasnama").value.trim() : '';
+    
+
     rows.forEach(row => {
       const nominalPc = row.querySelector(".pengajuan_pc_nominal").value.trim();
 
@@ -2253,7 +2340,10 @@ function submitDataPengajuan() {
           tanggalPengajuan: tanggalPengajuanGlobal,
           nominal: nominalPc,
           recapData: recapData,
-          fotoPengajuan: null
+          fotoPengajuan: null,
+          bank: bank,
+          rekening: rekening,
+          atasnama: atasnama
         };
         dataList.push(pettyCashItem);
 
@@ -2283,6 +2373,7 @@ function submitDataPengajuan() {
       } else {
         google.script.run.withSuccessHandler(showResultPengajuan).simpanDataPengajuanPC(payload);
       }
+      if (window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
     }).catch(error => {
       showError("❌ Gagal memproses file: " + error);
     });
@@ -2942,6 +3033,25 @@ function loadLihatPengajuanData() {
         };
         window.renderPengajuanPage();
     }, 50);
+
+    // [BARU] Pindahkan Riwayat Pengajuan Gaji ke Halaman Pengajuan Dana
+    setTimeout(() => {
+        const gajiTbody = document.getElementById('gaji_pengajuan_tbody');
+        const pengajuanContainer = tbody.closest('.form-container') || tbody.closest('.view-container');
+        if (gajiTbody && pengajuanContainer) {
+            let parentCard = gajiTbody.closest('.table-card');
+            if (parentCard) {
+                parentCard.style.display = 'block';
+                const prev = parentCard.previousElementSibling;
+                if (prev && (prev.tagName.includes('H') || prev.tagName === 'DIV')) {
+                    prev.style.display = 'block';
+                    pengajuanContainer.appendChild(prev);
+                }
+                pengajuanContainer.appendChild(parentCard);
+                if (typeof loadRiwayatGajiPengajuan === 'function') loadRiwayatGajiPengajuan({ reset: true });
+            }
+        }
+    }, 200);
 }
 
 function exportRekapToExcel() {
@@ -4349,8 +4459,41 @@ function updateJadwalLegend() {
 let activeAbsensiMode = 'absensi';
 
 function syncAbsensiPeriodAndRefresh() {
-    window._absensiViewData = undefined; // agar periode baru di-load dari Firebase
-    switchAbsensiTab(activeAbsensiMode);
+    var tglAwal = document.getElementById("absensi_tgl_awal") ? document.getElementById("absensi_tgl_awal").value : '';
+    var tglAkhir = document.getElementById("absensi_tgl_akhir") ? document.getElementById("absensi_tgl_akhir").value : '';
+    if (!tglAwal || !tglAkhir) return;
+
+    var tbody = document.getElementById("absensi_tbody");
+    if (tbody && (activeAbsensiMode === 'absensi' || activeAbsensiMode === 'jadwal')) {
+        tbody.innerHTML = '<tr><td colspan="30" style="text-align:center; padding:20px;">Memuat data dari server... ⏳</td></tr>';
+    }
+
+    if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadAbsensiJadwal) {
+        var outlet = getRbmOutlet() || 'default';
+        Promise.all([
+            FirebaseStorage.loadAbsensiJadwal(outlet, 'absensi', tglAwal, tglAkhir),
+            FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', tglAwal, tglAkhir),
+            FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir)
+        ]).then(function(results) {
+            var absenKey = getRbmStorageKey('RBM_ABSENSI_DATA');
+            var jadwalKey = getRbmStorageKey('RBM_JADWAL_DATA');
+            var gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
+            window._rbmParsedCache[absenKey] = { data: results[0] };
+            window._rbmParsedCache[jadwalKey] = { data: results[1] };
+            window._rbmParsedCache[gpsKey] = { data: results[2] };
+            
+            if (activeAbsensiMode === 'jadwal') window._absensiViewData = results[1];
+            else window._absensiViewData = results[0];
+
+            switchAbsensiTab(activeAbsensiMode);
+        }).catch(function(e) {
+            window._absensiViewData = {};
+            switchAbsensiTab(activeAbsensiMode);
+        });
+    } else {
+        window._absensiViewData = undefined;
+        switchAbsensiTab(activeAbsensiMode);
+    }
 }
 
 function switchAbsensiTab(mode) {
@@ -4368,8 +4511,13 @@ function switchAbsensiTab(mode) {
     document.getElementById('tab-content-bonus').style.display = 'none';
 
     if (mode === 'absensi' || mode === 'jadwal') {
-        window._absensiViewData = undefined; // load data yang sesuai mode (Absensi vs Jadwal)
         document.getElementById('tab-content-input').style.display = 'block';
+        if (useFirebaseBackend()) {
+             const key = getRbmStorageKey(mode === 'jadwal' ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA');
+             window._absensiViewData = window._rbmParsedCache[key] ? window._rbmParsedCache[key].data : undefined;
+        } else {
+             window._absensiViewData = undefined;
+        }
         renderAbsensiTable(mode);
     } else if (mode === 'laporan') {
         document.getElementById('tab-content-laporan').style.display = 'block';
@@ -4377,10 +4525,6 @@ function switchAbsensiTab(mode) {
     } else if (mode === 'gaji') {
         document.getElementById('tab-content-gaji').style.display = 'block';
         renderRekapGaji();
-        if (typeof loadRiwayatGajiPengajuan === 'function') {
-            // muat riwayat agar owner/manager bisa lihat tanpa reload
-            try { loadRiwayatGajiPengajuan({ reset: true }); } catch(e) {}
-        }
     } else if (mode === 'bonus') {
         document.getElementById('tab-content-bonus').style.display = 'block';
         renderBonusTab();
@@ -4631,9 +4775,9 @@ function saveAbsensiToFirebase(silent) {
     }
     var data = window._absensiViewData;
     if (data === undefined) data = {};
-    var isJadwal = (typeof activeAbsensiMode !== 'undefined' && activeAbsensiMode === 'jadwal');
-    var keyEmployees = getRbmStorageKey('RBM_EMPLOYEES');
-    var keyData = getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA');
+    var isJadwal = activeAbsensiMode === 'jadwal';
+    var type = isJadwal ? 'jadwal' : 'absensi';
+    var outlet = getRbmOutlet() || 'default';
     var msg = document.getElementById('absensi-save-feedback');
     function showSuccess() {
         if (msg) {
@@ -4654,12 +4798,22 @@ function saveAbsensiToFirebase(silent) {
     }
     if (msg && !silent) msg.textContent = 'Menyimpan...';
     var promises = [];
+    
+    var keyEmployees = getRbmStorageKey('RBM_EMPLOYEES');
+    var keyData = getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA');
+
     // [PERFORMA] jika karyawan belum diubah, jangan rewrite node karyawan
     var shouldSaveEmployees = window._absensiEmployeesDirty === true;
     if (shouldSaveEmployees) {
         promises.push(RBMStorage.setItem(keyEmployees, JSON.stringify(employees)));
     }
-    promises.push(RBMStorage.setItem(keyData, JSON.stringify(data)));
+
+    if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.saveAbsensiJadwal) {
+        promises.push(FirebaseStorage.saveAbsensiJadwal(outlet, type, data));
+        window._rbmParsedCache[keyData] = { data: data };
+    } else {
+        promises.push(RBMStorage.setItem(keyData, JSON.stringify(data)));
+    }
 
     Promise.all(promises).then(function() {
         window._absensiEmployeesDirty = false;
@@ -4872,7 +5026,8 @@ function printRekapAbsensiArea() {
     const printContent = document.getElementById('printable-rekap-area').innerHTML;
     const originalContent = document.body.innerHTML;
     
-    document.body.innerHTML = printContent;
+    const printStyle = '<style>@media print { @page { size: landscape; margin: 10mm; } body { zoom: 0.65; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 0; margin: 0; } table { width: 100% !important; max-width: 100% !important; border-collapse: collapse; } th, td { white-space: nowrap; padding: 4px; } }</style>';
+    document.body.innerHTML = printStyle + printContent;
     window.print();
     document.body.innerHTML = originalContent;
     window.location.reload();
@@ -4890,6 +5045,68 @@ function renderRekapGaji() {
     const tglAwal = tglAwalEl ? tglAwalEl.value : '';
     const tglAkhir = tglAkhirEl ? tglAkhirEl.value : '';
     
+    // --- PERBAIKAN LAYOUT TOMBOL AKSI GAJI (Menjadi 1 Baris) ---
+    try {
+        const allButtons = Array.from(document.querySelectorAll('button'));
+        const btnSaveGaji = allButtons.find(b => b.textContent && b.textContent.includes('Simpan Perubahan'));
+        const btnPrintGaji = allButtons.find(b => b.textContent && b.textContent.includes('Print Slip/Rekap'));
+        const btnZipGaji = allButtons.find(b => b.textContent && b.textContent.includes('Download Semua Slip (ZIP)'));
+        
+        const btns = [btnSaveGaji, btnPrintGaji, btnZipGaji].filter(Boolean);
+        
+        if (btns.length > 0 && !btns[0].parentElement.classList.contains('flex-wrapper-gaji')) {
+            // Hapus elemen <br> di dekat tombol agar tidak menyebabkan spasi berlebih
+            btns.forEach(b => {
+                if (b.previousElementSibling && b.previousElementSibling.tagName === 'BR') b.previousElementSibling.remove();
+                if (b.nextElementSibling && b.nextElementSibling.tagName === 'BR') b.nextElementSibling.remove();
+            });
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex-wrapper-gaji';
+            wrapper.style.cssText = 'display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px;';
+            
+            btns[0].parentNode.insertBefore(wrapper, btns[0]);
+            
+            btns.forEach(b => {
+                b.style.width = 'auto'; // Cegah tombol mengambil 100% lebar
+                b.style.margin = '0';   // Hilangkan margin bawaan yang bikin turun ke bawah
+                wrapper.appendChild(b);
+            });
+
+            // --- MENAMPILKAN KEMBALI FITUR PENGAJUAN GAJI LENGKAP KE OWNER ---
+            let btnPengajuan = allButtons.find(b => b.textContent && (b.textContent.includes('Pengajuan Gaji') || b.textContent.includes('Pengajuan Petty Cash') || b.textContent.includes('Ajukan Laporan Lengkap')));
+            if (!btnPengajuan) {
+                btnPengajuan = document.createElement('button');
+                btnPengajuan.onclick = typeof submitGajiPengajuan === 'function' ? submitGajiPengajuan : null;
+            }
+            btnPengajuan.textContent = 'Ajukan Laporan Lengkap (Owner)';
+            btnPengajuan.className = 'btn btn-primary';
+            btnPengajuan.style.cssText = 'background: #8b5cf6; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 14px; cursor: pointer; width: auto; margin: 0;';
+            
+            // Sembunyikan div parent lamanya jika isinya kosong
+            if (btnPengajuan.parentElement && btnPengajuan.parentElement.tagName === 'DIV' && !btnPengajuan.parentElement.classList.contains('flex-wrapper-gaji')) {
+                if (btnPengajuan.parentElement.children.length <= 1) {
+                    btnPengajuan.parentElement.style.display = 'none';
+                }
+            }
+            
+            wrapper.appendChild(btnPengajuan);
+
+            // Menyembunyikan tabel riwayat pengajuan di Rekap Gaji (karena dipindah ke Pengajuan Dana)
+            const tbodyRiwayat = document.getElementById('gaji_pengajuan_tbody');
+            if (tbodyRiwayat) {
+                let parentCard = tbodyRiwayat.closest('.table-card');
+                // Hanya sembunyikan jika masih berada di dalam tab gaji
+                if (parentCard && parentCard.closest('#tab-content-gaji')) {
+                    parentCard.style.display = 'none';
+                    const prev = parentCard.previousElementSibling; 
+                    if (prev && (prev.tagName.includes('H') || prev.tagName === 'DIV')) prev.style.display = 'none';
+                }
+            }
+        }
+    } catch(e) {}
+    // -----------------------------------------------------------
+
     if (!tglAwal || !tglAkhir) { alert("Pilih tanggal terlebih dahulu"); return; }
 
     // Update Header Text
@@ -4917,6 +5134,9 @@ function renderRekapGaji() {
     // Data Gaji Periodik (Hutang, Terlambat, dll) disimpan terpisah agar tidak hilang saat refresh
     const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
     const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
+    
+    // Ambil konfigurasi menit telat dari settings
+    const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : MENIT_TELAT_PER_JAM_GAJI;
 
     // Generate Dates for counting
     let curr = new Date(tglAwal);
@@ -4976,7 +5196,7 @@ function renderRekapGaji() {
         let jamTerlambat = pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : 0;
         const totalMenitTelatGps = getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir);
         if (totalMenitTelatGps > 0) {
-            jamTerlambat = Math.round((totalMenitTelatGps / MENIT_TELAT_PER_JAM_GAJI) * 10) / 10;
+            jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
             if (!gajiPeriodData[emp.id || idx]) gajiPeriodData[emp.id || idx] = {};
             gajiPeriodData[emp.id || idx].jamTerlambat = jamTerlambat;
             RBMStorage.setItem(gajiPeriodKey, JSON.stringify(gajiPeriodData));
@@ -5135,112 +5355,209 @@ function _getCurrentUser() {
     try { return JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch(e) { return {}; }
 }
 
-async function submitGajiPengajuan() {
-    try {
-        const period = _getAbsensiGajiPeriod();
-        if (!period) return alert('Pilih periode tanggal terlebih dahulu (Absensi Tanggal Mulai/Selesai).');
+let pendingPengajuanAction = null;
 
-        if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.init || !FirebaseStorage.init()) {
-            return alert('Pengajuan Gaji hanya tersedia di mode Online (Firebase).');
-        }
-
-        const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
-        const { tglAwal, tglAkhir, monthKey } = period;
-
-        const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
-        const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
-        const gajiKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
-        const gajiPeriodData = getCachedParsedStorage(gajiKey, {});
-
-        if (!Array.isArray(employees) || employees.length === 0) return alert('Tidak ada data karyawan untuk periode ini.');
-
-        // hitung ringkas per karyawan (untuk total grand request)
-        const end = new Date(tglAkhir);
-        let curr = new Date(tglAwal);
-        const dates = [];
-        while (curr <= end) {
-            dates.push(new Date(curr));
-            curr.setDate(curr.getDate() + 1);
-        }
-
-        let totalGrand = 0;
-        const items = [];
-
-        employees.forEach((emp, idx) => {
-            const empKey = emp.id != null ? emp.id : idx;
-            const pData = gajiPeriodData[empKey] || {};
-
-            const gajiPokok = parseInt(emp.gajiPokok) || 0;
-            const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
-            const jamTerlambat = pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : 0;
-            const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
-            const tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : 0;
-            const metodeBayar = pData.metodeBayar || 'TF';
-
-            // uang makan hanya dari jumlah H
-            let jumlahH = 0;
-            dates.forEach(d => {
-                const dateKey = d.toISOString().split('T')[0];
-                const absKey = `${dateKey}_${empKey}`;
-                if (absensiData[absKey] === 'H') jumlahH++;
-            });
-
-            const gajiPerHari = Math.round(gajiPokok / 30);
-            const potTerlambatPerJam = Math.round(gajiPokok / 240);
-            const uangMakan = jumlahH * 10000;
-
-            const totalPotKehadiran = Math.round(potHari * gajiPerHari);
-            const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
-
-            const totalPendapatan = gajiPokok + tunjangan + uangMakan;
-            const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
-
-            items.push({
-                empId: empKey,
-                nama: emp.name || '',
-                jabatan: emp.jabatan || '',
-                grandTotal: grandTotal,
-                metodeBayar: metodeBayar
-            });
-            totalGrand += Number(grandTotal) || 0;
-        });
-
-        const u = _getCurrentUser();
-        const requester = (u && (u.username || u.nama)) ? (u.username || u.nama) : 'unknown';
-        const note = `Pengajuan gaji periode ${tglAwal} s/d ${tglAkhir}`;
-
-        const feedbackEl = document.getElementById('gaji_pengajuan_feedback');
-        if (feedbackEl) {
-            feedbackEl.textContent = 'Mengajukan...';
-            feedbackEl.style.color = '#1d4ed8';
-        }
-
-        const res = await FirebaseStorage.saveGajiPengajuan({
-            outletId: outletId,
-            monthKey: monthKey,
-            periodStart: tglAwal,
-            periodEnd: tglAkhir,
-            requester: requester,
-            totalGrand: totalGrand,
-            note: note
-        }, items);
-
-        if (feedbackEl) {
-            feedbackEl.textContent = 'Sukses mengajukan. ID: ' + (res && res.requestId ? res.requestId : '-');
-            feedbackEl.style.color = '#16a34a';
-        }
-
-        loadRiwayatGajiPengajuan({ reset: true });
-    } catch (e) {
-        console.error(e);
-        const feedbackEl = document.getElementById('gaji_pengajuan_feedback');
-        if (feedbackEl) {
-            feedbackEl.textContent = 'Gagal mengajukan: ' + (e && e.message ? e.message : String(e));
-            feedbackEl.style.color = '#dc2626';
-        } else {
-            alert('Gagal mengajukan: ' + (e && e.message ? e.message : String(e)));
-        }
+function openRekeningPencairanModal(actionCallback) {
+    const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+    let savedRek = {bank: '', rekening: '', atasnama: ''};
+    try { savedRek = JSON.parse(localStorage.getItem('RBM_PC_REK_INFO_' + outletId)) || savedRek; } catch(e){}
+    
+    const b = document.getElementById('confirm_rek_bank');
+    const r = document.getElementById('confirm_rek_no');
+    const a = document.getElementById('confirm_rek_nama');
+    
+    const m = document.getElementById('rekeningPencairanModal');
+    if (m) {
+        if (b) b.value = 'Memuat...';
+        if (r) r.value = 'Memuat...';
+        if (a) a.value = 'Memuat...';
+        pendingPengajuanAction = actionCallback;
+        m.style.display = 'flex';
     }
+
+    const finish = function() {
+        if (m) {
+            if (b) b.value = savedRek.bank || '';
+            if (r) r.value = savedRek.rekening || '';
+            if (a) a.value = savedRek.atasnama || '';
+        } else if (actionCallback) {
+            actionCallback(savedRek);
+        }
+    };
+
+    if (typeof firebase !== 'undefined' && firebase.database) {
+        firebase.database().ref('customer_app_settings/outlets').once('value').then(function(snap) {
+            var o = snap.val();
+            var list = o ? (Array.isArray(o) ? o : Object.values(o)) : [];
+            var data = list.find(function(i) { return i && i.id === outletId; });
+            if (data && (data.bank || data.rekening || data.atasnama)) {
+                savedRek = { bank: data.bank || '', rekening: data.rekening || '', atasnama: data.atasnama || '' };
+                localStorage.setItem('RBM_PC_REK_INFO_' + outletId, JSON.stringify(savedRek));
+            }
+            finish();
+        }).catch(function(){ finish(); });
+    } else {
+        finish();
+    }
+}
+
+function closeRekeningPencairanModal() {
+    const m = document.getElementById('rekeningPencairanModal');
+    if (m) m.style.display = 'none';
+    pendingPengajuanAction = null;
+}
+
+function processPengajuanWithRekening() {
+    const b = document.getElementById('confirm_rek_bank');
+    const r = document.getElementById('confirm_rek_no');
+    const a = document.getElementById('confirm_rek_nama');
+    const bank = b ? b.value.trim() : '';
+    const rekening = r ? r.value.trim() : '';
+    const atasnama = a ? a.value.trim() : '';
+    
+    
+    closeRekeningPencairanModal();
+    if (pendingPengajuanAction) pendingPengajuanAction({bank, rekening, atasnama});
+}
+
+async function submitGajiPengajuan() {
+    const period = _getAbsensiGajiPeriod();
+    if (!period) return alert('Pilih periode tanggal terlebih dahulu (Absensi Tanggal Mulai/Selesai).');
+
+    if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.init || !FirebaseStorage.init()) {
+        return alert('Pengajuan Gaji hanya tersedia di mode Online (Firebase).');
+    }
+
+    openRekeningPencairanModal(async (rekInfo) => {
+        try {
+            const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+            const { tglAwal, tglAkhir, monthKey } = period;
+
+            const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+            const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+            const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
+            const gajiKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
+            const gajiPeriodData = getCachedParsedStorage(gajiKey, {});
+            
+            const allGpsLogs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
+            const gpsLogsLight = allGpsLogs.filter(l => l.date >= tglAwal && l.date <= tglAkhir).map(l => ({
+                date: l.date, name: l.name, type: l.type, time: l.time
+            }));
+
+            if (!Array.isArray(employees) || employees.length === 0) return alert('Tidak ada data karyawan untuk periode ini.');
+
+            const end = new Date(tglAkhir);
+            let curr = new Date(tglAwal);
+            const dates = [];
+            while (curr <= end) {
+                dates.push(new Date(curr));
+                curr.setDate(curr.getDate() + 1);
+            }
+
+            let totalGrand = 0;
+            const items = [];
+
+            employees.forEach((emp, idx) => {
+                const empKey = emp.id != null ? emp.id : idx;
+                const pData = gajiPeriodData[empKey] || {};
+
+                const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+                const gajiPokok = parseInt(emp.gajiPokok) || 0;
+                const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+                let jamTerlambat = pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : 0;
+                const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
+                if (totalMenitTelatGps > 0) jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
+                const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
+                const tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : 0;
+                const metodeBayar = pData.metodeBayar || 'TF';
+
+                let jumlahH = 0;
+                dates.forEach(d => {
+                    const dateKey = d.toISOString().split('T')[0];
+                    const absKey = `${dateKey}_${empKey}`;
+                    if (absensiData[absKey] === 'H') jumlahH++;
+                });
+
+                const gajiPerHari = Math.round(gajiPokok / 30);
+                const potTerlambatPerJam = Math.round(gajiPokok / 240);
+                const uangMakan = jumlahH * 10000;
+
+                const totalPotKehadiran = Math.round(potHari * gajiPerHari);
+                const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
+
+                const totalPendapatan = gajiPokok + tunjangan + uangMakan;
+                const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
+
+                items.push({
+                    empId: empKey,
+                    nama: emp.name || '',
+                    jabatan: emp.jabatan || '',
+                    grandTotal: grandTotal,
+                    metodeBayar: metodeBayar
+                });
+                totalGrand += Number(grandTotal) || 0;
+            });
+
+            const u = _getCurrentUser();
+            const requester = (u && (u.username || u.nama)) ? (u.username || u.nama) : 'unknown';
+            const note = `Pengajuan gaji periode ${tglAwal} s/d ${tglAkhir}`;
+
+            const feedbackEl = document.getElementById('gaji_pengajuan_feedback');
+            if (feedbackEl) {
+                feedbackEl.textContent = 'Mengajukan...';
+                feedbackEl.style.color = '#1d4ed8';
+            }
+
+            const res = await FirebaseStorage.saveGajiPengajuan({
+                outletId: outletId,
+                monthKey: monthKey,
+                periodStart: tglAwal,
+                periodEnd: tglAkhir,
+                requester: requester,
+                totalGrand: totalGrand,
+                bank: rekInfo.bank,
+                rekening: rekInfo.rekening,
+                atasnama: rekInfo.atasnama
+            }, items);
+
+            let reqId = res ? (res.requestId || res.id || res.key) : null;
+            if (!reqId && typeof res === 'string') reqId = res;
+            
+            if (reqId && typeof firebase !== 'undefined' && firebase.database) {
+                try {
+                    await firebase.database().ref(`rbm_pro/gaji_pengajuan/${outletId}/${monthKey}/${reqId}`).update({
+                        snapshot: JSON.stringify({
+                            employees: employees,
+                            absensiData: absensiData,
+                            jadwalData: jadwalData,
+                            gajiData: gajiPeriodData,
+                            gpsLogs: gpsLogsLight
+                        })
+                    });
+                } catch(e) { console.warn('Gagal inject snapshot:', e); }
+            }
+
+            if (feedbackEl) {
+                feedbackEl.textContent = 'Sukses mengajukan. ID: ' + (reqId || '-');
+                feedbackEl.style.color = '#16a34a';
+            }
+            
+            if (window.self !== window.top) {
+                window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+            }
+
+            loadRiwayatGajiPengajuan({ reset: true });
+        } catch (e) {
+            console.error(e);
+            const feedbackEl = document.getElementById('gaji_pengajuan_feedback');
+            if (feedbackEl) {
+                feedbackEl.textContent = 'Gagal mengajukan: ' + (e && e.message ? e.message : String(e));
+                feedbackEl.style.color = '#dc2626';
+            } else {
+                alert('Gagal mengajukan: ' + (e && e.message ? e.message : String(e)));
+            }
+        }
+    });
 }
 
 async function loadRiwayatGajiPengajuan(opts) {
@@ -5295,8 +5612,9 @@ async function loadRiwayatGajiPengajuan(opts) {
                 })();
 
                 const approveBtns = [];
-                if (canApproveOwner) approveBtns.push(`<button class="btn btn-secondary" style="padding:5px 8px; margin-right:6px;" onclick="approveGajiPengajuan('${r.requestId}','owner')">Setujui Owner</button>`);
-                if (canApproveManager) approveBtns.push(`<button class="btn btn-secondary" style="padding:5px 8px;" onclick="approveGajiPengajuan('${r.requestId}','manager')">Setujui Manager</button>`);
+                approveBtns.push(`<button class="btn btn-secondary" style="padding:5px 8px; margin-right:6px; background:#3b82f6; color:white; border:none;" onclick="viewPengajuanDetail('${r.periodStart}', '${r.periodEnd}')">Lihat Detail Laporan</button>`);
+                if (canApproveOwner) approveBtns.push(`<button class="btn btn-secondary" style="padding:5px 8px; margin-right:6px; background:#10b981; color:white; border:none;" onclick="approveGajiPengajuan('${r.requestId}','owner')">Setujui Owner</button>`);
+                if (canApproveManager) approveBtns.push(`<button class="btn btn-secondary" style="padding:5px 8px; background:#f59e0b; color:white; border:none;" onclick="approveGajiPengajuan('${r.requestId}','manager')">Setujui Manager</button>`);
 
                 return `
                   <tr>
@@ -5396,7 +5714,8 @@ function updatePeriodGaji(start, end, empId, field, val) {
 function printRekapGaji() {
     const printContent = document.getElementById('printable-gaji-area').innerHTML;
     const originalContent = document.body.innerHTML;
-    document.body.innerHTML = printContent;
+    const printStyle = '<style>@media print { @page { size: landscape; margin: 10mm; } body { zoom: 0.6; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 0; margin: 0; } table { width: 100% !important; max-width: 100% !important; border-collapse: collapse; } th, td { white-space: nowrap; padding: 4px; } }</style>';
+    document.body.innerHTML = printStyle + printContent;
     window.print();
     document.body.innerHTML = originalContent;
     window.location.reload();
@@ -5436,9 +5755,12 @@ function generateAndShowSlip(idx) {
     });
 
     const pData = gajiPeriodData[emp.id || idx] || {};
+    const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
     const gajiPokok = parseInt(emp.gajiPokok) || 0;
     const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
-    const jamTerlambat = pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : 0;
+    let jamTerlambat = pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : 0;
+    const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
+    if (totalMenitTelatGps > 0) jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
     const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
     const tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : 0;
 
@@ -5508,9 +5830,12 @@ function sendSlipEmail(idx) {
         curr.setDate(curr.getDate() + 1);
     }
     const pData = gajiPeriodData[emp.id || idx] || {};
+    const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
     const gajiPokok = parseInt(emp.gajiPokok) || 0;
     const potHari = parseFloat(pData.potHari) || 0;
-    const jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
+    let jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
+    const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
+    if (totalMenitTelatGps > 0) jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
     const hutang = parseInt(pData.hutang) || 0;
     const tunjangan = parseInt(pData.tunjangan) || 0;
     const gajiPerHari = Math.round(gajiPokok / 30);
@@ -5959,17 +6284,27 @@ function exportCompleteAbsensiPDF() {
     var totalGrand = 0;
     var rowsGaji = '';
     employees.forEach((emp, idx) => {
-        let hkAktual = 0;
+        let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
         dates.forEach(d => {
             const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
-            if(absensiData[key] === 'H') hkAktual++;
+            const status = absensiData[key] || '';
+            let countKey = status === 'O' ? 'OFF' : status;
+            if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
         });
         const pData = gajiData[emp.id || idx] || {};
+        const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+        const bank = emp.bank || '-';
+        const noRek = emp.noRek || '-';
+        const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
+        const hkAktual = counts.H;
         const gajiPokok = parseInt(emp.gajiPokok) || 0;
         const potHari = parseFloat(pData.potHari) || 0;
-        const jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
+        let jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
+        const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
+        if (totalMenitTelatGps > 0) jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
         const hutang = parseInt(pData.hutang) || 0;
         const tunjangan = parseInt(pData.tunjangan) || 0;
+        const metodeBayar = pData.metodeBayar || 'TF';
         const gajiPerHari = Math.round(gajiPokok / 30);
         const potTerlambatPerJam = Math.round(gajiPokok / 240);
         const uangMakan = hkAktual * 10000;
@@ -5977,12 +6312,29 @@ function exportCompleteAbsensiPDF() {
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
         const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
         totalGrand += grandTotal;
-        rowsGaji += `<tr><td>${idx+1}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td><td>${hkAktual}</td><td class="text-right">${formatMoney(gajiPokok)}</td><td>${potHari}</td><td class="text-right">${formatMoney(totalPotKehadiran)}</td><td>${jamTerlambat}</td><td class="text-right">${formatMoney(potTerlambatPerJam)}</td><td class="text-right">${formatMoney(totalPotTerlambat)}</td><td class="text-right">${formatMoney(hutang)}</td><td class="text-right">${formatMoney(uangMakan)}</td><td class="text-right">${formatMoney(tunjangan)}</td><td class="text-right" style="font-weight:bold;">${formatMoney(grandTotal)}</td></tr>`;
+        rowsGaji += `<tr>
+            <td>${idx+1}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td>
+            <td>${bank}</td><td>${noRek}</td><td>${hkTarget}</td><td>${hkAktual}</td>
+            <td>${counts.A || '-'}</td><td>${counts.I || '-'}</td><td>${counts.S || '-'}</td><td>${counts.OFF || '-'}</td><td>${counts.DP || '-'}</td><td>${counts.PH || '-'}</td><td>${counts.AL || '-'}</td><td>${dates.length}</td>
+            <td class="text-right">${formatMoney(gajiPokok)}</td><td class="text-right">${formatMoney(gajiPerHari)}</td>
+            <td>${potHari}</td><td class="text-right">${formatMoney(totalPotKehadiran)}</td>
+            <td>${jamTerlambat}</td><td class="text-right">${formatMoney(potTerlambatPerJam)}</td><td class="text-right">${formatMoney(totalPotTerlambat)}</td>
+            <td class="text-right">${formatMoney(hutang)}</td><td class="text-right">${formatMoney(uangMakan)}</td><td class="text-right">${formatMoney(tunjangan)}</td>
+            <td class="text-right" style="font-weight:bold;">${formatMoney(grandTotal)}</td><td>${metodeBayar}</td>
+        </tr>`;
     });
     var htmlGaji = styleBlock + `<h2>REKAPITULASI GAJI KARYAWAN</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
-        <th rowspan="2">No</th><th rowspan="2">Nama</th><th rowspan="2">Jabatan</th><th rowspan="2">HK</th><th rowspan="2">Gaji Pokok</th>
-        <th colspan="2">Potongan</th><th colspan="3">Terlambat</th><th rowspan="2">Hutang</th><th rowspan="2">Makan</th><th rowspan="2">Tunjangan</th><th rowspan="2">Grand Total</th></tr><tr>
-        <th>Hari</th><th>Rp</th><th>Jam</th><th>Rate</th><th>Total</th></tr></thead><tbody>${rowsGaji}</tbody></table>`;
+        <th rowspan="2">No</th><th rowspan="2">Nama</th><th rowspan="2">Jabatan</th>
+        <th rowspan="2">Bank</th><th rowspan="2">No Rek</th><th rowspan="2">HK<br>Target</th><th rowspan="2">HK<br>Aktual</th>
+        <th colspan="8">Absensi</th>
+        <th rowspan="2">Gaji Pokok</th><th rowspan="2">Gaji/Hari</th>
+        <th colspan="2">Potongan</th><th colspan="3">Terlambat</th>
+        <th rowspan="2">Hutang</th><th rowspan="2">Makan</th><th rowspan="2">Tunjangan</th>
+        <th rowspan="2">Grand Total</th><th rowspan="2">Pembayaran</th>
+    </tr><tr>
+        <th>A</th><th>I</th><th>S</th><th>OFF</th><th>DP</th><th>PH</th><th>AL</th><th>JML</th>
+        <th>Hari</th><th>Rp</th><th>Jam</th><th>Rate</th><th>Total</th>
+    </tr></thead><tbody>${rowsGaji}</tbody></table>`;
     htmlGaji += `<p style="text-align:right;font-weight:bold;margin-top:8px;">TOTAL: ${formatMoney(totalGrand)}</p>`;
 
     if (typeof window.jspdf !== 'undefined' && typeof html2canvas !== 'undefined') {
@@ -6262,9 +6614,12 @@ async function downloadAllSlipsAsZip(event) {
             });
 
             const pData = gajiPeriodData[emp.id || i] || {};
+            const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
             const gajiPokok = parseInt(emp.gajiPokok) || 0;
             const potHari = parseFloat(pData.potHari) || 0;
-            const jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
+            let jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
+            const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || i, emp.name, tglAwal, tglAkhir) : 0;
+            if (totalMenitTelatGps > 0) jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
             const hutang = parseInt(pData.hutang) || 0;
             const tunjangan = parseInt(pData.tunjangan) || 0;
 
@@ -6315,12 +6670,13 @@ async function downloadAllSlipsAsZip(event) {
 
 // ================= BONUS LOGIC =================
 function renderBonusTab() {
-    const tglAwal = document.getElementById("bonus_start_date").value;
-    const tglAkhir = document.getElementById("bonus_end_date").value;
+    const tglAwal = document.getElementById("absensi_tgl_awal").value;
+    const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
     if (!tglAwal || !tglAkhir) return;
 
     const key = getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir);
     const savedData = getCachedParsedStorage(key, { absensi: [], omset: { total: 0, persen: 0, excludedIds: [] } });
+    const omsetData = savedData.omset || { total: 0, persen: 0, pool: 0, excludedIds: [] };
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
 
     // --- 1. Render Bonus Absensi ---
@@ -6352,25 +6708,30 @@ function renderBonusTab() {
     calculateBonusAbsensiTotal();
 
     // --- 2. Render Bonus Omset ---
-    document.getElementById("bonus_omset_total").value = savedData.omset.total ? formatRupiah(savedData.omset.total) : "";
-    document.getElementById("bonus_omset_persen").value = savedData.omset.persen || "";
+    document.getElementById("bonus_omset_total").value = omsetData.total ? formatRupiah(omsetData.total) : "";
+    document.getElementById("bonus_omset_persen").value = omsetData.persen || "";
+    document.getElementById("bonus_omset_pool").value = omsetData.pool ? formatRupiah(omsetData.pool) : "";
 
     const omsetTbody = document.getElementById("bonus_omset_tbody");
     omsetTbody.innerHTML = "";
     
     employees.forEach(emp => {
-        const isExcluded = (savedData.omset.excludedIds || []).includes(emp.id);
+        const isExcluded = (omsetData.excludedIds || []).includes(emp.id);
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td>${emp.name}<br><span style="font-size:10px; color:#666;">${emp.jabatan}</span></td>
             <td style="text-align:center;">
-                <input type="checkbox" class="bonus-omset-check" value="${emp.id}" ${!isExcluded ? 'checked' : ''} onchange="calculateBonusOmset()">
+                <input type="checkbox" class="bonus-omset-check" value="${emp.id}" ${!isExcluded ? 'checked' : ''} onchange="calculateBonusOmsetFromPool()">
             </td>
             <td style="text-align:right;" class="bonus-omset-nominal-display">-</td>
         `;
         omsetTbody.appendChild(tr);
     });
-    calculateBonusOmset();
+    if (omsetData.pool > 0) {
+        calculateBonusOmsetFromPool();
+    } else {
+        calculateBonusOmset();
+    }
 }
 
 function addBonusAbsensiRow() {
@@ -6400,6 +6761,21 @@ function calculateBonusAbsensiTotal() {
     document.getElementById("bonus_absensi_total").innerText = formatRupiah(total);
 }
 
+function calculateBonusOmsetFromPool() {
+    const poolStr = document.getElementById("bonus_omset_pool").value;
+    const pool = parseInt(poolStr.replace(/[^0-9]/g, '')) || 0;
+
+    const checkboxes = document.querySelectorAll(".bonus-omset-check:checked");
+    const count = checkboxes.length;
+    const perPerson = count > 0 ? Math.round(pool / count) : 0;
+
+    document.querySelectorAll(".bonus-omset-nominal-display").forEach(el => el.innerText = "Rp 0");
+    checkboxes.forEach(cb => {
+        const row = cb.closest("tr");
+        row.querySelector(".bonus-omset-nominal-display").innerText = formatRupiah(perPerson);
+    });
+}
+
 function calculateBonusOmset() {
     const omsetStr = document.getElementById("bonus_omset_total").value;
     const omset = parseInt(omsetStr.replace(/[^0-9]/g, '')) || 0;
@@ -6408,28 +6784,19 @@ function calculateBonusOmset() {
     const pool = Math.round(omset * (persen / 100));
     document.getElementById("bonus_omset_pool").value = formatRupiah(pool);
 
-    const checkboxes = document.querySelectorAll(".bonus-omset-check:checked");
-    const count = checkboxes.length;
-    const perPerson = count > 0 ? Math.round(pool / count) : 0;
-
-    // Reset all displays first
-    document.querySelectorAll(".bonus-omset-nominal-display").forEach(el => el.innerText = "Rp 0");
-
-    // Update checked rows
-    checkboxes.forEach(cb => {
-        const row = cb.closest("tr");
-        row.querySelector(".bonus-omset-nominal-display").innerText = formatRupiah(perPerson);
-    });
+    calculateBonusOmsetFromPool();
 }
 
 function saveBonusData() {
-    const tglAwal = document.getElementById("bonus_start_date").value;
-    const tglAkhir = document.getElementById("bonus_end_date").value;
+    const tglAwal = document.getElementById("absensi_tgl_awal").value;
+    const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
     if (!tglAwal || !tglAkhir) { alert("Pilih tanggal terlebih dahulu."); return; }
 
     const absensiData = [];
     document.querySelectorAll("#bonus_absensi_tbody tr").forEach(tr => {
-        const name = tr.querySelector(".bonus-absensi-name").value;
+        const nameSel = tr.querySelector(".bonus-absensi-name");
+        if (!nameSel) return;
+        const name = nameSel.value;
         const nominal = parseInt(tr.querySelector(".bonus-absensi-nominal").value.replace(/[^0-9]/g, '')) || 0;
         const keterangan = tr.querySelector(".bonus-absensi-ket").value;
         if (name) absensiData.push({ name, nominal, keterangan });
@@ -6437,18 +6804,20 @@ function saveBonusData() {
 
     const omsetTotal = parseInt(document.getElementById("bonus_omset_total").value.replace(/[^0-9]/g, '')) || 0;
     const omsetPersen = parseFloat(document.getElementById("bonus_omset_persen").value) || 0;
+    const omsetPool = parseInt(document.getElementById("bonus_omset_pool").value.replace(/[^0-9]/g, '')) || 0;
     const excludedIds = [];
     document.querySelectorAll(".bonus-omset-check:not(:checked)").forEach(cb => excludedIds.push(parseInt(cb.value)));
 
-    const data = { absensi: absensiData, omset: { total: omsetTotal, persen: omsetPersen, excludedIds } };
+    const data = { absensi: absensiData, omset: { total: omsetTotal, persen: omsetPersen, pool: omsetPool, excludedIds } };
     RBMStorage.setItem(getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir), JSON.stringify(data));
     window._rbmParsedCache[getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir)] = { data: data };
-    alert("✅ Data Bonus tersimpan.");
+    if (typeof AppPopup !== 'undefined') AppPopup.success("Data Bonus tersimpan.", "Sukses");
+    else alert("✅ Data Bonus tersimpan.");
 }
 
 function exportBonusAbsensiExcel() {
-    const tglAwal = document.getElementById("bonus_start_date").value;
-    const tglAkhir = document.getElementById("bonus_end_date").value;
+    const tglAwal = document.getElementById("absensi_tgl_awal").value;
+    const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
     const rows = document.querySelectorAll("#bonus_absensi_tbody tr");
     const total = document.getElementById("bonus_absensi_total").innerText;
 
@@ -6480,8 +6849,8 @@ function exportBonusAbsensiExcel() {
 }
 
 function exportBonusAbsensiPDF() {
-    const tglAwal = document.getElementById("bonus_start_date").value;
-    const tglAkhir = document.getElementById("bonus_end_date").value;
+    const tglAwal = document.getElementById("absensi_tgl_awal").value;
+    const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
     const rows = document.querySelectorAll("#bonus_absensi_tbody tr");
     const total = document.getElementById("bonus_absensi_total").innerText;
 
@@ -6509,8 +6878,8 @@ function exportBonusAbsensiPDF() {
 }
 
 function exportBonusOmsetExcel() {
-    const tglAwal = document.getElementById("bonus_start_date").value;
-    const tglAkhir = document.getElementById("bonus_end_date").value;
+    const tglAwal = document.getElementById("absensi_tgl_awal").value;
+    const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
     const omset = document.getElementById("bonus_omset_total").value;
     const persen = document.getElementById("bonus_omset_persen").value;
     const pool = document.getElementById("bonus_omset_pool").value;
@@ -6548,8 +6917,8 @@ function exportBonusOmsetExcel() {
 }
 
 function exportBonusOmsetPDF() {
-    const tglAwal = document.getElementById("bonus_start_date").value;
-    const tglAkhir = document.getElementById("bonus_end_date").value;
+    const tglAwal = document.getElementById("absensi_tgl_awal").value;
+    const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
     const omset = document.getElementById("bonus_omset_total").value;
     const persen = document.getElementById("bonus_omset_persen").value;
     const pool = document.getElementById("bonus_omset_pool").value;
@@ -6581,6 +6950,137 @@ function exportBonusOmsetPDF() {
     win.document.close();
     win.focus();
     setTimeout(() => { win.print(); win.close(); }, 500);
+}
+
+async function submitBonusAbsensiPengajuan() {
+    const period = _getAbsensiGajiPeriod();
+    if (!period) return alert('Pilih periode tanggal terlebih dahulu.');
+
+    if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.init || !FirebaseStorage.init()) {
+        return alert('Pengajuan hanya tersedia di mode Online (Firebase).');
+    }
+
+    openRekeningPencairanModal(async (rekInfo) => {
+        try {
+            const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+            const { tglAwal, tglAkhir, monthKey } = period;
+
+            let totalGrand = 0;
+            const items = [];
+            
+            document.querySelectorAll("#bonus_absensi_tbody tr").forEach((tr, idx) => {
+                const nameSel = tr.querySelector(".bonus-absensi-name");
+                const nomInput = tr.querySelector(".bonus-absensi-nominal");
+                const ketInput = tr.querySelector(".bonus-absensi-ket");
+                if (!nameSel || !nomInput) return;
+                
+                const name = nameSel.value;
+                const nominal = parseInt(nomInput.value.replace(/[^0-9]/g, '')) || 0;
+                const keterangan = ketInput ? ketInput.value : '-';
+                
+                if (name && nominal > 0) {
+                    totalGrand += nominal;
+                    const employees = window._absensiViewEmployees || getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+                    const emp = employees.find(e => e.name === name);
+                    const empId = emp ? (emp.id != null ? emp.id : idx) : idx;
+                    
+                    items.push({ empId: empId, nama: name, jabatan: emp ? emp.jabatan : '-', grandTotal: nominal, metodeBayar: 'TF', keterangan: keterangan });
+                }
+            });
+
+            if (totalGrand === 0) {
+                if(!confirm("Total bonus absensi adalah Rp 0. Lanjutkan pengajuan?")) return;
+            }
+
+            const u = _getCurrentUser();
+            const requester = (u && (u.username || u.nama)) ? (u.username || u.nama) : 'unknown';
+            const note = `Pengajuan BONUS ABSENSI periode ${tglAwal} s/d ${tglAkhir}`;
+
+            await FirebaseStorage.saveGajiPengajuan({ 
+                outletId, monthKey, periodStart: tglAwal, periodEnd: tglAkhir, requester, totalGrand, note,
+                bank: rekInfo.bank, rekening: rekInfo.rekening, atasnama: rekInfo.atasnama 
+            }, items);
+            if (typeof showCustomAlert !== 'undefined') showCustomAlert('Pengajuan Bonus Absensi berhasil dikirim ke Owner.', 'Sukses', 'success');
+            else alert('Pengajuan Bonus Absensi berhasil dikirim ke Owner.');
+            
+            if (window.self !== window.top) {
+                window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+            }
+        } catch (e) {
+            console.error(e);
+            if (typeof showCustomAlert !== 'undefined') showCustomAlert('Gagal mengajukan: ' + (e.message || e), 'Error', 'error');
+            else alert('Gagal mengajukan: ' + (e.message || e));
+        }
+    });
+}
+
+async function submitBonusOmsetPengajuan() {
+    const period = _getAbsensiGajiPeriod();
+    if (!period) return alert('Pilih periode tanggal terlebih dahulu.');
+
+    if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.init || !FirebaseStorage.init()) {
+        return alert('Pengajuan hanya tersedia di mode Online (Firebase).');
+    }
+
+    openRekeningPencairanModal(async (rekInfo) => {
+        try {
+            const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+            const { tglAwal, tglAkhir, monthKey } = period;
+
+            let totalGrand = 0;
+            const items = [];
+            
+            document.querySelectorAll("#bonus_omset_tbody tr").forEach((tr, idx) => {
+                if (!tr.cells || tr.cells.length < 3) return;
+                const nameHtml = tr.cells[0].innerHTML;
+                const name = nameHtml.split('<br>')[0].trim();
+                const jabatanHtml = tr.cells[0].querySelector('span');
+                const jabatan = jabatanHtml ? jabatanHtml.textContent : '-';
+                
+                const checkEl = tr.querySelector(".bonus-omset-check");
+                const checked = checkEl ? checkEl.checked : false;
+                
+                const nomEl = tr.querySelector(".bonus-omset-nominal-display");
+                const nominal = nomEl ? parseInt(nomEl.innerText.replace(/[^0-9]/g, '')) || 0 : 0;
+                
+                if (checked && nominal > 0) {
+                    totalGrand += nominal;
+                    const employees = window._absensiViewEmployees || getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+                    const emp = employees.find(e => e.name === name);
+                    const empId = emp ? (emp.id != null ? emp.id : idx) : idx;
+                    
+                    items.push({ empId: empId, nama: name, jabatan: jabatan, grandTotal: nominal, metodeBayar: 'TF', keterangan: 'Bonus Omset' });
+                }
+            });
+
+            if (totalGrand === 0) {
+                if(!confirm("Total bonus omset adalah Rp 0. Lanjutkan pengajuan?")) return;
+            }
+
+            const omsetTotal = document.getElementById("bonus_omset_total").value || "Rp 0";
+            const omsetPersen = document.getElementById("bonus_omset_persen").value || "0";
+            const omsetPool = document.getElementById("bonus_omset_pool").value || "Rp 0";
+
+            const u = _getCurrentUser();
+            const requester = (u && (u.username || u.nama)) ? (u.username || u.nama) : 'unknown';
+            const note = `Pengajuan BONUS OMSET periode ${tglAwal} s/d ${tglAkhir}<br><span style="font-size:11px; color:#475569;">&bull; Total Omset: <b>${omsetTotal}</b><br>&bull; Persentase: <b>${omsetPersen}%</b><br>&bull; Total Dibagi: <b>${omsetPool}</b></span>`;
+
+            await FirebaseStorage.saveGajiPengajuan({ 
+                outletId, monthKey, periodStart: tglAwal, periodEnd: tglAkhir, requester, totalGrand, note,
+                bank: rekInfo.bank, rekening: rekInfo.rekening, atasnama: rekInfo.atasnama 
+            }, items);
+            if (typeof showCustomAlert !== 'undefined') showCustomAlert('Pengajuan Bonus Omset berhasil dikirim ke Owner.', 'Sukses', 'success');
+            else alert('Pengajuan Bonus Omset berhasil dikirim ke Owner.');
+            
+            if (window.self !== window.top) {
+                window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+            }
+        } catch (e) {
+            console.error(e);
+            if (typeof showCustomAlert !== 'undefined') showCustomAlert('Gagal mengajukan: ' + (e.message || e), 'Error', 'error');
+            else alert('Gagal mengajukan: ' + (e.message || e));
+        }
+    });
 }
 
 // ================= RESERVASI LOGIC =================
@@ -8449,7 +8949,11 @@ window.loadFaceApiModelsForAbsensi = async function() {
     } catch (e) {
         console.error("Face API Load Error:", e);
         if (faceStatus) {
-            faceStatus.innerHTML = "❌ Gagal memuat Face ID";
+            if (window.location.protocol === 'file:') {
+                faceStatus.innerHTML = "❌ Gagal memuat Face ID.<br>Aplikasi harus dijalankan lewat <b>Live Server</b>, bukan file:///";
+            } else {
+                faceStatus.innerHTML = "❌ Gagal memuat Face ID. Periksa koneksi internet.";
+            }
             faceStatus.style.color = "#b91c1c";
             faceStatus.style.background = "#fef2f2";
             faceStatus.style.borderColor = "#fecaca";
@@ -8493,9 +8997,21 @@ function initAbsensiHardware() {
 
     // Start GPS Watch
     if (navigator.geolocation) {
-        // [OPTIMASI] Tambahkan timeout 20 detik & maximumAge 0
-        // Ini memaksa browser untuk tidak menunggu selamanya jika sinyal susah
-        var geoOptions = { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 };
+        // [OPTIMASI KILAT] Gunakan getCurrentPosition dulu untuk mendapatkan lokasi terakhir dengan sangat cepat,
+        // lalu lanjutkan dengan watchPosition untuk akurasi tinggi.
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                if (!currentPos) {
+                    currentPos = pos.coords;
+                    checkDistance();
+                }
+            }, 
+            function() {}, 
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+        );
+
+        // Tambahkan timeout 15 detik & maximumAge 10 detik agar watchPosition bisa mereturn cache jika posisi tidak banyak berubah
+        var geoOptions = { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 };
 
         gpsWatchId = navigator.geolocation.watchPosition(
             pos => {
@@ -8680,7 +9196,7 @@ function getBreakStats(logs, name, date) {
     return { total, lastOut };
 }
 
-function loadRekapAbsensiGPS() {
+async function loadRekapAbsensiGPS() {
     const tglAwal = document.getElementById("rekap_gps_start").value;
     const tglAkhir = document.getElementById("rekap_gps_end").value;
     const filterNama = document.getElementById("rekap_gps_filter_nama").value;
@@ -8695,8 +9211,19 @@ function loadRekapAbsensiGPS() {
         toggleBtn.style.opacity = showEmpty ? '1' : '0.7';
     }
 
-    // Ambil Data (foto sudah di-strip saat loadFromFirebase untuk mencegah hang)
-    const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
+    tbody.innerHTML = '<tr><td colspan="10" class="table-loading">Memuat data dari server... ⏳</td></tr>';
+
+    let logs = [];
+    if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsLogs) {
+        const outlet = getRbmOutlet() || 'default';
+        try {
+            logs = await FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir);
+            window._rbmParsedCache[getRbmStorageKey('RBM_GPS_LOGS')] = { data: logs };
+        } catch(e) { logs = []; }
+    } else {
+        logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
+    }
+
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
 
@@ -8899,8 +9426,9 @@ function deleteSingleGpsLog(logId) {
         if (!logToDelete) { showCustomAlert('Data tidak ditemukan untuk dihapus.', 'Info', 'error'); return; }
 
         if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase() && logToDelete._firebaseKey) {
-            var sfx = getRbmOutlet() ? '_' + getRbmOutlet().toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
-            var refPath = 'rbm_pro/gps_logs' + sfx + '/' + logToDelete._firebaseKey;
+            var outlet = getRbmOutlet() || 'default';
+            var ym = logToDelete.date.substring(0, 7);
+            var refPath = 'rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym + '/' + logToDelete._firebaseKey;
             window.RBMStorage._db.ref(refPath).remove().then(function() {
                 var newLogs = logs.filter(function(l) { return l.id != logId; });
                 try { localStorage.setItem(key, JSON.stringify(newLogs)); } catch(e){}
@@ -9478,10 +10006,19 @@ async function _executeAbsensiGPS(type) {
 
     // Jika absen Masuk: set Hadir (H) di tab Absensi & Jadwal
     if (type === 'Masuk' && empId !== null) {
-        const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
         const absKey = `${today}_${empId}`;
-        absensiData[absKey] = 'H';
-        RBMStorage.setItem(getRbmStorageKey('RBM_ABSENSI_DATA'), JSON.stringify(absensiData));
+        if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase()) {
+            const outlet = getRbmOutlet() || 'default';
+            const ym = today.substring(0, 7);
+            const path = `rbm_pro/absensi/${outlet}/${ym}/${absKey}`;
+            if (window.RBMStorage._db) window.RBMStorage._db.ref(path).set('H');
+            const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+            absensiData[absKey] = 'H';
+        } else {
+            const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+            absensiData[absKey] = 'H';
+            RBMStorage.setItem(getRbmStorageKey('RBM_ABSENSI_DATA'), JSON.stringify(absensiData));
+        }
     }
 
     // Cek telat (hanya untuk Masuk)
@@ -9631,8 +10168,9 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             
             var savePromise;
             if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase()) {
-                var sfx = getRbmOutlet() ? '_' + getRbmOutlet().toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
-                var refPath = 'rbm_pro/gps_logs' + sfx;
+                var outlet = getRbmOutlet() || 'default';
+                var ym = date.substring(0, 7);
+                var refPath = 'rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym;
                 if (window.RBMStorage._db) {
                     savePromise = window.RBMStorage._db.ref(refPath).push(log).then(function(){ return true; });
                 } else {
@@ -9645,10 +10183,19 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             
             savePromise.then(function() {
                 if (type === 'Masuk' && empId !== null) {
-                    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
                     const absKey = date + '_' + empId;
-                    absensiData[absKey] = 'H';
-                    RBMStorage.setItem(getRbmStorageKey('RBM_ABSENSI_DATA'), JSON.stringify(absensiData));
+                    if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase()) {
+                        const outlet = getRbmOutlet() || 'default';
+                        const ym = date.substring(0, 7);
+                        const path = `rbm_pro/absensi/${outlet}/${ym}/${absKey}`;
+                        if (window.RBMStorage._db) window.RBMStorage._db.ref(path).set('H');
+                        const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+                        absensiData[absKey] = 'H';
+                    } else {
+                        const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+                        absensiData[absKey] = 'H';
+                        RBMStorage.setItem(getRbmStorageKey('RBM_ABSENSI_DATA'), JSON.stringify(absensiData));
+                    }
                 }
                 if (feedbackEl) {
                     feedbackEl.textContent = 'Absensi ' + type + ' berhasil disimpan (manual). Tanggal: ' + date + ', Jam: ' + timeDisplay;
@@ -9750,10 +10297,19 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof generateAndShowSlip !== 'undefined') window.generateAndShowSlip = generateAndShowSlip;
   if (typeof sendSlipEmail !== 'undefined') window.sendSlipEmail = sendSlipEmail;
   if (typeof saveBonusData !== 'undefined') window.saveBonusData = saveBonusData;
+  if (typeof submitBonusAbsensiPengajuan !== 'undefined') window.submitBonusAbsensiPengajuan = submitBonusAbsensiPengajuan;
+  if (typeof submitBonusOmsetPengajuan !== 'undefined') window.submitBonusOmsetPengajuan = submitBonusOmsetPengajuan;
   if (typeof exportBonusAbsensiExcel !== 'undefined') window.exportBonusAbsensiExcel = exportBonusAbsensiExcel;
   if (typeof exportBonusAbsensiPDF !== 'undefined') window.exportBonusAbsensiPDF = exportBonusAbsensiPDF;
   if (typeof printReservasiBill !== 'undefined') window.printReservasiBill = printReservasiBill;
   if (typeof deleteReservasi !== 'undefined') window.deleteReservasi = deleteReservasi;
+  if (typeof formatRupiahInput !== 'undefined') window.formatRupiahInput = formatRupiahInput;
+  if (typeof addBonusAbsensiRow !== 'undefined') window.addBonusAbsensiRow = addBonusAbsensiRow;
+  if (typeof calculateBonusAbsensiTotal !== 'undefined') window.calculateBonusAbsensiTotal = calculateBonusAbsensiTotal;
+  if (typeof calculateBonusOmset !== 'undefined') window.calculateBonusOmset = calculateBonusOmset;
+  if (typeof calculateBonusOmsetFromPool !== 'undefined') window.calculateBonusOmsetFromPool = calculateBonusOmsetFromPool;
+  if (typeof closeRekeningPencairanModal !== 'undefined') window.closeRekeningPencairanModal = closeRekeningPencairanModal;
+  if (typeof processPengajuanWithRekening !== 'undefined') window.processPengajuanWithRekening = processPengajuanWithRekening;
   if (typeof updateGpsJadwalDisplay !== 'undefined') window.updateGpsJadwalDisplay = updateGpsJadwalDisplay;
   if (typeof processAbsensiGPS !== 'undefined') window.processAbsensiGPS = processAbsensiGPS;
   if (typeof loadMyGpsHistory !== 'undefined') window.loadMyGpsHistory = loadMyGpsHistory;

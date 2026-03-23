@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard Kasir - Rice Bowl Monster</title>
   <link rel="stylesheet" href="styles.css">
+  <style>
+    #notification-wrapper:hover > div:first-child { background-color: #e5e7eb !important; }
+  </style>
+  <script>
+    // [PENTING] Mencegah dashboard terbuka ganda di dalam iframe (Penyebab lonceng bertumpuk)
+    try {
+      if (window.self !== window.top) {
+        window.top.location.href = window.location.href;
+      }
+    } catch(e) {}
+  </script>
 </head>
 <body>
   <div class="app-container desktop-layout">
@@ -14,9 +25,33 @@
 
       <!-- [BARU] Info User & Lokasi di Kanan Header -->
       <div style="margin-left: auto; display: flex; align-items: center; gap: 16px;">
+        
+        <!-- Notification Bell di Header Atas -->
+        <div id="notification-wrapper" style="position: relative; cursor: pointer; display: none;">
+            <div style="font-size: 20px; padding: 6px; border-radius: 50%; background: #f3f4f6; color: #4b5563; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; transition: background 0.2s;">
+                🔔
+            </div>
+            <span id="notification-badge" style="position: absolute; top: -2px; right: -2px; background: #ef4444; color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 12px; display: none; border: 2px solid white; box-shadow: 0 2px 4px rgba(239,68,68,0.3);">0</span>
+            
+            <!-- Dropdown -->
+            <div id="notification-dropdown" style="display: none; position: absolute; top: 120%; right: -10px; width: 340px; background: white; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); z-index: 9999;">
+                <div style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center; background: #f8fafc; border-radius: 12px 12px 0 0;">
+                   <span style="font-weight: 700; font-size: 14px; color: #1f2937;">Pemberitahuan</span>
+                   <span id="notif-count-text" style="color: #ef4444; font-size:11px; font-weight:bold; background:#fee2e2; padding:3px 8px; border-radius:12px; display: none;">0 Baru</span>
+                </div>
+                <div id="notification-list" style="max-height: 350px; overflow-y: auto; padding: 0;">
+                    <div style="text-align: center; padding: 40px 20px; color: #6b7280; font-size: 13px;">Tidak ada notifikasi</div>
+                </div>
+                <div style="padding: 12px; border-top: 1px solid #e5e7eb; text-align: center; background: #f8fafc; border-radius: 0 0 12px 12px;">
+                   <a href="#" class="menu-link-override" style="color: #4C2A85; font-size: 13px; font-weight: 600; text-decoration: none; display:block;">Lihat Semua Pengajuan &rarr;</a>
+                </div>
+            </div>
+        </div>
+
         <div style="text-align: right; line-height: 1.3;">
           <div id="header-user-name" style="font-weight: 700; font-size: 14px; color: #374151;"></div>
           <div id="header-location" style="font-size: 11px; color: #6b7280; font-weight: 500;"></div>
+          <div id="header-bank-info" style="font-size: 11px; color: #059669; font-weight: 700; display: none; margin-top: 2px;"></div>
         </div>
       </div>
     </header>
@@ -70,6 +105,7 @@
         </div>
       </main>
     </div>
+
   </div>
 
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -191,6 +227,207 @@
           }
       }
 
+      // [BARU] Fungsi Notifikasi Pengajuan Realtime (Owner & Manager)
+      function initNotifications() {
+        const userData = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+        const role = String(userData.role || '').toLowerCase();
+        const username = (userData.username || '').toLowerCase();
+        const isOwner = role === 'owner' || username === 'burhan';
+        const isManager = role === 'manager';
+        
+        if (!isOwner && !isManager) return;
+        
+        const notifWrapper = document.getElementById('notification-wrapper');
+        const notifBadge = document.getElementById('notification-badge');
+        const notifList = document.getElementById('notification-list');
+        const notifCountText = document.getElementById('notif-count-text');
+        
+        notifWrapper.style.display = 'block';
+
+        // [BARU] Integrasi ke Pemberitahuan Windows (Pojok Kanan Bawah)
+        let notifiedSet = new Set();
+        let isFirstLoad = true;
+
+        if ("Notification" in window) {
+            if (Notification.permission === "default") {
+                Notification.requestPermission();
+            }
+            document.addEventListener('click', () => {
+                if (Notification.permission === "default") Notification.requestPermission();
+            }, { once: true });
+        }
+
+        function sendDesktopNotification(title, body) {
+            if (!("Notification" in window)) return;
+            if (Notification.permission === "granted") {
+                const notif = new Notification(title, { body: body, icon: 'https://cdn-icons-png.flaticon.com/512/3239/3239952.png' });
+                notif.onclick = function() {
+                    window.focus();
+                    document.getElementById('notification-dropdown').style.display = 'none';
+                    const iframe = document.getElementById('content-iframe');
+                    if(iframe) {
+                        iframe.src = 'rbm-pengajuan.html';
+                        document.querySelectorAll('.menu-link').forEach(l => l.classList.remove('active'));
+                        const targetLink = document.querySelector('a[href="rbm-pengajuan.html"]');
+                        if (targetLink) targetLink.classList.add('active');
+                        const welcomeMessage = document.getElementById('welcome-message');
+                        if (welcomeMessage) welcomeMessage.style.display = 'none';
+                        iframe.style.display = 'block';
+                    }
+                };
+            }
+        }
+
+        notifWrapper.addEventListener('click', (e) => {
+            const dropdown = document.getElementById('notification-dropdown');
+            dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+            e.stopPropagation();
+        });
+        document.addEventListener('click', () => {
+            const dropdown = document.getElementById('notification-dropdown');
+            if(dropdown) dropdown.style.display = 'none';
+        });
+        document.getElementById('notification-dropdown').addEventListener('click', e => e.stopPropagation());
+
+        const fetchNotifs = () => {
+            if (typeof firebase === 'undefined' || !firebase.database) return;
+            const db = firebase.database();
+            
+            Promise.all([
+                db.ref('rbm_pro/pengajuan_tf').once('value'),
+                db.ref('rbm_pro/petty_cash/pengajuan').once('value'),
+                db.ref('rbm_pro/gaji_pengajuan').once('value')
+            ]).then(snaps => {
+                let items = [];
+                
+                const processNode = (data, type) => {
+                    if (!data) return;
+                    Object.keys(data).forEach(k => {
+                        const d = data[k];
+                        if (!d) return;
+                        
+                        const outletMatched = isOwner || (isManager && (d.outlet === userData.outlet || d._outlet === userData.outlet));
+                        if (!outletMatched) return;
+
+                        if (isOwner) {
+                            let status = type === 'Gaji' || type === 'Bonus' ? d.statusOwner : d.status;
+                            if ((!status || status === 'pending') && !d.viewedByOwner) {
+                                items.push({ id: k, type: type, data: d, time: d.createdAt || 0 });
+                            }
+                        } else if (isManager) {
+                            let status = type === 'Gaji' || type === 'Bonus' ? d.statusOwner : d.status;
+                            if ((status === 'approved' || status === 'rejected') && !d.viewedByManager) {
+                                items.push({ id: k, type: type, data: d, time: d.updatedAt || d.createdAt || 0 });
+                            }
+                        }
+                    });
+                };
+
+                processNode(snaps[0].val(), 'TF');
+                processNode(snaps[1].val(), 'Petty Cash');
+                
+                const gajiData = snaps[2].val();
+                if (gajiData) {
+                    const traverseGaji = (node, path) => {
+                        if (node && typeof node === 'object') {
+                            if (node.periodStart || node.totalGrand !== undefined) {
+                                node._outlet = path[0];
+                                node._month = path[1];
+                                const isBonus = (node.note || '').toLowerCase().includes('bonus');
+                                const type = isBonus ? 'Bonus' : 'Gaji';
+                                
+                                const outletMatched = isOwner || (isManager && (node.outlet === userData.outlet || node._outlet === userData.outlet));
+                                if (outletMatched) {
+                                    if (isOwner && (!node.statusOwner || node.statusOwner === 'pending') && !node.viewedByOwner) {
+                                        items.push({ id: path[path.length-1], type: type, data: node, time: node.createdAt || 0 });
+                                    } else if (isManager && (node.statusOwner === 'approved' || node.statusOwner === 'rejected') && !node.viewedByManager) {
+                                        items.push({ id: path[path.length-1], type: type, data: node, time: node.updatedAt || node.createdAt || 0 });
+                                    }
+                                }
+                            } else {
+                                Object.keys(node).forEach(k => traverseGaji(node[k], path.concat(k)));
+                            }
+                        }
+                    };
+                    traverseGaji(gajiData, []);
+                }
+
+                items.sort((a,b) => b.time - a.time);
+                
+                if (items.length > 0) {
+                    notifBadge.style.display = 'inline-block';
+                    notifBadge.textContent = items.length > 99 ? '99+' : items.length;
+                    notifCountText.style.display = 'inline-block';
+                    notifCountText.textContent = `${items.length} Baru`;
+                    
+                    let html = '';
+                    items.slice(0, 15).forEach(item => {
+                        const d = item.data;
+                        const outletName = d.outlet || d._outlet || 'Semua';
+                        const amount = d.total || d.nominal || d.totalGrand || 0;
+                        const title = item.type === 'TF' ? `TF: ${d.suplier}` : item.type;
+                        
+                        let statusHtml = '';
+                        if (isManager) {
+                            let status = item.type === 'Gaji' || item.type === 'Bonus' ? d.statusOwner : d.status;
+                            let color = status === 'approved' ? '#059669' : '#dc2626';
+                            let text = status === 'approved' ? 'DISETUJUI' : 'DITOLAK';
+                            statusHtml = `<span style="font-size:10px; color:${color}; font-weight:bold; background:${color}20; padding:2px 6px; border-radius:4px; margin-left:6px;">${text}</span>`;
+                        } else {
+                            statusHtml = `<span style="font-size:10px; color:#d97706; font-weight:bold; background:#fef3c7; padding:2px 6px; border-radius:4px; margin-left:6px;">MENUNGGU ACC</span>`;
+                        }
+
+                        html += `
+                            <a href="#" class="notif-item-link" style="display:block; padding:12px 16px; border-bottom:1px solid #f3f4f6; text-decoration:none; transition:background 0.2s; background:white;">
+                                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                                    <span style="font-size:11px; color:#4C2A85; font-weight:700;">📍 ${outletName.toUpperCase()}</span>
+                                    <span style="font-size:10px; color:#9ca3af;">${new Date(item.time).toLocaleDateString('id-ID')}</span>
+                                </div>
+                                <div style="font-size:13px; font-weight:600; color:#1f2937; margin-bottom:4px; display:flex; align-items:center;">
+                                    ${title} ${statusHtml}
+                                </div>
+                                <div style="font-size:12px; color:#059669; font-weight:bold;">Rp ${parseInt(amount).toLocaleString('id-ID')}</div>
+                            </a>
+                        `;
+                    });
+                    notifList.innerHTML = html;
+
+                    document.querySelectorAll('.notif-item-link, .menu-link-override').forEach(el => {
+                        el.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            document.getElementById('notification-dropdown').style.display = 'none';
+                            const iframe = document.getElementById('content-iframe');
+                            iframe.src = 'rbm-pengajuan.html';
+                            document.querySelectorAll('.menu-link').forEach(l => l.classList.remove('active'));
+                            const targetLink = document.querySelector('a[href="rbm-pengajuan.html"]');
+                            if (targetLink) targetLink.classList.add('active');
+                            const welcomeMessage = document.getElementById('welcome-message');
+                            if (welcomeMessage) welcomeMessage.style.display = 'none';
+                            iframe.style.display = 'block';
+                        });
+                    });
+                } else {
+                    notifBadge.style.display = 'none';
+                    notifCountText.style.display = 'none';
+                    notifCountText.textContent = `0 Baru`;
+                notifList.innerHTML = '<div style="text-align: center; padding: 40px 20px; color: #6b7280; font-size: 13px;">Tidak ada notifikasi</div>';
+                }
+            }).catch(e => console.error("Notif fetch error:", e));
+        };
+
+        setTimeout(() => {
+            fetchNotifs();
+            setInterval(fetchNotifs, 15000); 
+        }, 2000);
+
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'REFRESH_NOTIFS') {
+                fetchNotifs();
+            }
+        });
+      }
+      initNotifications();
+
       // Panggil fungsi cek mode
       checkConnectionMode();
 
@@ -224,6 +461,23 @@
         // Jika Owner, tampilkan 'Semua Lokasi', jika tidak tampilkan outlet user
         const locText = (userData.role === 'owner') ? '🏢 Semua Lokasi' : `📍 ${userData.outlet ? userData.outlet.charAt(0).toUpperCase() + userData.outlet.slice(1) : '-'}`;
         headerLocEl.textContent = locText;
+      }
+      
+      const headerBankEl = document.getElementById('header-bank-info');
+      if (userData.role !== 'owner' && userData.outlet) {
+          try {
+              firebase.database().ref('customer_app_settings/outlets').once('value').then(snap => {
+                  const o = snap.val();
+                  const list = o ? (Array.isArray(o) ? o : Object.values(o)) : [];
+                  const data = list.find(i => i && i.id === userData.outlet);
+                  if (data && (data.bank || data.rekening)) {
+                      if (headerBankEl) {
+                          headerBankEl.innerHTML = `💳 ${data.bank || '-'} - ${data.rekening || '-'} <span style="color:#6b7280; font-weight:normal;">(a.n ${data.atasnama || '-'})</span>`;
+                          headerBankEl.style.display = 'block';
+                      }
+                  }
+              }).catch(e => console.warn(e));
+          } catch(e) {}
       }
 
       const menuLinks = document.querySelectorAll('.menu-link');
@@ -266,17 +520,20 @@
 
       // [BARU] Listener saat halaman di dalam iframe selesai dimuat
       iframe.addEventListener('load', () => {
-        try {
-          const doc = iframe.contentDocument || iframe.contentWindow.document;
-          // Tambahkan class ke body halaman anak agar CSS bisa menyembunyikan header ganda
-          doc.body.classList.add('in-iframe');
-          // Update judul header utama sesuai dengan halaman yang dibuka
-          const childTitle = doc.querySelector('.page-title');
-          if (childTitle) pageTitle.textContent = childTitle.textContent;
-        } catch (e) {
-          // [DIPERBAIKI] Error ini wajar saat membuka file lokal (file://) karena kebijakan keamanan browser.
-          // Kita abaikan saja agar konsol bersih.
+        if (window.location.protocol !== 'file:') {
+            try {
+              const doc = iframe.contentDocument || iframe.contentWindow.document;
+              doc.body.classList.add('in-iframe');
+              const childTitle = doc.querySelector('.page-title, .rbm-page-title');
+              if (childTitle) pageTitle.textContent = childTitle.textContent;
+            } catch (e) {}
         }
+      });
+
+      window.addEventListener('message', (event) => {
+          if (event.data && event.data.type === 'UPDATE_TITLE') {
+              pageTitle.textContent = event.data.title;
+          }
       });
 
       // [BARU] Logika untuk toggle sidebar

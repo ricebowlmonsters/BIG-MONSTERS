@@ -127,8 +127,24 @@
         </div>
     </div>
 
-    <!-- Summary Petty Cash dinonaktifkan untuk mempercepat loading -->
-    <div class="summary-grid" id="pc_summary" style="display:none !important;">
+    <!-- Summary Petty Cash (ringan: dihitung per-bulan) -->
+    <div class="summary-grid" id="pc_summary" style="display:none;">
+      <div class="summary-card">
+        <div class="label">Saldo Awal</div>
+        <div class="value" id="pc_saldo_awal">Rp 0</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Total Debit (Pengeluaran)</div>
+        <div class="value" id="pc_total_debit">Rp 0</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Total Kredit (Pemasukan)</div>
+        <div class="value" id="pc_total_kredit">Rp 0</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Saldo Akhir</div>
+        <div class="value" id="pc_saldo_akhir">Rp 0</div>
+      </div>
     </div>
 
     <div class="table-card">

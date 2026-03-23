@@ -36,6 +36,7 @@
         height: auto !important;
         max-height: none !important;
         overflow: visible !important;
+          border: none !important;
       }
       #print-area, #ownerPengajuanModalBody, .scrollable-table-container {
         position: static !important;
@@ -43,6 +44,8 @@
         overflow: visible !important;
         max-height: none !important;
         height: auto !important;
+          width: 100% !important;
+          max-width: 100% !important;
       }
       .modal-footer, .modal-close {
         display: none !important;
@@ -50,15 +53,23 @@
       table {
         page-break-inside: auto;
         width: 100% !important;
+          max-width: 100% !important;
+          table-layout: auto !important;
       }
       tr {
         page-break-inside: avoid;
         page-break-after: auto;
       }
+        th, td {
+          white-space: normal !important;
+          word-break: break-word !important;
+        }
       thead {
         display: table-header-group;
       }
       img {
+          max-width: 100% !important;
+          height: auto !important;
         max-height: 400px !important;
         page-break-inside: avoid;
         display: block;
@@ -160,11 +171,13 @@
 
       let tfData = null;
       let pcData = null;
+      let gajiDataFlat = null;
       let tfLoaded = false;
       let pcLoaded = false;
+      let gajiLoaded = false;
       
       const renderList = () => {
-          if (!tfLoaded || !pcLoaded) return;
+          if (!tfLoaded || !pcLoaded || !gajiLoaded) return;
           
           let pendingSubmissions = [];
           let historySubmissions = [];
@@ -173,7 +186,10 @@
               if (dataMap) {
                   Object.keys(dataMap).forEach(k => {
                       const item = { id: k, type: type, data: dataMap[k] };
-                      if (!item.data.status || item.data.status === 'pending') {
+                      let itemStatus = item.data.status || 'pending';
+                      if (type === 'gaji') itemStatus = item.data.statusOwner || 'pending';
+                      
+                      if (!itemStatus || itemStatus === 'pending') {
                           pendingSubmissions.push(item);
                       } else {
                           historySubmissions.push(item);
@@ -184,6 +200,7 @@
 
           processData(tfData, 'tf');
           processData(pcData, 'pc');
+          processData(gajiDataFlat, 'gaji');
           
           pendingSubmissions.sort((a,b) => (b.data.createdAt || 0) - (a.data.createdAt || 0));
           historySubmissions.sort((a,b) => (b.data.updatedAt || b.data.createdAt || 0) - (a.data.updatedAt || a.data.createdAt || 0));
@@ -194,12 +211,16 @@
               list.forEach(sub => {
               const d = sub.data;
               const isTf = sub.type === 'tf';
-              const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : 'Semua Outlet';
-              const submittedBy = d.userName ? `${d.userName} (${d.userRole})` : 'Anonim';
-              const title = isTf ? `TF: ${d.suplier || 'Suplier'} - ${d.keterangan || ''}` : `Petty Cash`;
-              const total = isTf ? (d.total || d.nominal || 0) : (d.nominal || 0);
-              const dateStr = d.tanggal || d.tanggalPengajuan || (d.createdAt ? new Date(d.createdAt).toLocaleDateString('id-ID') : '-');
-              const status = d.status || 'pending';
+              const isGaji = sub.type === 'gaji';
+              const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : (d._outlet ? (names[d._outlet] || d._outlet.toUpperCase()) : 'Semua Outlet');
+              const submittedBy = d.requester ? d.requester : (d.userName ? `${d.userName} (${d.userRole})` : 'Anonim');
+              const isBonus = (d.note || '').toLowerCase().includes('bonus');
+              const title = isTf ? `TF: ${d.suplier || 'Suplier'} - ${d.keterangan || ''}` : (isGaji ? (isBonus ? `Pengajuan Bonus (${d.periodStart || ''} s/d ${d.periodEnd || ''})` : `Pengajuan Gaji (${d.periodStart || ''} s/d ${d.periodEnd || ''})`) : `Petty Cash`);
+              const total = isTf ? (d.total || d.nominal || 0) : (isGaji ? (d.totalGrand || 0) : (d.nominal || 0));
+              const dateObj = d.createdAt ? new Date(d.createdAt) : null;
+              const timeStr = dateObj ? dateObj.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}) : '';
+              const dateStr = dateObj ? dateObj.toLocaleDateString('id-ID') + ' ' + timeStr : (d.tanggal || d.tanggalPengajuan || d.periodStart || '-');
+              const status = isGaji ? (d.statusOwner || 'pending') : (d.status || 'pending');
               const statusColor = status === 'approved' ? '#059669' : (status === 'rejected' ? '#dc2626' : '#d97706');
               const statusText = status === 'approved' ? 'Disetujui' : (status === 'rejected' ? 'Ditolak' : 'Menunggu');
               
@@ -229,12 +250,34 @@
       // [OPTIMASI] Gunakan once() alih-alih on() agar browser tidak hang karena ukuran payload yang raksasa
       Promise.all([
           db.ref('rbm_pro/pengajuan_tf').orderByKey().limitToLast(10).once('value'),
-          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(10).once('value')
+          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(10).once('value'),
+          db.ref('rbm_pro/gaji_pengajuan').once('value') // Fetch gaji submission tree
       ]).then(snaps => {
           tfData = snaps[0].val();
           pcData = snaps[1].val();
+          
+          let rawGaji = snaps[2].val();
+          if (rawGaji) {
+              gajiDataFlat = {};
+              // Flatten the nested Gaji data structure (outlet/month/requestId)
+              const traverse = (node, path) => {
+                  if (node && typeof node === 'object') {
+                      if (node.periodStart || node.totalGrand !== undefined || node.items) {
+                          const reqId = path[path.length - 1];
+                          gajiDataFlat[reqId] = node;
+                          gajiDataFlat[reqId]._outlet = path[0] || 'default';
+                          if (path.length > 2) gajiDataFlat[reqId]._month = path[path.length - 2];
+                      } else {
+                          Object.keys(node).forEach(k => traverse(node[k], path.concat(k)));
+                      }
+                  }
+              };
+              traverse(rawGaji, []);
+          }
+          
           tfLoaded = true;
           pcLoaded = true;
+          gajiLoaded = true;
           renderList();
       }).catch(err => {
           console.error(err);
@@ -282,13 +325,16 @@
       const db = firebase.database();
       
       let tfData = null; let pcData = null;
+      let gajiDataFlat = null;
       let tfLoaded = false; let pcLoaded = false;
+      let gajiLoaded = false;
       
       const renderList = () => {
-          if (!tfLoaded || !pcLoaded) return;
+          if (!tfLoaded || !pcLoaded || !gajiLoaded) return;
           let allSubmissions = [];
           if (tfData) Object.keys(tfData).forEach(k => allSubmissions.push({ id: k, type: 'tf', data: tfData[k] }));
           if (pcData) Object.keys(pcData).forEach(k => allSubmissions.push({ id: k, type: 'pc', data: pcData[k] }));
+          if (gajiDataFlat) Object.keys(gajiDataFlat).forEach(k => allSubmissions.push({ id: k, type: 'gaji', data: gajiDataFlat[k] }));
           
           const btnRefresh = document.getElementById('btn-refresh-manager');
           if (btnRefresh) { btnRefresh.textContent = '🔄 Refresh'; btnRefresh.disabled = false; }
@@ -303,16 +349,37 @@
           allSubmissions.forEach(sub => {
               const d = sub.data;
               const isTf = sub.type === 'tf';
-              const title = isTf ? `TF: ${d.suplier || 'Suplier'}` : `Petty Cash`;
-              const total = isTf ? (d.total || d.nominal || 0) : (d.nominal || 0);
-              const dateStr = d.tanggal || d.tanggalPengajuan || (d.createdAt ? new Date(d.createdAt).toLocaleDateString('id-ID') : '-');
-              const status = d.status || 'pending';
+              const isGaji = sub.type === 'gaji';
+              const isBonus = (d.note || '').toLowerCase().includes('bonus');
+              const title = isTf ? `TF: ${d.suplier || 'Suplier'}` : (isGaji ? (isBonus ? `Pengajuan Bonus` : `Pengajuan Gaji`) : `Petty Cash`);
+              const total = isTf ? (d.total || d.nominal || 0) : (isGaji ? (d.totalGrand || 0) : (d.nominal || 0));
+              const dateObj = d.createdAt ? new Date(d.createdAt) : null;
+              const timeStr = dateObj ? dateObj.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}) : '';
+              const dateStr = dateObj ? dateObj.toLocaleDateString('id-ID') + ' ' + timeStr : (d.tanggal || d.tanggalPengajuan || d.periodStart || '-');
+              const status = isGaji ? (d.statusOwner || 'pending') : (d.status || 'pending');
               const statusColor = status === 'approved' ? '#059669' : (status === 'rejected' ? '#dc2626' : '#d97706');
               const statusText = status === 'approved' ? 'Disetujui' : (status === 'rejected' ? 'Ditolak' : 'Menunggu');
               
               html += `<div style="background:#f9fafb; padding:12px; border-radius:8px; border:1px solid #e5e7eb; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;"><div><strong style="display:block; margin-bottom:4px; font-size:14px;">${title}</strong><span style="font-size:12px; color:#64748b;">${dateStr}</span></div><div style="text-align:right;"><strong style="font-size:14px; display:block; margin-bottom:4px;">Rp ${parseInt(total).toLocaleString('id-ID')}</strong><span style="font-size:11px; padding:2px 8px; border-radius:12px; background-color:${statusColor}20; color:${statusColor}; font-weight:bold;">${statusText}</span></div></div>`;
           });
           listContainer.innerHTML = html;
+
+          // [BARU] Tandai bahwa Manager sudah melihat update notifikasi
+          let updates = {};
+          allSubmissions.forEach(sub => {
+              const d = sub.data;
+              const status = sub.type === 'gaji' ? d.statusOwner : d.status;
+              if ((status === 'approved' || status === 'rejected') && !d.viewedByManager) {
+                  let dbPath = '';
+                  if (sub.type === 'tf') dbPath = `rbm_pro/pengajuan_tf/${sub.id}/viewedByManager`;
+                  else if (sub.type === 'gaji') dbPath = `rbm_pro/gaji_pengajuan/${d._outlet}/${d._month}/${sub.id}/viewedByManager`;
+                  else dbPath = `rbm_pro/petty_cash/pengajuan/${sub.id}/viewedByManager`;
+                  updates[dbPath] = true;
+              }
+          });
+          if (Object.keys(updates).length > 0) {
+              db.ref().update(updates);
+          }
       };
       
       const btnRefresh = document.getElementById('btn-refresh-manager');
@@ -321,12 +388,30 @@
       // [OPTIMASI] Gunakan once() agar tidak berat.
       Promise.all([
           db.ref('rbm_pro/pengajuan_tf').orderByKey().limitToLast(10).once('value'),
-          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(10).once('value')
+          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(10).once('value'),
+          db.ref('rbm_pro/gaji_pengajuan').once('value')
       ]).then(snaps => {
           tfData = snaps[0].val();
           pcData = snaps[1].val();
+          let rawGaji = snaps[2].val();
+          
+          if (rawGaji) {
+              gajiDataFlat = {};
+              const traverse = (node, path) => {
+                  if (node && typeof node === 'object') {
+                      if (node.periodStart || node.totalGrand !== undefined || node.items) {
+                          const reqId = path[path.length - 1];
+                          gajiDataFlat[reqId] = node;
+                      } else {
+                          Object.keys(node).forEach(k => traverse(node[k], path.concat(k)));
+                      }
+                  }
+              };
+              traverse(rawGaji, []);
+          }
           tfLoaded = true;
           pcLoaded = true;
+          gajiLoaded = true;
           renderList();
       });
     }
@@ -338,16 +423,20 @@ function openOwnerPengajuanModal(id) {
   const sub = window._pengajuanDataMap[id];
   const d = sub.data;
   const isTf = sub.type === 'tf';
+  const isGaji = sub.type === 'gaji';
   
   const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
-  const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : 'Semua Outlet';
-  const submittedBy = d.userName ? `${d.userName} (${d.userRole})` : 'Anonim';
+  const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : (d._outlet ? (names[d._outlet] || d._outlet.toUpperCase()) : 'Semua Outlet');
+  const submittedBy = d.requester ? d.requester : (d.userName ? `${d.userName} (${d.userRole})` : 'Anonim');
   
   // [BARU] Tandai bahwa Owner sudah membaca pengajuan ini agar notifikasi hilang
   var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
   var isOwnerOrDev = String(u.role || '').toLowerCase() === 'owner' || (u.username || '').toLowerCase() === 'burhan';
   if (isOwnerOrDev && !d.viewedByOwner) {
-      const dbPath = isTf ? `rbm_pro/pengajuan_tf/${sub.id}` : `rbm_pro/petty_cash/pengajuan/${sub.id}`;
+      let dbPath = '';
+      if (isTf) dbPath = `rbm_pro/pengajuan_tf/${sub.id}`;
+      else if (isGaji) dbPath = `rbm_pro/gaji_pengajuan/${d._outlet}/${d._month}/${sub.id}`;
+      else dbPath = `rbm_pro/petty_cash/pengajuan/${sub.id}`;
       firebase.database().ref(dbPath).update({ viewedByOwner: true });
   }
 
@@ -355,7 +444,11 @@ function openOwnerPengajuanModal(id) {
   const body = document.getElementById('ownerPengajuanModalBody');
   const title = document.getElementById('ownerPengajuanModalTitle');
   
-  title.innerHTML = (isTf ? 'Rincian Pengajuan Transfer' : 'Rincian Pengajuan Petty Cash') + 
+  const dateObj = d.createdAt ? new Date(d.createdAt) : null;
+  const timeStr = dateObj ? dateObj.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}) : '';
+  const dateStr = dateObj ? dateObj.toLocaleDateString('id-ID') + ' ' + timeStr : (d.tanggal || d.tanggalPengajuan || d.periodStart || '-');
+  const isBonusData = (d.note || '').toLowerCase().includes('bonus');
+  title.innerHTML = (isTf ? 'Rincian Pengajuan Transfer' : (isGaji ? (isBonusData ? 'Rincian Pengajuan Bonus' : 'Rincian Pengajuan Gaji') : 'Rincian Pengajuan Petty Cash')) + 
     `<div style="font-size:13px; color:#6b7280; font-weight:normal; margin-top:4px;">📍 Outlet: <strong>${outletName}</strong> | 👤 <strong>${submittedBy}</strong></div>`;
   
   let html = '<table style="width:100%; border-collapse:collapse; margin-bottom:15px; font-size:13px;">';
@@ -369,12 +462,54 @@ function openOwnerPengajuanModal(id) {
         <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Bank Acc</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.bankAcc || '-'}</td></tr>
         <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>A/N</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.atasNama || '-'}</td></tr>
         <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Keterangan</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.keterangan || '-'}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Dikirim</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${dateStr}</td></tr>
       </table>
       `;
+  } else if (isGaji) {
+      html += `
+        <tr><td style="padding:8px; border-bottom:1px solid #eee; width:120px;"><strong>Periode</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.periodStart || '-'} s/d ${d.periodEnd || '-'}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Total ${isBonusData ? 'Bonus' : 'Gaji'}</strong></td><td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; color:#1e40af;">Rp ${parseInt(d.totalGrand||0).toLocaleString('id-ID')}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Catatan</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.note || '-'}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Bank Tujuan</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.bank || '-'}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>No. Rekening</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.rekening || '-'}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Atas Nama</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.atasnama || '-'}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Dikirim</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${dateStr}</td></tr>
+      </table>
+      `;
+      
+      if (d.items && d.items.length > 0) {
+          html += `<div class="scrollable-table-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead style="position: sticky; top: 0; z-index: 1;"><tr style="background:#1e40af; color:white;">
+                <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Nama Karyawan</th>
+                <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Jabatan</th>
+                ${isBonusData ? '<th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Keterangan</th>' : ''}
+                <th style="padding:8px; border:1px solid #e2e8f0; text-align:center;">Metode Bayar</th>
+                <th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">${isBonusData ? 'Total Bonus' : 'Grand Total'}</th>
+                <th style="padding:8px; border:1px solid #e2e8f0; text-align:center;">Aksi</th>
+            </tr></thead><tbody>`;
+          d.items.forEach((emp, idx) => {
+              html += `<tr>
+                <td style="padding:6px; border:1px solid #e2e8f0;">${emp.nama || '-'}</td>
+                <td style="padding:6px; border:1px solid #e2e8f0;">${emp.jabatan || '-'}</td>
+                ${isBonusData ? `<td style="padding:6px; border:1px solid #e2e8f0;">${emp.keterangan || '-'}</td>` : ''}
+                <td style="padding:6px; border:1px solid #e2e8f0; text-align:center;">${emp.metodeBayar || 'TF'}</td>
+                <td style="padding:6px; border:1px solid #e2e8f0; text-align:right; font-weight:bold; color:#059669;">Rp ${parseInt(emp.grandTotal||0).toLocaleString('id-ID')}</td>
+                <td style="padding:6px; border:1px solid #e2e8f0; text-align:center;">
+                    <button class="btn btn-secondary" style="padding:4px 8px; font-size:11px; background:#0ea5e9; color:white; border:none;" onclick="printSlipSatuanOwner('${id}', ${idx})">🖨️ Cetak Slip</button>
+                </td>
+              </tr>`;
+          });
+          html += `</tbody></table></div>`;
+      }
   } else {
       html += `
         <tr><td style="padding:8px; border-bottom:1px solid #eee; width:120px;"><strong>Nominal</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">Rp ${parseInt(d.nominal||0).toLocaleString('id-ID')}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Bank Tujuan</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.bank || '-'}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>No. Rekening</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.rekening || '-'}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Atas Nama</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.atasnama || '-'}</td></tr>
         <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Tgl Pengajuan</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.tanggalPengajuan || '-'}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Dikirim</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${dateStr}</td></tr>
       </table>
       `;
       
@@ -454,12 +589,22 @@ function openOwnerPengajuanModal(id) {
   
   const approveBtn = document.getElementById('approveBtn');
   const rejectBtn = document.getElementById('rejectBtn');
+  const btnLaporan = document.getElementById('btnLaporanLengkap');
   
-  if (d.status === 'approved' || d.status === 'rejected') {
+  if (isGaji) {
+      btnLaporan.style.display = 'inline-block';
+      btnLaporan.textContent = isBonusData ? '📊 Laporan Lengkap (Bonus)' : '📊 Laporan Lengkap (Gaji)';
+      btnLaporan.onclick = () => isBonusData ? viewBonusDetail(sub.id) : viewPengajuanDetail(sub.id);
+  } else {
+      btnLaporan.style.display = 'none';
+  }
+
+  let currentStatus = isGaji ? d.statusOwner : d.status;
+  if (currentStatus === 'approved' || currentStatus === 'rejected') {
       approveBtn.style.display = 'none';
       rejectBtn.style.display = 'none';
-      const statusColor = d.status === 'approved' ? 'green' : 'red';
-      const statusText = d.status === 'approved' ? 'DISETUJUI' : 'DITOLAK';
+      const statusColor = currentStatus === 'approved' ? 'green' : 'red';
+      const statusText = currentStatus === 'approved' ? 'DISETUJUI' : 'DITOLAK';
       body.innerHTML += `<div style="text-align:center; padding:10px; margin-top:15px; font-weight:bold; color:${statusColor}; border:2px solid ${statusColor}; border-radius:8px;">STATUS: ${statusText}</div>`;
   } else {
       approveBtn.style.display = 'inline-block';
@@ -471,20 +616,555 @@ function openOwnerPengajuanModal(id) {
   rejectBtn.onclick = () => updatePengajuanStatus(sub.type, sub.id, 'rejected');
 }
 
+window.viewPengajuanDetail = function(id) {
+    const sub = window._pengajuanDataMap[id];
+    if (!sub) return alert('Data tidak ditemukan.');
+    const d = sub.data;
+    const outlet = d._outlet;
+    const tglAwal = d.periodStart;
+    const tglAkhir = d.periodEnd;
+
+    // Info untuk Header dan Tanda Tangan
+    const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+    const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : (d._outlet ? (names[d._outlet] || d._outlet.toUpperCase()) : 'Semua Outlet');
+    const makerName = d.requester || d.userName || '-';
+    const makerRole = d.userRole ? d.userRole.charAt(0).toUpperCase() + d.userRole.slice(1) : 'Manager';
+    const optionsDate = { day: 'numeric', month: 'long', year: 'numeric' };
+    const dateObj = d.createdAt ? new Date(d.createdAt) : new Date();
+    const signDateStr = `Sidoarjo, ${dateObj.toLocaleDateString('id-ID', optionsDate)}`;
+
+    const btn = document.getElementById('btnLihatDetailLengkap');
+    if (btn) {
+        btn.textContent = 'Memuat Data... ⏳';
+        btn.disabled = true;
+    }
+
+    const renderLaporan = (employees, absensiData, jadwalData, gajiData, gpsLogs) => {
+        const dates = [];
+        let curr = new Date(tglAwal);
+        const end = new Date(tglAkhir);
+        while (curr <= end) {
+            dates.push(new Date(curr));
+            curr.setDate(curr.getDate() + 1);
+        }
+
+        const formatMoney = (n) => {
+            if (isNaN(n) || n === null) return 'Rp 0';
+            return 'Rp ' + (n || 0).toLocaleString('id-ID');
+        };
+
+        var styleBlock = '<style>body{font-family:sans-serif;font-size:12px;padding:20px;background:#f3f4f6;} .page{background:white;padding:20px;margin-bottom:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);overflow-x:auto;} h2,h3{text-align:center;margin:5px 0;color:#1e40af;} table{width:100%;border-collapse:collapse;margin-top:15px;white-space:nowrap;} th,td{border:1px solid #cbd5e1;padding:8px;text-align:center;} th{background-color:#1e40af;color:#fff;position:sticky;top:0;} .text-left{text-align:left;} .text-right{text-align:right;} tr:nth-child(even){background-color:#f8fafc;} tr:hover{background-color:#e2e8f0;} @media print { @page { size: landscape; margin: 10mm; } body { padding:0; background:white; -webkit-print-color-adjust: exact; print-color-adjust: exact; zoom: 0.6; } .page { box-shadow:none; margin:0; padding:0; page-break-after:always; overflow:visible; width:100%; max-width:100%; display:block; } table { font-size:10px; width:100%; max-width:100%; } th, td { padding:4px; white-space: nowrap; } button { display:none !important; } }</style>';
+
+        var headerHtml = '<div style="text-align: center; margin-bottom: 25px; font-family: \\\'Times New Roman\\\', serif; border-bottom: 3px double #1e293b; padding-bottom: 15px;">' +
+            '<h1 style="margin: 0; font-size: 22px; text-transform: uppercase; color:#1e293b;">LAPORAN GAJI & ABSENSI LENGKAP</h1>' +
+            '<h2 style="margin: 5px 0 0; font-size: 16px; color:#475569;">CABANG ' + outletName.toUpperCase() + '</h2>';
+            
+        if (d.bank || d.rekening) {
+            headerHtml += '<div style="display:inline-block; margin-top:10px; padding:6px 15px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:sans-serif; font-size:13px; color:#1e40af;">' +
+                '<strong>Rekening Pencairan:</strong> ' + (d.bank || '-') + ' - ' + (d.rekening || '-') + ' (a.n ' + (d.atasnama || '-') + ')' +
+                '</div>';
+        }
+        headerHtml += '</div>';
+
+        var isApproved = d.statusOwner === 'approved';
+        var approverHtml = isApproved 
+            ? '<div style="color:#059669; font-weight:bold; font-size:11px; margin: 10px auto 10px; border: 2px solid #059669; padding: 4px; border-radius: 4px; display: inline-block; transform: rotate(-5deg);">DISETUJUI DIGITAL</div>' 
+            : '<br><br><br>';
+        var approverName = isApproved ? (d.approvedOwnerBy || 'Puji Shohibul Burhan') : 'Puji Shohibul Burhan';
+        var approverRole = isApproved ? 'Owner / Manager Regional' : 'Manager Regional';
+
+        var htmlTandaTangan = `
+            <div style="margin-top: 50px; display: flex; justify-content: space-between; font-family: Arial, sans-serif; font-size: 14px; page-break-inside: avoid; padding: 0 50px;">
+                <div style="text-align: center; width: 250px;">
+                    <p style="margin-bottom: 50px; color:#333;">${signDateStr}</p>
+                    <p style="margin-bottom: 5px; color:#333;">Dibuat / Penanggung Jawab:</p>
+                    <br><br><br>
+                    <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px; color:#000;">${makerName}</p>
+                    <p style="margin: 0; color:#333;">${makerRole}</p>
+                </div>
+                <div style="text-align: center; width: 250px;">
+                    <p style="margin-bottom: 50px;">&nbsp;</p>
+                    <p style="margin-bottom: 5px; color:#333;">Disetujui / Mengetahui:</p>
+                    ${approverHtml}
+                    <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px; color:#000;">${approverName}</p>
+                    <p style="margin: 0; color:#333;">${approverRole}</p>
+                </div>
+            </div>
+        `;
+
+        // --- 1. ABSENSI ---
+        var htmlAbsensi = `<div class="page">${headerHtml}<h2>LAPORAN ABSENSI HARIAN</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
+            <th rowspan="2">No</th><th rowspan="2">Nama</th><th rowspan="2">Jabatan</th>
+            <th colspan="${dates.length}">Tanggal</th><th colspan="9">Rekap</th></tr><tr>`;
+        dates.forEach(d => htmlAbsensi += `<th>${d.getDate()}</th>`);
+        ['H','R','O','S','I','A','DP','PH','AL'].forEach(h => htmlAbsensi += `<th>${h}</th>`);
+        htmlAbsensi += `</tr></thead><tbody>`;
+        employees.forEach((emp, idx) => {
+            let empKey = emp.id != null ? emp.id : idx;
+            let counts = {H:0,R:0,O:0,S:0,I:0,A:0,DP:0,PH:0,AL:0};
+            htmlAbsensi += `<tr><td>${idx+1}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td>`;
+            dates.forEach(d => {
+                const key = `${d.toISOString().split('T')[0]}_${empKey}`;
+                const status = absensiData[key] || '';
+                let countKey = status === 'O' ? 'O' : status;
+                if(counts.hasOwnProperty(countKey)) counts[countKey]++;
+                htmlAbsensi += `<td>${status}</td>`;
+            });
+            ['H','R','O','S','I','A','DP','PH','AL'].forEach(h => htmlAbsensi += `<td>${counts[h]}</td>`);
+            htmlAbsensi += `</tr>`;
+        });
+        htmlAbsensi += `</tbody></table>${htmlTandaTangan}</div>`;
+
+        // --- 2. JADWAL ---
+        var htmlJadwal = `<div class="page">${headerHtml}<h2>JADWAL KERJA</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
+            <th rowspan="2">No</th><th rowspan="2">Nama</th><th rowspan="2">Jabatan</th>
+            <th colspan="${dates.length}">Tanggal</th><th colspan="7">Rekap</th></tr><tr>`;
+        dates.forEach(d => htmlJadwal += `<th>${d.getDate()}</th>`);
+        ['P','M','S','Off','PH','AL','DP'].forEach(h => htmlJadwal += `<th>${h}</th>`);
+        htmlJadwal += `</tr></thead><tbody>`;
+        employees.forEach((emp, idx) => {
+            let empKey = emp.id != null ? emp.id : idx;
+            let counts = {P:0,M:0,S:0,Off:0,PH:0,AL:0,DP:0};
+            htmlJadwal += `<tr><td>${idx+1}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td>`;
+            dates.forEach(d => {
+                const key = `${d.toISOString().split('T')[0]}_${empKey}`;
+                const status = jadwalData[key] || '';
+                if(counts.hasOwnProperty(status)) counts[status]++;
+                htmlJadwal += `<td>${status}</td>`;
+            });
+            ['P','M','S','Off','PH','AL','DP'].forEach(h => htmlJadwal += `<td>${counts[h]}</td>`);
+            htmlJadwal += `</tr>`;
+        });
+        htmlJadwal += `</tbody></table>${htmlTandaTangan}</div>`;
+
+        // --- 3. REKAP ABSEN ---
+        var htmlLaporanAbsen = `<div class="page">${headerHtml}<h2>REKAP ABSENSI</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
+            <th rowspan="2">No</th><th rowspan="2">ID</th><th rowspan="2">Nama</th><th rowspan="2">Jabatan</th>
+            <th colspan="${dates.length}">Periode</th><th rowspan="2">Total HK</th><th rowspan="2">Sisa Cuti</th><th colspan="8">Absensi</th></tr><tr>`;
+        dates.forEach(d => htmlLaporanAbsen += `<th>${d.getDate()}</th>`);
+        ['A','I','S','OFF','DP','PH','AL','JML'].forEach(h => htmlLaporanAbsen += `<th>${h}</th>`);
+        htmlLaporanAbsen += `</tr></thead><tbody>`;
+        employees.forEach((emp, idx) => {
+            let empKey = emp.id != null ? emp.id : idx;
+            let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
+            dates.forEach(d => {
+                const key = `${d.toISOString().split('T')[0]}_${empKey}`;
+                const status = absensiData[key] || '';
+                let countKey = status === 'O' ? 'OFF' : status;
+                if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
+            });
+            const totalSisaCuti = (parseInt(emp.sisaAL)||0) + (parseInt(emp.sisaDP)||0) + (parseInt(emp.sisaPH)||0);
+            htmlLaporanAbsen += `<tr><td>${idx+1}</td><td>${emp.id || '-'}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td>`;
+            dates.forEach(d => {
+                const key = `${d.toISOString().split('T')[0]}_${empKey}`;
+                htmlLaporanAbsen += `<td>${absensiData[key] || ''}</td>`;
+            });
+            htmlLaporanAbsen += `<td>${counts.H}</td><td>${totalSisaCuti}</td><td>${counts.A}</td><td>${counts.I}</td><td>${counts.S}</td><td>${counts.OFF}</td><td>${counts.DP}</td><td>${counts.PH}</td><td>${counts.AL}</td><td>${dates.length}</td></tr>`;
+        });
+        htmlLaporanAbsen += `</tbody></table>${htmlTandaTangan}</div>`;
+
+        // --- 4. REKAP GAJI ---
+        var totalGrand = 0;
+        var rowsGaji = '';
+        employees.forEach((emp, idx) => {
+            let empKey = emp.id != null ? emp.id : idx;
+            let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
+            dates.forEach(d => {
+                const key = `${d.toISOString().split('T')[0]}_${empKey}`;
+                const status = absensiData[key] || '';
+                let countKey = status === 'O' ? 'OFF' : status;
+                if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
+            });
+            const pData = gajiData[empKey] || {};
+            const bank = emp.bank || '-';
+            const noRek = emp.noRek || '-';
+            const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
+            const hkAktual = counts.H;
+            const gajiPokok = parseInt(emp.gajiPokok) || 0;
+            const potHari = parseFloat(pData.potHari) || 0;
+            const jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
+            const hutang = parseInt(pData.hutang) || 0;
+            const tunjangan = parseInt(pData.tunjangan) || 0;
+            const metodeBayar = pData.metodeBayar || 'TF';
+            const gajiPerHari = Math.round(gajiPokok / 30);
+            const potTerlambatPerJam = Math.round(gajiPokok / 240);
+            const uangMakan = hkAktual * 10000;
+            const totalPotKehadiran = Math.round(potHari * gajiPerHari);
+            const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
+            const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
+            totalGrand += grandTotal;
+            rowsGaji += `<tr>
+                <td>${idx+1}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td>
+                <td>${bank}</td><td>${noRek}</td><td>${hkTarget}</td><td>${hkAktual}</td>
+                <td>${counts.A || '-'}</td><td>${counts.I || '-'}</td><td>${counts.S || '-'}</td><td>${counts.OFF || '-'}</td><td>${counts.DP || '-'}</td><td>${counts.PH || '-'}</td><td>${counts.AL || '-'}</td><td>${dates.length}</td>
+                <td class="text-right">${formatMoney(gajiPokok)}</td><td class="text-right">${formatMoney(gajiPerHari)}</td>
+                <td>${potHari}</td><td class="text-right">${formatMoney(totalPotKehadiran)}</td>
+                <td>${jamTerlambat}</td><td class="text-right">${formatMoney(potTerlambatPerJam)}</td><td class="text-right">${formatMoney(totalPotTerlambat)}</td>
+                <td class="text-right">${formatMoney(hutang)}</td><td class="text-right">${formatMoney(uangMakan)}</td><td class="text-right">${formatMoney(tunjangan)}</td>
+                <td class="text-right" style="font-weight:bold; color:#16a34a;">${formatMoney(grandTotal)}</td><td>${metodeBayar}</td>
+            </tr>`;
+        });
+        var htmlGaji = `<div class="page">${headerHtml}<h2>REKAPITULASI GAJI KARYAWAN</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
+            <th rowspan="2">No</th><th rowspan="2">Nama</th><th rowspan="2">Jabatan</th>
+            <th rowspan="2">Bank</th><th rowspan="2">No Rek</th><th rowspan="2">HK<br>Target</th><th rowspan="2">HK<br>Aktual</th>
+            <th colspan="8">Absensi</th>
+            <th rowspan="2">Gaji Pokok</th><th rowspan="2">Gaji/Hari</th>
+            <th colspan="2">Potongan Kehadiran</th><th colspan="3">Keterlambatan</th>
+            <th rowspan="2">Hutang</th><th rowspan="2">Makan</th><th rowspan="2">Tunjangan</th>
+            <th rowspan="2">Grand Total</th><th rowspan="2">Pembayaran</th>
+        </tr><tr>
+            <th>A</th><th>I</th><th>S</th><th>OFF</th><th>DP</th><th>PH</th><th>AL</th><th>JML</th>
+            <th>Hari</th><th>Rp</th><th>Jam</th><th>Rate</th><th>Total</th>
+        </tr></thead><tbody>${rowsGaji}</tbody></table>`;
+        htmlGaji += `<div style="text-align:right; font-size:18px; font-weight:bold; margin-top:15px; padding:15px; background:#e2e8f0; border-radius:6px; color:#1e40af;">TOTAL PENGELUARAN GAJI: ${formatMoney(totalGrand)}</div>${htmlTandaTangan}</div>`;
+
+        // --- 5. REKAP ABSENSI GPS ---
+        var groupedGps = {};
+        (gpsLogs || []).forEach(log => {
+            const key = `${log.date}_${log.name}`;
+            if (!groupedGps[key]) groupedGps[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null };
+            if (log.type === 'Masuk' && !groupedGps[key].masuk) groupedGps[key].masuk = log;
+            else if (log.type === 'Pulang') groupedGps[key].pulang = log;
+            else if (log.type === 'Istirahat Keluar') groupedGps[key].breakOuts.push(log);
+            else if (log.type === 'Istirahat Kembali') groupedGps[key].breakIns.push(log);
+        });
+        
+        var gpsKeys = Object.keys(groupedGps).sort((a, b) => {
+            if (groupedGps[a].date !== groupedGps[b].date) return groupedGps[a].date.localeCompare(groupedGps[b].date);
+            return groupedGps[a].name.localeCompare(groupedGps[b].name);
+        });
+
+        var rowsGps = '';
+        gpsKeys.forEach(k => {
+            const item = groupedGps[k];
+            const formatTime = (log) => log ? log.time : '-';
+            const formatTimes = (arr) => arr && arr.length ? arr.map(l => l.time).join(', ') : '-';
+            
+            rowsGps += `<tr>
+                <td>${item.date}</td>
+                <td class="text-left">${item.name}</td>
+                <td>${formatTime(item.masuk)}</td>
+                <td>${formatTimes(item.breakOuts)}</td>
+                <td>${formatTimes(item.breakIns)}</td>
+                <td>${formatTime(item.pulang)}</td>
+            </tr>`;
+        });
+        
+        if (rowsGps === '') rowsGps = `<tr><td colspan="6" style="text-align:center;">Tidak ada data GPS pada periode ini.</td></tr>`;
+
+        var htmlGps = `<div class="page">${headerHtml}<h2>REKAP ABSENSI GPS (LOGS)</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
+            <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Pulang</th>
+        </tr></thead><tbody>${rowsGps}</tbody></table>${htmlTandaTangan}</div>`;
+
+        var finalHtml = '<html><head><title>Detail Laporan Pengajuan</title>' + styleBlock + '</head><body>' +
+            htmlAbsensi + htmlJadwal + htmlLaporanAbsen + htmlGaji + htmlGps +
+            '<div style="text-align:center; margin:30px 0;"><button onclick="window.print()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#10b981; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Print / PDF</button><button onclick="window.close()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#1e40af; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1);">Tutup Halaman</button></div>' +
+            '</body></html>';
+
+        var viewWindow = window.open('', '_blank');
+        viewWindow.document.write(finalHtml);
+        viewWindow.document.close();
+        viewWindow.focus();
+    };
+
+    // Jika ada snapshot di dalam payload (fitur baru), langsung render tanpa perlu konek database lain
+    if (d.snapshot) {
+        if (btn) {
+            btn.textContent = '📊 Lihat Laporan Lengkap (Absensi, Jadwal, Rincian Gaji)';
+            btn.disabled = false;
+        }
+        let snapData = d.snapshot;
+        if (typeof snapData === 'string') {
+            try { snapData = JSON.parse(snapData); } catch(e) { snapData = {}; }
+        }
+        renderLaporan(snapData.employees || [], snapData.absensiData || {}, snapData.jadwalData || {}, snapData.gajiData || {}, snapData.gpsLogs || []);
+        return;
+    }
+
+    // Fallback untuk pengajuan lama: ambil dari storage Firebase
+    const sfx = outlet && outlet !== 'default' ? '_' + outlet : '';
+    const db = firebase.database();
+    
+    const getStorageData = async (key) => {
+        const snap = await db.ref('rbm_pro/storage/' + key).once('value');
+        return snap.val();
+    };
+
+    Promise.all([
+        getStorageData('RBM_EMPLOYEES' + sfx),
+        getStorageData('RBM_ABSENSI_DATA' + sfx),
+        getStorageData('RBM_JADWAL_DATA' + sfx),
+        getStorageData('RBM_GAJI_' + tglAwal + '_' + tglAkhir + sfx),
+        getStorageData('RBM_GPS_LOGS' + sfx)
+    ]).then(snaps => {
+        if (btn) {
+            btn.textContent = '📊 Lihat Laporan Lengkap (Absensi, Jadwal, Rincian Gaji)';
+            btn.disabled = false;
+        }
+
+        const safeParse = (val, def) => {
+            try { return typeof val === 'string' ? JSON.parse(val) : (val || def); }
+            catch(e) { return def; }
+        };
+
+        let employees = safeParse(snaps[0], []);
+        if (typeof employees === 'object' && !Array.isArray(employees)) {
+            employees = Object.keys(employees).map(k => employees[k]).filter(Boolean);
+        }
+        
+        const absensiData = safeParse(snaps[1], {});
+        const jadwalData = safeParse(snaps[2], {});
+        const gajiData = safeParse(snaps[3], {});
+        let gpsLogs = safeParse(snaps[4], []);
+        if (typeof gpsLogs === 'object' && !Array.isArray(gpsLogs)) {
+            gpsLogs = Object.values(gpsLogs).filter(Boolean);
+        }
+
+        renderLaporan(employees, absensiData, jadwalData, gajiData, gpsLogs);
+
+    }).catch(err => {
+        if (btn) {
+            btn.textContent = '📊 Lihat Laporan Lengkap (Absensi, Jadwal, Rincian Gaji)';
+            btn.disabled = false;
+        }
+        alert("Gagal memuat data dari server: " + err.message);
+    });
+};
+
+window.viewBonusDetail = function(id) {
+    const sub = window._pengajuanDataMap[id];
+    if (!sub) return alert('Data tidak ditemukan.');
+    const d = sub.data;
+
+    const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+    const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : (d._outlet ? (names[d._outlet] || d._outlet.toUpperCase()) : 'Semua Outlet');
+    const makerName = d.requester || d.userName || '-';
+    const makerRole = d.userRole ? d.userRole.charAt(0).toUpperCase() + d.userRole.slice(1) : 'Manager';
+    const optionsDate = { day: 'numeric', month: 'long', year: 'numeric' };
+    const dateObj = d.createdAt ? new Date(d.createdAt) : new Date();
+    const signDateStr = `Sidoarjo, ${dateObj.toLocaleDateString('id-ID', optionsDate)}`;
+
+    const formatMoney = (n) => {
+        if (isNaN(n) || n === null) return 'Rp 0';
+        return 'Rp ' + parseInt(n).toLocaleString('id-ID');
+    };
+
+    var styleBlock = '<style>body{font-family:sans-serif;font-size:12px;padding:20px;background:#f3f4f6;} .page{background:white;padding:20px;margin-bottom:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);overflow-x:auto;} h2,h3{text-align:center;margin:5px 0;color:#1e40af;} table{width:100%;border-collapse:collapse;margin-top:15px;white-space:nowrap;} th,td{border:1px solid #cbd5e1;padding:8px;text-align:center;} th{background-color:#1e40af;color:#fff;} .text-left{text-align:left;} .text-right{text-align:right;} tr:nth-child(even){background-color:#f8fafc;} tr:hover{background-color:#e2e8f0;} @media print { @page { size: portrait; margin: 10mm; } body { padding:0; background:white; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .page { box-shadow:none; margin:0; padding:0; overflow:visible; width:100%; max-width:100%; display:block; } table { width:100%; max-width:100%; } button { display:none !important; } }</style>';
+
+    var headerHtml = '<div style="text-align: center; margin-bottom: 25px; font-family: \\\'Times New Roman\\\', serif; border-bottom: 3px double #1e293b; padding-bottom: 15px;">' +
+        '<h1 style="margin: 0; font-size: 22px; text-transform: uppercase; color:#1e293b;">LAPORAN PENGAJUAN BONUS</h1>' +
+        '<h2 style="margin: 5px 0 0; font-size: 16px; color:#475569;">CABANG ' + outletName.toUpperCase() + '</h2>';
+        
+    if (d.bank || d.rekening) {
+        headerHtml += '<div style="display:inline-block; margin-top:10px; padding:6px 15px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:sans-serif; font-size:13px; color:#1e40af;">' +
+            '<strong>Rekening Pencairan:</strong> ' + (d.bank || '-') + ' - ' + (d.rekening || '-') + ' (a.n ' + (d.atasnama || '-') + ')' +
+            '</div>';
+    }
+    headerHtml += '</div>';
+
+    var isApproved = d.statusOwner === 'approved';
+    var approverHtml = isApproved 
+        ? '<div style="color:#059669; font-weight:bold; font-size:11px; margin: 10px auto 10px; border: 2px solid #059669; padding: 4px; border-radius: 4px; display: inline-block; transform: rotate(-5deg);">DISETUJUI DIGITAL</div>' 
+        : '<br><br><br>';
+    var approverName = isApproved ? (d.approvedOwnerBy || 'Puji Shohibul Burhan') : 'Puji Shohibul Burhan';
+    var approverRole = isApproved ? 'Owner / Manager Regional' : 'Manager Regional';
+
+    var htmlTandaTangan = `
+        <div style="margin-top: 50px; display: flex; justify-content: space-between; font-family: Arial, sans-serif; font-size: 14px; page-break-inside: avoid; padding: 0 50px;">
+            <div style="text-align: center; width: 250px;">
+                <p style="margin-bottom: 50px; color:#333;">${signDateStr}</p>
+                <p style="margin-bottom: 5px; color:#333;">Dibuat / Penanggung Jawab:</p>
+                <br><br><br>
+                <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px; color:#000;">${makerName}</p>
+                <p style="margin: 0; color:#333;">${makerRole}</p>
+            </div>
+            <div style="text-align: center; width: 250px;">
+                <p style="margin-bottom: 50px;">&nbsp;</p>
+                <p style="margin-bottom: 5px; color:#333;">Disetujui / Mengetahui:</p>
+                ${approverHtml}
+                <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px; color:#000;">${approverName}</p>
+                <p style="margin: 0; color:#333;">${approverRole}</p>
+            </div>
+        </div>
+    `;
+
+    let noteHtml = `<div style="margin-bottom: 20px; font-size: 14px; line-height: 1.6; background: #eef2ff; padding: 15px; border-left: 4px solid #4f46e5; border-radius: 4px;">${d.note || '-'}</div>`;
+
+    let rowsBonus = '';
+    let totalBonus = 0;
+    if (d.items && d.items.length > 0) {
+        d.items.forEach((emp, idx) => {
+            totalBonus += parseInt(emp.grandTotal) || 0;
+            rowsBonus += `<tr>
+                <td>${idx + 1}</td>
+                <td class="text-left">${emp.nama || '-'}</td>
+                <td class="text-left">${emp.jabatan || '-'}</td>
+                <td class="text-left">${emp.keterangan || '-'}</td>
+                <td>${emp.metodeBayar || 'TF'}</td>
+                <td class="text-right" style="font-weight:bold; color:#059669;">${formatMoney(emp.grandTotal)}</td>
+            </tr>`;
+        });
+    } else {
+        rowsBonus = `<tr><td colspan="6">Tidak ada data karyawan</td></tr>`;
+    }
+
+    var htmlTable = `<table>
+        <thead>
+            <tr>
+                <th>No</th>
+                <th>Nama Karyawan</th>
+                <th>Jabatan</th>
+                <th>Keterangan</th>
+                <th>Metode Bayar</th>
+                <th>Total Bonus</th>
+            </tr>
+        </thead>
+        <tbody>${rowsBonus}</tbody>
+        <tfoot>
+            <tr>
+                <td colspan="5" class="text-right" style="font-weight:bold; padding: 10px;">TOTAL PENGAJUAN BONUS</td>
+                <td class="text-right" style="font-weight:bold; color:#1e40af; font-size: 14px;">${formatMoney(totalBonus)}</td>
+            </tr>
+        </tfoot>
+    </table>`;
+
+    var finalHtml = '<html><head><title>Laporan Pengajuan Bonus</title>' + styleBlock + '</head><body>' +
+        '<div class="page">' + headerHtml + noteHtml + htmlTable + htmlTandaTangan + '</div>' +
+        '<div style="text-align:center; margin:30px 0;"><button onclick="window.print()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#10b981; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Print / PDF</button><button onclick="window.close()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#1e40af; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1);">Tutup Halaman</button></div>' +
+        '</body></html>';
+
+    var viewWindow = window.open('', '_blank');
+    viewWindow.document.write(finalHtml);
+    viewWindow.document.close();
+    viewWindow.focus();
+};
+
+window.printSlipSatuanOwner = function(subId, empIdx) {
+    const sub = window._pengajuanDataMap[subId];
+    if (!sub) return alert('Data tidak ditemukan.');
+    const d = sub.data;
+    const emp = d.items[empIdx];
+    if (!emp) return alert('Karyawan tidak ditemukan.');
+
+    const isBonus = (d.note || '').toLowerCase().includes('bonus');
+    const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+    const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : (d._outlet ? (names[d._outlet] || d._outlet.toUpperCase()) : 'Semua Outlet');
+    
+    const formatMoney = (n) => 'Rp ' + parseInt(n||0).toLocaleString('id-ID');
+    
+    const periodText = isBonus ? 'BONUS' : 'GAJI';
+    const periodStart = d.periodStart || '-';
+    const periodEnd = d.periodEnd || '-';
+    const dateObj = d.createdAt ? new Date(d.createdAt) : new Date();
+    const dateStr = dateObj.toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'});
+
+    let snap = d.snapshot;
+    if (typeof snap === 'string') {
+        try { snap = JSON.parse(snap); } catch(e) { snap = {}; }
+    }
+    if (!snap) snap = {};
+
+    let detailsHtml = '';
+
+    if (!isBonus) {
+        let gajiPokok = 0; let potHari = 0; let jamTerlambat = 0; let hutang = 0; let tunjangan = 0;
+        let totalPotKehadiran = 0; let totalPotTerlambat = 0; let uangMakan = 0; let totalPendapatan = 0;
+
+        if (snap.employees && snap.gajiData && snap.absensiData) {
+            let snapEmp = snap.employees.find(e => e.name === emp.nama || e.id == emp.empId);
+            let empKey = snapEmp ? (snapEmp.id != null ? snapEmp.id : snap.employees.indexOf(snapEmp)) : emp.empId;
+            
+            if (snapEmp) {
+                gajiPokok = parseInt(snapEmp.gajiPokok) || 0;
+                const pData = snap.gajiData[empKey] || {};
+                potHari = parseFloat(pData.potHari) || 0;
+                jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
+                hutang = parseInt(pData.hutang) || 0;
+                tunjangan = parseInt(pData.tunjangan) || 0;
+
+                let hkAktual = 0;
+                let curr = new Date(d.periodStart);
+                const end = new Date(d.periodEnd);
+                while(curr <= end) {
+                    const dateKey = curr.toISOString().split('T')[0];
+                    const absKey = `${dateKey}_${empKey}`;
+                    if (snap.absensiData[absKey] === 'H') hkAktual++;
+                    curr.setDate(curr.getDate() + 1);
+                }
+                uangMakan = hkAktual * 10000;
+                const gajiPerHari = Math.round(gajiPokok / 30);
+                const potTerlambatPerJam = Math.round(gajiPokok / 240);
+                totalPotKehadiran = Math.round(potHari * gajiPerHari);
+                totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
+                totalPendapatan = gajiPokok + tunjangan + uangMakan;
+            }
+        }
+        detailsHtml = `<table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+                <tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pendapatan (+):</td></tr>
+                <tr><td style="padding-left: 15px;">Gaji Pokok</td><td>:</td><td style="text-align: right;">${formatMoney(gajiPokok)}</td><td></td></tr>
+                <tr><td style="padding-left: 15px;">Tunjangan</td><td>:</td><td style="text-align: right;">${formatMoney(tunjangan)}</td><td></td></tr>
+                <tr style="border-bottom: 1px solid black;"><td style="padding-left: 15px; padding-bottom: 8px;">Uang Makan</td><td style="padding-bottom: 8px;">:</td><td style="text-align: right; padding-bottom: 8px;">${formatMoney(uangMakan)}</td><td style="text-align: right; font-weight: bold; padding-bottom: 8px;">+</td></tr>
+                <tr><td style="font-weight: bold; padding-top: 8px;">Total</td><td style="font-weight: bold; padding-top: 8px;">:</td><td style="text-align: right; font-weight: bold; padding-top: 8px;">${formatMoney(totalPendapatan)}</td><td></td></tr>
+                <tr><td colspan="4" style="height: 20px;"></td></tr>
+                <tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pengurangan (-):</td></tr>
+                <tr><td style="padding-left: 15px;">Potongan Absensi</td><td>:</td><td style="text-align: right;">${formatMoney(totalPotKehadiran)}</td><td></td></tr>
+                <tr><td style="padding-left: 15px;">Potongan Terlambat</td><td>:</td><td style="text-align: right;">${formatMoney(totalPotTerlambat)}</td><td></td></tr>
+                <tr><td style="padding-left: 15px;">Hutang Karyawan</td><td>:</td><td style="text-align: right;">${formatMoney(hutang)}</td><td></td></tr>
+                <tr><td colspan="4" style="height: 20px;"></td></tr>
+                <tr style="background: #f0f0f0; border-top: 2px solid black; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Grand Total Gaji</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #059669;">${formatMoney(emp.grandTotal)}</td><td></td></tr>
+            </table>`;
+    } else {
+        detailsHtml = `<table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+                <tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Rincian Bonus:</td></tr>
+                <tr><td style="padding-left: 15px;">Keterangan</td><td>:</td><td style="text-align: right;">${emp.keterangan || 'Bonus'}</td><td></td></tr>
+                <tr><td colspan="4" style="height: 20px;"></td></tr>
+                <tr style="background: #f0f0f0; border-top: 2px solid black; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Total Bonus</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #059669;">${formatMoney(emp.grandTotal)}</td><td></td></tr>
+            </table>`;
+    }
+
+    const htmlContent = `<html><head><title>Slip ${periodText}</title><style>body { font-family: 'Courier New', Courier, monospace; color: #000; padding: 20px; } .slip-container { max-width: 800px; margin: 0 auto; border: 1px solid #ccc; padding: 40px; } @media print { body { padding: 0; } .slip-container { border: none; padding: 0; } }</style></head><body>
+            <div class="slip-container">
+                <div style="text-align: center; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 20px;">
+                    <h3 style="margin: 0; font-size: 18px; font-weight: bold;">SLIP ${periodText} KARYAWAN</h3>
+                    <h4 style="margin: 5px 0 0; font-size: 16px; font-weight: bold;">RICE BOWL MONSTERS</h4>
+                    <p style="margin: 5px 0 0; font-size: 14px;">PERIODE: ${periodStart} s/d ${periodEnd}</p>
+                </div>
+                <table style="width: 100%; margin-bottom: 20px; font-size: 14px; border-collapse: collapse;"><tr><td style="width: 120px; padding: 2px 0;">Nama</td><td style="width: 10px;">:</td><td style="font-weight: bold;">${emp.nama || '-'}</td></tr><tr><td style="padding: 2px 0;">Jabatan</td><td>:</td><td>${emp.jabatan || '-'}</td></tr><tr><td style="padding: 2px 0;">Cabang</td><td>:</td><td>${outletName}</td></tr><tr><td style="padding: 2px 0;">Metode Bayar</td><td>:</td><td>${emp.metodeBayar || 'TF'}</td></tr></table>
+                ${detailsHtml}
+                <div style="margin-top: 50px; width: 250px; font-size: 14px; text-align: center; float: right;"><p style="margin-bottom: 70px;">Sidoarjo, ${dateStr}<br>Dikeluarkan Oleh:</p><p style="font-weight: bold; text-decoration: underline; margin: 0;">Management</p></div><div style="clear: both;"></div>
+            </div></body></html>`;
+    const printWin = window.open('', '', 'width=800,height=600'); printWin.document.write(htmlContent); printWin.document.close(); printWin.focus(); setTimeout(() => { printWin.print(); printWin.close(); }, 500);
+};
+
 function closeOwnerPengajuanModal() { document.getElementById('ownerPengajuanModal').style.display = 'none'; }
 
 function updatePengajuanStatus(type, id, status) {
     const actionText = status === 'approved' ? 'DISETUJUI' : 'DITOLAK';
     AppPopup.confirm(`Tandai pengajuan ini sebagai <strong>${actionText}</strong>?`, 'Konfirmasi', function() {
-        const dbPath = type === 'tf' ? `rbm_pro/pengajuan_tf/${id}` : `rbm_pro/petty_cash/pengajuan/${id}`;
+        let dbPath = '';
+        let payload = {};
         
-        firebase.database().ref(dbPath).update({
-            status: status,
-            viewedByManager: false, // Reset agar Manager mendapat Notifikasi ACC
-            updatedAt: firebase.database.ServerValue.TIMESTAMP
-        }).then(() => {
+        var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+        var approverName = u.nama || u.username || 'Owner';
+
+        if (type === 'tf') {
+            dbPath = `rbm_pro/pengajuan_tf/${id}`;
+            payload = { status: status, viewedByManager: false, updatedAt: firebase.database.ServerValue.TIMESTAMP, approvedBy: approverName };
+        } else if (type === 'gaji') {
+            const sub = window._pengajuanDataMap[id];
+            dbPath = `rbm_pro/gaji_pengajuan/${sub.data._outlet}/${sub.data._month}/${id}`;
+            payload = { statusOwner: status, viewedByManager: false, updatedAt: firebase.database.ServerValue.TIMESTAMP, approvedOwnerBy: approverName };
+        } else {
+            dbPath = `rbm_pro/petty_cash/pengajuan/${id}`;
+            payload = { status: status, viewedByManager: false, updatedAt: firebase.database.ServerValue.TIMESTAMP, approvedBy: approverName };
+        }
+        
+        firebase.database().ref(dbPath).update(payload).then(() => {
             AppPopup.success('Status berhasil diupdate.');
             closeOwnerPengajuanModal();
+            if (window.self !== window.top) {
+                window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+            }
         }).catch(err => {
             console.error(err);
             var msg = (err && (err.message || err.code)) ? (err.message || err.code) : (err ? String(err) : 'unknown error');
@@ -538,10 +1218,11 @@ function updatePengajuanStatus(type, id, status) {
       <h3 id="ownerPengajuanModalTitle" style="margin:0 0 12px; font-size:18px; flex-shrink: 0;">Rincian Pengajuan</h3>
       <div id="ownerPengajuanModalBody" style="font-size:14px; line-height:1.6; color:#334155; flex: 1; overflow-y: auto; padding-right: 8px;"></div>
     </div>
-    <div class="modal-footer" style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; flex-shrink: 0; padding-top: 15px; border-top: 1px solid #e5e7eb;">
-      <button id="approveBtn" class="btn btn-primary" style="margin-top: 0; flex: 1;">Setujui (ACC)</button>
-      <button id="rejectBtn" class="btn btn-small-danger" style="font-size: 14px; padding: 10px 20px; flex: 1;">Tolak</button>
-      <button id="printBtn" class="btn btn-secondary" onclick="window.print()" style="background-color: #6c757d; color: white; border: none; flex: 1;">Print (A4)</button>
+    <div class="modal-footer" style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; flex-shrink: 0; padding-top: 15px; border-top: 1px solid #e5e7eb; flex-wrap: wrap;">
+      <button id="btnLaporanLengkap" class="btn btn-secondary" style="display:none; background: #8b5cf6; color: white; border: none; flex: 1; min-width: 150px;">📊 Laporan Lengkap</button>
+      <button id="approveBtn" class="btn btn-primary" style="margin-top: 0; flex: 1; min-width: 100px;">Setujui (ACC)</button>
+      <button id="rejectBtn" class="btn btn-small-danger" style="font-size: 14px; padding: 10px 20px; flex: 1; min-width: 80px;">Tolak</button>
+      <button id="printBtn" class="btn btn-secondary" onclick="window.print()" style="background-color: #6c757d; color: white; border: none; flex: 1; min-width: 100px;">Print (A4)</button>
     </div>
   </div>
 </div>

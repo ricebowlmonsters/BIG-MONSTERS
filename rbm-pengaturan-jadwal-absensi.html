@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <base target="_top">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pengaturan Jadwal & Absensi - RBM Pro</title>
@@ -19,7 +18,7 @@
 })();
 </script>
 <header class="rbm-page-header">
-  <a href="settings.html" class="rbm-back-btn">&#8249;</a>
+  <a href="settings.html" target="_top" class="rbm-back-btn">&#8249;</a>
   <h1 class="rbm-page-title">Pengaturan Jadwal & Absensi</h1>
 </header>
 <div class="rbm-content-wrap">
@@ -48,7 +47,14 @@
       var last = localStorage.getItem('rbm_last_selected_outlet');
       if (last && outlets.indexOf(last) >= 0) sel.value = last;
       else if (outlets.length) sel.value = outlets[0];
-      sel.addEventListener('change', function() { localStorage.setItem('rbm_last_selected_outlet', sel.value); onOutletChange(); });
+      sel.addEventListener('change', function() { 
+          localStorage.setItem('rbm_last_selected_outlet', sel.value); 
+          if (window.RBMStorage && typeof window.RBMStorage.loadFromFirebase === 'function') {
+              window.RBMStorage.loadFromFirebase().then(onOutletChange);
+          } else {
+              onOutletChange(); 
+          }
+      });
     }
   }
   function onOutletChange() {
@@ -118,6 +124,7 @@
   </main>
 </div>
 </div>
+<script>window.RBM_PAGE = 'pengaturan-jadwal-absensi';</script>
 <span class="watermark">RBM Pro 2.3</span>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
@@ -143,22 +150,41 @@ async function loadFaceApiModels() {
         msgEl.style.color = "#16a34a";
     } catch (e) {
         console.error(e);
-        msgEl.textContent = "Gagal memuat model AI.";
+        msgEl.textContent = window.location.protocol === 'file:' ? "❌ Gagal: Jalankan via Live Server (Bukan file:///)" : "Gagal memuat model AI.";
         msgEl.style.color = "#dc2626";
     }
 }
 
 function loadEmployeesForFaceReg() {
-    const empKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_EMPLOYEES') : 'RBM_EMPLOYEES';
-    const employees = JSON.parse(window.RBMStorage ? window.RBMStorage.getItem(empKey) : localStorage.getItem(empKey) || '[]');
     const select = document.getElementById('face_emp_select');
-    if (select) {
-        select.innerHTML = '<option value="">-- Pilih Karyawan --</option>';
-        employees.forEach(emp => {
-            select.innerHTML += `<option value="${emp.name}">${emp.name} (${emp.jabatan || '-'})</option>`;
-        });
-    }
-    renderRegisteredFaces();
+    const currentVal = select ? select.value : '';
+    if (select) select.innerHTML = '<option value="">-- Memuat Data... --</option>';
+
+    setTimeout(function() {
+        let employees = [];
+        try {
+            var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_EMPLOYEES') : 'RBM_EMPLOYEES';
+            var rawData;
+            if (typeof getCachedParsedStorage === 'function') {
+                rawData = getCachedParsedStorage(key, []);
+            } else {
+                var rawStr = window.RBMStorage ? window.RBMStorage.getItem(key) : localStorage.getItem(key);
+                rawData = rawStr ? JSON.parse(rawStr) : [];
+            }
+            employees = Array.isArray(rawData) ? rawData : (rawData ? Object.values(rawData) : []);
+        } catch(e) {}
+
+        if (select) {
+            select.innerHTML = '<option value="">-- Pilih Karyawan --</option>';
+            employees.forEach(emp => {
+                if (emp && emp.name) {
+                    select.innerHTML += `<option value="${emp.name}">${emp.name} (${emp.jabatan || '-'})</option>`;
+                }
+            });
+            if (currentVal) select.value = currentVal;
+        }
+        renderRegisteredFaces(employees);
+    }, 50);
 }
 
 async function startFaceRegistration() {
@@ -205,9 +231,20 @@ async function captureAndSaveFace() {
         }
 
         const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-        const faceData = JSON.parse((window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey)) || '{}');
+        let faceData = {};
+        try {
+            if (typeof getCachedParsedStorage === 'function') {
+                faceData = getCachedParsedStorage(faceKey, {});
+            } else {
+                const rawFace = window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey);
+                faceData = JSON.parse(rawFace || '{}') || {};
+            }
+        } catch(e) {}
         faceData[empName] = Array.from(detection.descriptor);
         if (window.RBMStorage) window.RBMStorage.setItem(faceKey, JSON.stringify(faceData)); else localStorage.setItem(faceKey, JSON.stringify(faceData));
+        
+        window._rbmParsedCache = window._rbmParsedCache || {};
+        window._rbmParsedCache[faceKey] = { data: faceData };
 
         msgEl.textContent = "✅ Wajah berhasil didaftarkan untuk " + empName;
         msgEl.style.color = "#16a34a";
@@ -230,34 +267,81 @@ async function captureAndSaveFace() {
     }
 }
 
-function renderRegisteredFaces() {
-    const empKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_EMPLOYEES') : 'RBM_EMPLOYEES';
-    const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-    const employees = JSON.parse(window.RBMStorage ? window.RBMStorage.getItem(empKey) : localStorage.getItem(empKey) || '[]');
-    const faceData = JSON.parse((window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey)) || '{}');
+function renderRegisteredFaces(employees) {
     const tbody = document.getElementById('face_registered_tbody');
     if (!tbody) return;
     
-    let html = '';
-    employees.forEach(emp => {
-        const hasFace = !!faceData[emp.name];
-        html += `<tr>
-            <td style="padding:8px; border-bottom:1px solid #ccc; text-align:left;">${emp.name}</td>
-            <td style="padding:8px; border-bottom:1px solid #ccc; text-align:center;"><span style="padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; color:white; background:${hasFace ? '#16a34a' : '#dc2626'}">${hasFace ? 'Terdaftar' : 'Belum'}</span></td>
-            <td style="padding:8px; border-bottom:1px solid #ccc; text-align:center;">
-                ${hasFace ? `<button type="button" style="background:#dc2626; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px;" onclick="deleteFaceData('${emp.name}')">Hapus</button>` : '-'}
-            </td>
-        </tr>`;
-    });
-    tbody.innerHTML = html;
+    if (!employees && tbody.innerHTML.indexOf('Memuat') === -1) {
+        // Jangan kosongkan tbody untuk mencegah kedipan (flicker) jika sedang refresh cepat
+    } else {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;">Memuat data...</td></tr>';
+    }
+    
+    setTimeout(function() {
+        if (!employees) {
+            try {
+                var empKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_EMPLOYEES') : 'RBM_EMPLOYEES';
+                var rawEmp;
+                if (typeof getCachedParsedStorage === 'function') {
+                    rawEmp = getCachedParsedStorage(empKey, []);
+                } else {
+                    var rawStr = window.RBMStorage ? window.RBMStorage.getItem(empKey) : localStorage.getItem(empKey);
+                    rawEmp = rawStr ? JSON.parse(rawStr) : [];
+                }
+                employees = Array.isArray(rawEmp) ? rawEmp : (rawEmp ? Object.values(rawEmp) : []);
+            } catch(e) {
+                employees = [];
+            }
+        }
+
+        const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+        let faceData = {};
+        try {
+            if (typeof getCachedParsedStorage === 'function') {
+                faceData = getCachedParsedStorage(faceKey, {});
+            } else {
+                const rawFace = window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey);
+                faceData = JSON.parse(rawFace || '{}') || {};
+            }
+        } catch(e) {}
+
+        let html = '';
+        let empArr = Array.isArray(employees) ? employees : (employees ? Object.values(employees) : []);
+        empArr.forEach(emp => {
+            if (!emp || !emp.name) return;
+            const hasFace = !!faceData[emp.name];
+            html += `<tr>
+                <td style="padding:8px; border-bottom:1px solid #ccc; text-align:left;">${emp.name}</td>
+                <td style="padding:8px; border-bottom:1px solid #ccc; text-align:center;"><span style="padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; color:white; background:${hasFace ? '#16a34a' : '#dc2626'}">${hasFace ? 'Terdaftar' : 'Belum'}</span></td>
+                <td style="padding:8px; border-bottom:1px solid #ccc; text-align:center;">
+                    ${hasFace ? `<button type="button" style="background:#dc2626; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px;" onclick="deleteFaceData('${emp.name.replace(/'/g, "\\'")}')">Hapus</button>` : '-'}
+                </td>
+            </tr>`;
+        });
+        if (empArr.length === 0) {
+            html = '<tr><td colspan="3" style="text-align:center;">Tidak ada data karyawan</td></tr>';
+        }
+        tbody.innerHTML = html;
+    }, 10);
 }
 
 function deleteFaceData(empName) {
     if (!confirm("Hapus data wajah untuk " + empName + "?")) return;
     const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-    const faceData = JSON.parse((window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey)) || '{}');
+    let faceData = {};
+    try {
+        if (typeof getCachedParsedStorage === 'function') {
+            faceData = getCachedParsedStorage(faceKey, {});
+        } else {
+            const rawFace = window.RBMStorage ? window.RBMStorage.getItem(faceKey) : localStorage.getItem(faceKey);
+            faceData = JSON.parse(rawFace || '{}') || {};
+        }
+    } catch(e) {}
     delete faceData[empName];
     if (window.RBMStorage) window.RBMStorage.setItem(faceKey, JSON.stringify(faceData)); else localStorage.setItem(faceKey, JSON.stringify(faceData));
+    
+    window._rbmParsedCache = window._rbmParsedCache || {};
+    window._rbmParsedCache[faceKey] = { data: faceData };
     renderRegisteredFaces();
 }
 

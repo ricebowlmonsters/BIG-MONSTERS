@@ -360,6 +360,21 @@
                 <p style="font-size: 10px; color: #6b7280; margin-top: 2px;">Dari Google Maps: Bagikan -> Sematkan Peta -> Salin HTML</p>
             </div>
             
+            <div style="display: flex; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb;">
+                <div class="form-group" style="flex: 1;">
+                    <label style="font-size: 12px;" for="outlet-bank">Bank Pencairan (Gaji/PC)</label>
+                    <input type="text" id="outlet-bank" class="form-input" placeholder="Contoh: BCA">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label style="font-size: 12px;" for="outlet-rekening">No. Rekening</label>
+                    <input type="text" id="outlet-rekening" class="form-input" placeholder="Contoh: 1234567890">
+                </div>
+                <div class="form-group" style="flex: 1.5;">
+                    <label style="font-size: 12px;" for="outlet-atasnama">Atas Nama Pencairan</label>
+                    <input type="text" id="outlet-atasnama" class="form-input" placeholder="Contoh: PT. RBM">
+                </div>
+            </div>
+            
             <div style="display: flex; gap: 10px;">
                 <div class="form-group" style="flex: 1;">
                     <label style="font-size: 12px;" for="outlet-lat">Latitude (cth: -7.44698)</label>
@@ -644,6 +659,9 @@
       const outletImg3File = document.getElementById('outlet-img3-file');
       const outletImg3Base64 = document.getElementById('outlet-img3-base64');
       const outletImg3Preview = document.getElementById('outlet-img3-preview');
+      const outletBankInput = document.getElementById('outlet-bank');
+      const outletRekeningInput = document.getElementById('outlet-rekening');
+      const outletAtasnamaInput = document.getElementById('outlet-atasnama');
 
       // [BARU] Element Toggle Ordering
       const custEnableAiChat = document.getElementById('cust-enable-ai-chat');
@@ -773,6 +791,9 @@
               setImgState(outletImg1Base64, outletImg1Preview, imgs[0]);
               setImgState(outletImg2Base64, outletImg2Preview, imgs[1]);
               setImgState(outletImg3Base64, outletImg3Preview, imgs[2]);
+              outletBankInput.value = outlet.bank || '';
+              outletRekeningInput.value = outlet.rekening || '';
+              outletAtasnamaInput.value = outlet.atasnama || '';
           } else {
               outletIndexInput.value = '-1';
               outletIdInput.value = '';
@@ -791,6 +812,9 @@
               setImgState(outletImg1Base64, outletImg1Preview, null);
               setImgState(outletImg2Base64, outletImg2Preview, null);
               setImgState(outletImg3Base64, outletImg3Preview, null);
+              outletBankInput.value = '';
+              outletRekeningInput.value = '';
+              outletAtasnamaInput.value = '';
           }
       }
 
@@ -853,7 +877,10 @@
                   '3': outletLink3Input.value.trim()
               },
               ordering_enabled: outletOrderingEnabledInput.checked,
-              images: images
+              images: images,
+              bank: outletBankInput.value.trim(),
+              rekening: outletRekeningInput.value.trim(),
+              atasnama: outletAtasnamaInput.value.trim()
           };
 
           if (!newOutlet.id || !newOutlet.name) { alert('ID dan Nama Outlet wajib diisi'); return; }

@@ -17,9 +17,14 @@
   <h1 class="rbm-page-title">Absensi & Jadwal</h1>
 </header>
 <div class="rbm-content-wrap">
-<section class="rbm-outlet-card">
-  <label for="rbm-outlet-select" class="rbm-outlet-label">Pilih Outlet:</label>
-  <select id="rbm-outlet-select" class="rbm-outlet-select"></select>
+<section class="rbm-outlet-card" style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; justify-content: space-between;">
+  <div style="display: flex; align-items: center; gap: 10px;">
+    <label for="rbm-outlet-select" class="rbm-outlet-label" style="margin:0;">Pilih Outlet:</label>
+    <select id="rbm-outlet-select" class="rbm-outlet-select" style="margin:0;"></select>
+  </div>
+  <div id="top-rek-info" style="font-size: 13px; background: #eef2ff; color: #4338ca; padding: 8px 16px; border-radius: 8px; border: 1px solid #c7d2fe; font-weight: 600; display: none;">
+      💳 Rekening Pencairan Pusat: <span id="top-rek-bank"></span> - <span id="top-rek-no"></span> (a.n <span id="top-rek-nama"></span>)
+  </div>
 </section>
 <script>
 (function(){
@@ -42,9 +47,36 @@
       var last = localStorage.getItem('rbm_last_selected_outlet');
       if (last && outlets.indexOf(last) >= 0) sel.value = last;
       else if (outlets.length) sel.value = outlets[0];
-      sel.addEventListener('change', function() { localStorage.setItem('rbm_last_selected_outlet', sel.value); });
+      sel.addEventListener('change', function() { localStorage.setItem('rbm_last_selected_outlet', sel.value); updateTopRekInfo(); });
+      setTimeout(updateTopRekInfo, 800);
     }
   }
+  
+  function updateTopRekInfo() {
+    var selEl = document.getElementById('rbm-outlet-select');
+    if (!selEl || !selEl.value) return;
+    if (typeof firebase !== 'undefined' && firebase.database) {
+        firebase.database().ref('customer_app_settings/outlets').once('value').then(function(snap) {
+            var o = snap.val();
+            var list = o ? (Array.isArray(o) ? o : Object.values(o)) : [];
+            var data = list.find(function(i) { return i && i.id === selEl.value; });
+            var infoDiv = document.getElementById('top-rek-info');
+            var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+            var isOwner = String(u.role || '').toLowerCase() === 'owner' || (u.username || '').toLowerCase() === 'burhan';
+            
+            if (data && (data.bank || data.rekening) && !isOwner) {
+                document.getElementById('top-rek-bank').textContent = data.bank || '-';
+                document.getElementById('top-rek-no').textContent = data.rekening || '-';
+                document.getElementById('top-rek-nama').textContent = data.atasnama || '-';
+                infoDiv.style.display = 'block';
+                localStorage.setItem('RBM_PC_REK_INFO_' + selEl.value, JSON.stringify({ bank: data.bank || '', rekening: data.rekening || '', atasnama: data.atasnama || '' }));
+            } else {
+                infoDiv.style.display = 'none';
+            }
+        }).catch(function(){});
+    }
+  }
+  window.updateTopRekInfo = updateTopRekInfo;
 })();
 </script>
 <div class="app-layout">
@@ -80,7 +112,7 @@
         <label style="font-size:12px">Tanggal Selesai</label>
         <input type="date" id="absensi_tgl_akhir" onchange="syncAbsensiPeriodAndRefresh()">
       </div>
-      <span style="font-size: 11px; color: #64748b; align-self: flex-end; padding-bottom: 8px;">Periode ini dipakai untuk Absensi, Jadwal, Laporan Absen & Rekap Gaji</span>
+      <span style="font-size: 11px; color: #64748b; align-self: flex-end; padding-bottom: 8px;">Periode ini dipakai untuk Absensi, Jadwal, Laporan Absen, Rekap Gaji & Bonus</span>
     </div>
 
     <!-- ABSENSI & JADWAL -->
@@ -323,15 +355,7 @@
     <!-- BONUS -->
     <div id="tab-content-bonus" style="display:none;">
         <div class="filter-row">
-          <div class="filter-group">
-            <label>Tanggal Mulai</label>
-            <input type="date" id="bonus_start_date" onchange="renderBonusTab()">
-          </div>
-          <div class="filter-group">
-            <label>Tanggal Selesai</label>
-            <input type="date" id="bonus_end_date" onchange="renderBonusTab()">
-          </div>
-          <button class="btn btn-primary" onclick="saveBonusData()" style="margin-left: auto;">Simpan Bonus</button>
+          <button class="btn btn-primary" onclick="saveBonusData()" style="background-color: var(--primary);">Simpan Perubahan Bonus</button>
         </div>
 
         <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start;">
@@ -340,6 +364,7 @@
               <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid #1e40af; padding-bottom: 10px; margin-bottom: 15px;">
                   <h3 style="margin:0; color: #1e40af; font-size: 16px;">Bonus Absensi</h3>
                   <div style="display:flex; gap:5px;">
+                      <button class="btn-small-danger" style="background:#8b5cf6; padding: 4px 8px;" onclick="submitBonusAbsensiPengajuan()">Ajukan</button>
                       <button class="btn-small-danger" style="background:#198754; padding: 4px 8px;" onclick="exportBonusAbsensiExcel()">Excel</button>
                       <button class="btn-small-danger" style="background:#dc3545; padding: 4px 8px;" onclick="exportBonusAbsensiPDF()">PDF</button>
                   </div>
@@ -370,6 +395,7 @@
               <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid #059669; padding-bottom: 10px; margin-bottom: 15px;">
                   <h3 style="margin:0; color: #059669; font-size: 16px;">Bonus Omset</h3>
                   <div style="display:flex; gap:5px;">
+                      <button class="btn-small-danger" style="background:#8b5cf6; padding: 4px 8px;" onclick="submitBonusOmsetPengajuan()">Ajukan</button>
                       <button class="btn-small-danger" style="background:#198754; padding: 4px 8px;" onclick="exportBonusOmsetExcel()">Excel</button>
                       <button class="btn-small-danger" style="background:#dc3545; padding: 4px 8px;" onclick="exportBonusOmsetPDF()">PDF</button>
                   </div>
@@ -378,7 +404,7 @@
               <div style="display: grid; grid-template-columns: 1fr 0.5fr 1fr; gap: 10px; margin-bottom: 15px;">
                 <div><label style="font-size: 11px;">Total Omset</label><input type="text" id="bonus_omset_total" placeholder="Rp 0" oninput="formatRupiahInput(this); calculateBonusOmset()"></div>
                 <div><label style="font-size: 11px;">Persen (%)</label><input type="number" id="bonus_omset_persen" placeholder="%" oninput="calculateBonusOmset()"></div>
-                <div><label style="font-size: 11px;">Total Dibagi</label><input type="text" id="bonus_omset_pool" readonly style="background: #f1f5f9; font-weight: bold; color: #059669;"></div>
+                <div><label style="font-size: 11px;">Total Dibagi</label><input type="text" id="bonus_omset_pool" placeholder="Rp 0" oninput="formatRupiahInput(this); calculateBonusOmsetFromPool()" style="background: white; border: 1px solid #ccc; padding: 5px; border-radius: 4px; font-weight: bold; color: #059669; width: 100%; box-sizing: border-box;"></div>
               </div>
 
               <table class="data-table" style="font-size: 12px;">

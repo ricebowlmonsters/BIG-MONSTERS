@@ -343,6 +343,8 @@ app.get('/api/petty-cash', async (req, res) => {
         const from = normYyyyMmDd(req.query.from || '');
         const to = normYyyyMmDd(req.query.to || '');
         const search = (req.query.search || '').toString().trim().toLowerCase();
+        const order = (req.query.order || req.query.sort || '').toString().trim().toLowerCase();
+        const desc = (order === 'desc' || order === 'descending' || order === 'newest');
 
         const limit = clampInt(req.query.limit, 20, 50, 20);
         const page = clampInt(req.query.page, 1, 1_000_000, 1);
@@ -383,6 +385,7 @@ app.get('/api/petty-cash', async (req, res) => {
             let runningSaldo = saldoAwal;
             let seen = 0;
             let emitted = 0;
+            const offsetUsed = desc ? Math.max(0, totalRows - page * limit) : offset;
 
             for (const dateKey of dateKeys) {
                 if (from && dateKey < from) continue;
@@ -398,10 +401,10 @@ app.get('/api/petty-cash', async (req, res) => {
                     const kredit = Number.parseFloat(r.kredit ?? r.masuk ?? 0) || 0;
                     runningSaldo = runningSaldo - debit + kredit;
                     seen++;
-                    if (seen <= offset) continue;
+                    if (seen <= offsetUsed) continue;
                     if (emitted >= limit) break;
                     rows.push({
-                        no: offset + emitted + 1,
+                        no: offsetUsed + emitted + 1,
                         tanggal: r.tanggalStr || r.tanggal || r.date || dateKey,
                         nama: (r.nama || '').toString(),
                         jumlah: r.jumlah,
@@ -420,8 +423,15 @@ app.get('/api/petty-cash', async (req, res) => {
 
             const saldoAkhir = pettyCashLedgerCache.getSaldoAtEndOf(ledger, to) || runningSaldo;
             const totalPages = Math.max(1, Math.ceil(totalRows / limit));
+            if (desc && rows.length) {
+                // tampilkan "terbaru dulu": kebalikan urutan, no ditetapkan ulang per page
+                rows.reverse().forEach((r, i) => { r.no = i + 1; delete r._dateKey; delete r._indexInDate; });
+            } else {
+                // jangan bawa properti internal
+                rows.forEach(r => { delete r._dateKey; delete r._indexInDate; });
+            }
             res.json({
-                meta: { page, limit, offset, totalRows, totalPages },
+                meta: { page, limit, offset: offsetUsed, totalRows, totalPages },
                 summary: { totalDebit, totalKredit, saldoAwal, saldoAkhir },
                 data: rows
             });
@@ -435,6 +445,9 @@ app.get('/api/petty-cash', async (req, res) => {
         let totalMatchedRows = 0;
         let emitted = 0;
         const rows = [];
+
+        // Jika desc+search, simpan dulu semua baris yang cocok supaya bisa ambil slice dari akhir.
+        const allMatchedRows = desc && search ? [] : null;
 
         for (const dateKey of dateKeys) {
             if (from && dateKey < from) continue;
@@ -455,10 +468,8 @@ app.get('/api/petty-cash', async (req, res) => {
 
                 if (search && !nama.toLowerCase().includes(search)) continue;
                 totalMatchedRows++;
-                if (totalMatchedRows <= offset) continue;
-                if (emitted >= limit) continue;
-                rows.push({
-                    no: offset + emitted + 1,
+                const rowObj = {
+                    no: totalMatchedRows, // nanti di-reassign kalau desc
                     tanggal: r.tanggalStr || r.tanggal || r.date || dateKey,
                     nama: nama,
                     jumlah: r.jumlah,
@@ -469,16 +480,38 @@ app.get('/api/petty-cash', async (req, res) => {
                     saldo: runningSaldo,
                     _dateKey: dateKey,
                     _indexInDate: idx
-                });
-                emitted++;
+                };
+
+                if (allMatchedRows) {
+                    allMatchedRows.push(rowObj);
+                } else {
+                    if (totalMatchedRows <= offset) continue;
+                    if (emitted >= limit) continue;
+                    rows.push(rowObj);
+                    emitted++;
+                }
             }
         }
 
-        const totalPages = Math.max(1, Math.ceil(totalMatchedRows / limit));
+        let outRows = rows;
+        let outTotalRows = totalMatchedRows;
+        if (allMatchedRows) {
+            const start = Math.max(0, totalMatchedRows - page * limit);
+            const end = Math.max(0, totalMatchedRows - (page - 1) * limit);
+            const pageRowsAsc = allMatchedRows.slice(start, end);
+            outRows = pageRowsAsc.reverse().map((r, i) => {
+                delete r._dateKey; delete r._indexInDate;
+                return Object.assign({}, r, { no: i + 1 });
+            });
+        } else {
+            outRows.forEach(r => { delete r._dateKey; delete r._indexInDate; });
+        }
+
+        const totalPages = Math.max(1, Math.ceil(outTotalRows / limit));
         res.json({
-            meta: { page, limit, offset, totalRows: totalMatchedRows, totalPages },
+            meta: { page, limit, offset, totalRows: outTotalRows, totalPages },
             summary: { totalDebit, totalKredit, saldoAwal, saldoAkhir: runningSaldo },
-            data: rows
+            data: outRows
         });
     } catch (e) {
         res.status(500).json({ error: true, message: e.message || String(e) });

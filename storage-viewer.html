@@ -128,6 +128,9 @@
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
         <h3 class="card-title" style="margin: 0;">Ringkasan Database</h3>
         <div style="display: flex; gap: 8px;">
+            <button class="btn btn-primary" style="background-color: #4C2A85; color: white; border: none;" onclick="openJsonEditorModal()">📝 Editor JSON</button>
+            <button class="btn btn-primary" style="background-color: #10b981; color: white; border: none;" onclick="openNodeFormModal()">➕ Tambah Box Baru</button>
+            <button class="btn btn-secondary" style="background-color: #6b7280; color: white; border: none;" onclick="resetDefaultNodes()">🔄 Reset Box Layout</button>
             <button id="btn-delete-all" class="btn btn-secondary" style="background-color: #ef4444; color: white; border: none;">🗑️ Hapus Full</button>
             <button id="btn-restore-all" class="btn btn-secondary" style="background-color: #d97706; color: white; border: none;">⬆️ Restore Full</button>
             <button id="btn-backup-all" class="btn btn-secondary" style="background-color: #059669; color: white; border: none;">⬇️ Backup Full</button>
@@ -214,10 +217,53 @@
       <div style="flex: 1; overflow-y: auto;">
         <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
           <thead style="background: #f9fafb; position: sticky; top: 0;">
-            <tr><th style="padding:8px; text-align:left;">Key / Item</th><th style="padding:8px; text-align:left;">Ukuran</th><th style="padding:8px; text-align:left;">%</th></tr>
+            <tr><th style="padding:8px; text-align:left;">Key / Item</th><th style="padding:8px; text-align:left;">Ukuran</th><th style="padding:8px; text-align:left;">%</th><th style="padding:8px; text-align:right;">Aksi</th></tr>
           </thead>
           <tbody id="detail-list"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Tambah/Edit Kotak [BARU] -->
+  <div id="node-form-modal" class="modal-overlay">
+    <div class="modal" style="max-width: 500px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h3 style="margin: 0;" id="form-node-title">➕ Tambah Kotak Database</h3>
+        <button onclick="closeNodeFormModal()" style="background:none; border:none; font-size:24px; cursor:pointer; color: #6b7280;">&times;</button>
+      </div>
+      <p style="font-size: 12px; color: #6b7280; margin-bottom: 15px;">Buat atau edit kotak pantauan dengan alamat (path) Firebase yang Anda tentukan sendiri.</p>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+          <label style="font-size: 13px; font-weight: bold;">Nama Kotak</label>
+          <input type="text" id="new-node-label" class="form-input" placeholder="Contoh: Produk Sidoarjo" style="padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+          <label style="font-size: 13px; font-weight: bold;">Path Firebase</label>
+          <input type="text" id="new-node-path" class="form-input" placeholder="Contoh: products/sidoarjo" style="padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: monospace;">
+          <label style="font-size: 13px; font-weight: bold;">Ikon (Emoji)</label>
+          <input type="text" id="new-node-icon" class="form-input" placeholder="Contoh: 📍" style="padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; text-align: center; width: 60px;">
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 20px;">
+          <button class="btn btn-secondary" onclick="closeNodeFormModal()" style="flex: 1;">Batal</button>
+          <button id="btn-add-node" class="btn btn-primary" onclick="saveStorageNode()" style="flex: 1;">Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Editor Data JSON Manual [BARU] -->
+  <div id="json-editor-modal" class="modal-overlay">
+    <div class="modal" style="max-width: 800px; width: 95%;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h3 style="margin: 0;"><span style="font-size: 20px;">📝</span> Editor Data JSON Manual</h3>
+        <button onclick="closeJsonEditorModal()" style="background:none; border:none; font-size:24px; cursor:pointer; color: #6b7280;">&times;</button>
+      </div>
+      <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+          <input type="text" id="editor-path" class="form-input" placeholder="Masukkan path Firebase (cth: rbm_pro/bank)" style="flex: 1; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: monospace;">
+          <button id="btn-editor-load" class="btn btn-secondary" onclick="loadEditorData()" style="white-space: nowrap;">Load Data</button>
+      </div>
+      <textarea id="editor-json" class="form-input" rows="15" placeholder="Hasil data JSON akan muncul di sini...&#10;&#10;⚠️ Hati-hati saat mengedit data secara manual! Pastikan format JSON (tanda kutip, koma, kurung kurawal) sudah benar." style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical; background: #f9fafb;"></textarea>
+      <div style="display: flex; gap: 10px; margin-top: 15px;">
+          <button class="btn btn-secondary" onclick="closeJsonEditorModal()" style="flex: 1;">Batal</button>
+          <button id="btn-editor-format" class="btn btn-secondary" style="flex: 1;" onclick="formatEditorData()">✨ Format JSON</button>
+          <button id="btn-editor-save" class="btn btn-primary" style="flex: 2;" onclick="saveEditorData()">💾 Simpan Perubahan</button>
       </div>
     </div>
   </div>
@@ -348,8 +394,7 @@
     }
 
     // Daftar node utama yang akan dianalisis
-    // Data RBM Pro dibedakan per menu (bukan disatukan satu)
-    const NODES = [
+    const DEFAULT_NODES = [
         { key: 'products', label: 'Produk & Menu', icon: '🍔' },
         { key: 'orders', label: 'Riwayat Pesanan', icon: '🧾' },
         { key: 'users', label: 'Data Pengguna', icon: '👥' },
@@ -375,6 +420,14 @@
         { key: 'rbm_pro', label: 'RBM Pro Lainnya (Absensi, Jadwal, Reservasi, dll)', icon: '📅' }
     ];
 
+    let ALL_NODES = JSON.parse(localStorage.getItem('rbm_all_storage_nodes'));
+    if (!ALL_NODES || ALL_NODES.length === 0) {
+        // Migrasi dari custom nodes lama jika ada
+        const oldCustom = JSON.parse(localStorage.getItem('rbm_custom_nodes') || '[]');
+        ALL_NODES = [...DEFAULT_NODES, ...oldCustom];
+        localStorage.setItem('rbm_all_storage_nodes', JSON.stringify(ALL_NODES));
+    }
+
     // ID DOM tidak boleh pakai slash; gunakan untuk getElementById
     function safeId(key) {
         return (key || '').replace(/\//g, '_');
@@ -399,9 +452,15 @@
         return new Blob([JSON.stringify(obj)]).size;
     }
 
-    function createCard(node) {
+    function createCard(node, index) {
         const id = safeId(node.key);
         const keyEsc = (node.key || '').replace(/'/g, "\\'");
+        const customButtons = `
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <button class="btn" style="background: #eab308; color: white; flex: 1; font-size: 13px; padding: 8px;" onclick="editStorageNode(${index})">✏️ Edit Box</button>
+                <button class="btn" style="background: #6b7280; color: white; flex: 1; font-size: 13px; padding: 8px;" onclick="removeStorageNode(${index})">❌ Hapus Box</button>
+            </div>
+        `;
         const div = document.createElement('div');
         div.className = 'storage-card';
         div.innerHTML = `
@@ -420,19 +479,26 @@
                     <button class="btn btn-primary" id="btn-detail-${id}" onclick="showNodeDetails('${keyEsc}')" style="flex: 1; display: none;">Lihat Detail</button>
                 </div>
                 <div style="display: flex; gap: 8px;">
+                    <button class="btn" style="background: #3b82f6; color: white; flex: 1; font-size: 13px; padding: 8px;" onclick="editNode('${keyEsc}')">📝 Edit</button>
                     <button class="btn" style="background: #059669; color: white; flex: 1; font-size: 13px; padding: 8px;" onclick="backupNode('${keyEsc}')">⬇️ Backup</button>
                     <button class="btn" style="background: #d97706; color: white; flex: 1; font-size: 13px; padding: 8px;" onclick="triggerRestore('${keyEsc}')">⬆️ Restore</button>
                 </div>
                 <button class="btn" style="background: #ef4444; color: white; width: 100%; font-size: 13px; padding: 8px;" onclick="deleteNode('${keyEsc}')">🗑️ Hapus Data</button>
+                ${customButtons}
             </div>
         `;
         return div;
     }
 
+    function renderCards() {
+        grid.innerHTML = '';
+        ALL_NODES.forEach((node, index) => {
+            grid.appendChild(createCard(node, index));
+        });
+    }
+
     // Render kartu awal
-    NODES.forEach(node => {
-        grid.appendChild(createCard(node));
-    });
+    renderCards();
 
     window.analyzeNode = async function(key) {
         if (!db) {
@@ -499,42 +565,95 @@
         }
     };
 
-    window.showNodeDetails = function(key) {
-        const data = nodeDataCache[key];
-        if (!data) return;
-
-        const list = document.getElementById('detail-list');
-        list.innerHTML = '';
-        document.getElementById('detail-title').textContent = `Detail: /${key}`;
-
-        const totalSize = getSize(data);
-        const children = [];
-
-        if (typeof data === 'object' && data !== null) {
-            Object.keys(data).forEach(childKey => {
-                const childData = data[childKey];
-                const size = getSize(childData);
-                children.push({ key: childKey, size: size });
-            });
-        } else {
-             children.push({ key: '(Value)', size: totalSize });
-        }
-
-        // Sort descending by size
-        children.sort((a, b) => b.size - a.size);
-
-        children.forEach(item => {
-            const percent = totalSize > 0 ? ((item.size / totalSize) * 100).toFixed(1) : 0;
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td style="padding: 8px; border-bottom: 1px solid #eee; font-family: monospace; word-break: break-all;">${item.key}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">${formatBytes(item.size)}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">${percent}%</td>
-            `;
-            list.appendChild(tr);
-        });
-
+    window.showNodeDetails = async function(key) {
+        document.getElementById('detail-title').innerHTML = `Detail: /${key} <span style="font-size:12px;color:gray;">(Memuat...)</span>`;
         document.getElementById('detail-modal').classList.add('show');
+        const list = document.getElementById('detail-list');
+        list.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">Memuat data... ⏳</td></tr>';
+
+        try {
+            const snap = await db.ref(key).once('value');
+            const data = snap.val();
+            if (!data) {
+                list.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">Data kosong</td></tr>';
+                document.getElementById('detail-title').textContent = `Detail: /${key}`;
+                return;
+            }
+
+            const totalSize = getSize(data);
+            const children = [];
+
+            if (typeof data === 'object' && data !== null) {
+                Object.keys(data).forEach(childKey => {
+                    const childData = data[childKey];
+                    const size = getSize(childData);
+                    const isFolder = typeof childData === 'object' && childData !== null;
+                    children.push({ key: childKey, size: size, isFolder: isFolder, rawData: childData });
+                });
+            } else {
+                 children.push({ key: '(Value)', size: totalSize, isFolder: false, rawData: data });
+            }
+
+            // Sort descending by size
+            children.sort((a, b) => b.size - a.size);
+
+            list.innerHTML = '';
+            
+            // Tombol kembali (Up one level)
+            if (key !== '/' && key !== '') {
+                const parentParts = key.split('/');
+                parentParts.pop();
+                const parentPath = parentParts.join('/') || '/';
+                const trBack = document.createElement('tr');
+                trBack.innerHTML = `
+                    <td colspan="4" style="padding: 8px; border-bottom: 1px solid #eee; background: #f3f4f6; cursor: pointer; color: #4C2A85; font-weight: bold;" onclick="showNodeDetails('${parentPath.replace(/'/g, "\\'")}')">
+                        🔙 Naik ke Folder Sebelumnya
+                    </td>
+                `;
+                list.appendChild(trBack);
+            }
+
+            children.forEach(item => {
+                const percent = totalSize > 0 ? ((item.size / totalSize) * 100).toFixed(1) : 0;
+                
+                let actionHtml = '';
+                let keyHtml = item.key;
+
+                if (item.key !== '(Value)') {
+                    const fullPath = key === '/' ? item.key : `${key}/${item.key}`;
+                    const safePath = fullPath.replace(/'/g, "\\'");
+                    
+                    actionHtml = `<div style="display: flex; gap: 4px; justify-content: flex-end;">
+                        <button onclick="editNode('${safePath}')" style="background:#3b82f6; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px;">📝 Edit</button>
+                        <button onclick="deleteNode('${safePath}')" style="background:#ef4444; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px;">🗑️ Hapus</button>
+                    </div>`;
+                    
+                    if (item.isFolder) {
+                        // Jika di dalam folder ini ada "name", kita tampilkan sebagai info tambahan biar gampang dicari
+                        let extraName = '';
+                        if (item.rawData && item.rawData.name) {
+                            extraName = ` <span style="color:#059669; font-size:11px; background:#d1fae5; padding:2px 4px; border-radius:4px; margin-left:6px;">${item.rawData.name}</span>`;
+                        }
+                        keyHtml = `<a href="javascript:void(0)" onclick="showNodeDetails('${safePath}')" style="color: #4C2A85; text-decoration: none; font-weight: bold;">📁 ${item.key}</a>${extraName}`;
+                    } else {
+                        keyHtml = `📄 ${item.key}`;
+                    }
+                }
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="padding: 8px; border-bottom: 1px solid #eee; font-family: monospace; word-break: break-all;">${keyHtml}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${formatBytes(item.size)}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee;">${percent}%</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #eee; text-align:right;">${actionHtml}</td>
+                `;
+                list.appendChild(tr);
+            });
+            document.getElementById('detail-title').textContent = `Detail: /${key}`;
+        } catch(e) {
+            list.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 20px; color: red;">Error: ${e.message}</td></tr>`;
+            document.getElementById('detail-title').textContent = `Detail: /${key}`;
+        }
     };
 
     window.closeDetailModal = function() {
@@ -767,6 +886,62 @@
     const deleteMsg = document.getElementById('delete-confirm-msg');
     const deleteKeywordDisplay = document.getElementById('delete-confirm-keyword');
 
+    // [SYNC] Kalau Petty Cash dihapus dari "Data & Penyimpanan", pastikan juga:
+    // 1) index paging (`petty_cash_index`)
+    // 2) ringkasan bulan (`petty_cash_month_summary`)
+    // ikut terhapus/ter-rebuild, biar halaman "Lihat Petty Cash" tidak menampilkan data lama.
+    async function purgePettyCashRelatedByDeletedKey(deletedKey) {
+        try {
+            if (!deletedKey) return;
+            const key = String(deletedKey);
+
+            // Case A: dihapus pada node transaksi petty_cash per tanggal
+            // Format yang umum:
+            //   rbm_pro/petty_cash/{outlet}/{YYYY-MM-DD}/...
+            const mDate = key.match(/^rbm_pro\/petty_cash\/([^\/]+)\/(\d{4}-\d{2}-\d{2})/);
+            if (mDate) {
+                const outletId = mDate[1];
+                const dateStr = mDate[2];
+                const ym = dateStr.slice(0, 7); // YYYY-MM
+
+                await db.ref(`rbm_pro/petty_cash_index/${outletId}/${ym}`).remove().catch(function() {});
+                await db.ref(`rbm_pro/petty_cash_month_summary/${outletId}/${ym}`).remove().catch(function() {});
+
+                // Rebuild index + summary (owner/dev saja biasanya yang bisa)
+                try {
+                    if (window.FirebaseStorage && typeof window.FirebaseStorage.buildPettyCashMonthIndex === 'function') {
+                        await window.FirebaseStorage.buildPettyCashMonthIndex(ym, outletId).catch(function() {});
+                    }
+                    if (window.FirebaseStorage && typeof window.FirebaseStorage.getPettyCashMonthSummary === 'function') {
+                        await window.FirebaseStorage.getPettyCashMonthSummary(ym, outletId).catch(function() {});
+                    }
+                } catch (e) {}
+
+                return;
+            }
+
+            // Case B: dihapus pada subtree outlet petty_cash (tanpa tanggal spesifik)
+            //   rbm_pro/petty_cash/{outlet}
+            const mOutlet = key.match(/^rbm_pro\/petty_cash\/([^\/]+)(\/|$)/);
+            if (mOutlet) {
+                const outletId = mOutlet[1];
+                await db.ref(`rbm_pro/petty_cash_index/${outletId}`).remove().catch(function() {});
+                await db.ref(`rbm_pro/petty_cash_month_summary/${outletId}`).remove().catch(function() {});
+                return;
+            }
+
+            // Case C: dihapus di level paling atas petty_cash (tanpa outlet spesifik)
+            //   rbm_pro/petty_cash
+            if (key === 'rbm_pro/petty_cash' || key === 'rbm_pro/petty_cash/') {
+                await db.ref('rbm_pro/petty_cash_index').remove().catch(function() {});
+                await db.ref('rbm_pro/petty_cash_month_summary').remove().catch(function() {});
+                return;
+            }
+        } catch (e) {
+            // Abaikan jika parsing key gagal
+        }
+    }
+
     window.openDeleteModal = function(key, keyword, message) {
         deleteTargetKey = key;
         deleteExpectedKeyword = keyword;
@@ -810,6 +985,8 @@
                  await db.ref(deleteTargetKey).remove();
                  CustomUI.success(`Data di /${deleteTargetKey} berhasil dihapus.`);
                  analyzeNode(deleteTargetKey);
+                 // [SYNC] Pastikan Petty Cash terkait juga ikut bersih
+                 await purgePettyCashRelatedByDeletedKey(deleteTargetKey);
             }
             // [SYNC] Hapus cache lokal RBM agar halaman lain tidak menampilkan data lama.
             try {
@@ -840,7 +1017,7 @@
     });
 
     btnRefreshAll.addEventListener('click', () => {
-        if(db) NODES.forEach(node => analyzeNode(node.key));
+        if(db) ALL_NODES.forEach(node => analyzeNode(node.key));
     });
 
     // --- Connection Modal Logic ---
@@ -1108,6 +1285,172 @@
 
     // Auto analyze saat halaman dibuka (opsional, bisa berat jika data banyak)
     // setTimeout(() => btnRefreshAll.click(), 500);
+
+    // --- Edit Node Logic ---
+    window.editNode = function(key) {
+        closeDetailModal(); // Tutup modal jika terbuka
+        openJsonEditorModal(key);
+    };
+
+    window.openJsonEditorModal = function(defaultPath = '') {
+        document.getElementById('json-editor-modal').classList.add('show');
+        if (defaultPath && typeof defaultPath === 'string') {
+            document.getElementById('editor-path').value = defaultPath;
+            loadEditorData();
+        } else {
+            document.getElementById('editor-path').value = '';
+            document.getElementById('editor-json').value = '';
+        }
+    }
+
+    window.closeJsonEditorModal = function() {
+        document.getElementById('json-editor-modal').classList.remove('show');
+    }
+
+    // --- Editor Data JSON Manual Logic ---
+    window.loadEditorData = async function() {
+        if (!db) return alert("Database belum terhubung!");
+        const path = document.getElementById('editor-path').value.trim();
+        if (!path) return CustomUI.alert("Masukkan path Firebase terlebih dahulu (cth: rbm_pro/bank).", "Info");
+        
+        const btn = document.getElementById('btn-editor-load');
+        const origText = btn.textContent;
+        btn.textContent = "Loading...";
+        btn.disabled = true;
+
+        try {
+            const snap = await db.ref(path).once('value');
+            const data = snap.val();
+            const textarea = document.getElementById('editor-json');
+            if (data === null) {
+                textarea.value = "null";
+                CustomUI.alert("Data kosong (null) di path tersebut.");
+            } else {
+                textarea.value = JSON.stringify(data, null, 2);
+            }
+        } catch (e) {
+            CustomUI.error("Gagal memuat data: " + e.message);
+        } finally {
+            btn.textContent = origText;
+            btn.disabled = false;
+        }
+    };
+
+    window.formatEditorData = function() {
+        const textarea = document.getElementById('editor-json');
+        if (!textarea.value) return;
+        try {
+            const parsed = JSON.parse(textarea.value);
+            textarea.value = JSON.stringify(parsed, null, 2);
+        } catch (e) {
+            CustomUI.alert("Format JSON tidak valid. Periksa tanda baca Anda: " + e.message);
+        }
+    };
+
+    window.saveEditorData = async function() {
+        if (!db) return alert("Database belum terhubung!");
+        const path = document.getElementById('editor-path').value.trim();
+        if (!path) return CustomUI.alert("Masukkan path Firebase terlebih dahulu!", "Info");
+        
+        const textarea = document.getElementById('editor-json');
+        let parsedData;
+        try {
+            parsedData = JSON.parse(textarea.value);
+        } catch (e) {
+            return CustomUI.alert("Format JSON tidak valid. Perbaiki sintaks JSON sebelum menyimpan:\n\n" + e.message, "Error JSON");
+        }
+
+        if (!await CustomUI.confirm(`Anda yakin ingin <strong>MENYIMPAN / MENIMPA</strong> data secara permanen di path:<br><code style="background:#eee;padding:2px 4px;border-radius:4px;">/${path}</code> ?<br><br>Hati-hati, data lama akan ditimpa dengan yang ada di teks editor ini.`, "Konfirmasi Simpan")) return;
+
+        const btn = document.getElementById('btn-editor-save');
+        const origText = btn.innerHTML;
+        btn.innerHTML = "Menyimpan... ⏳";
+        btn.disabled = true;
+
+        try {
+            await db.ref(path).set(parsedData);
+            CustomUI.success("Data berhasil disimpan di /" + path);
+            // Auto-refresh jika path tersebut sedang dianalisa di tabel bawah
+            analyzeNode(path);
+            closeJsonEditorModal(); // Tutup popup setelah berhasil simpan
+        } catch (e) {
+            CustomUI.error("Gagal menyimpan data: " + e.message);
+        } finally {
+            btn.innerHTML = origText;
+            btn.disabled = false;
+        }
+    };
+
+    // --- Storage Node Logic (Edit Layout) ---
+    let editingNodeIndex = -1;
+
+    window.openNodeFormModal = function() {
+        editingNodeIndex = -1;
+        document.getElementById('new-node-label').value = '';
+        document.getElementById('new-node-path').value = '';
+        document.getElementById('new-node-icon').value = '';
+        
+        document.getElementById('form-node-title').innerHTML = '➕ Tambah Kotak Database';
+        document.getElementById('btn-add-node').textContent = 'Tambah Box';
+        document.getElementById('node-form-modal').classList.add('show');
+    };
+
+    window.closeNodeFormModal = function() {
+        document.getElementById('node-form-modal').classList.remove('show');
+    };
+
+    window.editStorageNode = function(index) {
+        const node = ALL_NODES[index];
+        if (!node) return;
+        
+        document.getElementById('new-node-label').value = node.label;
+        document.getElementById('new-node-path').value = node.key;
+        document.getElementById('new-node-icon').value = node.icon || '📁';
+        
+        editingNodeIndex = index;
+        
+        document.getElementById('form-node-title').innerHTML = '✏️ Edit Kotak Database';
+        document.getElementById('btn-add-node').textContent = 'Simpan Perubahan';
+        document.getElementById('node-form-modal').classList.add('show');
+    };
+
+    window.saveStorageNode = function() {
+        const label = document.getElementById('new-node-label').value.trim();
+        const path = document.getElementById('new-node-path').value.trim();
+        const icon = document.getElementById('new-node-icon').value.trim() || '📁';
+        if (!label || !path) {
+            return CustomUI.alert("Nama dan Path wajib diisi!", "Info");
+        }
+        
+        if (editingNodeIndex > -1) {
+            ALL_NODES[editingNodeIndex] = { key: path, label: label, icon: icon };
+            CustomUI.success("Kotak database berhasil diperbarui!");
+        } else {
+            ALL_NODES.push({ key: path, label: label, icon: icon });
+            CustomUI.success("Kotak database baru berhasil ditambahkan!");
+        }
+
+        localStorage.setItem('rbm_all_storage_nodes', JSON.stringify(ALL_NODES));
+        renderCards();
+        closeNodeFormModal(); // Tutup popup setelah simpan
+    };
+
+    window.removeStorageNode = function(index) {
+        CustomUI.confirm("Hapus kotak ini dari tampilan?<br><br><small>Hanya menghapus kotak tampilan. Data asli di database TIDAK akan terhapus.</small>", "Hapus Kotak", function() {
+            ALL_NODES.splice(index, 1);
+            localStorage.setItem('rbm_all_storage_nodes', JSON.stringify(ALL_NODES));
+            renderCards();
+        });
+    };
+
+    window.resetDefaultNodes = function() {
+        CustomUI.confirm("Kembalikan semua kotak ke pengaturan awal (bawaan pabrik)?<br><br><small>Kotak custom yang Anda buat akan ikut hilang.</small>", "Reset Layout", function() {
+            ALL_NODES = [...DEFAULT_NODES];
+            localStorage.setItem('rbm_all_storage_nodes', JSON.stringify(ALL_NODES));
+            renderCards();
+            CustomUI.success("Layout dikembalikan ke pengaturan awal.");
+        });
+    };
   </script>
 </body>
 </html>
