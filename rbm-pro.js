@@ -4524,6 +4524,9 @@ function syncAbsensiPeriodAndRefresh() {
     var tglAkhir = document.getElementById("absensi_tgl_akhir") ? document.getElementById("absensi_tgl_akhir").value : '';
     if (!tglAwal || !tglAkhir) return;
 
+    if (window._isSyncingAbsensi) return;
+    window._isSyncingAbsensi = true;
+
     var absenKey = getRbmStorageKey('RBM_ABSENSI_DATA');
     var jadwalKey = getRbmStorageKey('RBM_JADWAL_DATA');
     var gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
@@ -4545,9 +4548,27 @@ function syncAbsensiPeriodAndRefresh() {
         }
     }
 
-    // [FIX] Tarik juga master Karyawan terbaru dari Firebase di background saat Refresh
+    // [FIX] Tarik juga master Karyawan terbaru dari Firebase saat Refresh,
+    // lalu paksa render ulang agar nama karyawan lintas-device langsung sinkron.
     if (window.RBMStorage && typeof window.RBMStorage.loadFromFirebase === 'function') {
-        window.RBMStorage.loadFromFirebase();
+        window.RBMStorage.loadFromFirebase().then(function() {
+            try {
+                var empKey = getRbmStorageKey('RBM_EMPLOYEES');
+                if (window._rbmParsedCache && window._rbmParsedCache[empKey]) {
+                    delete window._rbmParsedCache[empKey];
+                }
+                window._absensiViewEmployees = undefined;
+                if (activeAbsensiMode === 'absensi' || activeAbsensiMode === 'jadwal') {
+                    renderAbsensiTable(activeAbsensiMode);
+                } else if (activeAbsensiMode === 'laporan' && typeof renderRekapAbsensiReport === 'function') {
+                    renderRekapAbsensiReport();
+                } else if (activeAbsensiMode === 'gaji' && typeof renderRekapGaji === 'function') {
+                    renderRekapGaji();
+                } else if (activeAbsensiMode === 'bonus' && typeof renderBonusTab === 'function') {
+                    renderBonusTab();
+                }
+            } catch (e) {}
+        }).catch(function(){});
     }
 
     if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadAbsensiJadwal) {
@@ -4571,11 +4592,13 @@ function syncAbsensiPeriodAndRefresh() {
                 else window._absensiViewData = results[0];
                 switchAbsensiTab(activeAbsensiMode);
             }
+            window._isSyncingAbsensi = false;
         }).catch(function(e) {
             if (!cachedAbsen && !cachedJadwal) {
                 window._absensiViewData = {};
                 switchAbsensiTab(activeAbsensiMode);
             }
+            window._isSyncingAbsensi = false;
         });
 
         // [OPTIMASI KILAT] Tarik GPS logs (yang sangat berat) di background secara terpisah.
@@ -4592,6 +4615,7 @@ function syncAbsensiPeriodAndRefresh() {
             window._absensiViewData = undefined;
             switchAbsensiTab(activeAbsensiMode);
         }
+        window._isSyncingAbsensi = false;
     }
 }
 
@@ -4712,12 +4736,10 @@ function renderAbsensiTable(mode) {
     const employees = window._absensiViewEmployees;
 
     // 3. Build Body
-    tbody.innerHTML = '';
+    let bodyHtml = '';
     employees.forEach((emp, index) => {
-        const tr = document.createElement('tr');
-        
         // Static Info (Email dihapus; Jabatan, Join Date, Sisa Cuti bisa dilipat via icon di samping Save/Print Jadwal)
-        let html = `
+        let rowHtml = `<tr>
             <td style="position:sticky; left:0; background:white; z-index:5;">${index + 1}</td>
             <td style="position:sticky; left:40px; background:white; z-index:5; text-align:left;">
                 <input type="text" name="emp_name_${index}" aria-label="Nama Karyawan" value="${emp.name}" onchange="updateEmployee(${index}, 'name', this.value)" style="border:none; width:100%; padding:0;">
@@ -4761,18 +4783,18 @@ function renderAbsensiTable(mode) {
                     colorClass = `status-${type}`;
                  }
             }
-            html += `<td class="absensi-cell ${colorClass}" onclick="cycleAbsensiStatus(this, '${key}')">${status}</td>`;
+            rowHtml += `<td class="absensi-cell ${colorClass}" onclick="cycleAbsensiStatus(this, '${key}')">${status}</td>`;
         });
 
         // Rekap Columns
         rekapHeaders.forEach(h => {
-            html += `<td class="rekap-${h}" style="text-align:center;">${counts[h]}</td>`;
+            rowHtml += `<td class="rekap-${h}" style="text-align:center;">${counts[h]}</td>`;
         });
-        html += `<td>${window.rbmOnlyOwnerCanEditDelete && window.rbmOnlyOwnerCanEditDelete() ? '<button class="btn-small-danger" onclick="removeEmployee(' + index + ')">x</button>' : '-'}</td>`;
+        rowHtml += `<td>${window.rbmOnlyOwnerCanEditDelete && window.rbmOnlyOwnerCanEditDelete() ? '<button class="btn-small-danger" onclick="removeEmployee(' + index + ')">x</button>' : '-'}</td></tr>`;
 
-        tr.innerHTML = html;
-        tbody.appendChild(tr);
+        bodyHtml += rowHtml;
     });
+    tbody.innerHTML = bodyHtml;
 }
 
 function toggleAbsensiExtraCols(btn) {

@@ -2439,12 +2439,10 @@ function renderAbsensiTable(mode) {
     }
 
     // 3. Build Body
-    tbody.innerHTML = '';
+    let bodyHtml = '';
     employees.forEach((emp, index) => {
-        const tr = document.createElement('tr');
-        
         // Static Info
-        let html = `
+        let rowHtml = `<tr>
             <td style="position:sticky; left:0; background:white; z-index:5;">${index + 1}</td>
             <td style="position:sticky; left:40px; background:white; z-index:5; text-align:left;">
                 <input type="text" value="${emp.name}" onchange="updateEmployee(${index}, 'name', this.value)" style="border:none; width:100%; padding:0;">
@@ -2454,7 +2452,7 @@ function renderAbsensiTable(mode) {
         `;
 
         // Sisa Cuti Inputs (Dipindah ke sini agar terlihat di kiri)
-        html += `
+        rowHtml += `
             <td><input type="number" value="${emp.sisaAL||0}" onchange="updateEmployee(${index}, 'sisaAL', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;"></td>
             <td><input type="number" value="${emp.sisaDP||0}" onchange="updateEmployee(${index}, 'sisaDP', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;"></td>
             <td><input type="number" value="${emp.sisaPH||0}" onchange="updateEmployee(${index}, 'sisaPH', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;"></td>
@@ -2482,11 +2480,11 @@ function renderAbsensiTable(mode) {
                     colorClass = `status-${type}`;
                  }
             }
-            html += `<td class="absensi-cell ${colorClass}" onclick="cycleStatus(this, '${key}', '${activeAbsensiMode}')">${status}</td>`;
+            rowHtml += `<td class="absensi-cell ${colorClass}" onclick="cycleStatus(this, '${key}', '${activeAbsensiMode}')">${status}</td>`;
         });
 
         // Sisa Cuti Inputs
-        html += `
+        rowHtml += `
             <td><input type="number" value="${emp.sisaAL||0}" onchange="updateEmployee(${index}, 'sisaAL', this.value)" style="width:50px; padding:5px; border:none; text-align:center;"></td>
             <td><input type="number" value="${emp.sisaDP||0}" onchange="updateEmployee(${index}, 'sisaDP', this.value)" style="width:50px; padding:5px; border:none; text-align:center;"></td>
             <td><input type="number" value="${emp.sisaPH||0}" onchange="updateEmployee(${index}, 'sisaPH', this.value)" style="width:50px; padding:5px; border:none; text-align:center;"></td>
@@ -2494,13 +2492,13 @@ function renderAbsensiTable(mode) {
 
         // Rekap Columns (Calculated)
         rekapHeaders.forEach(h => {
-            html += `<td class="rekap-${h}">${counts[h]}</td>`;
+            rowHtml += `<td class="rekap-${h}">${counts[h]}</td>`;
         });
-        html += `<td><button class="btn-small-danger" onclick="removeEmployee(${index})">x</button></td>`;
+        rowHtml += `<td><button class="btn-small-danger" onclick="removeEmployee(${index})">x</button></td></tr>`;
 
-        tr.innerHTML = html;
-        tbody.appendChild(tr);
+        bodyHtml += rowHtml;
     });
+    tbody.innerHTML = bodyHtml;
     
     // Simpan employees ke local storage jika baru inisialisasi
     localStorage.setItem('RBM_EMPLOYEES', JSON.stringify(employees));
