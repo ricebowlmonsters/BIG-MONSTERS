@@ -251,14 +251,16 @@
     setTimeout(function() { if (typeof window.hideGlobalLoader === 'function') window.hideGlobalLoader(); }, 100);
     };
     if (window.RBMStorage && window.RBMStorage.ready) {
-      // [OPTIMASI KILAT] Batasi loading screen maksimal 1.5 detik agar UI tidak terasa hang menunggu Firebase
+      // [OPTIMASI KILAT] Batasi loading screen agar UI tidak terasa hang menunggu Firebase.
+      // Khusus Absensi GPS, percepat lagi karena karyawan hanya butuh form cepat tampil.
       var initFired = false;
       var safeRunInit = function() {
           if (initFired) return;
           initFired = true;
           runInit();
       };
-      setTimeout(safeRunInit, 1500);
+      var firstPaintMaxWait = (window.RBM_PAGE === 'absensi-gps-view') ? 350 : 1500;
+      setTimeout(safeRunInit, firstPaintMaxWait);
       window.RBMStorage.ready().then(safeRunInit).catch(safeRunInit);
     } else {
       runInit();
