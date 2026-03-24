@@ -234,71 +234,18 @@
 
   function loadAbsensiJadwal(outlet, type, tglAwal, tglAkhir) {
     if (!init()) return Promise.resolve({});
-    var migKey = 'rbm_pro/migrated_' + type + '/' + outlet;
-    return db.ref(migKey).once('value').then(function(migSnap) {
-        if (!migSnap.val()) {
-            var oldKey = type === 'jadwal' ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA';
-            oldKey += (outlet && outlet !== 'default' ? '_' + outlet : '');
-            return db.ref('rbm_pro/storage/' + oldKey).once('value').then(function(oldSnap) {
-                var oldStr = oldSnap.val();
-                if (oldStr && typeof oldStr === 'string') {
-                    try {
-                        var oldObj = JSON.parse(oldStr);
-                        return saveAbsensiJadwal(outlet, type, oldObj).then(function() { return db.ref(migKey).set(true); });
-                    } catch(e) {}
-                }
-                return db.ref(migKey).set(true);
-            });
-        }
-    }).then(function() {
-        var ymStart = (tglAwal || '').substring(0, 7);
-        var ymEnd = (tglAkhir || '').substring(0, 7);
-        if (!ymStart || !ymEnd) return {};
-        var months = [];
-        var curr = new Date(ymStart + '-01');
-        var end = new Date(ymEnd + '-01');
-        while(curr <= end) {
-            months.push(curr.getFullYear() + '-' + ('0'+(curr.getMonth()+1)).slice(-2));
-            curr.setMonth(curr.getMonth() + 1);
-        }
-        var promises = months.map(function(ym) { return db.ref('rbm_pro/' + type + '/' + outlet + '/' + ym).once('value'); });
-        return Promise.all(promises).then(function(snaps) {
-            var merged = {};
-            snaps.forEach(function(snap) {
-                var val = snap.val();
-                if (val && typeof val === 'object') Object.assign(merged, val);
-            });
-            return merged;
+    var     return merged;
         });
-    });
   }
 
   // ---------- GPS Logs (Struktur Partisi Per Bulan) ----------
   function loadGpsLogs(outlet, tglAwal, tglAkhir) {
     if (!init()) return Promise.resolve([]);
     
-    // Auto-catch-up migration: Pindahkan data yang tersesat (dari cache lama yang belum ter-refresh) ke sistem partisi.
-    var oldKey = 'rbm_pro/gps_logs' + (outlet && outlet !== 'default' ? '_' + outlet.toLowerCase().replace(/[^a-z0-9_]/g, '_') : '');
-    return db.ref(oldKey).once('value').then(function(oldSnap) {
-        var oldData = oldSnap.val();
-        if (oldData && typeof oldData === 'object') {
-            var updates = {};
-            Object.keys(oldData).forEach(function(k) {
-                var log = oldData[k];
-                if (log && log.date) {
-                    var ym = log.date.substring(0, 7);
-                    if (/^\d{4}-\d{2}$/.test(ym)) {
-                        updates['rbm_pro/gps_logs_partitioned/' + (outlet || 'default') + '/' + ym + '/' + k] = log;
-                        updates[oldKey + '/' + k] = null; // Bersihkan dari sarang lama
-                    }
-                }
-            });
-            if (Object.keys(updates).length > 0) return db.ref().update(updates);
-        }
-    }).catch(function(){}).then(function() {
-        var ymStart = (tglAwal || '').substring(0, 7);
-        var ymEnd = (tglAkhir || '').substring(0, 7);
-        if (!ymStart || !ymEnd) return [];
+    var ymStart = (tglAwal || '').substring(0, 7);
+    var ymEnd = (tglAkhir || '').substring(0, 7);
+    if (!ymStart || !ymEnd) return Promise.resolve([]);
+
         var months = [];
         var curr = new Date(ymStart + '-01');
         var end = new Date(ymEnd + '-01');
@@ -308,10 +255,7 @@
         }
         var promises = months.map(function(ym) { return db.ref('rbm_pro/gps_logs_partitioned/' + (outlet || 'default') + '/' + ym).once('value'); });
         return Promise.all(promises).then(function(snaps) {
-            var merged = [];
-            var photoUpdates = {};
-            var partitionUpdates = {};
-            var safeOutlet = (outlet || 'default').replace(/[^a-zA-Z0-9_-]/g, '');
+                var safeOutlet = (outlet || 'default').replace(/[^a-zA-Z0-9_-]/g, '');
 
             snaps.forEach(function(snap) {
                 var val = snap.val();
@@ -320,12 +264,8 @@
                         var item = val[k];
                         item._firebaseKey = k;
                         
-                        // MIGRASI OTOMATIS: Pisahkan foto berat dari cache utama jika masih tergabung
+                        // [PERFORMA] Jangan upload ulang foto raksasa yang macet, cukup ringankan di tampilan lokal
                         if (item.photo && item.photo.length > 500 && item.photo.indexOf('LAZY_SPLIT_') === -1 && item.photo !== 'LAZY_PHOTO') {
-                            var ym = item.date ? item.date.substring(0, 7) : 'unknown';
-                            photoUpdates['rbm_pro/gps_logs_photos/' + safeOutlet + '/' + ym + '/' + k] = item.photo;
-                            partitionUpdates['rbm_pro/gps_logs_partitioned/' + safeOutlet + '/' + ym + '/' + k + '/photo'] = 'LAZY_PHOTO';
-                            partitionUpdates['rbm_pro/gps_logs_partitioned/' + safeOutlet + '/' + ym + '/' + k + '/hasPhoto'] = true;
                             item.hasPhoto = true;
                         }
                         
@@ -339,12 +279,8 @@
                 }
             });
             
-            if (Object.keys(photoUpdates).length > 0) {
-                db.ref().update(photoUpdates).then(function() { db.ref().update(partitionUpdates); }).catch(function(){});
-            }
             return merged.filter(function(l) { return l.date >= tglAwal && l.date <= tglAkhir; });
         });
-    });
   }
 
   // ---------- Petty Cash (logika sama seperti Pembukuan: satu node per tanggal) ----------

@@ -1,4 +1,22 @@
 (function() {
+  // --- GLOBAL LOADING SCREEN ---
+  (function injectLoader() {
+      if (typeof document === 'undefined') return;
+      var style = document.createElement('style');
+      style.innerHTML = '#rbm-global-loader{position:fixed;top:0;left:0;width:100%;height:100%;background:#f8fafc;z-index:999999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity 0.4s ease;}.rbm-global-spinner{width:48px;height:48px;border:4px solid #e2e8f0;border-top-color:#4C2A85;border-radius:50%;animation:rbm-global-spin 1s linear infinite;}.rbm-global-text{margin-top:16px;font-family:"Segoe UI",sans-serif;font-size:14px;color:#475569;font-weight:600;letter-spacing:0.5px;}@keyframes rbm-global-spin{to{transform:rotate(360deg);}}';
+      document.head.appendChild(style);
+      var loader = document.createElement('div');
+      loader.id = 'rbm-global-loader';
+      loader.innerHTML = '<div class="rbm-global-spinner"></div><div class="rbm-global-text">Memuat Sistem...</div>';
+      var insert = function() { document.body.appendChild(loader); };
+      if (document.body) insert();
+      else document.addEventListener('DOMContentLoaded', insert);
+  })();
+  window.hideGlobalLoader = function() {
+      var loader = document.getElementById('rbm-global-loader');
+      if (loader) { loader.style.opacity = '0'; setTimeout(function() { loader.style.display = 'none'; }, 400); }
+  };
+
   if (!window.RBMStorage) {
     window.RBMStorage = { getItem: function(k) { return localStorage.getItem(k); }, setItem: function(k, v) { localStorage.setItem(k, v); }, ready: function() { return Promise.resolve(); } };
   }
@@ -121,6 +139,8 @@
         waitUntilReadyAndRun({ flag: '_rbmAutoLoadedPb', fn: loadPembukuanData });
       } else if (pageFast === 'stok-barang-view' && typeof renderStokTable === 'function') {
         waitUntilReadyAndRun({ flag: '_rbmAutoLoadedStok', fn: renderStokTable });
+      } else if (pageFast === 'absensi-view' && typeof syncAbsensiPeriodAndRefresh === 'function') {
+        waitUntilReadyAndRun({ flag: '_rbmAutoLoadedAbsen', fn: syncAbsensiPeriodAndRefresh });
       }
     } catch(e) {}
 
@@ -214,9 +234,20 @@
         if (typeof initAbsensiGPS === 'function') initAbsensiGPS();
       }
     }
+
+    // Sembunyikan layar loading secara halus (fade-out) setelah data selesai digambar
+    setTimeout(function() { if (typeof window.hideGlobalLoader === 'function') window.hideGlobalLoader(); }, 100);
     };
     if (window.RBMStorage && window.RBMStorage.ready) {
-      window.RBMStorage.ready().then(runInit).catch(function() { runInit(); });
+      // [OPTIMASI KILAT] Batasi loading screen maksimal 1.5 detik agar UI tidak terasa hang menunggu Firebase
+      var initFired = false;
+      var safeRunInit = function() {
+          if (initFired) return;
+          initFired = true;
+          runInit();
+      };
+      setTimeout(safeRunInit, 1500);
+      window.RBMStorage.ready().then(safeRunInit).catch(safeRunInit);
     } else {
       runInit();
     }
@@ -307,11 +338,25 @@
             data = rawObj !== null && rawObj !== undefined ? rawObj : defaultVal;
             if (data === defaultVal && Array.isArray(defaultVal)) data = [];
             if (data === defaultVal && typeof defaultVal === 'object' && !Array.isArray(defaultVal)) data = {};
+            
+            // [FIX KRUSIAL] Paksa data menjadi Array jika defaultVal adalah Array
+            if (Array.isArray(defaultVal) && data !== null && typeof data === 'object' && !Array.isArray(data)) {
+                data = Object.keys(data).map(function(k) { return data[k]; }).filter(function(item) { return item !== null && item !== undefined; });
+            }
         }
     } else {
         const raw = RBMStorage.getItem(key) || JSON.stringify(defaultVal || []);
         data = safeParse(raw, defaultVal || []);
     }
+    
+    // [SAFETY NET KILAT] Jika gagal muat dari jaringan, pertahankan data lokal lama agar tidak hilang
+    if (Array.isArray(data) && data.length === 0 && key.indexOf('EMPLOYEES') >= 0) {
+        const fallbackRaw = localStorage.getItem(key);
+        if (fallbackRaw && fallbackRaw.length > 10) {
+            data = safeParse(fallbackRaw, data);
+        }
+    }
+    
     window._rbmParsedCache[key] = { data: data };
     return data;
   }
@@ -860,6 +905,7 @@ function savePembukuanToJpg() {
             if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(totalDana);
             if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
             if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
+            if (typeof window.showSyncIndicator === 'function') window.showSyncIndicator();
         }).catch(function(err) {
             tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
             summaryEl.style.display = 'none';
@@ -1046,6 +1092,7 @@ function savePembukuanToJpg() {
             if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(summary.totalKredit || 0);
             if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
             if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
+            if (typeof window.showSyncIndicator === 'function') window.showSyncIndicator();
           }).catch(function(err) {
             console.error(err);
             tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
@@ -1058,7 +1105,10 @@ function savePembukuanToJpg() {
         // refresh dari network (silent jika cache sudah tampil)
         loadPage(window._pcFbCursor || null, { silent: true });
       } else {
-        FirebaseStorage.getPettyCash(tglAwal, tglAkhir, getRbmOutlet()).then(renderPettyCashFromResult).catch(function(err) {
+        FirebaseStorage.getPettyCash(tglAwal, tglAkhir, getRbmOutlet()).then(function(result) {
+            renderPettyCashFromResult(result);
+            if (typeof window.showSyncIndicator === 'function') window.showSyncIndicator();
+        }).catch(function(err) {
           tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
           summaryEl.style.display = 'none';
         });
@@ -3290,6 +3340,7 @@ function loadPembukuanData() {
                     document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(subtotalKeluar);
                     document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(saldoAkhir);
                     summaryEl.style.display = 'grid';
+                    if (typeof window.showSyncIndicator === 'function') window.showSyncIndicator();
                 }).catch(function(err) {
                     tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Gagal memuat: ' + (err && err.message ? err.message : '') + '</td></tr>';
                     summaryEl.style.display = 'none';
@@ -3555,6 +3606,7 @@ function loadPembukuanData() {
       FirebaseStorage.getPembukuan(tglAwal, tglAkhir, getRbmOutlet()).then(function(pending) {
         window._lastPembukuanPending = pending;
         renderPembukuanFromPending(pending);
+        if (typeof window.showSyncIndicator === 'function') window.showSyncIndicator();
       }).catch(function() {
         tbody.innerHTML = '<tr><td colspan="7" class="table-empty">Gagal memuat data.</td></tr>';
         summaryEl.style.display = 'none';
@@ -4459,40 +4511,83 @@ function updateJadwalLegend() {
 let activeAbsensiMode = 'absensi';
 
 function syncAbsensiPeriodAndRefresh() {
+    if (window._absensiEmployeesDirty) {
+        if (!confirm("Ada perubahan data karyawan yang belum disimpan! Lanjutkan refresh (perubahan akan hilang)?")) return;
+        window._absensiEmployeesDirty = false;
+    }
+
     var tglAwal = document.getElementById("absensi_tgl_awal") ? document.getElementById("absensi_tgl_awal").value : '';
     var tglAkhir = document.getElementById("absensi_tgl_akhir") ? document.getElementById("absensi_tgl_akhir").value : '';
     if (!tglAwal || !tglAkhir) return;
 
-    var tbody = document.getElementById("absensi_tbody");
-    if (tbody && (activeAbsensiMode === 'absensi' || activeAbsensiMode === 'jadwal')) {
-        tbody.innerHTML = '<tr><td colspan="30" style="text-align:center; padding:20px;">Memuat data dari server... ⏳</td></tr>';
+    var absenKey = getRbmStorageKey('RBM_ABSENSI_DATA');
+    var jadwalKey = getRbmStorageKey('RBM_JADWAL_DATA');
+    var gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
+    
+    var cachedAbsen = window._rbmParsedCache[absenKey] ? window._rbmParsedCache[absenKey].data : safeParse(RBMStorage.getItem(absenKey), {});
+    var cachedJadwal = window._rbmParsedCache[jadwalKey] ? window._rbmParsedCache[jadwalKey].data : safeParse(RBMStorage.getItem(jadwalKey), {});
+
+    if (cachedAbsen || cachedJadwal) {
+        window._rbmParsedCache[absenKey] = { data: cachedAbsen || {} };
+        window._rbmParsedCache[jadwalKey] = { data: cachedJadwal || {} };
+        window._absensiViewEmployees = undefined; // [FIX] Selalu kosongkan agar tabel mengambil data karyawan terbaru dari cache
+        if (activeAbsensiMode === 'jadwal') window._absensiViewData = cachedJadwal || {};
+        else window._absensiViewData = cachedAbsen || {};
+        switchAbsensiTab(activeAbsensiMode);
+    } else {
+        var tbody = document.getElementById("absensi_tbody");
+        if (tbody && (activeAbsensiMode === 'absensi' || activeAbsensiMode === 'jadwal')) {
+            tbody.innerHTML = '<tr><td colspan="30" style="text-align:center; padding:20px;">Memuat data dari server... ⏳</td></tr>';
+        }
+    }
+
+    // [FIX] Tarik juga master Karyawan terbaru dari Firebase di background saat Refresh
+    if (window.RBMStorage && typeof window.RBMStorage.loadFromFirebase === 'function') {
+        window.RBMStorage.loadFromFirebase();
     }
 
     if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadAbsensiJadwal) {
         var outlet = getRbmOutlet() || 'default';
         Promise.all([
             FirebaseStorage.loadAbsensiJadwal(outlet, 'absensi', tglAwal, tglAkhir),
-            FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', tglAwal, tglAkhir),
-            FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir)
+            FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', tglAwal, tglAkhir)
         ]).then(function(results) {
-            var absenKey = getRbmStorageKey('RBM_ABSENSI_DATA');
-            var jadwalKey = getRbmStorageKey('RBM_JADWAL_DATA');
-            var gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
+            var oldAbsen = JSON.stringify(cachedAbsen || {});
+            var newAbsen = JSON.stringify(results[0] || {});
+            var oldJadwal = JSON.stringify(cachedJadwal || {});
+            var newJadwal = JSON.stringify(results[1] || {});
+
             window._rbmParsedCache[absenKey] = { data: results[0] };
             window._rbmParsedCache[jadwalKey] = { data: results[1] };
-            window._rbmParsedCache[gpsKey] = { data: results[2] };
             
-            if (activeAbsensiMode === 'jadwal') window._absensiViewData = results[1];
-            else window._absensiViewData = results[0];
-
-            switchAbsensiTab(activeAbsensiMode);
+            if (oldAbsen !== newAbsen || oldJadwal !== newJadwal || !window._absensiAutoRefreshed) {
+                window._absensiAutoRefreshed = true;
+                window._absensiViewEmployees = undefined; // Paksa refresh daftar karyawan terbaru jika ada perubahan
+                if (activeAbsensiMode === 'jadwal') window._absensiViewData = results[1];
+                else window._absensiViewData = results[0];
+                switchAbsensiTab(activeAbsensiMode);
+            }
         }).catch(function(e) {
-            window._absensiViewData = {};
-            switchAbsensiTab(activeAbsensiMode);
+            if (!cachedAbsen && !cachedJadwal) {
+                window._absensiViewData = {};
+                switchAbsensiTab(activeAbsensiMode);
+            }
         });
+
+        // [OPTIMASI KILAT] Tarik GPS logs (yang sangat berat) di background secara terpisah.
+        // JANGAN memblokir proses render Tabel Absensi dan Jadwal!
+        FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir).then(function(gpsData) {
+            window._rbmParsedCache[gpsKey] = { data: gpsData };
+            // Auto-update tabel Gaji jika kebetulan user sedang berada di Tab Gaji
+            if (activeAbsensiMode === 'gaji' && typeof renderRekapGaji === 'function') {
+                renderRekapGaji();
+            }
+        }).catch(function(){});
     } else {
-        window._absensiViewData = undefined;
-        switchAbsensiTab(activeAbsensiMode);
+        if (!cachedAbsen && !cachedJadwal) {
+            window._absensiViewData = undefined;
+            switchAbsensiTab(activeAbsensiMode);
+        }
     }
 }
 
@@ -4769,7 +4864,7 @@ function saveAbsensiData() {
 /** Simpan data Absensi & Jadwal (karyawan + status per tanggal) ke Firebase. Panggil saat user klik tombol Simpan. */
 function saveAbsensiToFirebase(silent) {
     var employees = window._absensiViewEmployees;
-    if (!employees || !Array.isArray(employees)) {
+    if (!employees || !Array.isArray(employees) || employees.length === 0) {
         if (!silent) alert('Tidak ada data karyawan untuk disimpan.');
         return;
     }
@@ -4833,7 +4928,7 @@ function saveAbsensiToFirebase(silent) {
 // [NEW] Simpan hanya master karyawan (nama, jabatan, joinDate, sisa cuti).
 function saveAbsensiEmployeesToFirebase(silent) {
     var employees = window._absensiViewEmployees;
-    if (!employees || !Array.isArray(employees)) {
+    if (!employees || !Array.isArray(employees) || employees.length === 0) {
         if (!silent) alert('Tidak ada data karyawan untuk disimpan.');
         return;
     }
@@ -5049,19 +5144,21 @@ function renderRekapGaji() {
     try {
         const allButtons = Array.from(document.querySelectorAll('button'));
         const btnSaveGaji = allButtons.find(b => b.textContent && b.textContent.includes('Simpan Perubahan'));
-        const btnPrintGaji = allButtons.find(b => b.textContent && b.textContent.includes('Print Slip/Rekap'));
+        const btnPrintGaji = allButtons.find(b => b.textContent && (b.textContent.includes('Print Slip/Rekap') || b.textContent.includes('PDF')));
         const btnZipGaji = allButtons.find(b => b.textContent && b.textContent.includes('Download Semua Slip (ZIP)'));
         
-        const btns = [btnSaveGaji, btnPrintGaji, btnZipGaji].filter(Boolean);
+        const btns = [btnSaveGaji, btnZipGaji, btnPrintGaji].filter(Boolean);
         
-        if (btns.length > 0 && !btns[0].parentElement.classList.contains('flex-wrapper-gaji')) {
+        let wrapper = btns.length > 0 ? btns[0].parentElement : null;
+        
+        if (wrapper && !wrapper.classList.contains('flex-wrapper-gaji')) {
             // Hapus elemen <br> di dekat tombol agar tidak menyebabkan spasi berlebih
             btns.forEach(b => {
                 if (b.previousElementSibling && b.previousElementSibling.tagName === 'BR') b.previousElementSibling.remove();
                 if (b.nextElementSibling && b.nextElementSibling.tagName === 'BR') b.nextElementSibling.remove();
             });
             
-            const wrapper = document.createElement('div');
+            wrapper = document.createElement('div');
             wrapper.className = 'flex-wrapper-gaji';
             wrapper.style.cssText = 'display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px;';
             
@@ -5072,7 +5169,9 @@ function renderRekapGaji() {
                 b.style.margin = '0';   // Hilangkan margin bawaan yang bikin turun ke bawah
                 wrapper.appendChild(b);
             });
+        }
 
+        if (wrapper && wrapper.classList.contains('flex-wrapper-gaji')) {
             // --- MENAMPILKAN KEMBALI FITUR PENGAJUAN GAJI LENGKAP KE OWNER ---
             let btnPengajuan = allButtons.find(b => b.textContent && (b.textContent.includes('Pengajuan Gaji') || b.textContent.includes('Pengajuan Petty Cash') || b.textContent.includes('Ajukan Laporan Lengkap')));
             if (!btnPengajuan) {
@@ -5090,7 +5189,9 @@ function renderRekapGaji() {
                 }
             }
             
-            wrapper.appendChild(btnPengajuan);
+            if (!wrapper.contains(btnPengajuan)) {
+                wrapper.appendChild(btnPengajuan);
+            }
 
             // Menyembunyikan tabel riwayat pengajuan di Rekap Gaji (karena dipindah ke Pengajuan Dana)
             const tbodyRiwayat = document.getElementById('gaji_pengajuan_tbody');
@@ -8907,7 +9008,7 @@ window.loadFaceApiModelsForAbsensi = async function() {
     if (window.isFaceApiLoaded) return;
     const faceStatus = document.getElementById('face_id_status_info');
     if (faceStatus) {
-        faceStatus.innerHTML = "⏳ Memuat model AI Face ID...";
+        faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memuat model AI Face ID...</span>';
         faceStatus.style.color = "#b45309";
         faceStatus.style.background = "#fffbeb";
         faceStatus.style.borderColor = "#fde68a";
@@ -8932,7 +9033,7 @@ window.loadFaceApiModelsForAbsensi = async function() {
                         faceStatus.style.borderColor = "#fecaca";
                         if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
                     } else {
-                        faceStatus.innerHTML = "⏳ Memulai pemindaian wajah...";
+                        faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memulai pemindaian wajah...</span>';
                         faceStatus.style.color = "#1d4ed8";
                         faceStatus.style.background = "#eff6ff";
                         faceStatus.style.borderColor = "#bfdbfe";
@@ -9211,195 +9312,186 @@ async function loadRekapAbsensiGPS() {
         toggleBtn.style.opacity = showEmpty ? '1' : '0.7';
     }
 
-    tbody.innerHTML = '<tr><td colspan="10" class="table-loading">Memuat data dari server... ⏳</td></tr>';
+    // [OPTIMASI KILAT] Gunakan pola Stale-While-Revalidate
+    const renderTable = (logs) => {
+        const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+        const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
+        let filtered = logs.filter(l => l.date >= tglAwal && l.date <= tglAkhir);
 
-    let logs = [];
+        const dates = [];
+        let curr = new Date(tglAwal);
+        const end = new Date(tglAkhir);
+        while (curr <= end) {
+            dates.push(new Date(curr).toISOString().split('T')[0]);
+            curr.setDate(curr.getDate() + 1);
+        }
+
+        window._rekapGpsPage = window._rekapGpsPage || 1;
+        const daysPerPage = 3;
+        const totalPages = Math.ceil(dates.length / daysPerPage) || 1;
+        if (window._rekapGpsPage > totalPages) window._rekapGpsPage = totalPages;
+        if (window._rekapGpsPage < 1) window._rekapGpsPage = 1;
+        const pageStart = (window._rekapGpsPage - 1) * daysPerPage;
+        const pageDates = dates.slice(pageStart, pageStart + daysPerPage);
+
+        const grouped = {};
+        filtered.forEach(log => {
+            if (pageDates.indexOf(log.date) < 0) return;
+            const key = `${log.date}_${log.name}`;
+            if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: true };
+            grouped[key].hasLog = true;
+            if (log.type === 'Masuk' && !grouped[key].masuk) grouped[key].masuk = log;
+            else if (log.type === 'Pulang') grouped[key].pulang = log;
+            else if (log.type === 'Istirahat Keluar') grouped[key].breakOuts.push(log);
+            else if (log.type === 'Istirahat Kembali') grouped[key].breakIns.push(log);
+        });
+
+        const canDelete = window.rbmOnlyOwnerCanEditDelete && (window.rbmOnlyOwnerCanEditDelete() || (JSON.parse(localStorage.getItem('rbm_user')||'{}').username||'').toLowerCase() === 'burhan');
+
+        let keys = [];
+        if (showEmpty) {
+            pageDates.forEach(function(d) {
+                employees.forEach(function(emp) {
+                    const name = emp && emp.name ? emp.name : '';
+                    if (!name) return;
+                    const key = `${d}_${name}`;
+                    if (!grouped[key]) grouped[key] = { date: d, name: name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: false };
+                    keys.push(key);
+                });
+            });
+        } else {
+            keys = Object.keys(grouped);
+        }
+
+        if (filterNama) keys = keys.filter(k => grouped[k] && grouped[k].name === filterNama);
+        keys.sort((a, b) => {
+            if (grouped[a].date !== grouped[b].date) return grouped[b].date.localeCompare(grouped[a].date);
+            return grouped[a].name.localeCompare(grouped[b].name);
+        });
+
+        if (keys.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data pada halaman ini.</td></tr>';
+        } else {
+            const empMap = {};
+            employees.forEach(e => { empMap[e.name] = e; });
+
+            function isTelat(date, name, masukLog) {
+                if (!masukLog || !masukLog.time) return false;
+                const emp = empMap[name];
+                const empId = emp ? (emp.id != null ? emp.id : employees.indexOf(emp)) : null;
+                if (empId === null) return false;
+                const jadwalKey = `${date}_${empId}`;
+                const shift = jadwalData[jadwalKey];
+                const batas = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift) : null) || JADWAL_BATAS_MASUK[shift];
+                if (!batas) return false;
+                const menitBatas = parseTimeToMinutes(batas);
+                const menitMasuk = parseTimeToMinutes(masukLog.time);
+                return menitMasuk > menitBatas;
+            }
+            function hasTelatAtauPulangCepat(item, date, name) {
+                const d = getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMap);
+                return d.totalMenit > 0;
+            }
+            function getLupaAbsen(item) {
+                const lupa = [];
+                if (!item.masuk) lupa.push('Masuk');
+                if (item.breakOuts.length > item.breakIns.length) lupa.push('Istirahat Kembali');
+                if (item.breakIns.length > item.breakOuts.length) lupa.push('Istirahat Keluar');
+                if (!item.pulang) lupa.push('Pulang');
+                if (lupa.length === 0) return '-';
+                return 'Lupa ' + lupa.join(' & ');
+            }
+
+            let html = '';
+            keys.forEach(k => {
+                const item = grouped[k];
+                if (!item.hasLog) {
+                    if (showEmpty) {
+                        html += `<tr style="background:#f8fafc; color:#94a3b8;"><td>${item.date}</td><td>${item.name}</td><td colspan="8" style="text-align:center; font-style:italic; font-size:12px;">Tidak ada data absensi (Belum Absen / Libur)</td></tr>`;
+                    }
+                    return;
+                }
+                const buildGpsLogCaption = (log) => {
+                    if (!log) return '';
+                    let s = (log.name || '') + ' - ' + (log.type || '') + ' | ' + (log.date || '') + ' ' + (log.time || '');
+                    if (log.lat != null && log.lng != null) s += ' | Lat: ' + Number(log.lat).toFixed(5) + ', Lng: ' + Number(log.lng).toFixed(5);
+                    return s;
+                };
+                const renderCell = (logOrArray) => {
+                    const renderSingleLog = (log) => {
+                        if (!log || log.id == null) return '<span>-</span>';
+                        const captionEsc = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                        const timeHtml = `<span title="${captionEsc.replace(/&quot;/g,'"')}" style="color:#0f172a;">${log.time}</span>`;
+                        const deleteHtml = canDelete ? ` <span style="cursor:pointer; color:#dc3545; font-size:14px; vertical-align:middle; margin-left:4px;" onclick="deleteSingleGpsLog(${log.id})" title="Hapus absensi ini">&#x2715;</span>` : '';
+                        return `<div style="white-space:nowrap; display:flex; align-items:center; justify-content:flex-start;">${timeHtml}${deleteHtml}</div>`;
+                    };
+                    if (!logOrArray) return renderSingleLog(null);
+                    if (Array.isArray(logOrArray)) return logOrArray.length > 0 ? logOrArray.map(renderSingleLog).join('') : '-';
+                    return renderSingleLog(logOrArray);
+                };
+                const telat = isTelat(item.date, item.name, item.masuk);
+                const detailTelat = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData, empMap);
+                const punyaTelatPulangCepat = detailTelat.totalMenit > 0;
+                const lupaAbsen = getLupaAbsen(item);
+                const lupaMasuk = !item.masuk;
+                const lupaPulang = !item.pulang;
+                const lupaBreakOut = item.breakIns.length > item.breakOuts.length;
+                const lupaBreakIn = item.breakOuts.length > item.breakIns.length;
+                const detailTelatEsc = JSON.stringify({ lines: detailTelat.lines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const telatHtml = (telat || punyaTelatPulangCepat) ? '<span style="color:#b91c1c; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailTelatModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', \'' + detailTelatEsc + '\')">Ya</span>' : '-';
+                const lupaHtml = lupaAbsen !== '-' ? '<span style="color:#b45309; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailLupaModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', ' + lupaMasuk + ', ' + lupaPulang + ', ' + lupaBreakOut + ', ' + lupaBreakIn + ')">' + lupaAbsen + '</span>' : '-';
+                const photosHtml = '-'; 
+                const breakStats = getBreakStats(filtered, item.name, item.date);
+                const totalIstirahat = breakStats.total > 0 ? breakStats.total + ' menit' : '-';
+                html += `<tr${telat || punyaTelatPulangCepat || lupaAbsen !== '-' ? ' style="background:#fef2f2;"' : ''}>
+                    <td>${item.date}</td>
+                    <td>${item.name}</td>
+                    <td>${renderCell(item.masuk)}</td>
+                    <td>${renderCell(item.breakOuts)}</td>
+                    <td>${renderCell(item.breakIns)}</td>
+                    <td>${totalIstirahat}</td>
+                    <td>${renderCell(item.pulang)}</td>
+                    <td>${telatHtml}</td>
+                    <td>${lupaHtml}</td>
+                    <td>${photosHtml}</td>
+                </tr>`;
+            });
+            tbody.innerHTML = html;
+        }
+        let paginationEl = document.getElementById('rekap_gps_pagination');
+        if (!paginationEl) {
+            paginationEl = document.createElement('div');
+            paginationEl.id = 'rekap_gps_pagination';
+            paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
+            const tableCard = tbody.closest('.table-card') || tbody.parentElement;
+            if (tableCard) tableCard.appendChild(paginationEl);
+        }
+        paginationEl.innerHTML = `
+            <button class="btn btn-secondary" ${window._rekapGpsPage === 1 ? 'disabled' : ''} onclick="window._rekapGpsPage--; loadRekapAbsensiGPS()">⬅️ Prev</button>
+            <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${window._rekapGpsPage} dari ${totalPages} (per ${daysPerPage} hari)</span>
+            <button class="btn btn-secondary" ${window._rekapGpsPage === totalPages ? 'disabled' : ''} onclick="window._rekapGpsPage++; loadRekapAbsensiGPS()">Next ➡️</button>
+        `;
+        const legend = document.getElementById('rekap_gps_legend');
+        if (legend) legend.style.display = 'block';
+    };
+
+    let cachedLogs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
+    if (cachedLogs.length > 0) {
+        renderTable(cachedLogs);
+    } else {
+        tbody.innerHTML = '<tr><td colspan="10" class="table-loading">Memuat data dari server... ⏳</td></tr>';
+    }
+
     if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsLogs) {
         const outlet = getRbmOutlet() || 'default';
         try {
-            logs = await FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir);
-            window._rbmParsedCache[getRbmStorageKey('RBM_GPS_LOGS')] = { data: logs };
-        } catch(e) { logs = []; }
-    } else {
-        logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
-    }
-
-    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
-    const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
-
-    let filtered = logs.filter(l => l.date >= tglAwal && l.date <= tglAkhir);
-
-    // Generate Range Tanggal
-    const dates = [];
-    let curr = new Date(tglAwal);
-    const end = new Date(tglAkhir);
-    while (curr <= end) {
-        dates.push(new Date(curr).toISOString().split('T')[0]);
-        curr.setDate(curr.getDate() + 1);
-    }
-
-    // --- [SUPER OPTIMASI] Jangan buat matrix (tanggal x karyawan) untuk semua periode.
-    // Paginate berdasarkan TANGGAL (mis. 3 hari per halaman), baru generate rows untuk halaman itu.
-    window._rekapGpsPage = window._rekapGpsPage || 1;
-    const daysPerPage = 3;
-    const totalPages = Math.ceil(dates.length / daysPerPage) || 1;
-    if (window._rekapGpsPage > totalPages) window._rekapGpsPage = totalPages;
-    if (window._rekapGpsPage < 1) window._rekapGpsPage = 1;
-    const pageStart = (window._rekapGpsPage - 1) * daysPerPage;
-    const pageDates = dates.slice(pageStart, pageStart + daysPerPage);
-
-    const grouped = {};
-    // Isi hanya untuk tanggal di halaman ini
-    filtered.forEach(log => {
-        if (pageDates.indexOf(log.date) < 0) return;
-        const key = `${log.date}_${log.name}`;
-        if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: true };
-        grouped[key].hasLog = true;
-        if (log.type === 'Masuk' && !grouped[key].masuk) grouped[key].masuk = log;
-        else if (log.type === 'Pulang') grouped[key].pulang = log;
-        else if (log.type === 'Istirahat Keluar') grouped[key].breakOuts.push(log);
-        else if (log.type === 'Istirahat Kembali') grouped[key].breakIns.push(log);
-    });
-
-    const canDelete = window.rbmOnlyOwnerCanEditDelete && (window.rbmOnlyOwnerCanEditDelete() || (JSON.parse(localStorage.getItem('rbm_user')||'{}').username||'').toLowerCase() === 'burhan');
-
-    // Build keys untuk halaman ini: kalau showEmpty, buat semua (tanggal x karyawan) untuk pageDates saja.
-    let keys = [];
-    if (showEmpty) {
-        pageDates.forEach(function(d) {
-            employees.forEach(function(emp) {
-                const name = emp && emp.name ? emp.name : '';
-                if (!name) return;
-                const key = `${d}_${name}`;
-                if (!grouped[key]) grouped[key] = { date: d, name: name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: false };
-                keys.push(key);
-            });
-        });
-    } else {
-        keys = Object.keys(grouped);
-    }
-
-    if (filterNama) keys = keys.filter(k => grouped[k] && grouped[k].name === filterNama);
-    keys.sort((a, b) => {
-        if (grouped[a].date !== grouped[b].date) return grouped[b].date.localeCompare(grouped[a].date);
-        return grouped[a].name.localeCompare(grouped[b].name);
-    });
-
-    if (keys.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data pada halaman ini.</td></tr>';
-    } else {
-
-    // --- [OPTIMASI 1000X] Hash Map O(1) untuk Bypass Loop Bersarang Array.find ---
-    const empMap = {};
-    employees.forEach(e => {
-        empMap[e.name] = e;
-    });
-
-    function isTelat(date, name, masukLog) {
-        if (!masukLog || !masukLog.time) return false;
-        const emp = empMap[name];
-        const empId = emp ? (emp.id != null ? emp.id : employees.indexOf(emp)) : null;
-        if (empId === null) return false;
-        const jadwalKey = `${date}_${empId}`;
-        const shift = jadwalData[jadwalKey];
-        const batas = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift) : null) || JADWAL_BATAS_MASUK[shift];
-        if (!batas) return false;
-        const menitBatas = parseTimeToMinutes(batas);
-        const menitMasuk = parseTimeToMinutes(masukLog.time);
-        return menitMasuk > menitBatas;
-    }
-    function hasTelatAtauPulangCepat(item, date, name) {
-        const d = getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMap);
-        return d.totalMenit > 0;
-    }
-
-    function getLupaAbsen(item) {
-        const lupa = [];
-        if (!item.masuk) lupa.push('Masuk');
-        if (item.breakOuts.length > item.breakIns.length) lupa.push('Istirahat Kembali');
-        if (item.breakIns.length > item.breakOuts.length) lupa.push('Istirahat Keluar');
-        if (!item.pulang) lupa.push('Pulang');
-        if (lupa.length === 0) return '-';
-        return 'Lupa ' + lupa.join(' & ');
-    }
-
-    let html = '';
-    keys.forEach(k => {
-        const item = grouped[k];
-        
-        // [FIX] Tampilkan baris kosong jika tidak ada log (Belum Absen)
-        if (!item.hasLog) {
-            if (showEmpty) {
-                html += `<tr style="background:#f8fafc; color:#94a3b8;"><td>${item.date}</td><td>${item.name}</td><td colspan="8" style="text-align:center; font-style:italic; font-size:12px;">Tidak ada data absensi (Belum Absen / Libur)</td></tr>`;
+            let serverLogs = await FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir);
+            window._rbmParsedCache[getRbmStorageKey('RBM_GPS_LOGS')] = { data: serverLogs };
+            if (JSON.stringify(cachedLogs) !== JSON.stringify(serverLogs)) {
+                renderTable(serverLogs);
             }
-            return;
-        }
-
-        const buildGpsLogCaption = (log) => {
-            if (!log) return '';
-            let s = (log.name || '') + ' - ' + (log.type || '') + ' | ' + (log.date || '') + ' ' + (log.time || '');
-            if (log.lat != null && log.lng != null) s += ' | Lat: ' + Number(log.lat).toFixed(5) + ', Lng: ' + Number(log.lng).toFixed(5);
-            return s;
-        };
-        const renderCell = (logOrArray) => {
-            const renderSingleLog = (log) => {
-                if (!log || log.id == null) return '<span>-</span>';
-                const captionEsc = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                // Foto di-strip untuk performa. Jika suatu saat mau foto on-demand, endpoint/fetch bisa ditambahkan.
-                const timeHtml = `<span title="${captionEsc.replace(/&quot;/g,'"')}" style="color:#0f172a;">${log.time}</span>`;
-                const deleteHtml = canDelete ? ` <span style="cursor:pointer; color:#dc3545; font-size:14px; vertical-align:middle; margin-left:4px;" onclick="deleteSingleGpsLog(${log.id})" title="Hapus absensi ini">&#x2715;</span>` : '';
-                return `<div style="white-space:nowrap; display:flex; align-items:center; justify-content:flex-start;">${timeHtml}${deleteHtml}</div>`;
-            };
-            if (!logOrArray) return renderSingleLog(null);
-            if (Array.isArray(logOrArray)) return logOrArray.length > 0 ? logOrArray.map(renderSingleLog).join('') : '-';
-            return renderSingleLog(logOrArray);
-        };
-        const telat = isTelat(item.date, item.name, item.masuk);
-        const detailTelat = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData, empMap);
-        const punyaTelatPulangCepat = detailTelat.totalMenit > 0;
-        const lupaAbsen = getLupaAbsen(item);
-        const lupaMasuk = !item.masuk;
-        const lupaPulang = !item.pulang;
-        const lupaBreakOut = item.breakIns.length > item.breakOuts.length;
-        const lupaBreakIn = item.breakOuts.length > item.breakIns.length;
-        const detailTelatEsc = JSON.stringify({ lines: detailTelat.lines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const telatHtml = (telat || punyaTelatPulangCepat) ? '<span style="color:#b91c1c; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailTelatModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', \'' + detailTelatEsc + '\')">Ya</span>' : '-';
-        const lupaHtml = lupaAbsen !== '-' ? '<span style="color:#b45309; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailLupaModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', ' + lupaMasuk + ', ' + lupaPulang + ', ' + lupaBreakOut + ', ' + lupaBreakIn + ')">' + lupaAbsen + '</span>' : '-';
-        const photosHtml = '-'; // Foto dihapus dari list untuk performa (data bisa 1.000.000+)
-        const breakStats = getBreakStats(filtered, item.name, item.date);
-        const totalIstirahat = breakStats.total > 0 ? breakStats.total + ' menit' : '-';
-        html += `<tr${telat || punyaTelatPulangCepat || lupaAbsen !== '-' ? ' style="background:#fef2f2;"' : ''}>
-            <td>${item.date}</td>
-            <td>${item.name}</td>
-            <td>${renderCell(item.masuk)}</td>
-            <td>${renderCell(item.breakOuts)}</td>
-            <td>${renderCell(item.breakIns)}</td>
-            <td>${totalIstirahat}</td>
-            <td>${renderCell(item.pulang)}</td>
-            <td>${telatHtml}</td>
-            <td>${lupaHtml}</td>
-            <td>${photosHtml}</td>
-        </tr>`;
-    });
-    tbody.innerHTML = html;
+        } catch(e) {}
     }
-
-    // Pagination UI (berdasarkan halaman tanggal)
-    let paginationEl = document.getElementById('rekap_gps_pagination');
-    if (!paginationEl) {
-        paginationEl = document.createElement('div');
-        paginationEl.id = 'rekap_gps_pagination';
-        paginationEl.style.cssText = "display:flex; justify-content:center; gap:15px; margin-top:20px; align-items:center;";
-        const tableCard = tbody.closest('.table-card') || tbody.parentElement;
-        if (tableCard) tableCard.appendChild(paginationEl);
-    }
-    paginationEl.innerHTML = `
-        <button class="btn btn-secondary" ${window._rekapGpsPage === 1 ? 'disabled' : ''} onclick="window._rekapGpsPage--; loadRekapAbsensiGPS()">⬅️ Prev</button>
-        <span style="font-size:14px; font-weight:bold; color:#1e40af;">Hal ${window._rekapGpsPage} dari ${totalPages} (per ${daysPerPage} hari)</span>
-        <button class="btn btn-secondary" ${window._rekapGpsPage === totalPages ? 'disabled' : ''} onclick="window._rekapGpsPage++; loadRekapAbsensiGPS()">Next ➡️</button>
-    `;
-    const legend = document.getElementById('rekap_gps_legend');
-    if (legend) legend.style.display = 'block';
 }
 
 function toggleEmptyRows() {
@@ -9835,7 +9927,7 @@ function updateGpsJadwalDisplay() {
             faceStatus.style.borderColor = "#fecaca";
             if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
         } else {
-            faceStatus.innerHTML = "⏳ Memulai pemindaian wajah...";
+            faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memulai pemindaian wajah...</span>';
             faceStatus.style.color = "#1d4ed8";
             faceStatus.style.background = "#eff6ff";
             faceStatus.style.borderColor = "#bfdbfe";

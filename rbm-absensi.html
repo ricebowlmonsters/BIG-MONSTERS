@@ -87,16 +87,16 @@
     <p>Kelola jadwal, absensi, laporan, dan gaji karyawan</p>
   </div>
   <div class="form-container" style="max-width: 100%; overflow-x: hidden; padding: 0; background: transparent; border: none; box-shadow: none;">
-    <div class="tab-header" style="background: var(--surface); padding: 0 20px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; border: 1px solid var(--border); border-bottom: none; margin-bottom: 0;">
+    <div class="tab-header" style="background: var(--surface); padding: 10px 20px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; border: 1px solid var(--border); border-bottom: none; margin-bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
       <button id="tab-btn-absensi" class="tab-btn active" onclick="switchAbsensiTab('absensi')">Absensi</button>
       <button id="tab-btn-jadwal" class="tab-btn" onclick="switchAbsensiTab('jadwal')">Jadwal</button>
       <button id="tab-btn-laporan" class="tab-btn" onclick="switchAbsensiTab('laporan')">Laporan Absen</button>
       <button id="tab-btn-gaji" class="tab-btn" onclick="switchAbsensiTab('gaji')">Rekap Gaji</button>
       <button id="tab-btn-bonus" class="tab-btn" onclick="switchAbsensiTab('bonus')">Bonus</button>
-      <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           <span style="font-size: 12px; font-weight: 600; color: #64748b;">Export:</span>
-          <button class="btn btn-primary" onclick="exportCompleteAbsensiExcel()" style="font-size: 12px; padding: 8px 12px; background: #198754; border: none;">Excel</button>
-          <button class="btn btn-primary" onclick="exportCompleteAbsensiPDF()" style="font-size: 12px; padding: 8px 12px; background: #dc3545; border: none;">PDF</button>
+          <button class="btn btn-primary" onclick="exportCompleteAbsensiExcel()" style="font-size: 12px; padding: 8px 12px; background: #198754; border: none; width: auto; margin: 0;">Excel</button>
+          <button class="btn btn-primary" onclick="exportCompleteAbsensiPDF()" style="font-size: 12px; padding: 8px 12px; background: #dc3545; border: none; width: auto; margin: 0;">PDF</button>
       </div>
     </div>
 
@@ -207,10 +207,10 @@
 
     <!-- REKAP GAJI -->
     <div id="tab-content-gaji" style="display:none;">
-        <div class="filter-row" style="margin-bottom: 12px;">
-          <button class="btn btn-primary" onclick="saveRekapGajiData()" style="background-color: var(--primary);">Simpan Perubahan</button>
-          <button class="btn btn-primary" onclick="printRekapGaji()" style="margin-left: 8px;">Print Slip/Rekap</button>
-          <button class="btn btn-primary" onclick="downloadAllSlipsAsZip(event)" style="margin-left: 8px; background-color: #6f42c1; border-color: #6f42c1;">Download Semua Slip (ZIP)</button>
+        <div class="filter-row flex-wrapper-gaji" style="margin-bottom: 12px; gap: 10px; display: flex; flex-wrap: wrap; align-items: center;">
+          <button class="btn btn-primary" onclick="saveRekapGajiData()" style="background-color: var(--primary); width: auto; margin: 0;">Simpan Perubahan</button>
+          <button class="btn btn-primary" onclick="downloadAllSlipsAsZip(event)" style="background-color: #198754; border: none; width: auto; margin: 0;">Download Semua Slip (ZIP)</button>
+          <button class="btn btn-primary" onclick="printRekapGaji()" style="background-color: #dc3545; border: none; width: auto; margin: 0;">Print Slip/Rekap PDF</button>
         </div>
 
         <!-- PENGAJUAN GAJI (ke Owner & Manager) -->

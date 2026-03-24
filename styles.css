@@ -686,3 +686,27 @@ body.in-iframe .app-container {
 .location-option:hover { background: #f3f4f6; transform: scale(1.01); }
 .location-option .icon { font-size: 22px; line-height: 1; filter: grayscale(0.2); }
 .location-option .arrow { color: #d1d5db; font-size: 18px; font-weight: 300; margin-left: auto; }
+
+/* [BARU] Animated Loader untuk AI Face ID */
+.rbm-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: rbm-spin 0.75s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes rbm-spin {
+  to { transform: rotate(360deg); }
+}
+.pulse-text {
+  animation: rbm-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  vertical-align: middle;
+}
+@keyframes rbm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

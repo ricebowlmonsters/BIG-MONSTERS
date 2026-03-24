@@ -89,6 +89,7 @@
       // Akibatnya: Petty Cash / Inventaris / Pembukuan bisa LEMOT walau outlet kosong (karena node ini bisa sangat besar).
       // Sekarang: default minimal, lalu tambah node hanya jika halaman memang butuh.
       var nodesToLoad = ['gps_config' + sfx, 'gps_jam_config' + sfx];
+      var backgroundNodes = [];
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
       if (page === 'absensi-gps-view') {
@@ -101,13 +102,15 @@
           var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
           nodesToLoad.push('jadwal/' + (outlet || 'default') + '/' + currYm);
           // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
+      } else if (page === 'pengaturan-jadwal-absensi') {
+          nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
       } else if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
           // Halaman absensi/jadwal butuh employees + face_data
           // [PERFORMA] Hindari muat global employees/face_data.
-          nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
+          nodesToLoad.push('employees' + sfx);
           // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
-          // [OPTIMASI KILAT] Jangan muat absensi_data, jadwal_data, dan gps_logs secara penuh saat awal. Biarkan syncAbsensiPeriodAndRefresh yang meload sesuai rentang bulan untuk menghemat memori drastis.
-          nodesToLoad.push('jadwal_notes', 'gaji', 'bonus');
+          // [OPTIMASI KILAT] Jadwal notes bisa diload di background, gaji & bonus HANYA diload saat buka tab masing-masing.
+          backgroundNodes.push('jadwal_notes');
           // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
       } else if (page.indexOf('petty-cash') >= 0) {
           // [OPTIMASI KILAT] Jangan load seluruh petty_cash karena data sangat besar dan sudah diload otomatis sesuai tanggal
@@ -150,6 +153,21 @@
           });
       });
 
+      // [OPTIMASI KILAT] Muat node yang sangat besar di background, jangan block UI ready.
+      if (backgroundNodes && backgroundNodes.length > 0) {
+          backgroundNodes.forEach(function(node) {
+              self._db.ref('rbm_pro/' + node).once('value').then(function(snap) {
+                  var val = snap.val();
+                  if (val !== null) {
+                      var parts = node.split('/');
+                      var curr = self._cache;
+                      for(var i=0; i<parts.length-1; i++){ if(!curr[parts[i]]) curr[parts[i]]={}; curr=curr[parts[i]]; }
+                      curr[parts[parts.length-1]] = val;
+                  }
+              }).catch(function(){});
+          });
+      }
+
       this._readyPromise = Promise.all(promises).then(function(results) {
         var rootVal = {};
         results.forEach(function(res) {
@@ -168,7 +186,10 @@
           
           if (sfx) {
               var empKey = 'employees' + sfx;
-              if (rootVal[empKey]) localStorage.setItem('RBM_EMPLOYEES' + sfx, JSON.stringify(rootVal[empKey]));
+              if (rootVal[empKey]) {
+                  localStorage.setItem('RBM_EMPLOYEES' + sfx, JSON.stringify(rootVal[empKey]));
+                  if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_EMPLOYEES' + sfx];
+              }
               
               var gpsKey = 'gps_config' + sfx;
               if (rootVal[gpsKey]) localStorage.setItem('RBM_GPS_CONFIG' + sfx, JSON.stringify(rootVal[gpsKey]));
@@ -177,9 +198,15 @@
               if (rootVal[jamKey]) localStorage.setItem('RBM_GPS_JAM_CONFIG' + sfx, JSON.stringify(rootVal[jamKey]));
 
               var faceKey = 'face_data' + sfx;
-              if (rootVal[faceKey]) localStorage.setItem('RBM_FACE_DATA' + sfx, JSON.stringify(rootVal[faceKey]));
+              if (rootVal[faceKey]) {
+                  localStorage.setItem('RBM_FACE_DATA' + sfx, JSON.stringify(rootVal[faceKey]));
+                  if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_FACE_DATA' + sfx];
+              }
           }
-          if (rootVal.face_data) localStorage.setItem('RBM_FACE_DATA', JSON.stringify(rootVal.face_data));
+          if (rootVal.face_data) {
+              localStorage.setItem('RBM_FACE_DATA', JSON.stringify(rootVal.face_data));
+              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_FACE_DATA'];
+          }
         } catch(e) {}
       }).catch(function(err) {
         console.warn('RBM Storage: load failed', err);
