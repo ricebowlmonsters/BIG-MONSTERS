@@ -27,7 +27,19 @@
     try { var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); _cachedOwnerCheck = (u.role === 'owner' || (u.username || '').toLowerCase() === 'burhan'); return _cachedOwnerCheck; } catch(e) { return false; }
   };
   function setVal(id, val) { var e = document.getElementById(id); if (e) e.value = val; }
-  function getRbmOutlet() { var s = document.getElementById('rbm-outlet-select'); return (s && s.value) ? s.value : ''; }
+  function getRbmOutlet() {
+    var s = document.getElementById('rbm-outlet-select');
+    if (s && s.value) return s.value;
+    try {
+      var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+      if (u && u.outlet) return String(u.outlet);
+    } catch (e) {}
+    try {
+      var last = localStorage.getItem('rbm_last_selected_outlet');
+      if (last) return last;
+    } catch (e2) {}
+    return '';
+  }
   window.getRbmOutlet = getRbmOutlet;
   function getRbmStorageKey(baseKey) { var o = getRbmOutlet(); return o ? baseKey + '_' + o : baseKey; }
   window.getRbmStorageKey = getRbmStorageKey;

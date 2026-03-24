@@ -78,6 +78,10 @@
          var el = typeof document !== 'undefined' ? document.getElementById('rbm-outlet-select') : null;
          if (!outlet) outlet = (el && el.value) ? el.value : (localStorage.getItem('rbm_last_selected_outlet') || '');
          if (!outlet) {
+             var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+             if (u && u.outlet) outlet = String(u.outlet);
+         }
+         if (!outlet) {
              var outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
              if (outlets.length) outlet = outlets[0];
          }
