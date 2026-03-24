@@ -93,10 +93,12 @@
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
       if (page === 'absensi-gps-view') {
-          // Absensi GPS butuh employees + face_data untuk validasi/nama
-          // [PERFORMA] Jangan load node global besar (employees/face_data tanpa outlet).
+          // Absensi GPS butuh employees + face_data untuk validasi/nama.
+          // [PERFORMA] Nama karyawan harus tampil cepat: employees dimuat dulu,
+          // face_data dimuat di background agar UI tidak menunggu node besar.
           // Karyawan hanya butuh data untuk outlet yang dikunci (employees_{outlet} & face_data_{outlet}).
-          nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
+          nodesToLoad.push('employees' + sfx);
+          backgroundNodes.push('face_data' + sfx);
           // [OPTIMASI KILAT] Di HP karyawan, JANGAN load data berat seperti absensi_data, gaji, bonus
           var dDate = new Date();
           var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
@@ -163,6 +165,23 @@
                       var curr = self._cache;
                       for(var i=0; i<parts.length-1; i++){ if(!curr[parts[i]]) curr[parts[i]]={}; curr=curr[parts[i]]; }
                       curr[parts[parts.length-1]] = val;
+
+                      // Sinkronkan node penting ke localStorage agar bisa langsung dipakai halaman aktif
+                      try {
+                          if (node.indexOf('employees') === 0) {
+                              localStorage.setItem('RBM_EMPLOYEES' + sfx, JSON.stringify(val));
+                              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_EMPLOYEES' + sfx];
+                          } else if (node.indexOf('face_data') === 0) {
+                              localStorage.setItem('RBM_FACE_DATA' + sfx, JSON.stringify(val));
+                              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_FACE_DATA' + sfx];
+                          } else if (node.indexOf('gps_config') === 0) {
+                              localStorage.setItem('RBM_GPS_CONFIG' + sfx, JSON.stringify(val));
+                              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_GPS_CONFIG' + sfx];
+                          } else if (node.indexOf('gps_jam_config') === 0) {
+                              localStorage.setItem('RBM_GPS_JAM_CONFIG' + sfx, JSON.stringify(val));
+                              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_GPS_JAM_CONFIG' + sfx];
+                          }
+                      } catch(e) {}
                   }
               }).catch(function(){});
           });
