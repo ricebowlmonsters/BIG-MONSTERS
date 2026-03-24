@@ -9060,11 +9060,6 @@ function populateGpsNames() {
             FirebaseStorage.loadGpsKioskRoster(outletK).then(function(roster) {
                 if (!roster || !roster.employees || !roster.employees.length) throw new Error('no_roster');
                 window._gpsKioskRosterEmployees = roster.employees;
-                var nowK = new Date();
-                var todayK = nowK.getFullYear() + '-' + ('0' + (nowK.getMonth() + 1)).slice(-2) + '-' + ('0' + nowK.getDate()).slice(-2);
-                return FirebaseStorage.loadGpsKioskDayCells(outletK, todayK);
-            }).then(function(cells) {
-                window._gpsKioskDayCells = cells || {};
                 applyGpsNameOptions(window._gpsKioskRosterEmployees || []);
             }).catch(function() {
                 window._gpsKioskRosterEmployees = null;
@@ -9443,28 +9438,7 @@ function checkDistance() {
         var today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
         
         // [OPTIMASI KILAT] Hindari parse JSON gps_logs (foto base64 besar) pada setiap sinyal GPS agar HP karyawan tidak Hang/Macet
-        if (window._cachedGpsName !== name || window._cachedGpsLogsTime !== today) {
-            var gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
-            var logs = safeParse(RBMStorage.getItem(gpsKey), []);
-            var todayLogs = logs.filter(function(l) { return l.name === name && l.date === today; });
-            var hasMasuk = todayLogs.some(function(l) { return l.type === 'Masuk'; });
-            var hasPulang = todayLogs.some(function(l) { return l.type === 'Pulang'; });
-
-            if (hasPulang) {
-                window._cachedGpsStatusMsg = "Sudah Absen Pulang Hari Ini";
-            } else if (hasMasuk) {
-                window._cachedGpsStatusMsg = "Sudah Absen Masuk";
-                var breaks = todayLogs.filter(function(l) { return l.type === 'Istirahat Keluar' || l.type === 'Istirahat Kembali'; });
-                var lastBreak = breaks.length > 0 ? breaks[breaks.length - 1] : null;
-                if (lastBreak && lastBreak.type === 'Istirahat Keluar') {
-                    window._cachedGpsStatusMsg += " (Sedang Istirahat)";
-                }
-            } else {
-                window._cachedGpsStatusMsg = "Belum Absen Masuk";
-            }
-            window._cachedGpsName = name;
-            window._cachedGpsLogsTime = today;
-        }
+        // Data ini sudah di-fetch khusus oleh updateGpsJadwalDisplay saat nama dipilih.
         statusMsg = window._cachedGpsStatusMsg;
     }
 
@@ -10060,7 +10034,7 @@ function getTotalMenitTelatFromGps(empId, empName, tglAwal, tglAkhir) {
     return totalMenit;
 }
 
-function updateGpsJadwalDisplay() {
+async function updateGpsJadwalDisplay() {
     const name = document.getElementById('gps_absen_name').value;
     const box = document.getElementById('gps_jadwal_display');
     const textEl = document.getElementById('gps_jadwal_text');
@@ -10077,33 +10051,54 @@ function updateGpsJadwalDisplay() {
         if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
         return;
     }
+
+    textEl.innerHTML = '<span style="color:#64748b;">Memuat data khusus untuk Anda... ⏳</span>';
+    box.style.display = 'block';
+
     const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
         ? window._gpsKioskRosterEmployees
         : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const emp = employees.find(e => e.name === name);
     if (!emp) {
         textEl.textContent = '-';
-        box.style.display = 'block';
         return;
     }
     const now = new Date();
     const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+    const ym = today.substring(0, 7);
+    const outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : 'default';
+    
     var shift = '';
-    var cells = window._gpsKioskDayCells;
-    if (cells && emp.id != null && cells[String(emp.id)] && cells[String(emp.id)].j) {
-        shift = cells[String(emp.id)].j;
-    }
-    if (!shift) {
+    var myLogs = [];
+    
+    // [OPTIMASI] Fetch data jadwal dan history istirahat dari server HANYA setelah nama dipilih
+    if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.isReady()) {
+        const db = FirebaseStorage.db();
+        try {
+            const shiftSnap = await db.ref(`rbm_pro/jadwal/${outlet}/${ym}/${today}_${emp.id}`).once('value');
+            shift = shiftSnap.val() || '';
+            
+            const logsSnap = await db.ref(`rbm_pro/gps_logs_partitioned/${outlet}/${ym}`).orderByChild('date').equalTo(today).once('value');
+            const logsVal = logsSnap.val();
+            if (logsVal) {
+                myLogs = Object.values(logsVal).filter(l => l.name === name);
+            }
+        } catch (e) {
+            console.warn("Gagal fetch data spesifik", e);
+        }
+    } else {
         const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
         const key = `${today}_${emp.id || employees.indexOf(emp)}`;
         shift = jadwalData[key] || '';
+        
+        const allLogs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
+        myLogs = allLogs.filter(l => l.name === name && l.date === today);
     }
+
     const label = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift || 'Tidak ada jadwal';
     
-    // Hitung sisa istirahat
-    const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
-    const logs = safeParse(RBMStorage.getItem(gpsKey), []);
-    const stats = getBreakStats(logs, name, today);
+    // Hitung sisa istirahat dari log spesifik ini
+    const stats = getBreakStats(myLogs, name, today);
     const batasMenit = typeof getDurasiIstirahatMenitFromConfig === 'function' ? getDurasiIstirahatMenitFromConfig(shift) : 60;
     
     let info = '';
@@ -10175,12 +10170,8 @@ function processAbsensiGPS(type) {
     const name = document.getElementById('gps_absen_name').value;
     if (!name) { showCustomAlert("Pilih nama karyawan dulu!", "Perhatian", "error"); return; }
     
-    // Cek riwayat untuk peringatan (bukan kunci mati)
-    const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
-    const logs = safeParse(RBMStorage.getItem(gpsKey), []);
-    const now = new Date();
-    const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
-    const todayLogs = logs.filter(l => l.name === name && l.date === today);
+    // Gunakan log spesifik yang sudah di-fetch oleh updateGpsJadwalDisplay
+    const todayLogs = window._cachedGpsMyLogs || [];
     
     const hasMasuk = todayLogs.some(l => l.type === 'Masuk');
     const hasPulang = todayLogs.some(l => l.type === 'Pulang');
@@ -10304,19 +10295,18 @@ async function _executeAbsensiGPS(type) {
 
     const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
     const logs = getCachedParsedStorage(gpsKey, []);
+    const myLogs = window._cachedGpsMyLogs || [];
 
     // Peringatan durasi istirahat (sebelum push log Selesai Istirahat)
     if (type === 'Istirahat Kembali' && empId !== null) {
-        const stats = getBreakStats(logs, name, today);
+        const stats = getBreakStats(myLogs, name, today);
         if (stats.lastOut !== null) {
             var menitSelesai = now.getHours() * 60 + now.getMinutes();
             var durasiIni = menitSelesai - stats.lastOut;
             if (durasiIni < 0) durasiIni += 24 * 60;
             var totalDurasi = stats.total + durasiIni;
 
-            var jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
-            var jadwalKey = today + '_' + empId;
-            var shift = jadwalData[jadwalKey];
+            var shift = window._cachedGpsShift || '';
             var batasMenit = typeof getDurasiIstirahatMenitFromConfig === 'function' ? getDurasiIstirahatMenitFromConfig(shift) : 60;
             var labelShift = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || (shift || 'Shift');
 
@@ -10387,14 +10377,15 @@ function loadMyGpsHistory() {
     const name = document.getElementById('gps_absen_name').value;
     if (!name) { alert("Pilih nama karyawan terlebih dahulu!"); return; }
     
-    const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
+    // Gunakan log spesifik yang sudah di-fetch oleh updateGpsJadwalDisplay
+    let baseLogs = window._cachedGpsMyLogs || [];
     
     // Dapatkan tanggal hari ini dengan format YYYY-MM-DD
     const now = new Date();
     const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
 
     // Filter hanya berdasarkan nama DAN tanggal hari ini saja, lalu urutkan menurun (terbaru di atas)
-    const myLogs = logs.filter(l => l.name === name && l.date === today).sort((a, b) => {
+    const myLogs = baseLogs.filter(l => l.name === name && l.date === today).sort((a, b) => {
         const ta = a.timestamp || (a.date + 'T' + a.time);
         const tb = b.timestamp || (b.date + 'T' + b.time);
         return tb.localeCompare(ta);

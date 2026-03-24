@@ -99,12 +99,11 @@
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
       if (page === 'absensi-gps-view') {
-          // Absensi GPS: jangan blok di gps_config/jam; cukup employees dulu untuk dropdown nama.
-          nodesToLoad = ['employees' + sfx];
-          backgroundNodes.push('gps_config' + sfx, 'gps_jam_config' + sfx, 'face_data' + sfx);
-          var dDate = new Date();
-          var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
-          backgroundNodes.push('jadwal/' + (outlet || 'default') + '/' + currYm);
+          // [SUPER OPTIMASI] Halaman GPS Kiosk (HP Karyawan) HANYA memuat config.
+          // Nama karyawan (roster) di-fetch langsung oleh populateGpsNames().
+          // Jadwal, Sisa Cuti, Istirahat, Face Data HANYA dimuat SETELAH memilih nama.
+          nodesToLoad = ['gps_config' + sfx, 'gps_jam_config' + sfx];
+          backgroundNodes = [];
       } else if (page === 'pengaturan-jadwal-absensi') {
           nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
       } else if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
