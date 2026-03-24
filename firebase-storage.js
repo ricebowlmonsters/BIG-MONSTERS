@@ -234,8 +234,27 @@
 
   function loadAbsensiJadwal(outlet, type, tglAwal, tglAkhir) {
     if (!init()) return Promise.resolve({});
-    var     return merged;
+    var ymStart = (tglAwal || '').substring(0, 7);
+    var ymEnd = (tglAkhir || '').substring(0, 7);
+    if (!ymStart || !ymEnd) return Promise.resolve({});
+
+    var months = [];
+    var curr = new Date(ymStart + '-01');
+    var end = new Date(ymEnd + '-01');
+    while(curr <= end) {
+        months.push(curr.getFullYear() + '-' + ('0'+(curr.getMonth()+1)).slice(-2));
+        curr.setMonth(curr.getMonth() + 1);
+    }
+    
+    var promises = months.map(function(ym) { return db.ref('rbm_pro/' + type + '/' + outlet + '/' + ym).once('value'); });
+    return Promise.all(promises).then(function(snaps) {
+        var merged = {};
+        snaps.forEach(function(snap) {
+            var val = snap.val();
+            if (val && typeof val === 'object') Object.assign(merged, val);
         });
+        return merged;
+    });
   }
 
   // ---------- GPS Logs (Struktur Partisi Per Bulan) ----------

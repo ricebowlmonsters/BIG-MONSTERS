@@ -1470,26 +1470,30 @@ function submitDataBarang(){
             }
         });
 
-        if (!isGoogleScript()) {
-          savePendingToLocalStorage('BARANG', dataList);
-          processStokUpdates(stokUpdates);
-          if (reportItems.length > 0) {
-              let msg = "Laporan Update Stok:\n";
-              reportItems.forEach(item => {
-                  msg += `- ${item.name}: Masuk ke kategori '${item.category}' pada tgl ${item.date}`;
-                  if (item.isNew) msg += " (Item Baru - Default Sales)";
-                  msg += "\n";
-              });
-              msg += "\nJika tidak muncul di tabel, pastikan Anda melihat Tab Kategori dan Bulan yang sesuai.";
-              alert(msg);
-          }
-          showResultBarang('✅ Data disimpan sementara di perangkat. Buka dari Google Apps Script untuk sinkron ke sheet.');
-          return;
+        // Update stok tabel dulu di semua mode
+        processStokUpdates(stokUpdates);
+        if (reportItems.length > 0) {
+            let msg = "Laporan Update Stok:\n";
+            reportItems.forEach(item => {
+                msg += `- ${item.name}: Masuk ke kategori '${item.category}' pada tgl ${item.date}`;
+                if (item.isNew) msg += " (Item Baru - Default Sales)";
+                msg += "\n";
+            });
+            msg += "\nJika tidak muncul di tabel, pastikan Anda melihat Tab Kategori dan Bulan yang sesuai.";
+            alert(msg);
         }
+
         if (useFirebaseBackend()) {
           FirebaseStorage.saveDatabaseBarang(dataList).then(showResultBarang).catch(function(err) { showResultBarang('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
           return;
         }
+
+        if (!isGoogleScript()) {
+          savePendingToLocalStorage('BARANG', dataList);
+          showResultBarang('✅ Data disimpan sementara di perangkat. Buka dari Google Apps Script untuk sinkron ke sheet.');
+          return;
+        }
+
         google.script.run.withSuccessHandler(showResultBarang).simpanDataOnline(dataList);
     }).catch(error => {
         document.getElementById("outputBarang").innerText="❌ Gagal memproses file: "+error;
