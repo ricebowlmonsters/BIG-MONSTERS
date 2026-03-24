@@ -8938,9 +8938,48 @@ function populateGpsNames() {
     if (!select) return;
     const currentValue = select.value;
 
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
+    function normalizeEmployees(val) {
+        if (Array.isArray(val)) return val.filter(function(emp) { return emp && emp.name; });
+        if (val && typeof val === 'object') {
+            return Object.keys(val).map(function(k) { return val[k]; }).filter(function(emp) { return emp && emp.name; });
+        }
+        return [];
+    }
+
+    function loadEmployeesFromStorage() {
+        var key = getRbmStorageKey('RBM_EMPLOYEES');
+        var employees = normalizeEmployees(safeParse(RBMStorage.getItem(key), []));
+        if (employees.length) return employees;
+        // Fallback key untuk beberapa format data lama / cache awal
+        employees = normalizeEmployees(safeParse(RBMStorage.getItem('RBM_EMPLOYEES'), []));
+        if (employees.length) return employees;
+        employees = normalizeEmployees(safeParse(localStorage.getItem('RBM_EMPLOYEES_ALL'), []));
+        return employees;
+    }
+
+    const employees = loadEmployeesFromStorage();
     if (employees.length === 0) {
         select.innerHTML = '<option value="">-- Memuat Data Karyawan... --</option>';
+        // Coba sinkron ulang dari Firebase, lalu render ulang dropdown.
+        if (window.RBMStorage && typeof window.RBMStorage.loadFromFirebase === 'function' && !window._gpsNamesSyncInFlight) {
+            window._gpsNamesSyncInFlight = true;
+            window.RBMStorage.loadFromFirebase().then(function() {
+                try {
+                    const refreshed = loadEmployeesFromStorage();
+                    if (refreshed.length > 0) {
+                        select.innerHTML = '<option value="">-- Pilih Nama --</option>';
+                        refreshed.forEach(function(emp) {
+                            select.innerHTML += `<option value="${emp.name}">${emp.name}</option>`;
+                        });
+                        if (Array.from(select.options).some(function(opt) { return opt.value === currentValue; })) {
+                            select.value = currentValue;
+                        }
+                    }
+                } catch (e) {}
+            }).catch(function(){}).finally(function() {
+                window._gpsNamesSyncInFlight = false;
+            });
+        }
     } else {
         select.innerHTML = '<option value="">-- Pilih Nama --</option>';
         employees.forEach(emp => {
