@@ -106,7 +106,8 @@
           // [OPTIMASI KILAT] Di HP karyawan, JANGAN load data berat seperti absensi_data, gaji, bonus
           var dDate = new Date();
           var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
-          nodesToLoad.push('jadwal/' + (outlet || 'default') + '/' + currYm);
+          // [PERFORMA] Jadwal sebulan bisa besar; muat di background agar dropdown nama tampil dulu.
+          backgroundNodes.push('jadwal/' + (outlet || 'default') + '/' + currYm);
           // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
       } else if (page === 'pengaturan-jadwal-absensi') {
           nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
@@ -184,6 +185,15 @@
                           } else if (node.indexOf('gps_jam_config') === 0) {
                               localStorage.setItem('RBM_GPS_JAM_CONFIG' + sfx, JSON.stringify(val));
                               if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_GPS_JAM_CONFIG' + sfx];
+                          } else if (node.indexOf('jadwal/') === 0) {
+                              // Simpan ke cache path agar fallback RBMStorage.getItem('RBM_JADWAL_DATA_*') bisa membaca cepat.
+                              if (window._rbmParsedCache) {
+                                  var jadwalKey = 'RBM_JADWAL_DATA' + sfx;
+                                  window._rbmParsedCache[jadwalKey] = { data: val || {} };
+                              }
+                              if (typeof window !== 'undefined' && window.RBM_PAGE === 'absensi-gps-view' && typeof window.updateGpsJadwalDisplay === 'function') {
+                                  setTimeout(function() { try { window.updateGpsJadwalDisplay(); } catch(_) {} }, 0);
+                              }
                           }
                       } catch(e) {}
                   }

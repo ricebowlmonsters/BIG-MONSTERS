@@ -8989,8 +8989,28 @@ function populateGpsNames() {
     if (Array.from(select.options).some(opt => opt.value === currentValue)) {
         select.value = currentValue;
     }
-    if (!select.onchange) select.onchange = function() { window._cachedGpsName = null; updateGpsJadwalDisplay(); };
-    updateGpsJadwalDisplay();
+    if (!select.onchange) {
+        select.onchange = function() {
+            window._cachedGpsName = null;
+            updateGpsJadwalDisplay();
+            const faceStatus = document.getElementById('face_id_status_info');
+            if (!this.value) {
+                if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
+                if (faceStatus) {
+                    faceStatus.innerHTML = "✅ Sistem AI Siap. Silakan pilih nama Anda.";
+                    faceStatus.style.color = "#15803d";
+                    faceStatus.style.background = "#f0fdf4";
+                    faceStatus.style.borderColor = "#bbf7d0";
+                }
+                return;
+            }
+            // [PERFORMA] Muat model Face ID hanya saat nama sudah dipilih.
+            if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi();
+        };
+    }
+    // [PERFORMA] Jangan hitung jadwal/sisa cuti saat startup.
+    // Tampilkan detail hanya setelah karyawan memilih nama.
+    if (select.value) updateGpsJadwalDisplay();
 }
 
 window._faceVerified = false;
@@ -9081,8 +9101,10 @@ window.stopLiveFaceVerification = function() {
 };
 
 window.isFaceApiLoaded = window.isFaceApiLoaded || false;
+window._faceApiLoading = window._faceApiLoading || false;
 window.loadFaceApiModelsForAbsensi = async function() {
-    if (window.isFaceApiLoaded) return;
+    if (window.isFaceApiLoaded || window._faceApiLoading) return;
+    window._faceApiLoading = true;
     const faceStatus = document.getElementById('face_id_status_info');
     if (faceStatus) {
         faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memuat model AI Face ID...</span>';
@@ -9136,6 +9158,8 @@ window.loadFaceApiModelsForAbsensi = async function() {
             faceStatus.style.background = "#fef2f2";
             faceStatus.style.borderColor = "#fecaca";
         }
+    } finally {
+        window._faceApiLoading = false;
     }
 };
 
@@ -9222,8 +9246,8 @@ function initAbsensiHardware() {
         if(el) el.innerText = "Browser tidak support GPS";
     }
 
-    // Load Face API models if available
-    if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi();
+    // [PERFORMA] Jangan auto-load Face API di startup.
+    // Model akan dimuat saat nama karyawan dipilih.
 }
 
 // Stop camera/gps when leaving view (optional optimization)
