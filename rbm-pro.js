@@ -8962,23 +8962,54 @@ function populateGpsNames() {
     const employees = loadEmployeesFromStorage();
     if (employees.length === 0) {
         select.innerHTML = '<option value="">-- Memuat Data Karyawan... --</option>';
+        try {
+            if (window._gpsNamesLoadTimer) clearTimeout(window._gpsNamesLoadTimer);
+            window._gpsNamesLoadTimer = setTimeout(function() {
+                var sel = document.getElementById('gps_absen_name');
+                if (!sel) return;
+                var stillEmpty = true;
+                try {
+                    var k = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_EMPLOYEES') : 'RBM_EMPLOYEES';
+                    var raw = (window.RBMStorage && RBMStorage.getItem(k)) || localStorage.getItem(k);
+                    if (raw && raw.length > 5) stillEmpty = false;
+                } catch (e2) {}
+                if (stillEmpty && sel.options.length <= 1) {
+                    sel.innerHTML = '<option value="">⚠️ Gagal muat nama. Tap Refresh atau cek jaringan.</option>';
+                }
+            }, 18000);
+        } catch (e0) {}
         // Coba sinkron ulang dari Firebase, lalu render ulang dropdown.
         if (window.RBMStorage && typeof window.RBMStorage.loadFromFirebase === 'function' && !window._gpsNamesSyncInFlight) {
             window._gpsNamesSyncInFlight = true;
             window.RBMStorage.loadFromFirebase().then(function() {
+                setTimeout(function() {
                 try {
+                    if (window._gpsNamesLoadTimer) { clearTimeout(window._gpsNamesLoadTimer); window._gpsNamesLoadTimer = null; }
                     const refreshed = loadEmployeesFromStorage();
+                    const sel2 = document.getElementById('gps_absen_name');
+                    if (!sel2) return;
                     if (refreshed.length > 0) {
-                        select.innerHTML = '<option value="">-- Pilih Nama --</option>';
+                        sel2.innerHTML = '<option value="">-- Pilih Nama --</option>';
                         refreshed.forEach(function(emp) {
-                            select.innerHTML += `<option value="${emp.name}">${emp.name}</option>`;
+                            sel2.innerHTML += `<option value="${emp.name}">${emp.name}</option>`;
                         });
-                        if (Array.from(select.options).some(function(opt) { return opt.value === currentValue; })) {
-                            select.value = currentValue;
+                        if (Array.from(sel2.options).some(function(opt) { return opt.value === currentValue; })) {
+                            sel2.value = currentValue;
                         }
+                    } else {
+                        sel2.innerHTML = '<option value="">⚠️ Belum ada data karyawan untuk outlet ini.</option>';
                     }
                 } catch (e) {}
-            }).catch(function(){}).finally(function() {
+                }, 0);
+            }).catch(function(){
+                try {
+                    if (window._gpsNamesLoadTimer) clearTimeout(window._gpsNamesLoadTimer);
+                    var sel3 = document.getElementById('gps_absen_name');
+                    if (sel3 && sel3.options.length <= 1) {
+                        sel3.innerHTML = '<option value="">⚠️ Gagal muat. Tap Refresh atau login ulang.</option>';
+                    }
+                } catch (e3) {}
+            }).finally(function() {
                 window._gpsNamesSyncInFlight = false;
             });
         }

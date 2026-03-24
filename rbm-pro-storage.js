@@ -46,6 +46,8 @@
     _db: null,
     _useFirebase: false,
     _readyPromise: null,
+    /** Hindari loadFromFirebase ganda berjalan paralel (bikin hang di HP). */
+    _loadInflight: null,
 
     init: function() {
       var conn = getActiveConnection();
@@ -97,18 +99,12 @@
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
       if (page === 'absensi-gps-view') {
-          // Absensi GPS butuh employees + face_data untuk validasi/nama.
-          // [PERFORMA] Nama karyawan harus tampil cepat: employees dimuat dulu,
-          // face_data dimuat di background agar UI tidak menunggu node besar.
-          // Karyawan hanya butuh data untuk outlet yang dikunci (employees_{outlet} & face_data_{outlet}).
-          nodesToLoad.push('employees' + sfx);
-          backgroundNodes.push('face_data' + sfx);
-          // [OPTIMASI KILAT] Di HP karyawan, JANGAN load data berat seperti absensi_data, gaji, bonus
+          // Absensi GPS: jangan blok di gps_config/jam; cukup employees dulu untuk dropdown nama.
+          nodesToLoad = ['employees' + sfx];
+          backgroundNodes.push('gps_config' + sfx, 'gps_jam_config' + sfx, 'face_data' + sfx);
           var dDate = new Date();
           var currYm = dDate.getFullYear() + '-' + ('0' + (dDate.getMonth() + 1)).slice(-2);
-          // [PERFORMA] Jadwal sebulan bisa besar; muat di background agar dropdown nama tampil dulu.
           backgroundNodes.push('jadwal/' + (outlet || 'default') + '/' + currYm);
-          // [PERFORMA] Hindari fallback node format lama bersarang per-outlet.
       } else if (page === 'pengaturan-jadwal-absensi') {
           nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
       } else if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
@@ -138,6 +134,11 @@
       // Hapus duplikat node jika ada
       var uniqueNodes = [];
       nodesToLoad.forEach(function(n) { if (uniqueNodes.indexOf(n) === -1) uniqueNodes.push(n); });
+
+      var inflightSig = (page || '') + '\0' + (outlet || '') + '\0' + uniqueNodes.join('\0');
+      if (this._loadInflight && this._loadInflight.sig === inflightSig) {
+          return this._loadInflight.promise;
+      }
 
       var promises = uniqueNodes.map(function(node) {
           if (node.indexOf('gps_logs_partitioned') === 0) {
@@ -182,9 +183,16 @@
                           } else if (node.indexOf('gps_config') === 0) {
                               localStorage.setItem('RBM_GPS_CONFIG' + sfx, JSON.stringify(val));
                               if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_GPS_CONFIG' + sfx];
+                              if (typeof window !== 'undefined' && window.RBM_PAGE === 'absensi-gps-view') {
+                                  window._cachedOfficeConfig = null;
+                                  setTimeout(function() { try { if (typeof window.loadOfficeConfig === 'function') window.loadOfficeConfig(); } catch (e) {} }, 0);
+                              }
                           } else if (node.indexOf('gps_jam_config') === 0) {
                               localStorage.setItem('RBM_GPS_JAM_CONFIG' + sfx, JSON.stringify(val));
                               if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_GPS_JAM_CONFIG' + sfx];
+                              if (typeof window !== 'undefined' && window.RBM_PAGE === 'absensi-gps-view') {
+                                  setTimeout(function() { try { if (typeof window.loadJamConfig === 'function') window.loadJamConfig(); } catch (e) {} }, 0);
+                              }
                           } else if (node.indexOf('jadwal/') === 0) {
                               // Simpan ke cache path agar fallback RBMStorage.getItem('RBM_JADWAL_DATA_*') bisa membaca cepat.
                               if (window._rbmParsedCache) {
@@ -201,18 +209,24 @@
           });
       }
 
-      this._readyPromise = Promise.all(promises).then(function(results) {
+      var mainPromise = Promise.all(promises).then(function(results) {
+        if (!self._cache || typeof self._cache !== 'object') self._cache = {};
         var rootVal = {};
         results.forEach(function(res) {
             if (res.val !== null) {
                 var parts = res.key.split('/');
-                var curr = rootVal;
-                for(var i=0; i<parts.length-1; i++){ if(!curr[parts[i]]) curr[parts[i]]={}; curr=curr[parts[i]]; }
-                curr[parts[parts.length-1]] = res.val;
+                var currR = rootVal;
+                var currC = self._cache;
+                for (var i = 0; i < parts.length - 1; i++) {
+                    if (!currR[parts[i]]) currR[parts[i]] = {};
+                    currR = currR[parts[i]];
+                    if (!currC[parts[i]]) currC[parts[i]] = {};
+                    currC = currC[parts[i]];
+                }
+                currR[parts[parts.length - 1]] = res.val;
+                currC[parts[parts.length - 1]] = res.val;
             }
         });
-        
-        self._cache = rootVal;
         
         try {
           if (rootVal.employees) localStorage.setItem('RBM_EMPLOYEES_ALL', JSON.stringify(rootVal.employees));
@@ -245,7 +259,13 @@
         console.warn('RBM Storage: load failed', err);
         self._useFirebase = false;
       });
-      return this._readyPromise;
+
+      this._loadInflight = { sig: inflightSig, promise: mainPromise };
+      mainPromise.finally(function() {
+        if (self._loadInflight && self._loadInflight.promise === mainPromise) self._loadInflight = null;
+      });
+      this._readyPromise = this._readyPromise || mainPromise;
+      return mainPromise;
     },
 
     ready: function() {
