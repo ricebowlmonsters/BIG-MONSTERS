@@ -4954,6 +4954,11 @@ function saveAbsensiToFirebase(silent) {
         window._absensiEmployeesDirty = false;
         if (msg && !silent) msg.textContent = 'Data tersimpan.';
         showSuccess();
+        try {
+            if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.syncGpsKioskAfterAbsensiSave) {
+                FirebaseStorage.syncGpsKioskAfterAbsensiSave(outlet, type, data, employees);
+            }
+        } catch (eGps) {}
     }).catch(function(err) {
         console.warn('saveAbsensiToFirebase failed', err);
         // Tampilkan pesan lebih jelas jika ada
@@ -4985,6 +4990,12 @@ function saveAbsensiEmployeesToFirebase(silent) {
         } else if (!silent) {
             alert('Karyawan tersimpan.');
         }
+        try {
+            if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.syncGpsKioskAfterAbsensiSave) {
+                var outletEmp = getRbmOutlet() || 'default';
+                FirebaseStorage.syncGpsKioskAfterAbsensiSave(outletEmp, 'absensi', {}, employees);
+            }
+        } catch (eK) {}
     }).catch(function(err) {
         console.warn('saveAbsensiEmployeesToFirebase failed', err);
         if (msg) {
@@ -8926,6 +8937,20 @@ function saveJamConfig() {
     }
 }
 
+/** Normalisasi descriptor dari node gps_kiosk/faces atau blob lama Firebase. */
+function normalizeGpsKioskDescriptor(raw) {
+    if (!raw) return null;
+    if (Array.isArray(raw)) return raw;
+    if (raw.descriptor != null) {
+        var d = raw.descriptor;
+        if (Array.isArray(d)) return d;
+        if (d && typeof d === 'object') {
+            return Object.keys(d).sort(function(a, b) { return parseInt(a, 10) - parseInt(b, 10); }).map(function(k) { return d[k]; });
+        }
+    }
+    return null;
+}
+
 function initAbsensiGPS() {
     // Fungsi ini dipanggil setelah DB siap, jadi kita panggil lagi untuk me-refresh data.
     // UI awal (nama karyawan) sudah di-load dari cache di bawah.
@@ -8959,6 +8984,8 @@ function populateGpsNames() {
         return employees;
     }
 
+    window._gpsKioskRosterEmployees = null;
+
     const employees = loadEmployeesFromStorage();
     if (employees.length === 0) {
         select.innerHTML = '<option value="">-- Memuat Data Karyawan... --</option>';
@@ -8978,30 +9005,38 @@ function populateGpsNames() {
                 }
             }, 18000);
         } catch (e0) {}
-        // Coba sinkron ulang dari Firebase, lalu render ulang dropdown.
-        if (window.RBMStorage && typeof window.RBMStorage.loadFromFirebase === 'function' && !window._gpsNamesSyncInFlight) {
+
+        function applyGpsNameOptions(list) {
+            var sel2 = document.getElementById('gps_absen_name');
+            if (!sel2) return;
+            try {
+                if (window._gpsNamesLoadTimer) { clearTimeout(window._gpsNamesLoadTimer); window._gpsNamesLoadTimer = null; }
+            } catch (eT) {}
+            if (list && list.length > 0) {
+                sel2.innerHTML = '<option value="">-- Pilih Nama --</option>';
+                list.forEach(function(emp) {
+                    if (emp && emp.name) sel2.innerHTML += `<option value="${emp.name}">${emp.name}</option>`;
+                });
+                if (Array.from(sel2.options).some(function(opt) { return opt.value === currentValue; })) {
+                    sel2.value = currentValue;
+                }
+            } else {
+                sel2.innerHTML = '<option value="">⚠️ Belum ada data karyawan untuk outlet ini.</option>';
+            }
+        }
+
+        function runFullFirebaseSync() {
+            if (!window.RBMStorage || typeof window.RBMStorage.loadFromFirebase !== 'function') return;
+            if (window._gpsNamesSyncInFlight) return;
             window._gpsNamesSyncInFlight = true;
             window.RBMStorage.loadFromFirebase().then(function() {
                 setTimeout(function() {
-                try {
-                    if (window._gpsNamesLoadTimer) { clearTimeout(window._gpsNamesLoadTimer); window._gpsNamesLoadTimer = null; }
-                    const refreshed = loadEmployeesFromStorage();
-                    const sel2 = document.getElementById('gps_absen_name');
-                    if (!sel2) return;
-                    if (refreshed.length > 0) {
-                        sel2.innerHTML = '<option value="">-- Pilih Nama --</option>';
-                        refreshed.forEach(function(emp) {
-                            sel2.innerHTML += `<option value="${emp.name}">${emp.name}</option>`;
-                        });
-                        if (Array.from(sel2.options).some(function(opt) { return opt.value === currentValue; })) {
-                            sel2.value = currentValue;
-                        }
-                    } else {
-                        sel2.innerHTML = '<option value="">⚠️ Belum ada data karyawan untuk outlet ini.</option>';
-                    }
-                } catch (e) {}
+                    try {
+                        window._gpsKioskRosterEmployees = null;
+                        applyGpsNameOptions(loadEmployeesFromStorage());
+                    } catch (e) {}
                 }, 0);
-            }).catch(function(){
+            }).catch(function() {
                 try {
                     if (window._gpsNamesLoadTimer) clearTimeout(window._gpsNamesLoadTimer);
                     var sel3 = document.getElementById('gps_absen_name');
@@ -9012,6 +9047,33 @@ function populateGpsNames() {
             }).finally(function() {
                 window._gpsNamesSyncInFlight = false;
             });
+        }
+
+        var tryKiosk = window.RBM_PAGE === 'absensi-gps-view' &&
+            typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
+            typeof FirebaseStorage !== 'undefined' &&
+            FirebaseStorage.loadGpsKioskRoster && FirebaseStorage.loadGpsKioskDayCells;
+
+        if (tryKiosk) {
+            window._gpsNamesSyncInFlight = true;
+            var outletK = getRbmOutlet() || 'default';
+            FirebaseStorage.loadGpsKioskRoster(outletK).then(function(roster) {
+                if (!roster || !roster.employees || !roster.employees.length) throw new Error('no_roster');
+                window._gpsKioskRosterEmployees = roster.employees;
+                var nowK = new Date();
+                var todayK = nowK.getFullYear() + '-' + ('0' + (nowK.getMonth() + 1)).slice(-2) + '-' + ('0' + nowK.getDate()).slice(-2);
+                return FirebaseStorage.loadGpsKioskDayCells(outletK, todayK);
+            }).then(function(cells) {
+                window._gpsKioskDayCells = cells || {};
+                applyGpsNameOptions(window._gpsKioskRosterEmployees || []);
+            }).catch(function() {
+                window._gpsKioskRosterEmployees = null;
+                runFullFirebaseSync();
+            }).finally(function() {
+                window._gpsNamesSyncInFlight = false;
+            });
+        } else {
+            runFullFirebaseSync();
         }
     } else {
         select.innerHTML = '<option value="">-- Pilih Nama --</option>';
@@ -9037,8 +9099,36 @@ function populateGpsNames() {
                 }
                 return;
             }
-            // [PERFORMA] Muat model Face ID hanya saat nama sudah dipilih.
-            if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi();
+            // Face ID per karyawan: ambil dari gps_kiosk/faces/{id} (1 read), fallback blob lama setelah model siap.
+            (function gpsLoadFaceThenModels() {
+                var nameSel = document.getElementById('gps_absen_name');
+                var name = nameSel ? nameSel.value : '';
+                if (!name) return;
+                var outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+                var emList = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
+                    ? window._gpsKioskRosterEmployees
+                    : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+                var emp = emList.find(function(e) { return e && e.name === name; });
+                function goModels() {
+                    if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi();
+                }
+                if (typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
+                    typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskFace &&
+                    emp && emp.id != null) {
+                    FirebaseStorage.loadGpsKioskFace(outlet, emp.id).then(function(raw) {
+                        var desc = normalizeGpsKioskDescriptor(raw);
+                        if (desc && desc.length) {
+                            var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+                            var fd = getCachedParsedStorage(faceKey, {});
+                            fd[name] = desc;
+                            window._rbmParsedCache[faceKey] = { data: fd };
+                        }
+                        goModels();
+                    }).catch(goModels);
+                } else {
+                    goModels();
+                }
+            })();
         };
     }
     // [PERFORMA] Jangan hitung jadwal/sisa cuti saat startup.
@@ -9987,7 +10077,9 @@ function updateGpsJadwalDisplay() {
         if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
         return;
     }
-    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
+        ? window._gpsKioskRosterEmployees
+        : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const emp = employees.find(e => e.name === name);
     if (!emp) {
         textEl.textContent = '-';
@@ -9996,9 +10088,16 @@ function updateGpsJadwalDisplay() {
     }
     const now = new Date();
     const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
-    const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
-    const key = `${today}_${emp.id || employees.indexOf(emp)}`;
-    const shift = jadwalData[key] || '';
+    var shift = '';
+    var cells = window._gpsKioskDayCells;
+    if (cells && emp.id != null && cells[String(emp.id)] && cells[String(emp.id)].j) {
+        shift = cells[String(emp.id)].j;
+    }
+    if (!shift) {
+        const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
+        const key = `${today}_${emp.id || employees.indexOf(emp)}`;
+        shift = jadwalData[key] || '';
+    }
     const label = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift || 'Tidak ada jadwal';
     
     // Hitung sisa istirahat
@@ -10120,7 +10219,21 @@ async function _executeAbsensiGPS(type) {
     const video = document.getElementById('gps_video');
     const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
     const faceData = getCachedParsedStorage(faceKey, {});
-    const registeredDescriptorArr = faceData[name];
+    var registeredDescriptorArr = faceData[name];
+    if (!registeredDescriptorArr && typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
+        typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskFace) {
+        const emListF = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
+            ? window._gpsKioskRosterEmployees
+            : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+        const empF = emListF.find(function(e) { return e && e.name === name; });
+        if (empF && empF.id != null) {
+            try {
+                var rawF = await FirebaseStorage.loadGpsKioskFace(getRbmOutlet() || 'default', empF.id);
+                var descF = normalizeGpsKioskDescriptor(rawF);
+                if (descF && descF.length) registeredDescriptorArr = descF;
+            } catch (eFx) {}
+        }
+    }
 
     // ===== VERIFIKASI WAJAH =====
     if (!registeredDescriptorArr) {
@@ -10147,7 +10260,9 @@ async function _executeAbsensiGPS(type) {
     }
     // ============================
 
-    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
+        ? window._gpsKioskRosterEmployees
+        : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const emp = employees.find(e => e.name === name);
     const empId = emp ? (emp.id || employees.indexOf(emp)) : null;
     

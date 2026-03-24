@@ -257,6 +257,100 @@
     });
   }
 
+  /**
+   * Ringkasan khusus halaman Absensi GPS (HP karyawan): sedikit bacaan, mudah di-cache.
+   * Path: rbm_pro/gps_kiosk/{outletId}/
+   *   roster          → { updatedAt, employees: [{ id, name, sisaAL, sisaDP, sisaPH }] }
+   *   day/{yyyy-mm-dd}/cells/{empId} → { j: shift code, a: absensi harian (opsional) }
+   *   faces/{empId}   → { name, descriptor: number[], updatedAt }
+   * Diisi ulang saat Owner/Manager menyimpan absensi/jadwal/karyawan atau registrasi wajah.
+   */
+  function gpsKioskBase(outletId) {
+    return 'rbm_pro/gps_kiosk/' + String(outletId || 'default').replace(/[.#$\[\]]/g, '_');
+  }
+
+  function loadGpsKioskRoster(outletId) {
+    if (!init()) return Promise.resolve(null);
+    return db.ref(gpsKioskBase(outletId) + '/roster').once('value').then(function(snap) {
+      return snap.val();
+    });
+  }
+
+  function loadGpsKioskDayCells(outletId, dateStr) {
+    if (!init()) return Promise.resolve(null);
+    return db.ref(gpsKioskBase(outletId) + '/day/' + dateStr + '/cells').once('value').then(function(snap) {
+      return snap.val() || {};
+    });
+  }
+
+  function loadGpsKioskFace(outletId, empId) {
+    if (!init()) return Promise.resolve(null);
+    return db.ref(gpsKioskBase(outletId) + '/faces/' + String(empId)).once('value').then(function(snap) {
+      return snap.val();
+    });
+  }
+
+  function writeGpsKioskFace(outletId, empId, empName, descriptorArr) {
+    if (!init()) return Promise.resolve();
+    return db.ref(gpsKioskBase(outletId) + '/faces/' + String(empId)).set({
+      name: empName || '',
+      descriptor: descriptorArr,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP
+    }).catch(function(e) { console.warn('writeGpsKioskFace failed', e); });
+  }
+
+  function deleteGpsKioskFace(outletId, empId) {
+    if (!init()) return Promise.resolve();
+    return db.ref(gpsKioskBase(outletId) + '/faces/' + String(empId)).remove()
+      .catch(function(e) { console.warn('deleteGpsKioskFace failed', e); });
+  }
+
+  /** Sinkron roster + snapshot hari ini (saja) untuk kiosk. */
+  function syncGpsKioskAfterAbsensiSave(outlet, type, dataObj, employees) {
+    if (!init()) return Promise.resolve();
+    var o = outlet || 'default';
+    var updates = {};
+    var now = new Date();
+    var today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+
+    if (employees && employees.length) {
+      updates[gpsKioskBase(o) + '/roster'] = {
+        updatedAt: firebase.database.ServerValue.TIMESTAMP,
+        employees: employees.map(function(e) {
+          return {
+            id: e.id,
+            name: e.name,
+            sisaAL: e.sisaAL != null ? e.sisaAL : 0,
+            sisaDP: e.sisaDP != null ? e.sisaDP : 0,
+            sisaPH: e.sisaPH != null ? e.sisaPH : 0
+          };
+        })
+      };
+    }
+
+    if (dataObj && typeof dataObj === 'object') {
+      Object.keys(dataObj).forEach(function(k) {
+        var m = k.match(/^(\d{4}-\d{2}-\d{2})_(.+)$/);
+        if (!m) return;
+        var dateStr = m[1];
+        var empPart = m[2];
+        if (dateStr !== today) return;
+        var val = dataObj[k];
+        var basePath = gpsKioskBase(o) + '/day/' + today + '/cells/' + empPart;
+        if (type === 'jadwal') {
+          updates[basePath + '/j'] = val === '' || val === null ? null : val;
+        } else if (type === 'absensi') {
+          updates[basePath + '/a'] = val === '' || val === null ? null : val;
+        }
+      });
+    }
+
+    if (Object.keys(updates).length === 0) return Promise.resolve();
+    return db.ref().update(updates).catch(function(err) {
+      console.warn('syncGpsKioskAfterAbsensiSave failed', err);
+    });
+  }
+
   // ---------- GPS Logs (Struktur Partisi Per Bulan) ----------
   function loadGpsLogs(outlet, tglAwal, tglAkhir) {
     if (!init()) return Promise.resolve([]);
@@ -1698,6 +1792,13 @@
     trackPresence: trackPresence,
     saveAbsensiJadwal: saveAbsensiJadwal,
     loadAbsensiJadwal: loadAbsensiJadwal,
+    gpsKioskBase: gpsKioskBase,
+    loadGpsKioskRoster: loadGpsKioskRoster,
+    loadGpsKioskDayCells: loadGpsKioskDayCells,
+    loadGpsKioskFace: loadGpsKioskFace,
+    writeGpsKioskFace: writeGpsKioskFace,
+    deleteGpsKioskFace: deleteGpsKioskFace,
+    syncGpsKioskAfterAbsensiSave: syncGpsKioskAfterAbsensiSave,
     loadGpsLogs: loadGpsLogs,
     getPettyCash: getPettyCash,
     getPettyCashPage: getPettyCashPage,

@@ -242,6 +242,19 @@ async function captureAndSaveFace() {
         window._rbmParsedCache = window._rbmParsedCache || {};
         window._rbmParsedCache[faceKey] = { data: faceData };
 
+        try {
+          var outletF = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+          var empIdF = null;
+          var keyEmp = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_EMPLOYEES') : 'RBM_EMPLOYEES';
+          var rawEm = typeof getCachedParsedStorage === 'function' ? getCachedParsedStorage(keyEmp, []) : [];
+          var arrEm = Array.isArray(rawEm) ? rawEm : (rawEm ? Object.values(rawEm) : []);
+          var foundF = arrEm.find(function(e) { return e && e.name === empName; });
+          if (foundF && foundF.id != null) empIdF = foundF.id;
+          if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.writeGpsKioskFace && empIdF != null) {
+            FirebaseStorage.writeGpsKioskFace(outletF, empIdF, empName, Array.from(detection.descriptor));
+          }
+        } catch (eFk) {}
+
         msgEl.textContent = "✅ Wajah berhasil didaftarkan untuk " + empName;
         msgEl.style.color = "#16a34a";
         
@@ -338,6 +351,18 @@ function deleteFaceData(empName) {
     
     window._rbmParsedCache = window._rbmParsedCache || {};
     window._rbmParsedCache[faceKey] = { data: faceData };
+
+    try {
+      var outletD = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+      var keyEmp2 = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_EMPLOYEES') : 'RBM_EMPLOYEES';
+      var rawEm2 = typeof getCachedParsedStorage === 'function' ? getCachedParsedStorage(keyEmp2, []) : [];
+      var arrEm2 = Array.isArray(rawEm2) ? rawEm2 : (rawEm2 ? Object.values(rawEm2) : []);
+      var foundD = arrEm2.find(function(e) { return e && e.name === empName; });
+      if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.deleteGpsKioskFace && foundD && foundD.id != null) {
+        FirebaseStorage.deleteGpsKioskFace(outletD, foundD.id);
+      }
+    } catch (eDel) {}
+
     renderRegisteredFaces();
 }
 
