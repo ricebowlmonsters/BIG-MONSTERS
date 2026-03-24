@@ -149,6 +149,15 @@ function fallbackCopy(url, feedback) {
   <main class="app-main" style="margin-left:0;">
 <div id="absensi-gps-view" class="view-container">
   <div class="page-header">
+    <style>
+      /* Efek AI Scanner Canggih & Kamera Mirror */
+      .rbm-scanner-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px solid rgba(16, 185, 129, 0.5); border-radius: 8px; pointer-events: none; z-index: 10; overflow: hidden; }
+      .rbm-scanner-line { width: 100%; height: 3px; background: #10b981; position: absolute; top: 0; animation: scan 2s infinite linear; box-shadow: 0 0 8px #10b981, 0 0 12px #10b981; }
+      @keyframes scan { 0% { top: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+      .rbm-camera-wrap { position: relative; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); background: #000; }
+      /* Mirror camera agar seperti kaca (selfie alami) */
+      #gps_video { transform: scaleX(-1); width: 100%; height: auto; display: block; }
+    </style>
     <h2>Absensi GPS & Foto</h2>
     <p>Absensi dengan validasi lokasi dan foto.</p>
   </div>
@@ -170,6 +179,7 @@ function fallbackCopy(url, feedback) {
     <div class="form-section" style="text-align: center;">
         <div class="rbm-camera-wrap">
             <video id="gps_video" autoplay playsinline></video>
+            <div class="rbm-scanner-overlay" id="gps_scanner_ui" style="display:none;"><div class="rbm-scanner-line"></div></div>
             <canvas id="gps_canvas" style="display: none;"></canvas>
             <div id="gps_status_overlay" class="rbm-camera-status">Menunggu Lokasi...</div>
         </div>

@@ -9105,7 +9105,7 @@ function populateGpsNames() {
                     : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
                 var emp = emList.find(function(e) { return e && e.name === name; });
                 function goModels() {
-                    if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi();
+                    if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi(false);
                 }
                 if (typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
                     typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskFace &&
@@ -9134,6 +9134,22 @@ function populateGpsNames() {
 window._faceVerified = false;
 window._faceVerificationInterval = null;
 
+window._playSuccessBeep = function() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.05, ctx.currentTime);
+        osc.start();
+        gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
+        osc.stop(ctx.currentTime + 0.1);
+    } catch(e) {}
+};
+
 window.startLiveFaceVerification = function() {
     if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
     const nameSel = document.getElementById('gps_absen_name');
@@ -9159,6 +9175,8 @@ window.startLiveFaceVerification = function() {
     const registeredDescriptor = new Float32Array(registeredDescriptorArr);
     const video = document.getElementById('gps_video');
     const faceStatus = document.getElementById('face_id_status_info');
+    const scannerUI = document.getElementById('gps_scanner_ui');
+    if (scannerUI) scannerUI.style.display = 'block'; // Tampilkan Laser Scanner
 
     let isProcessing = false;
 
@@ -9193,7 +9211,10 @@ window.startLiveFaceVerification = function() {
                         faceStatus.style.borderColor = "#fecaca";
                     }
                 } else {
-                    window._faceVerified = true;
+                    if (!window._faceVerified) {
+                        window._faceVerified = true;
+                        if (typeof window._playSuccessBeep === 'function') window._playSuccessBeep();
+                    }
                     if (faceStatus) {
                         faceStatus.innerHTML = "✅ Wajah Terverifikasi. Tombol Absen Aktif.";
                         faceStatus.style.color = "#15803d";
@@ -9215,16 +9236,24 @@ window.stopLiveFaceVerification = function() {
         clearInterval(window._faceVerificationInterval);
         window._faceVerificationInterval = null;
     }
+    const scannerUI = document.getElementById('gps_scanner_ui');
+    if (scannerUI) scannerUI.style.display = 'none'; // Sembunyikan Laser Scanner
     window._faceVerified = false;
 };
 
 window.isFaceApiLoaded = window.isFaceApiLoaded || false;
 window._faceApiLoading = window._faceApiLoading || false;
-window.loadFaceApiModelsForAbsensi = async function() {
-    if (window.isFaceApiLoaded || window._faceApiLoading) return;
+window.loadFaceApiModelsForAbsensi = async function(silent = false) {
+    if (window.isFaceApiLoaded) {
+        if (!silent && typeof window.startLiveFaceVerification === 'function') {
+             setTimeout(() => window.startLiveFaceVerification(), 100);
+        }
+        return;
+    }
+    if (window._faceApiLoading) return;
     window._faceApiLoading = true;
     const faceStatus = document.getElementById('face_id_status_info');
-    if (faceStatus) {
+    if (faceStatus && !silent) {
         faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memuat model AI Face ID...</span>';
         faceStatus.style.color = "#b45309";
         faceStatus.style.background = "#fffbeb";
@@ -9237,7 +9266,7 @@ window.loadFaceApiModelsForAbsensi = async function() {
             await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
             await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
             window.isFaceApiLoaded = true;
-            if (faceStatus) {
+            if (faceStatus && !silent) {
                 const nameSel = document.getElementById('gps_absen_name');
                 if (nameSel && nameSel.value) {
                     const name = nameSel.value;
@@ -10075,10 +10104,12 @@ async function updateGpsJadwalDisplay() {
     if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.isReady()) {
         const db = FirebaseStorage.db();
         try {
-            const shiftSnap = await db.ref(`rbm_pro/jadwal/${outlet}/${ym}/${today}_${emp.id}`).once('value');
+            // [SUPER CEPAT] Ambil Jadwal dan Histori Absen secara BERSAMAAN (Paralel)
+            const [shiftSnap, logsSnap] = await Promise.all([
+                db.ref(`rbm_pro/jadwal/${outlet}/${ym}/${today}_${emp.id}`).once('value'),
+                db.ref(`rbm_pro/gps_logs_partitioned/${outlet}/${ym}`).orderByChild('date').equalTo(today).once('value')
+            ]);
             shift = shiftSnap.val() || '';
-            
-            const logsSnap = await db.ref(`rbm_pro/gps_logs_partitioned/${outlet}/${ym}`).orderByChild('date').equalTo(today).once('value');
             const logsVal = logsSnap.val();
             if (logsVal) {
                 myLogs = Object.values(logsVal).filter(l => l.name === name);
@@ -10729,6 +10760,11 @@ if (window.RBM_PAGE === 'absensi-gps-view') {
         if (window.initAbsensiHardware) window.initAbsensiHardware();
         // [OPTIMASI 2] Langsung isi nama dari cache localStorage, jangan tunggu DB
         if (window.populateGpsNames) window.populateGpsNames();
+        
+        // [CANGGIH] Preload AI Face API di background secara senyap saat halaman baru dibuka
+        setTimeout(function() {
+            if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi(true);
+        }, 800);
     }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', runGpsEarlyInit);
