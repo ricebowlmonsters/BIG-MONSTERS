@@ -138,7 +138,8 @@ let faceRegStream = null;
 async function loadFaceApiModels() {
     if (isFaceApiLoaded) return;
     const msgEl = document.getElementById('face_status_msg');
-    msgEl.
+    msgEl.innerHTML = '<span class="rbm-spinner"></span> Memuat model AI...';
+    try {
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
         await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
@@ -213,8 +214,8 @@ async function captureAndSaveFace() {
     if (!empName || !video.srcObject) return;
 
     const msgEl = document.getElementById('face_status_msg');
-    msgEl.innerHTML = '<span class="rbm-spinner"></span><spa
-    document.getElementById('btn_capture_face').disabled = t
+    msgEl.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memproses wajah...</span>';
+    document.getElementById('btn_capture_face').disabled = true;
     try {
         const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
         const detection = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
@@ -369,10 +370,13 @@ function deleteFaceData(empName) {
 (function() {
   function runLoad() { 
       if (typeof loadJamConfig === 'function') loadJamConfig(); 
-      setTimeout(loadEmployeesForFaceReg, 
+      setTimeout(loadEmployeesForFaceReg, 500);
+  }
   runLoad(); // [OPTIMASI] Langsung render dari cache lokal tanpa tunggu Firebase
   if (window.RBMStorage && typeof window.RBMStorage.ready === 'function') {
     window.RBMStorage.ready().then(runLoad).catch(runLoad);
-  }ript>
+  }
+})();
+</script>
 </body>
 </html>
