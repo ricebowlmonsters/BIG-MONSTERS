@@ -9104,19 +9104,21 @@ function populateGpsNames() {
                     ? window._gpsKioskRosterEmployees
                     : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
                 var emp = emList.find(function(e) { return e && e.name === name; });
+                var empIdToUse = (emp && emp.id != null) ? emp.id : (emp ? emList.indexOf(emp) : null);
                 function goModels() {
                     if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi(false);
                 }
                 if (typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
                     typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskFace &&
-                    emp && emp.id != null) {
-                    FirebaseStorage.loadGpsKioskFace(outlet, emp.id).then(function(raw) {
+                    empIdToUse != null) {
+                    FirebaseStorage.loadGpsKioskFace(outlet, empIdToUse).then(function(raw) {
                         var desc = normalizeGpsKioskDescriptor(raw);
                         if (desc && desc.length) {
                             var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
                             var fd = getCachedParsedStorage(faceKey, {});
                             fd[name] = desc;
                             window._rbmParsedCache[faceKey] = { data: fd };
+                            RBMStorage.setItem(faceKey, JSON.stringify(fd));
                         }
                         goModels();
                     }).catch(goModels);
@@ -9245,6 +9247,27 @@ window.isFaceApiLoaded = window.isFaceApiLoaded || false;
 window._faceApiLoading = window._faceApiLoading || false;
 window.loadFaceApiModelsForAbsensi = async function(silent = false) {
     if (window.isFaceApiLoaded) {
+        const faceStatus = document.getElementById('face_id_status_info');
+        if (faceStatus && !silent) {
+            const nameSel = document.getElementById('gps_absen_name');
+            if (nameSel && nameSel.value) {
+                const name = nameSel.value;
+                const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+                const faceData = getCachedParsedStorage(faceKey, {});
+                if (!faceData[name]) {
+                    faceStatus.innerHTML = "❌ Wajah belum terdaftar. Hubungi Manager.";
+                    faceStatus.style.color = "#b91c1c";
+                    faceStatus.style.background = "#fef2f2";
+                    faceStatus.style.borderColor = "#fecaca";
+                    if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
+                } else {
+                    faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memulai pemindaian wajah...</span>';
+                    faceStatus.style.color = "#1d4ed8";
+                    faceStatus.style.background = "#eff6ff";
+                    faceStatus.style.borderColor = "#bfdbfe";
+                }
+            }
+        }
         if (!silent && typeof window.startLiveFaceVerification === 'function') {
              setTimeout(() => window.startLiveFaceVerification(), 100);
         }
@@ -10248,9 +10271,10 @@ async function _executeAbsensiGPS(type) {
             ? window._gpsKioskRosterEmployees
             : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
         const empF = emListF.find(function(e) { return e && e.name === name; });
-        if (empF && empF.id != null) {
+        const empIdF = (empF && empF.id != null) ? empF.id : (empF ? emListF.indexOf(empF) : null);
+        if (empIdF != null) {
             try {
-                var rawF = await FirebaseStorage.loadGpsKioskFace(getRbmOutlet() || 'default', empF.id);
+                var rawF = await FirebaseStorage.loadGpsKioskFace(getRbmOutlet() || 'default', empIdF);
                 var descF = normalizeGpsKioskDescriptor(rawF);
                 if (descF && descF.length) registeredDescriptorArr = descF;
             } catch (eFx) {}

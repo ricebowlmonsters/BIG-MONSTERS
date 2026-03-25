@@ -99,10 +99,9 @@
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
       if (page === 'absensi-gps-view') {
-          // [SUPER OPTIMASI] Halaman GPS Kiosk (HP Karyawan) HANYA memuat config.
-          // Nama karyawan (roster) di-fetch langsung oleh populateGpsNames().
-          // Jadwal, Sisa Cuti, Istirahat, Face Data HANYA dimuat SETELAH memilih nama.
-          nodesToLoad = ['gps_config' + sfx, 'gps_jam_config' + sfx];
+          // [PERBAIKAN] Pastikan face_data ikut dimuat agar HP karyawan memiliki data wajah
+          // untuk proses pencocokan AI. Jika tidak dimuat, akan muncul "Wajah belum terdaftar".
+          nodesToLoad = ['gps_config' + sfx, 'gps_jam_config' + sfx, 'face_data' + sfx];
           backgroundNodes = [];
       } else if (page === 'pengaturan-jadwal-absensi') {
           nodesToLoad.push('employees' + sfx, 'face_data' + sfx);

@@ -250,7 +250,7 @@ async function captureAndSaveFace() {
           var rawEm = typeof getCachedParsedStorage === 'function' ? getCachedParsedStorage(keyEmp, []) : [];
           var arrEm = Array.isArray(rawEm) ? rawEm : (rawEm ? Object.values(rawEm) : []);
           var foundF = arrEm.find(function(e) { return e && e.name === empName; });
-          if (foundF && foundF.id != null) empIdF = foundF.id;
+          if (foundF && foundF.id != null) empIdF = foundF.id; else if (foundF) empIdF = arrEm.indexOf(foundF);
           if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.writeGpsKioskFace && empIdF != null) {
             FirebaseStorage.writeGpsKioskFace(outletF, empIdF, empName, Array.from(detection.descriptor));
           }
@@ -359,8 +359,9 @@ function deleteFaceData(empName) {
       var rawEm2 = typeof getCachedParsedStorage === 'function' ? getCachedParsedStorage(keyEmp2, []) : [];
       var arrEm2 = Array.isArray(rawEm2) ? rawEm2 : (rawEm2 ? Object.values(rawEm2) : []);
       var foundD = arrEm2.find(function(e) { return e && e.name === empName; });
-      if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.deleteGpsKioskFace && foundD && foundD.id != null) {
-        FirebaseStorage.deleteGpsKioskFace(outletD, foundD.id);
+      var empIdD = (foundD && foundD.id != null) ? foundD.id : (foundD ? arrEm2.indexOf(foundD) : null);
+      if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.deleteGpsKioskFace && empIdD != null) {
+        FirebaseStorage.deleteGpsKioskFace(outletD, empIdD);
       }
     } catch (eDel) {}
 
