@@ -99,10 +99,11 @@
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
       if (page === 'absensi-gps-view') {
-          // [PERBAIKAN] Pastikan face_data ikut dimuat agar HP karyawan memiliki data wajah
-          // untuk proses pencocokan AI. Jika tidak dimuat, akan muncul "Wajah belum terdaftar".
-          nodesToLoad = ['gps_config' + sfx, 'gps_jam_config' + sfx, 'face_data' + sfx];
-          backgroundNodes = [];
+          // [SUPER OPTIMASI + PERBAIKAN] Halaman GPS Kiosk (HP Karyawan) HANYA memuat config di awal
+          // agar halaman langsung terbuka cepat tanpa hang/lemot.
+          // Data wajah (face_data) tetap diunduh, tapi secara DIAM-DIAM di latar belakang (backgroundNodes).
+          nodesToLoad = ['gps_config' + sfx, 'gps_jam_config' + sfx];
+          backgroundNodes = ['face_data' + sfx];
       } else if (page === 'pengaturan-jadwal-absensi') {
           nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
       } else if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
