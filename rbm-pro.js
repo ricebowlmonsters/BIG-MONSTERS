@@ -8948,6 +8948,10 @@ function normalizeGpsKioskDescriptor(raw) {
             return Object.keys(d).sort(function(a, b) { return parseInt(a, 10) - parseInt(b, 10); }).map(function(k) { return d[k]; });
         }
     }
+    // [PERBAIKAN] Jika Firebase mengembalikan array sebagai objek {0: val, 1: val} langsung tanpa bungkus .descriptor
+    if (typeof raw === 'object' && raw[0] !== undefined) {
+        return Object.keys(raw).sort(function(a, b) { return parseInt(a, 10) - parseInt(b, 10); }).map(function(k) { return raw[k]; });
+    }
     return null;
 }
 
@@ -9099,29 +9103,60 @@ function populateGpsNames() {
                 var nameSel = document.getElementById('gps_absen_name');
                 var name = nameSel ? nameSel.value : '';
                 if (!name) return;
+                
+                function goModels() {
+                    if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi(false);
+                }
+
+                // [OPTIMASI KILAT] Cek memori HP dulu! Jika wajah sudah pernah didownload, LANGSUNG JALAN tanpa nunggu server.
+                var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+                var faceDataCache = getCachedParsedStorage(faceKey, {});
+                if (faceDataCache[name] && faceDataCache[name].length > 0) {
+                    goModels();
+                    return; // Berhenti di sini, lompat ke pemindaian
+                }
+
                 var outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
                 var emList = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
                     ? window._gpsKioskRosterEmployees
                     : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
                 var emp = emList.find(function(e) { return e && e.name === name; });
                 var empIdToUse = (emp && emp.id != null) ? emp.id : (emp ? emList.indexOf(emp) : null);
-                function goModels() {
-                    if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi(false);
-                }
                 if (typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
-                    typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskFace &&
-                    empIdToUse != null) {
-                    FirebaseStorage.loadGpsKioskFace(outlet, empIdToUse).then(function(raw) {
-                        var desc = normalizeGpsKioskDescriptor(raw);
-                        if (desc && desc.length) {
-                            var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-                            var fd = getCachedParsedStorage(faceKey, {});
-                            fd[name] = desc;
-                            window._rbmParsedCache[faceKey] = { data: fd };
-                            RBMStorage.setItem(faceKey, JSON.stringify(fd));
-                        }
-                        goModels();
-                    }).catch(goModels);
+                    typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskFace) {
+                    var fallbackToMaster = function() {
+                        // [PERBAIKAN] Fallback: Cari wajah spesifik ini langsung ke Data Master (Gudang Utama)
+                        var sfx = outlet ? '_' + outlet.toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
+                        firebase.database().ref('rbm_pro/face_data' + sfx + '/' + name).once('value').then(function(snap) {
+                            var masterRaw = snap.val();
+                            var masterDesc = normalizeGpsKioskDescriptor(masterRaw);
+                            if (masterDesc && masterDesc.length) {
+                                var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+                                var fd = getCachedParsedStorage(faceKey, {});
+                                fd[name] = masterDesc;
+                                window._rbmParsedCache[faceKey] = { data: fd };
+                                RBMStorage.setItem(faceKey, JSON.stringify(fd));
+                            }
+                            goModels();
+                        }).catch(goModels);
+                    };
+                    if (empIdToUse != null) {
+                        FirebaseStorage.loadGpsKioskFace(outlet, empIdToUse).then(function(raw) {
+                            var desc = normalizeGpsKioskDescriptor(raw);
+                            if (desc && desc.length) {
+                                var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+                                var fd = getCachedParsedStorage(faceKey, {});
+                                fd[name] = desc;
+                                window._rbmParsedCache[faceKey] = { data: fd };
+                                RBMStorage.setItem(faceKey, JSON.stringify(fd));
+                                goModels();
+                            } else {
+                                fallbackToMaster();
+                            }
+                        }).catch(fallbackToMaster);
+                    } else {
+                        fallbackToMaster();
+                    }
                 } else {
                     goModels();
                 }
@@ -9246,36 +9281,72 @@ window.stopLiveFaceVerification = function() {
 window.isFaceApiLoaded = window.isFaceApiLoaded || false;
 window._faceApiLoading = window._faceApiLoading || false;
 window.loadFaceApiModelsForAbsensi = async function(silent = false) {
+    const faceStatus = document.getElementById('face_id_status_info');
+    const nameSel = document.getElementById('gps_absen_name');
+    const name = nameSel ? nameSel.value : '';
+
+    const updateUIForLoaded = () => {
+        if (silent) return;
+        if (!name) {
+            if (faceStatus) {
+                faceStatus.innerHTML = "✅ Sistem AI Siap. Silakan pilih nama Anda.";
+                faceStatus.style.color = "#15803d";
+                faceStatus.style.background = "#f0fdf4";
+                faceStatus.style.borderColor = "#bbf7d0";
+            }
+            return;
+        }
+        const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+        const faceData = getCachedParsedStorage(faceKey, {});
+        if (!faceData[name]) {
+            if (faceStatus) {
+                faceStatus.innerHTML = "❌ Wajah belum terdaftar. Hubungi Manager.";
+                faceStatus.style.color = "#b91c1c";
+                faceStatus.style.background = "#fef2f2";
+                faceStatus.style.borderColor = "#fecaca";
+            }
+            if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
+        } else {
+            if (faceStatus) {
+                faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memulai pemindaian wajah...</span>';
+                faceStatus.style.color = "#1d4ed8";
+                faceStatus.style.background = "#eff6ff";
+                faceStatus.style.borderColor = "#bfdbfe";
+            }
+            if (typeof window.startLiveFaceVerification === 'function') window.startLiveFaceVerification();
+        }
+    };
+
     if (window.isFaceApiLoaded) {
-        const faceStatus = document.getElementById('face_id_status_info');
-        if (faceStatus && !silent) {
-            const nameSel = document.getElementById('gps_absen_name');
-            if (nameSel && nameSel.value) {
-                const name = nameSel.value;
-                const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-                const faceData = getCachedParsedStorage(faceKey, {});
-                if (!faceData[name]) {
-                    faceStatus.innerHTML = "❌ Wajah belum terdaftar. Hubungi Manager.";
+        updateUIForLoaded();
+        return;
+    }
+
+    if (window._faceApiLoading) {
+        if (!silent && faceStatus) {
+            faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memuat model AI Face ID...</span>';
+            faceStatus.style.color = "#b45309";
+            faceStatus.style.background = "#fffbeb";
+            faceStatus.style.borderColor = "#fde68a";
+        }
+        const checkInterval = setInterval(() => {
+            if (window.isFaceApiLoaded) {
+                clearInterval(checkInterval);
+                updateUIForLoaded();
+            } else if (!window._faceApiLoading) {
+                clearInterval(checkInterval);
+                if (faceStatus && !silent) {
+                    faceStatus.innerHTML = "❌ Gagal memuat Face ID. Periksa koneksi internet.";
                     faceStatus.style.color = "#b91c1c";
                     faceStatus.style.background = "#fef2f2";
                     faceStatus.style.borderColor = "#fecaca";
-                    if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
-                } else {
-                    faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memulai pemindaian wajah...</span>';
-                    faceStatus.style.color = "#1d4ed8";
-                    faceStatus.style.background = "#eff6ff";
-                    faceStatus.style.borderColor = "#bfdbfe";
                 }
             }
-        }
-        if (!silent && typeof window.startLiveFaceVerification === 'function') {
-             setTimeout(() => window.startLiveFaceVerification(), 100);
-        }
+        }, 200);
         return;
     }
-    if (window._faceApiLoading) return;
+
     window._faceApiLoading = true;
-    const faceStatus = document.getElementById('face_id_status_info');
     if (faceStatus && !silent) {
         faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memuat model AI Face ID...</span>';
         faceStatus.style.color = "#b45309";
@@ -9284,37 +9355,23 @@ window.loadFaceApiModelsForAbsensi = async function(silent = false) {
     }
     try {
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+        
+        let waitCount = 0;
+        while (typeof faceapi === 'undefined' && waitCount < 20) {
+            await new Promise(r => setTimeout(r, 250));
+            waitCount++;
+        }
+
         if (typeof faceapi !== 'undefined') {
-            await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-            await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+            await Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+            ]);
             window.isFaceApiLoaded = true;
-            if (faceStatus && !silent) {
-                const nameSel = document.getElementById('gps_absen_name');
-                if (nameSel && nameSel.value) {
-                    const name = nameSel.value;
-                    const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-                    const faceData = getCachedParsedStorage(faceKey, {});
-                    if (!faceData[name]) {
-                        faceStatus.innerHTML = "❌ Wajah belum terdaftar. Hubungi Manager.";
-                        faceStatus.style.color = "#b91c1c";
-                        faceStatus.style.background = "#fef2f2";
-                        faceStatus.style.borderColor = "#fecaca";
-                        if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
-                    } else {
-                        faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memulai pemindaian wajah...</span>';
-                        faceStatus.style.color = "#1d4ed8";
-                        faceStatus.style.background = "#eff6ff";
-                        faceStatus.style.borderColor = "#bfdbfe";
-                        if (typeof window.startLiveFaceVerification === 'function') window.startLiveFaceVerification();
-                    }
-                } else {
-                    faceStatus.innerHTML = "✅ Sistem AI Siap. Silakan pilih nama Anda.";
-                    faceStatus.style.color = "#15803d";
-                    faceStatus.style.background = "#f0fdf4";
-                    faceStatus.style.borderColor = "#bbf7d0";
-                }
-            }
+            updateUIForLoaded();
+        } else {
+            throw new Error("Library Face API tidak ditemukan atau gagal dimuat.");
         }
     } catch (e) {
         console.error("Face API Load Error:", e);
@@ -10199,24 +10256,6 @@ async function updateGpsJadwalDisplay() {
     textEl.innerHTML = (shift ? `<strong>${shift} (${label})</strong>` : `<strong>${label}</strong>`) + info + cutiInfo + quote;
     box.style.display = 'block';
     
-    if (faceStatus && window.isFaceApiLoaded) {
-        const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-        const faceData = getCachedParsedStorage(faceKey, {});
-        if (!faceData[name]) {
-            faceStatus.innerHTML = "❌ Wajah belum terdaftar. Hubungi Manager.";
-            faceStatus.style.color = "#b91c1c";
-            faceStatus.style.background = "#fef2f2";
-            faceStatus.style.borderColor = "#fecaca";
-            if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
-        } else {
-            faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memulai pemindaian wajah...</span>';
-            faceStatus.style.color = "#1d4ed8";
-            faceStatus.style.background = "#eff6ff";
-            faceStatus.style.borderColor = "#bfdbfe";
-            if (typeof window.startLiveFaceVerification === 'function') window.startLiveFaceVerification();
-        }
-    }
-
     if (typeof checkDistance === 'function') checkDistance();
 }
 
@@ -10272,13 +10311,21 @@ async function _executeAbsensiGPS(type) {
             : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
         const empF = emListF.find(function(e) { return e && e.name === name; });
         const empIdF = (empF && empF.id != null) ? empF.id : (empF ? emListF.indexOf(empF) : null);
-        if (empIdF != null) {
-            try {
-                var rawF = await FirebaseStorage.loadGpsKioskFace(getRbmOutlet() || 'default', empIdF);
+        try {
+            var outletF = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+            if (empIdF != null) {
+                var rawF = await FirebaseStorage.loadGpsKioskFace(outletF || 'default', empIdF);
                 var descF = normalizeGpsKioskDescriptor(rawF);
                 if (descF && descF.length) registeredDescriptorArr = descF;
-            } catch (eFx) {}
-        }
+            }
+            if (!registeredDescriptorArr) {
+                var sfx = outletF ? '_' + outletF.toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
+                var snapMaster = await firebase.database().ref('rbm_pro/face_data' + sfx + '/' + name).once('value');
+                var masterRaw = snapMaster.val();
+                var masterDesc = normalizeGpsKioskDescriptor(masterRaw);
+                if (masterDesc && masterDesc.length) registeredDescriptorArr = masterDesc;
+            }
+        } catch (eFx) {}
     }
 
     // ===== VERIFIKASI WAJAH =====
@@ -10788,7 +10835,7 @@ if (window.RBM_PAGE === 'absensi-gps-view') {
         // [CANGGIH] Preload AI Face API di background secara senyap saat halaman baru dibuka
         setTimeout(function() {
             if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi(true);
-        }, 800);
+        }, 50); // Dipercepat dari 800ms menjadi 50ms agar segera di-download
     }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', runGpsEarlyInit);

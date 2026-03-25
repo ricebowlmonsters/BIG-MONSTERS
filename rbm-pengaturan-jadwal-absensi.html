@@ -98,7 +98,10 @@
     <!-- Registrasi Wajah Karyawan -->
     <div class="form-section" style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
         <h3 style="margin-top:0; font-size:14px; color:#166534;">Registrasi Wajah Karyawan (Face ID)</h3>
-        <p style="font-size:11px; color:#64748b; margin:0 0 10px;">Daftarkan wajah karyawan untuk validasi absensi otomatis. Pastikan wajah terlihat jelas di kamera.</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
+            <p style="font-size:11px; color:#64748b; margin:0;">Daftarkan wajah karyawan untuk validasi absensi otomatis. Pastikan wajah terlihat jelas di kamera.</p>
+            <button type="button" class="btn-secondary" onclick="syncAllFacesToKiosk()" style="font-size:11px; padding:5px 10px; background:#3b82f6; color:white; border:none; border-radius:4px;">🔄 Perbaiki Sync GPS Kiosk</button>
+        </div>
         <div style="display:flex; gap:15px; flex-wrap:wrap; margin-bottom:15px;">
             <div style="flex:1; min-width:250px;">
                 <label style="font-size:12px; display:block; margin-bottom:5px;">Pilih Karyawan</label>
@@ -141,9 +144,19 @@ async function loadFaceApiModels() {
     msgEl.innerHTML = '<span class="rbm-spinner"></span> Memuat model AI...';
     try {
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
-        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        
+        let waitCount = 0;
+        while (typeof faceapi === 'undefined' && waitCount < 20) {
+            await new Promise(r => setTimeout(r, 250));
+            waitCount++;
+        }
+        if (typeof faceapi === 'undefined') throw new Error("Library Face API tidak ditemukan.");
+
+        await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        ]);
         isFaceApiLoaded = true;
         msgEl.textContent = "Model AI siap.";
         msgEl.style.color = "#16a34a";
@@ -237,11 +250,20 @@ async function captureAndSaveFace() {
                 faceData = JSON.parse(rawFace || '{}') || {};
             }
         } catch(e) {}
-        faceData[empName] = Array.from(detection.descriptor);
-        if (window.RBMStorage) window.RBMStorage.setItem(faceKey, JSON.stringify(faceData)); else localStorage.setItem(faceKey, JSON.stringify(faceData));
         
+        // [PERBAIKAN] Pastikan data koordinat angka bersih, mencegah error Firebase "Invalid data"
+        var cleanDescriptor = Array.from(detection.descriptor).map(function(n) { return Number(n) || 0; });
+        faceData[empName] = cleanDescriptor;
+        
+        // Update local cache
         window._rbmParsedCache = window._rbmParsedCache || {};
         window._rbmParsedCache[faceKey] = { data: faceData };
+        try { localStorage.setItem(faceKey, JSON.stringify(faceData)); } catch(e) {}
+
+        // [PERBAIKAN] Simpan ke server dengan aman
+        if (window.RBMStorage && typeof window.RBMStorage.setItem === 'function') {
+            window.RBMStorage.setItem(faceKey, JSON.stringify(faceData)).catch(function(e){ console.warn("Save face error", e); });
+        }
 
         try {
           var outletF = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
@@ -252,7 +274,18 @@ async function captureAndSaveFace() {
           var foundF = arrEm.find(function(e) { return e && e.name === empName; });
           if (foundF && foundF.id != null) empIdF = foundF.id; else if (foundF) empIdF = arrEm.indexOf(foundF);
           if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.writeGpsKioskFace && empIdF != null) {
-            FirebaseStorage.writeGpsKioskFace(outletF, empIdF, empName, Array.from(detection.descriptor));
+            FirebaseStorage.writeGpsKioskFace(outletF, empIdF, empName, cleanDescriptor);
+          } else if (typeof firebase !== 'undefined' && firebase.database) {
+            var sfxF = outletF ? '_' + outletF.toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
+            firebase.database().ref('rbm_pro/employees' + sfxF).once('value').then(function(snapEm) {
+                var empsVal = snapEm.val();
+                var arrDb = Array.isArray(empsVal) ? empsVal : (empsVal ? Object.values(empsVal) : []);
+                var foundDb = arrDb.find(function(e) { return e && e.name === empName; });
+                var dbId = (foundDb && foundDb.id != null) ? foundDb.id : (foundDb ? arrDb.indexOf(foundDb) : null);
+                if (dbId != null && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.writeGpsKioskFace) {
+                     FirebaseStorage.writeGpsKioskFace(outletF, dbId, empName, cleanDescriptor);
+                }
+            }).catch(function(){});
           }
         } catch (eFk) {}
 
@@ -275,6 +308,48 @@ async function captureAndSaveFace() {
         msgEl.style.color = "#dc2626";
         document.getElementById('btn_capture_face').disabled = false;
     }
+}
+
+function syncAllFacesToKiosk() {
+    const msgEl = document.getElementById('face_status_msg');
+    msgEl.innerHTML = '<span class="rbm-spinner"></span> Membaca data terbaru dari server...';
+    
+    var outletF = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+    var sfx = outletF ? '_' + outletF.toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
+    
+    if (typeof firebase !== 'undefined' && firebase.database) {
+        var db = firebase.database();
+        Promise.all([
+            db.ref('rbm_pro/employees' + sfx).once('value'),
+            db.ref('rbm_pro/face_data' + sfx).once('value')
+        ]).then(function(snaps) {
+            var empsVal = snaps[0].val();
+            var facesVal = snaps[1].val();
+            
+            var employees = Array.isArray(empsVal) ? empsVal : (empsVal ? Object.values(empsVal) : []);
+            var faceData = facesVal || {};
+            
+            var promises = [];
+            if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.writeGpsKioskFace) {
+                employees.forEach(function(emp) {
+                    if (emp && emp.name && faceData[emp.name]) {
+                        var empIdF = emp.id != null ? emp.id : employees.indexOf(emp);
+                        promises.push(FirebaseStorage.writeGpsKioskFace(outletF, empIdF, emp.name, faceData[emp.name]));
+                    }
+                });
+                if (promises.length === 0) {
+                    msgEl.textContent = "⚠️ Tidak ada wajah yang cocok dengan daftar karyawan di server.";
+                    msgEl.style.color = "#d97706";
+                    return;
+                }
+                msgEl.innerHTML = '<span class="rbm-spinner"></span> Menyinkronkan ' + promises.length + ' wajah...';
+                Promise.all(promises).then(function() {
+                    msgEl.textContent = "✅ " + promises.length + " Wajah berhasil disinkronkan ke GPS Kiosk.";
+                    msgEl.style.color = "#16a34a";
+                }).catch(function(e) { msgEl.textContent = "❌ Gagal: " + e.message; msgEl.style.color = "#dc2626"; });
+            } else { msgEl.textContent = "❌ Sistem Kiosk tidak tersedia."; }
+        }).catch(function(e) { msgEl.textContent = "❌ Error: " + e.message; msgEl.style.color = "#dc2626"; });
+    } else { msgEl.textContent = "❌ Firebase tidak terhubung."; msgEl.style.color = "#dc2626"; }
 }
 
 function renderRegisteredFaces(employees) {

@@ -99,11 +99,11 @@
       var page = typeof window !== 'undefined' ? (window.RBM_PAGE || '') : '';
       
       if (page === 'absensi-gps-view') {
-          // [SUPER OPTIMASI + PERBAIKAN] Halaman GPS Kiosk (HP Karyawan) HANYA memuat config di awal
-          // agar halaman langsung terbuka cepat tanpa hang/lemot.
-          // Data wajah (face_data) tetap diunduh, tapi secara DIAM-DIAM di latar belakang (backgroundNodes).
+          // [SUPER OPTIMASI FINAL] Halaman GPS Kiosk HANYA memuat config.
+          // Jangan download face_data secara global di sini, karena akan bikin HP lag/hang.
+          // Wajah, jadwal, & histori HANYA akan didownload 1 per 1 SAAT nama dipilih.
           nodesToLoad = ['gps_config' + sfx, 'gps_jam_config' + sfx];
-          backgroundNodes = ['face_data' + sfx];
+          backgroundNodes = [];
       } else if (page === 'pengaturan-jadwal-absensi') {
           nodesToLoad.push('employees' + sfx, 'face_data' + sfx);
       } else if (page.indexOf('absensi') >= 0 || page.indexOf('jadwal') >= 0) {
