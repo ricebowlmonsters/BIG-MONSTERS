@@ -230,7 +230,7 @@ async function captureAndSaveFace() {
     msgEl.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memproses wajah...</span>';
     document.getElementById('btn_capture_face').disabled = true;
     try {
-        const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
+        const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 });
         const detection = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
         
         if (!detection) {
@@ -272,7 +272,11 @@ async function captureAndSaveFace() {
           var rawEm = typeof getCachedParsedStorage === 'function' ? getCachedParsedStorage(keyEmp, []) : [];
           var arrEm = Array.isArray(rawEm) ? rawEm : (rawEm ? Object.values(rawEm) : []);
           var foundF = arrEm.find(function(e) { return e && e.name === empName; });
-          if (foundF && foundF.id != null) empIdF = foundF.id; else if (foundF) empIdF = arrEm.indexOf(foundF);
+          // Stabilkan kunci Face ID untuk GPS Kiosk.
+          // Jika `id` tidak ada, jangan pakai indexOf (rawan beda urutan antar halaman/perangkat),
+          // tapi pakai `empName` yang deterministik.
+          if (foundF && foundF.id != null) empIdF = foundF.id;
+          else if (foundF) empIdF = empName;
           if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.writeGpsKioskFace && empIdF != null) {
             FirebaseStorage.writeGpsKioskFace(outletF, empIdF, empName, cleanDescriptor);
           } else if (typeof firebase !== 'undefined' && firebase.database) {
@@ -333,7 +337,8 @@ function syncAllFacesToKiosk() {
             if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.writeGpsKioskFace) {
                 employees.forEach(function(emp) {
                     if (emp && emp.name && faceData[emp.name]) {
-                        var empIdF = emp.id != null ? emp.id : employees.indexOf(emp);
+                        // Gunakan fallback yang stabil untuk kunci face di kiosk.
+                        var empIdF = emp.id != null ? emp.id : (emp.name || employees.indexOf(emp));
                         promises.push(FirebaseStorage.writeGpsKioskFace(outletF, empIdF, emp.name, faceData[emp.name]));
                     }
                 });
@@ -434,7 +439,8 @@ function deleteFaceData(empName) {
       var rawEm2 = typeof getCachedParsedStorage === 'function' ? getCachedParsedStorage(keyEmp2, []) : [];
       var arrEm2 = Array.isArray(rawEm2) ? rawEm2 : (rawEm2 ? Object.values(rawEm2) : []);
       var foundD = arrEm2.find(function(e) { return e && e.name === empName; });
-      var empIdD = (foundD && foundD.id != null) ? foundD.id : (foundD ? arrEm2.indexOf(foundD) : null);
+      // Konsistenkan dengan penulisan face di kiosk: jika `id` tidak ada, pakai nama.
+      var empIdD = (foundD && foundD.id != null) ? foundD.id : (foundD ? foundD.name : null);
       if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.deleteGpsKioskFace && empIdD != null) {
         FirebaseStorage.deleteGpsKioskFace(outletD, empIdD);
       }

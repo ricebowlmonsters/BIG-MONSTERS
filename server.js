@@ -37,6 +37,9 @@ try {
 
 app.use(cors());
 
+// [BARU] Tambahkan ini untuk menyajikan file HTML, CSS, JS dari folder yang sama
+app.use(express.static(__dirname));
+
 // [BARU] Log setiap request agar terlihat di terminal
 app.use((req, res, next) => {
     console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url}`);

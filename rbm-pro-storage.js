@@ -49,6 +49,12 @@
     /** Hindari loadFromFirebase ganda berjalan paralel (bikin hang di HP). */
     _loadInflight: null,
 
+    _outletSuffix: function(outletId) {
+      var outlet = '';
+      try { outlet = (outletId || '').toString().trim(); } catch (_) { outlet = ''; }
+      return outlet ? '_' + outlet.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
+    },
+
     init: function() {
       var conn = getActiveConnection();
       if (!conn) return;
@@ -464,7 +470,7 @@
         
         // [PERBAIKAN] Simpan juga ke localStorage untuk cache offline/startup cepat
         // Khusus untuk data master yang sering dibaca (Karyawan, Config)
-        if (key.indexOf('RBM_EMPLOYEES') === 0 || key.indexOf('RBM_GPS_') === 0 || key.indexOf('RBM_FACE_DATA') === 0) {
+        if (key.indexOf('RBM_EMPLOYEES') === 0 || key.indexOf('RBM_GPS_') === 0 || key.indexOf('RBM_FACE_DATA') === 0 || key.indexOf('RBM_GAJI_') === 0 || key.indexOf('RBM_BONUS_') === 0) {
            try { localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); } catch(e) {}
         }
 
@@ -481,6 +487,95 @@
         }
       }
       return Promise.resolve();
+    },
+
+    /**
+     * Utility: sisipkan/geser karyawan ke urutan tertentu untuk outlet tertentu.
+     * Contoh (Console):
+     *   RBMStorage.addEmployeeAtIndex('rice bowl monsters   ponti', 1, { name: 'Puji Shohibul Burhan' })
+     */
+    addEmployeeAtIndex: function(outletId, index, employeePatch) {
+      var self = this;
+      var sfx = this._outletSuffix(outletId);
+      var key = 'RBM_EMPLOYEES' + sfx;
+      var idx = parseInt(index, 10);
+      if (isNaN(idx) || idx < 0) idx = 0;
+
+      var normalizeArr = function(v) {
+        if (!v) return [];
+        if (Array.isArray(v)) return v.filter(function(x) { return x !== null && x !== undefined; });
+        if (typeof v === 'object') {
+          // Firebase kadang balik object keyed → ubah ke array
+          var ks = Object.keys(v);
+          var arr = [];
+          ks.forEach(function(k) { arr.push(v[k]); });
+          return arr.filter(function(x) { return x !== null && x !== undefined; });
+        }
+        return [];
+      };
+
+      var safeParseAny = function(raw) {
+        if (!raw) return null;
+        if (typeof raw === 'string') {
+          try { return JSON.parse(raw); } catch (_) { return null; }
+        }
+        return raw;
+      };
+
+      var buildEmployee = function(existing) {
+        var patch = (employeePatch && typeof employeePatch === 'object') ? employeePatch : {};
+        var name = (patch.name || '').toString().trim();
+        if (!name) name = 'Puji Shohibul Burhan';
+
+        var maxId = 0;
+        existing.forEach(function(e) {
+          if (!e) return;
+          var n = parseInt(e.id, 10);
+          if (!isNaN(n) && n > maxId) maxId = n;
+        });
+
+        // Default minimal agar UI absensi/jadwal tidak error
+        return Object.assign({
+          id: maxId + 1,
+          name: name,
+          jabatan: '',
+          joinDate: '',
+          bank: '',
+          noRek: '',
+          email: '',
+          gajiPokok: 0,
+          sisaAL: '0',
+          sisaDP: 0,
+          sisaPH: '0'
+        }, patch, { name: name });
+      };
+
+      return this.ready().then(function() {
+        var existingRaw = self.getItem(key);
+        var existingVal = safeParseAny(existingRaw);
+        var employees = normalizeArr(existingVal);
+
+        var targetName = '';
+        try { targetName = ((employeePatch && employeePatch.name) ? employeePatch.name : 'Puji Shohibul Burhan').toString().trim().toLowerCase(); } catch (_) { targetName = 'puji shohibul burhan'; }
+
+        // Jika sudah ada (by name), keluarkan dulu agar bisa dipindah ke index yang diminta
+        var found = null;
+        for (var i = 0; i < employees.length; i++) {
+          var e = employees[i];
+          if (e && e.name && e.name.toString().trim().toLowerCase() === targetName) {
+            found = e;
+            employees.splice(i, 1);
+            break;
+          }
+        }
+
+        var emp = found || buildEmployee(employees);
+        if (idx > employees.length) idx = employees.length;
+        employees.splice(idx, 0, emp);
+
+        // Simpan (ke Firebase jika aktif, juga cache localStorage via RBMStorage.setItem)
+        return self.setItem(key, JSON.stringify(employees)).then(function() { return employees; });
+      });
     },
 
     // =========================================================================
