@@ -120,6 +120,7 @@
       <button class="btn btn-secondary" onclick="openJadwalModal()" style="background: #0d6efd; color: white; border-color: #0d6efd;">Save / Print Jadwal</button>
       <button type="button" class="btn btn-secondary" onclick="syncAbsensiPeriodAndRefresh()" title="Muat ulang data outlet terpilih" style="margin-left: 8px;">🔄 Refresh</button>
       <button type="button" id="absensi-toggle-cols-btn" class="absensi-toggle-col-btn" onclick="toggleAbsensiExtraCols(this)" title="Sembunyikan Jabatan, Join Date, Sisa Cuti" style="margin-left: 8px;">&#128065;</button>
+      <button type="button" id="absensi-order-btn" class="btn btn-secondary" onclick="openAbsensiEmployeeOrderModal()" title="Atur urutan karyawan (Developer)" style="margin-left: 8px; display:none;">Atur Urutan</button>
       <button type="button" class="btn btn-primary" onclick="saveAbsensiToFirebase()" style="margin-left: 8px;">Simpan</button>
       <span id="absensi-save-feedback" style="font-size: 12px; margin-left: 8px;"></span>
     </div>
@@ -367,6 +368,9 @@
                       <button class="btn-small-danger" style="background:#198754; padding: 4px 8px;" onclick="exportBonusAbsensiExcel()">Excel</button>
                       <button class="btn-small-danger" style="background:#dc3545; padding: 4px 8px;" onclick="exportBonusAbsensiPDF()">PDF</button>
                   </div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:flex-end; margin: 0 0 10px; flex-wrap: wrap;">
+                  <!-- Fitur tambah nama manual untuk dropdown sudah dihapus. -->
               </div>
               <table class="data-table" id="bonus_absensi_table" style="font-size: 12px;">
                 <thead>

@@ -1,30 +1,39 @@
 
   window.addEventListener('load', () => {
+    function setPersistedValTemp(id, defaultVal) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const saved = sessionStorage.getItem('rbm_saved_date_' + id);
+        el.value = saved ? saved : defaultVal;
+        if (!el._rbmPersistBound) {
+            el.addEventListener('change', function() { sessionStorage.setItem('rbm_saved_date_' + id, this.value); });
+            el._rbmPersistBound = true;
+        }
+    }
+
     const today = new Date().toISOString().split("T")[0];
-    document.getElementById("tanggal_barang").value = today;
-    document.getElementById("tanggal_keuangan").value = today;
-    document.getElementById("tanggal_inventaris").value = today;
-    document.getElementById("tanggal_pembukuan").value = today;
-    document.getElementById("pc_input_tanggal").value = today;
+    setPersistedValTemp("tanggal_barang", today);
+    setPersistedValTemp("tanggal_keuangan", today);
+    setPersistedValTemp("tanggal_inventaris", today);
+    setPersistedValTemp("tanggal_pembukuan", today);
+    setPersistedValTemp("pc_input_tanggal", today);
     
     const firstDay = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
-    document.getElementById("pc_tanggal_awal").value = firstDay;
-    document.getElementById("pc_tanggal_akhir").value = today;
-    document.getElementById("pengajuan_saldo_date").value = today;
-    document.getElementById("pengajuan_filter_date_start").value = today;
-    document.getElementById("pengajuan_filter_date_end").value = today;
-    document.getElementById("pembukuan_tanggal_awal").value = firstDay;
-    document.getElementById("pembukuan_tanggal_akhir").value = today;
-    document.getElementById("inv_tanggal_awal").value = firstDay;
-    document.getElementById("inv_tanggal_akhir").value = today;
-    document.getElementById("absensi_tgl_awal").value = firstDay;
-    document.getElementById("absensi_tgl_akhir").value = today;
+    setPersistedValTemp("pc_tanggal_awal", firstDay);
+    setPersistedValTemp("pc_tanggal_akhir", today);
+    setPersistedValTemp("pengajuan_saldo_date", today);
+    setPersistedValTemp("pengajuan_filter_date_start", today);
+    setPersistedValTemp("pengajuan_filter_date_end", today);
+    setPersistedValTemp("pembukuan_tanggal_awal", firstDay);
+    setPersistedValTemp("pembukuan_tanggal_akhir", today);
+    setPersistedValTemp("inv_tanggal_awal", firstDay);
+    setPersistedValTemp("inv_tanggal_akhir", today);
+    setPersistedValTemp("absensi_tgl_awal", firstDay);
+    setPersistedValTemp("absensi_tgl_akhir", today);
     
     // [BARU] Set default bulan untuk filter agar tidak kosong
-    const pcBulan = document.getElementById("pc_bulan_filter");
-    if (pcBulan) pcBulan.value = today.substring(0, 7);
-    const pbBulan = document.getElementById("pembukuan_bulan_filter");
-    if (pbBulan) pbBulan.value = today.substring(0, 7);
+    setPersistedValTemp("pc_bulan_filter", today.substring(0, 7));
+    setPersistedValTemp("pembukuan_bulan_filter", today.substring(0, 7));
 
     // [DIUBAH] Buka tab yang sesuai dengan halaman
     const initialView = window.RBM_PAGE || 'input-petty-cash-view';

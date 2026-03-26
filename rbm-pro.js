@@ -27,6 +27,17 @@
     try { var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); _cachedOwnerCheck = (u.role === 'owner' || (u.username || '').toLowerCase() === 'burhan'); return _cachedOwnerCheck; } catch(e) { return false; }
   };
   function setVal(id, val) { var e = document.getElementById(id); if (e) e.value = val; }
+  function setPersistedVal(id, val) { 
+      var e = document.getElementById(id); 
+      if (e) { 
+          var saved = sessionStorage.getItem('rbm_saved_date_' + id); 
+          e.value = saved ? saved : val; 
+          if (!e._rbmPersistBound) { 
+              e.addEventListener('change', function() { sessionStorage.setItem('rbm_saved_date_' + id, this.value); }); 
+              e._rbmPersistBound = true; 
+          } 
+      } 
+  }
   function getRbmOutlet() {
     var s = document.getElementById('rbm-outlet-select');
     if (s && s.value) return s.value;
@@ -62,24 +73,24 @@
       var firstDayFast = fmtFast(new Date(nowFast.getFullYear(), nowFast.getMonth(), 1));
       var payrollStartFast = fmtFast(new Date(nowFast.getFullYear(), nowFast.getMonth() - 1, 26));
       var payrollEndFast = fmtFast(new Date(nowFast.getFullYear(), nowFast.getMonth(), 25));
-      setVal("pc_bulan_filter", todayFast.slice(0, 7));
-      setVal("pembukuan_bulan_filter", todayFast.slice(0, 7));
-      setVal("stok_bulan_filter", todayFast.slice(0, 7));
-      setVal("pc_input_tanggal", todayFast);
-      setVal("tanggal_barang", todayFast);
-      setVal("tanggal_keuangan", todayFast);
-      setVal("tanggal_inventaris", todayFast);
-      setVal("tanggal_pembukuan", todayFast);
-      setVal("inv_tanggal_awal", firstDayFast);
-      setVal("inv_tanggal_akhir", todayFast);
-      setVal("absensi_tgl_awal", payrollStartFast);
-      setVal("absensi_tgl_akhir", payrollEndFast);
-      setVal("res_filter_start", firstDayFast);
-      setVal("res_filter_end", todayFast);
-      setVal("rekap_gps_start", payrollStartFast);
-      setVal("rekap_gps_end", payrollEndFast);
-      setVal("riwayat_barang_start", firstDayFast);
-      setVal("riwayat_barang_end", todayFast);
+      setPersistedVal("pc_bulan_filter", todayFast.slice(0, 7));
+      setPersistedVal("pembukuan_bulan_filter", todayFast.slice(0, 7));
+      setPersistedVal("stok_bulan_filter", todayFast.slice(0, 7));
+      setPersistedVal("pc_input_tanggal", todayFast);
+      setPersistedVal("tanggal_barang", todayFast);
+      setPersistedVal("tanggal_keuangan", todayFast);
+      setPersistedVal("tanggal_inventaris", todayFast);
+      setPersistedVal("tanggal_pembukuan", todayFast);
+      setPersistedVal("inv_tanggal_awal", firstDayFast);
+      setPersistedVal("inv_tanggal_akhir", todayFast);
+      setPersistedVal("absensi_tgl_awal", payrollStartFast);
+      setPersistedVal("absensi_tgl_akhir", payrollEndFast);
+      setPersistedVal("res_filter_start", firstDayFast);
+      setPersistedVal("res_filter_end", todayFast);
+      setPersistedVal("rekap_gps_start", payrollStartFast);
+      setPersistedVal("rekap_gps_end", payrollEndFast);
+      setPersistedVal("riwayat_barang_start", firstDayFast);
+      setPersistedVal("riwayat_barang_end", todayFast);
     } catch(e) {}
 
     // [PERFORMA] Auto-load halaman "lihat" tanpa menunggu RBMStorage.ready()
@@ -170,20 +181,23 @@
     setVal("tanggal_inventaris", today);
     setVal("tanggal_pembukuan", today);
     setVal("pc_input_tanggal", today);
-    setVal("pc_bulan_filter", today.slice(0, 7));
+    // Jangan timpa nilai manual yang dipilih user saat refresh
+    setPersistedVal("pc_bulan_filter", today.slice(0, 7));
     setVal("pengajuan_saldo_date", today);
     setVal("pengajuan_filter_date_start", today);
     setVal("pengajuan_filter_date_end", today);
-    setVal("pembukuan_bulan_filter", today.slice(0, 7));
+    // Jangan timpa nilai manual yang dipilih user saat refresh
+    setPersistedVal("pembukuan_bulan_filter", today.slice(0, 7));
     setVal("inv_tanggal_awal", firstDay);
     setVal("inv_tanggal_akhir", today);
-    setVal("absensi_tgl_awal", payrollStart);
-    setVal("absensi_tgl_akhir", payrollEnd);
+    // Periode absensi (26 s/d 25) harus tetap sesuai pilihan manual user
+    setPersistedVal("absensi_tgl_awal", payrollStart);
+    setPersistedVal("absensi_tgl_akhir", payrollEnd);
     setVal("res_filter_start", firstDay);
     setVal("res_filter_end", today);
-    setVal("stok_bulan_filter", today.slice(0, 7));
-    setVal("rekap_gps_start", payrollStart);
-    setVal("rekap_gps_end", payrollEnd);
+    setPersistedVal("stok_bulan_filter", today.slice(0, 7));
+    setPersistedVal("rekap_gps_start", payrollStart);
+    setPersistedVal("rekap_gps_end", payrollEnd);
     setVal("riwayat_barang_start", firstDay);
     setVal("riwayat_barang_end", today);
     var pageView = window.RBM_PAGE || (window.location.hash || '').replace(/^#/, '');
@@ -2401,7 +2415,9 @@ function submitDataPengajuan() {
     
 
     rows.forEach(row => {
-      const nominalPc = row.querySelector(".pengajuan_pc_nominal").value.trim();
+      const nominalEl = row.querySelector(".pengajuan_pc_nominal");
+      // Hindari crash jika ada row yang tidak punya input nominal (mis. row kosong/template).
+      const nominalPc = nominalEl ? nominalEl.value.trim() : '';
 
       if (nominalPc) {
         const pettyCashItem = {
@@ -4631,6 +4647,76 @@ function syncAbsensiPeriodAndRefresh() {
         }
         window._isSyncingAbsensi = false;
     }
+
+    // [FIX KRUSIAL] Tarik data Gaji & Bonus dari Firebase (Di luar blok agar SELALU tereksekusi meskipun modul lawas absen)
+    var gajiKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
+    var bonusKey = getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir);
+    if (window.RBMStorage && window.RBMStorage._db) {
+        window.RBMStorage._db.ref('rbm_pro/gaji/' + gajiKey.slice(9)).once('value').then(function(snap) {
+            var v = snap.val();
+            if (v) {
+                // Jangan menimpa edit lokal terbaru: gabungkan data cloud + lokal dan utamakan nilai lokal jika ada.
+                var localGaji = getCachedParsedStorage(gajiKey, {});
+                var mergedGaji = {};
+                try {
+                    var localObj = (localGaji && typeof localGaji === 'object') ? localGaji : {};
+                    var cloudObj = (v && typeof v === 'object') ? v : {};
+                    Object.keys(cloudObj).forEach(function(k) { mergedGaji[k] = cloudObj[k]; });
+                    Object.keys(localObj).forEach(function(k) {
+                        if (!mergedGaji[k] || typeof mergedGaji[k] !== 'object') mergedGaji[k] = {};
+                        if (localObj[k] && typeof localObj[k] === 'object') {
+                            Object.keys(localObj[k]).forEach(function(f) {
+                                var lv = localObj[k][f];
+                                if (lv !== undefined && lv !== null && lv !== '') mergedGaji[k][f] = lv;
+                            });
+                        } else if (localObj[k] !== undefined) {
+                            mergedGaji[k] = localObj[k];
+                        }
+                    });
+                } catch (e) { mergedGaji = v; }
+                window._rbmParsedCache[gajiKey] = { data: mergedGaji };
+                try { localStorage.setItem(gajiKey, JSON.stringify(mergedGaji)); } catch(e) {}
+                if (activeAbsensiMode === 'gaji' && typeof renderRekapGaji === 'function') renderRekapGaji();
+            }
+        }).catch(function(){});
+        window.RBMStorage._db.ref('rbm_pro/bonus/' + bonusKey.slice(10)).once('value').then(function(snap) {
+            var v = snap.val();
+            if (v) {
+                // Jangan menimpa edit lokal terbaru: gabungkan data cloud + lokal dan utamakan data lokal
+                var localBonus = getCachedParsedStorage(bonusKey, {});
+                var mergedBonus = {};
+                try {
+                    var localObj = (localBonus && typeof localBonus === 'object') ? localBonus : {};
+                    var cloudObj = (v && typeof v === 'object') ? v : {};
+
+                    // Default: pakai cloud dulu, lalu overlay lokal yang benar-benar ada
+                    mergedBonus = cloudObj || {};
+
+                    if (Array.isArray(localObj.absensi)) {
+                        if (localObj.absensi.length > 0 || !(cloudObj && Array.isArray(cloudObj.absensi) && cloudObj.absensi.length > 0)) {
+                            mergedBonus.absensi = localObj.absensi;
+                        }
+                    }
+
+                    if (localObj.omset && typeof localObj.omset === 'object') {
+                        mergedBonus.omset = localObj.omset;
+                    }
+
+                    // Overlay key lain kalau ada
+                    Object.keys(localObj).forEach(function(k) {
+                        if (k === 'absensi' || k === 'omset') return;
+                        if (localObj[k] !== undefined) mergedBonus[k] = localObj[k];
+                    });
+                } catch (e) {
+                    mergedBonus = v;
+                }
+
+                window._rbmParsedCache[bonusKey] = { data: mergedBonus };
+                try { localStorage.setItem(bonusKey, JSON.stringify(mergedBonus)); } catch(e) {}
+                if (activeAbsensiMode === 'bonus' && typeof renderBonusTab === 'function') renderBonusTab();
+            }
+        }).catch(function(){});
+    }
 }
 
 function switchAbsensiTab(mode) {
@@ -4749,12 +4835,21 @@ function renderAbsensiTable(mode) {
     }
     const employees = window._absensiViewEmployees;
 
+    // Tombol Atur Urutan hanya untuk Developer
+    try {
+        var btnEmpOrder = document.getElementById('absensi-order-btn');
+        if (btnEmpOrder) btnEmpOrder.style.display = rbmIsDeveloper() ? '' : 'none';
+    } catch (e) {}
+
     // 3. Build Body
     let bodyHtml = '';
-    employees.forEach((emp, index) => {
+    const ordered = getOrderedAbsensiEmployeesWithIndex(employees);
+    ordered.forEach((item, displayIndex) => {
+        const emp = item.emp;
+        const index = item.idx; // index asli (untuk key & update/remove)
         // Static Info (Email dihapus; Jabatan, Join Date, Sisa Cuti bisa dilipat via icon di samping Save/Print Jadwal)
         let rowHtml = `<tr>
-            <td style="position:sticky; left:0; background:white; z-index:5;">${index + 1}</td>
+            <td style="position:sticky; left:0; background:white; z-index:5;">${displayIndex + 1}</td>
             <td style="position:sticky; left:40px; background:white; z-index:5; text-align:left;">
                 <input type="text" name="emp_name_${index}" aria-label="Nama Karyawan" value="${emp.name}" onchange="updateEmployee(${index}, 'name', this.value)" style="border:none; width:100%; padding:0;">
             </td>
@@ -5286,6 +5381,15 @@ function renderRekapGaji() {
     // Data Gaji Periodik (Hutang, Terlambat, dll) disimpan terpisah agar tidak hilang saat refresh
     const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
     const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
+
+    // Key employee untuk menyimpan/membaca hutang-tunjangan harus stabil.
+    // Prioritas: `emp.id` jika ada, jika tidak pakai `emp.name`, jika masih kosong pakai idx.
+    // Tambahkan prefix agar kunci TIDAK numerik murni (firebase storage akan mengubah object numeric-key jadi array lalu "dipadatkan").
+    const getGajiEmpKey = function(emp, idx) {
+        if (emp && emp.id !== undefined && emp.id !== null && emp.id !== '') return 'id_' + String(emp.id);
+        if (emp && emp.name) return 'name_' + String(emp.name).replace(/[.#$\[\]]/g, '_');
+        return 'idx_' + String(idx);
+    };
     
     // Ambil konfigurasi menit telat dari settings
     const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : MENIT_TELAT_PER_JAM_GAJI;
@@ -5329,6 +5433,8 @@ function renderRekapGaji() {
     let html = '';
 
     employees.forEach((emp, idx) => {
+        const empKey = getGajiEmpKey(emp, idx);
+        const empKeyAttr = String(empKey).replace(/"/g, '&quot;');
         // 1. Hitung Absensi
         let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
         dates.forEach(d => {
@@ -5344,14 +5450,13 @@ function renderRekapGaji() {
         });
 
         // 2. Ambil Data Tersimpan / Default
-        const pData = gajiPeriodData[emp.id || idx] || {};
-        let jamTerlambat = pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : 0;
+        const pData = gajiPeriodData[empKey] || {};
         const totalMenitTelatGps = getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir);
-        if (totalMenitTelatGps > 0) {
+        let jamTerlambat = 0;
+        if (pData.jamTerlambat !== undefined) {
+            jamTerlambat = parseFloat(pData.jamTerlambat);
+        } else if (totalMenitTelatGps > 0) {
             jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
-            if (!gajiPeriodData[emp.id || idx]) gajiPeriodData[emp.id || idx] = {};
-            gajiPeriodData[emp.id || idx].jamTerlambat = jamTerlambat;
-            RBMStorage.setItem(gajiPeriodKey, JSON.stringify(gajiPeriodData));
         }
         
         // Static Data (Save to Employee Object)
@@ -5388,7 +5493,7 @@ function renderRekapGaji() {
         const wTunj = Math.max(80, (String(tunjangan).length * 8) + 15);
 
         // 4. Render Row (NO dan NAMA sticky) - simpan hanya saat klik Simpan Perubahan
-        html += `<tr data-emp-index="${idx}" data-emp-id="${emp.id||idx}">
+        html += `<tr data-emp-index="${idx}" data-emp-id="${empKeyAttr}">
             <td style="text-align:center; position:sticky; left:0; background:white; z-index:5; border:1px solid #ccc;">${idx + 1}</td>
             <td style="position:sticky; left:40px; background:white; z-index:5; border:1px solid #ccc;">${emp.name}</td>
             <td>${emp.jabatan}</td>
@@ -5443,7 +5548,7 @@ function renderRekapGaji() {
     tfoot.innerHTML = `<tr><td colspan="28" style="text-align:right; font-weight:bold; padding:10px;">TOTAL PENGELUARAN GAJI: ${formatRupiah(totalGrand)}</td><td></td></tr>`;
 }
 
-function saveRekapGajiData() {
+async function saveRekapGajiData() {
     var tglAwalEl = document.getElementById('absensi_tgl_awal');
     var tglAkhirEl = document.getElementById('absensi_tgl_akhir');
     var tglAwal = tglAwalEl ? tglAwalEl.value : '';
@@ -5464,8 +5569,11 @@ function saveRekapGajiData() {
     for (var r = 0; r < tbody.rows.length; r++) {
         var tr = tbody.rows[r];
         var empIdx = parseInt(tr.getAttribute('data-emp-index'), 10);
-        var empId = parseInt(tr.getAttribute('data-emp-id'), 10);
+        // Kunci employee untuk gaji periodik harus konsisten dengan render:
+        // render pakai `emp.id || idx` (bisa string/non-numeric), jadi jangan dipaksa parseInt.
+        var empId = tr.getAttribute('data-emp-id');
         if (isNaN(empIdx) || !employees[empIdx]) continue;
+        if (empId === null || empId === undefined || empId === '') empId = String(empIdx);
         var inpBank = tr.querySelector('input[data-field="bank"]');
         var inpNoRek = tr.querySelector('input[data-field="noRek"]');
         var inpGajiPokok = tr.querySelector('input[data-field="gajiPokok"]');
@@ -5486,11 +5594,30 @@ function saveRekapGajiData() {
         if (inpTunjangan) gajiData[empId].tunjangan = parseRp(inpTunjangan.value);
         if (selMetode) gajiData[empId].metodeBayar = selMetode.value || 'TF';
     }
-    RBMStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees));
-    RBMStorage.setItem(gajiKey, JSON.stringify(gajiData));
-    window._rbmParsedCache[getRbmStorageKey('RBM_EMPLOYEES')] = { data: employees };
-    window._rbmParsedCache[gajiKey] = { data: gajiData };
-    alert('Data Rekap Gaji tersimpan.');
+    try {
+        // Simpan ke cache memory dan local storage DULU agar instan
+        window._rbmParsedCache[getRbmStorageKey('RBM_EMPLOYEES')] = { data: employees };
+        window._rbmParsedCache[gajiKey] = { data: gajiData };
+        try { localStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees)); } catch(e){}
+        try { localStorage.setItem(gajiKey, JSON.stringify(gajiData)); } catch(e){}
+
+        // Proses tulis ke server secara paralel + tunggu hasil agar status simpan akurat.
+        var saveResults = await Promise.allSettled([
+            RBMStorage.setItem(getRbmStorageKey('RBM_EMPLOYEES'), JSON.stringify(employees)),
+            RBMStorage.setItem(gajiKey, JSON.stringify(gajiData))
+        ]);
+        var hasFailedSave = saveResults.some(function(r) { return r.status === 'rejected'; });
+        if (hasFailedSave) {
+            console.warn('Sebagian data gagal sinkron ke server, data lokal tetap tersimpan.', saveResults);
+            alert('Data tersimpan di perangkat, tetapi sinkron server gagal. Coba Simpan lagi saat koneksi stabil.');
+            return;
+        }
+
+        alert('Data Rekap Gaji tersimpan.');
+    } catch (e) {
+        console.error(e);
+        alert('Gagal menyimpan Data Rekap Gaji. Cek koneksi / storage.');
+    }
 }
 
 // -----------------------------
@@ -5610,7 +5737,10 @@ async function submitGajiPengajuan() {
             const items = [];
 
             employees.forEach((emp, idx) => {
-                const empKey = emp.id != null ? emp.id : idx;
+                const empKey = emp && emp.id != null && emp.id !== '' ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
+                // Key absensi historis (RBM_ABSENSI_DATA) tidak memakai prefix id_/name_/idx_.
+                // Ini harus konsisten dengan cara rekap absensi & rekap gaji menghitung HK Aktual.
+                const empKeyAbsensi = (emp && emp.id != null && emp.id !== '') ? String(emp.id) : String(idx);
                 const pData = gajiPeriodData[empKey] || {};
 
                 const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
@@ -5626,7 +5756,7 @@ async function submitGajiPengajuan() {
                 let jumlahH = 0;
                 dates.forEach(d => {
                     const dateKey = d.toISOString().split('T')[0];
-                    const absKey = `${dateKey}_${empKey}`;
+                    const absKey = `${dateKey}_${empKeyAbsensi}`;
                     if (absensiData[absKey] === 'H') jumlahH++;
                 });
 
@@ -5906,7 +6036,8 @@ function generateAndShowSlip(idx) {
         }
     });
 
-    const pData = gajiPeriodData[emp.id || idx] || {};
+    const empKey = (emp && emp.id !== undefined && emp.id !== null && emp.id !== '') ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
+    const pData = gajiPeriodData[empKey] || {};
     const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
     const gajiPokok = parseInt(emp.gajiPokok) || 0;
     const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
@@ -5981,7 +6112,8 @@ function sendSlipEmail(idx) {
         if (absensiData[key] === 'H') counts.H++;
         curr.setDate(curr.getDate() + 1);
     }
-    const pData = gajiPeriodData[emp.id || idx] || {};
+    const empKey = (emp && emp.id !== undefined && emp.id !== null && emp.id !== '') ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
+    const pData = gajiPeriodData[empKey] || {};
     const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
     const gajiPokok = parseInt(emp.gajiPokok) || 0;
     const potHari = parseFloat(pData.potHari) || 0;
@@ -6267,7 +6399,8 @@ function exportCompleteAbsensiExcel() {
             if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
         });
 
-        const pData = gajiData[emp.id || idx] || {};
+        const empKey = (emp && emp.id != null && emp.id !== '') ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
+        const pData = gajiData[empKey] || {};
         const gajiPokok = parseInt(emp.gajiPokok) || 0;
         const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
         const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
@@ -6443,7 +6576,8 @@ function exportCompleteAbsensiPDF() {
             let countKey = status === 'O' ? 'OFF' : status;
             if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
         });
-        const pData = gajiData[emp.id || idx] || {};
+        const empKey = (emp && emp.id != null && emp.id !== '') ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
+        const pData = gajiData[empKey] || {};
         const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
         const bank = emp.bank || '-';
         const noRek = emp.noRek || '-';
@@ -6765,7 +6899,8 @@ async function downloadAllSlipsAsZip(event) {
                 if (absensiData[key] === 'H') counts.H++;
             });
 
-            const pData = gajiPeriodData[emp.id || i] || {};
+            const empKey = (emp && emp.id != null && emp.id !== '') ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(i)));
+            const pData = gajiPeriodData[empKey] || {};
             const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
             const gajiPokok = parseInt(emp.gajiPokok) || 0;
             const potHari = parseFloat(pData.potHari) || 0;
@@ -6821,6 +6956,397 @@ async function downloadAllSlipsAsZip(event) {
 }
 
 // ================= BONUS LOGIC =================
+function getBonusManualNames() {
+    var key = getRbmStorageKey('RBM_BONUS_MANUAL_NAMES');
+    var list = safeParse(localStorage.getItem(key), []);
+    if (!Array.isArray(list)) return [];
+    return list
+        .map(function(x) { return (x || '').toString().trim(); })
+        .filter(function(x) { return !!x; });
+}
+
+function rbmIsDeveloper() {
+    try {
+        var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+        return (u && (u.username || '').toString().toLowerCase() === 'burhan');
+    } catch (e) {
+        return false;
+    }
+}
+
+function getAbsensiEmployeeOrder() {
+    var key = getRbmStorageKey('RBM_ABSENSI_EMP_ORDER');
+    var list = safeParse(localStorage.getItem(key), []);
+    if (!Array.isArray(list)) return [];
+    return list.map(function(x) { return (x || '').toString().trim(); }).filter(function(x) { return !!x; });
+}
+
+function setAbsensiEmployeeOrder(list) {
+    var key = getRbmStorageKey('RBM_ABSENSI_EMP_ORDER');
+    try { localStorage.setItem(key, JSON.stringify(list || [])); } catch (e) {}
+}
+
+function getAbsensiEmployeeIdentifier(emp) {
+    if (!emp) return '';
+    if (emp.id != null && emp.id !== '') return 'id:' + String(emp.id);
+    var n = (emp.name || '').toString().trim();
+    return n ? ('name:' + n) : '';
+}
+
+function getOrderedAbsensiEmployeesWithIndex(employees) {
+    var list = [];
+    (employees || []).forEach(function(emp, idx) {
+        list.push({ emp: emp, idx: idx, ident: getAbsensiEmployeeIdentifier(emp) });
+    });
+    var order = getAbsensiEmployeeOrder();
+    if (!order || !order.length) return list;
+
+    var pos = {};
+    order.forEach(function(id, i) { if (id && pos[id] == null) pos[id] = i; });
+    list.sort(function(a, b) {
+        var pa = (pos[a.ident] != null) ? pos[a.ident] : 999999;
+        var pb = (pos[b.ident] != null) ? pos[b.ident] : 999999;
+        if (pa !== pb) return pa - pb;
+        // fallback: pertahankan urutan aslinya agar key berbasis index tetap aman
+        return a.idx - b.idx;
+    });
+    return list;
+}
+
+function openAbsensiEmployeeOrderModal() {
+    if (!rbmIsDeveloper()) {
+        showCustomAlert('Akses ditolak. Hanya Developer yang bisa mengatur urutan karyawan.', 'Akses Ditolak', 'error');
+        return;
+    }
+    var existing = document.getElementById('absensiEmployeeOrderModal');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'absensiEmployeeOrderModal';
+    overlay.className = 'modal-overlay';
+    overlay.style.cssText = 'display:flex; align-items:center; justify-content:center;';
+    overlay.onclick = function() { overlay.remove(); };
+
+    var box = document.createElement('div');
+    box.className = 'modal-content';
+    box.style.cssText = 'background:#fff; padding:18px; width:560px; max-width:95%; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.15); position:relative;';
+    box.onclick = function(e) { e.stopPropagation(); };
+
+    var title = document.createElement('h3');
+    title.textContent = 'Atur Urutan Karyawan (Absensi/Jadwal)';
+    title.style.cssText = 'margin:0 0 10px; font-size:18px;';
+
+    var info = document.createElement('div');
+    info.style.cssText = 'font-size:12px; color:#64748b; margin-bottom:10px; line-height:1.4;';
+    info.innerHTML = 'Urutan ini mempengaruhi tabel <b>Absensi</b> dan <b>Jadwal</b> (tampilan). Disimpan per outlet. Aman untuk data lama karena key absensi tetap memakai index/id asli.';
+
+    var listWrap = document.createElement('div');
+    listWrap.style.cssText = 'max-height:55vh; overflow:auto; border:1px solid #e2e8f0; border-radius:10px;';
+
+    var employees = (window._absensiViewEmployees && Array.isArray(window._absensiViewEmployees))
+        ? window._absensiViewEmployees
+        : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+
+    var items = (employees || []).map(function(emp, idx) {
+        return { emp: emp, idx: idx, ident: getAbsensiEmployeeIdentifier(emp) };
+    }).filter(function(x) { return !!x.ident; });
+
+    var present = {};
+    items.forEach(function(x) { present[x.ident] = x; });
+
+    var existingOrder = getAbsensiEmployeeOrder();
+    var order = (existingOrder && existingOrder.length)
+        ? existingOrder.filter(function(id) { return !!present[id]; })
+        : items.map(function(x) { return x.ident; });
+
+    var render = function() {
+        listWrap.innerHTML = '';
+        order.forEach(function(id, index) {
+            var item = present[id];
+            if (!item) return;
+            var emp = item.emp || {};
+
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid #f1f5f9;';
+
+            var nameEl = document.createElement('div');
+            nameEl.style.cssText = 'flex:1; font-size:13px; color:#0f172a;';
+            nameEl.innerHTML = '<div style="font-weight:600;">' + (emp.name || '-') + '</div>' +
+                               '<div style="font-size:11px; color:#64748b;">' + (emp.jabatan || '') + '</div>';
+
+            var up = document.createElement('button');
+            up.type = 'button';
+            up.className = 'btn btn-secondary';
+            up.textContent = '⬆️';
+            up.style.cssText = 'width:auto; padding:6px 10px;';
+            up.disabled = index === 0;
+            up.onclick = function() {
+                var tmp = order[index - 1];
+                order[index - 1] = order[index];
+                order[index] = tmp;
+                render();
+            };
+
+            var down = document.createElement('button');
+            down.type = 'button';
+            down.className = 'btn btn-secondary';
+            down.textContent = '⬇️';
+            down.style.cssText = 'width:auto; padding:6px 10px;';
+            down.disabled = index === order.length - 1;
+            down.onclick = function() {
+                var tmp = order[index + 1];
+                order[index + 1] = order[index];
+                order[index] = tmp;
+                render();
+            };
+
+            row.appendChild(nameEl);
+            row.appendChild(up);
+            row.appendChild(down);
+            listWrap.appendChild(row);
+        });
+    };
+
+    var footer = document.createElement('div');
+    footer.style.cssText = 'display:flex; gap:8px; margin-top:12px;';
+
+    var btnReset = document.createElement('button');
+    btnReset.className = 'btn btn-secondary';
+    btnReset.type = 'button';
+    btnReset.textContent = 'Reset (Urutan Awal)';
+    btnReset.onclick = function() {
+        order = items.map(function(x) { return x.ident; });
+        render();
+    };
+
+    var btnSave = document.createElement('button');
+    btnSave.className = 'btn btn-primary';
+    btnSave.type = 'button';
+    btnSave.textContent = 'Simpan Urutan';
+    btnSave.style.cssText = 'flex:1;';
+    btnSave.onclick = function() {
+        setAbsensiEmployeeOrder(order);
+        overlay.remove();
+        renderAbsensiTable(activeAbsensiMode);
+        if (typeof AppPopup !== 'undefined') AppPopup.success('Urutan karyawan tersimpan.', 'Sukses');
+        else alert('✅ Urutan karyawan tersimpan.');
+    };
+
+    var btnClose = document.createElement('button');
+    btnClose.className = 'btn btn-secondary';
+    btnClose.type = 'button';
+    btnClose.textContent = 'Tutup';
+    btnClose.onclick = function() { overlay.remove(); };
+
+    footer.appendChild(btnReset);
+    footer.appendChild(btnClose);
+    footer.appendChild(btnSave);
+
+    box.appendChild(title);
+    box.appendChild(info);
+    box.appendChild(listWrap);
+    box.appendChild(footer);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    render();
+}
+
+if (typeof openAbsensiEmployeeOrderModal !== 'undefined') window.openAbsensiEmployeeOrderModal = openAbsensiEmployeeOrderModal;
+
+function getBonusNameOrder() {
+    var key = getRbmStorageKey('RBM_BONUS_NAME_ORDER');
+    var list = safeParse(localStorage.getItem(key), []);
+    if (!Array.isArray(list)) return [];
+    return list
+        .map(function(x) { return (x || '').toString().trim(); })
+        .filter(function(x) { return !!x; });
+}
+
+function setBonusNameOrder(list) {
+    var key = getRbmStorageKey('RBM_BONUS_NAME_ORDER');
+    try { localStorage.setItem(key, JSON.stringify(list || [])); } catch (e) {}
+}
+
+function getBonusAbsensiNameList() {
+    var employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+
+    // Urutan Bonus harus sama seperti tampilan Absensi/Jadwal,
+    // jadi tidak memakai RBM_BONUS_MANUAL_NAMES maupun RBM_BONUS_NAME_ORDER.
+    var ordered = (typeof getOrderedAbsensiEmployeesWithIndex === 'function')
+        ? getOrderedAbsensiEmployeesWithIndex(employees)
+        : (employees || []).map(function(emp, idx) { return { emp: emp, idx: idx }; });
+
+    var names = (ordered || []).map(function(item) {
+        var n = item && item.emp && item.emp.name ? item.emp.name : '';
+        return n ? n.toString().trim() : '';
+    }).filter(function(x) { return !!x; });
+
+    // Unik-kan tanpa mengubah urutan
+    var seen = {};
+    var uniq = [];
+    names.forEach(function(n) {
+        if (!seen[n]) { seen[n] = true; uniq.push(n); }
+    });
+    return uniq;
+}
+
+function buildBonusAbsensiNameOptionsHtml(selectedName) {
+    var names = getBonusAbsensiNameList();
+    var sel = (selectedName || '').toString().trim();
+    // Untuk data bonus lama: pastikan opsi tetap ada agar selectedName tetap tampil.
+    if (sel && names.indexOf(sel) < 0) names.push(sel);
+    var html = `<option value="">-- Pilih --</option>`;
+    names.forEach(function(n) {
+        html += `<option value="${n}" ${sel === n ? 'selected' : ''}>${n}</option>`;
+    });
+    return html;
+}
+
+function refreshBonusAbsensiSelectOptions() {
+    document.querySelectorAll('select.bonus-absensi-name').forEach(function(sel) {
+        var current = sel.value;
+        sel.innerHTML = buildBonusAbsensiNameOptionsHtml(current);
+        if (current) sel.value = current;
+    });
+}
+
+function addBonusManualName() {
+    // Fitur ini sudah dihapus dari UI.
+    // Fungsi dibiarkan sebagai no-op agar tidak error jika masih ada referensi lama.
+    return;
+}
+
+if (typeof addBonusManualName !== 'undefined') window.addBonusManualName = addBonusManualName;
+
+function openBonusNameOrderModal() {
+    if (!rbmIsDeveloper()) {
+        showCustomAlert('Akses ditolak. Hanya Developer yang bisa mengatur urutan nama.', 'Akses Ditolak', 'error');
+        return;
+    }
+    var existing = document.getElementById('bonusNameOrderModal');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'bonusNameOrderModal';
+    overlay.className = 'modal-overlay';
+    overlay.style.cssText = 'display:flex; align-items:center; justify-content:center;';
+    overlay.onclick = function() { overlay.remove(); };
+
+    var box = document.createElement('div');
+    box.className = 'modal-content';
+    box.style.cssText = 'background:#fff; padding:18px; width:520px; max-width:95%; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.15); position:relative;';
+    box.onclick = function(e) { e.stopPropagation(); };
+
+    var title = document.createElement('h3');
+    title.textContent = 'Atur Urutan Nama (Bonus)';
+    title.style.cssText = 'margin:0 0 10px; font-size:18px;';
+
+    var info = document.createElement('div');
+    info.style.cssText = 'font-size:12px; color:#64748b; margin-bottom:10px; line-height:1.4;';
+    info.innerHTML = 'Urutan ini hanya mempengaruhi dropdown <b>Bonus Absensi</b> dan tersimpan per outlet. Nama yang tidak ada di daftar urutan akan tetap tampil alfabet di bawahnya.';
+
+    var listWrap = document.createElement('div');
+    listWrap.style.cssText = 'max-height:55vh; overflow:auto; border:1px solid #e2e8f0; border-radius:10px;';
+
+    var allNames = getBonusAbsensiNameList(); // sudah termasuk manual + employee (dan sudah berurut)
+    var order = getBonusNameOrder();
+    // Jika order kosong, inisialisasi dengan urutan saat ini (supaya bisa dipindah)
+    if (!order || !order.length) order = allNames.slice();
+
+    // Buat list yang hanya berisi nama yang masih ada
+    var present = {};
+    allNames.forEach(function(n) { present[n] = true; });
+    order = order.filter(function(n) { return present[n]; });
+
+    var render = function() {
+        listWrap.innerHTML = '';
+        order.forEach(function(n, idx) {
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid #f1f5f9;';
+
+            var nameEl = document.createElement('div');
+            nameEl.textContent = n;
+            nameEl.style.cssText = 'flex:1; font-size:13px; color:#0f172a;';
+
+            var up = document.createElement('button');
+            up.type = 'button';
+            up.className = 'btn btn-secondary';
+            up.textContent = '⬆️';
+            up.style.cssText = 'width:auto; padding:6px 10px;';
+            up.disabled = idx === 0;
+            up.onclick = function() {
+                var tmp = order[idx - 1];
+                order[idx - 1] = order[idx];
+                order[idx] = tmp;
+                render();
+            };
+
+            var down = document.createElement('button');
+            down.type = 'button';
+            down.className = 'btn btn-secondary';
+            down.textContent = '⬇️';
+            down.style.cssText = 'width:auto; padding:6px 10px;';
+            down.disabled = idx === order.length - 1;
+            down.onclick = function() {
+                var tmp = order[idx + 1];
+                order[idx + 1] = order[idx];
+                order[idx] = tmp;
+                render();
+            };
+
+            row.appendChild(nameEl);
+            row.appendChild(up);
+            row.appendChild(down);
+            listWrap.appendChild(row);
+        });
+    };
+
+    var footer = document.createElement('div');
+    footer.style.cssText = 'display:flex; gap:8px; margin-top:12px;';
+
+    var btnReset = document.createElement('button');
+    btnReset.className = 'btn btn-secondary';
+    btnReset.type = 'button';
+    btnReset.textContent = 'Reset (Alfabet)';
+    btnReset.onclick = function() {
+        order = allNames.slice().sort(function(a, b) { return String(a).localeCompare(String(b)); });
+        render();
+    };
+
+    var btnSave = document.createElement('button');
+    btnSave.className = 'btn btn-primary';
+    btnSave.type = 'button';
+    btnSave.textContent = 'Simpan Urutan';
+    btnSave.style.cssText = 'flex:1;';
+    btnSave.onclick = function() {
+        setBonusNameOrder(order);
+        refreshBonusAbsensiSelectOptions();
+        overlay.remove();
+        if (typeof AppPopup !== 'undefined') AppPopup.success('Urutan nama tersimpan.', 'Sukses');
+        else alert('✅ Urutan nama tersimpan.');
+    };
+
+    var btnClose = document.createElement('button');
+    btnClose.className = 'btn btn-secondary';
+    btnClose.type = 'button';
+    btnClose.textContent = 'Tutup';
+    btnClose.onclick = function() { overlay.remove(); };
+
+    footer.appendChild(btnReset);
+    footer.appendChild(btnClose);
+    footer.appendChild(btnSave);
+
+    box.appendChild(title);
+    box.appendChild(info);
+    box.appendChild(listWrap);
+    box.appendChild(footer);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    render();
+}
+
+if (typeof openBonusNameOrderModal !== 'undefined') window.openBonusNameOrderModal = openBonusNameOrderModal;
+
 function renderBonusTab() {
     const tglAwal = document.getElementById("absensi_tgl_awal").value;
     const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
@@ -6831,6 +7357,12 @@ function renderBonusTab() {
     const omsetData = savedData.omset || { total: 0, persen: 0, pool: 0, excludedIds: [] };
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
 
+    // Tombol Atur Urutan hanya untuk Developer
+    try {
+        var btnOrder = document.getElementById('bonus_order_btn');
+        if (btnOrder) btnOrder.style.display = rbmIsDeveloper() ? '' : 'none';
+    } catch (e) {}
+
     // --- 1. Render Bonus Absensi ---
     const absensiTbody = document.getElementById("bonus_absensi_tbody");
     absensiTbody.innerHTML = "";
@@ -6838,10 +7370,7 @@ function renderBonusTab() {
     // Helper to create row
     const createRow = (data = {}) => {
         const tr = document.createElement("tr");
-        let options = `<option value="">-- Pilih --</option>`;
-        employees.forEach(emp => {
-            options += `<option value="${emp.name}" ${data.name === emp.name ? 'selected' : ''}>${emp.name}</option>`;
-        });
+        let options = buildBonusAbsensiNameOptionsHtml(data.name);
 
         tr.innerHTML = `
             <td><select class="bonus-absensi-name" style="width:100%; padding:5px;">${options}</select></td>
@@ -6887,13 +7416,9 @@ function renderBonusTab() {
 }
 
 function addBonusAbsensiRow() {
-    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const tbody = document.getElementById("bonus_absensi_tbody");
     const tr = document.createElement("tr");
-    let options = `<option value="">-- Pilih --</option>`;
-    employees.forEach(emp => {
-        options += `<option value="${emp.name}">${emp.name}</option>`;
-    });
+    let options = buildBonusAbsensiNameOptionsHtml('');
 
     tr.innerHTML = `
         <td><select class="bonus-absensi-name" style="width:100%; padding:5px;">${options}</select></td>
@@ -9135,7 +9660,8 @@ function populateGpsNames() {
                                 var fd = getCachedParsedStorage(faceKey, {});
                                 fd[name] = masterDesc;
                                 window._rbmParsedCache[faceKey] = { data: fd };
-                                RBMStorage.setItem(faceKey, JSON.stringify(fd));
+                                // FIX: Hanya simpan di memori lokal HP, jangan timpa ulang ke Firebase!
+                                try { localStorage.setItem(faceKey, JSON.stringify(fd)); } catch(e) {}
                             }
                             goModels();
                         }).catch(goModels);
@@ -9148,7 +9674,8 @@ function populateGpsNames() {
                                 var fd = getCachedParsedStorage(faceKey, {});
                                 fd[name] = desc;
                                 window._rbmParsedCache[faceKey] = { data: fd };
-                                RBMStorage.setItem(faceKey, JSON.stringify(fd));
+                                // FIX: Hanya simpan di memori lokal HP, jangan timpa ulang ke Firebase!
+                                try { localStorage.setItem(faceKey, JSON.stringify(fd)); } catch(e) {}
                                 goModels();
                             } else {
                                 fallbackToMaster();
@@ -9216,17 +9743,29 @@ window.startLiveFaceVerification = function() {
     if (scannerUI) scannerUI.style.display = 'block'; // Tampilkan Laser Scanner
 
     let isProcessing = false;
+    window._faceVerificationActive = true; // Flag untuk menghentikan loop
 
-    window._faceVerificationInterval = setInterval(async () => {
+    const scanLoop = async () => {
+        if (!window._faceVerificationActive) return;
         if (isProcessing) return;
-        if (!video || !video.videoWidth || video.paused || video.ended) return;
+        
+        if (!video || !video.videoWidth || video.paused || video.ended) {
+            window._faceVerificationInterval = setTimeout(scanLoop, 500);
+            return;
+        }
+
+        // OPTIMASI: Jika sudah diverifikasi, pelankan scan agar tidak boros baterai/CPU HP
+        if (window._faceVerified) {
+            window._faceVerificationInterval = setTimeout(scanLoop, 2000);
+            return;
+        }
         
         isProcessing = true;
         try {
             // PENGATURAN AI UNTUK PENCAHAYAAN GELAP:
-            // inputSize: 320 (resolusi pemindaian lebih tinggi, default 224)
+            // inputSize: 224 (Diturunkan dari 320 agar kalkulasi AI di HP jauh lebih cepat/tidak lag)
             // scoreThreshold: 0.3 (lebih sensitif mendeteksi wajah samar, default 0.5)
-            const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
+            const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 });
             const detection = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
             
             if (!detection) {
@@ -9265,12 +9804,19 @@ window.startLiveFaceVerification = function() {
             console.error(e);
         }
         isProcessing = false;
-    }, 1500); // Lakukan scan setiap 1.5 detik
+        
+        // OPTIMASI: Cek setiap 400ms (Sangat responsif dibanding 1.5 detik)
+        window._faceVerificationInterval = setTimeout(scanLoop, 400);
+    };
+    
+    // Jalankan loop pertama kali
+    scanLoop();
 };
 
 window.stopLiveFaceVerification = function() {
+    window._faceVerificationActive = false;
     if (window._faceVerificationInterval) {
-        clearInterval(window._faceVerificationInterval);
+        clearTimeout(window._faceVerificationInterval);
         window._faceVerificationInterval = null;
     }
     const scannerUI = document.getElementById('gps_scanner_ui');
@@ -9286,7 +9832,6 @@ window.loadFaceApiModelsForAbsensi = async function(silent = false) {
     const name = nameSel ? nameSel.value : '';
 
     const updateUIForLoaded = () => {
-        if (silent) return;
         if (!name) {
             if (faceStatus) {
                 faceStatus.innerHTML = "✅ Sistem AI Siap. Silakan pilih nama Anda.";
@@ -9296,6 +9841,8 @@ window.loadFaceApiModelsForAbsensi = async function(silent = false) {
             }
             return;
         }
+        if (silent) return;
+        
         const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
         const faceData = getCachedParsedStorage(faceKey, {});
         if (!faceData[name]) {
@@ -9868,6 +10415,16 @@ function populateRekapGpsFilterNama() {
         if (n && !seen[n]) { seen[n] = true; names.push(n); }
     });
 
+    // [NEW] Nama manual untuk dropdown (disimpan di localStorage per-outlet)
+    var manualKey = getRbmStorageKey('RBM_REKAP_GPS_MANUAL_NAMES');
+    var manualNames = safeParse(localStorage.getItem(manualKey), []);
+    if (Array.isArray(manualNames)) {
+        manualNames.forEach(function(nm) {
+            var n = (nm || '').toString().trim();
+            if (n && !seen[n]) { seen[n] = true; names.push(n); }
+        });
+    }
+
     names.sort(function(a, b) { return String(a).localeCompare(String(b)); });
     
     var currentVal = filterSelect.value;
@@ -9880,6 +10437,24 @@ function populateRekapGpsFilterNama() {
     });
     if (currentVal && names.indexOf(currentVal) >= 0) filterSelect.value = currentVal;
 }
+
+// Tambah nama manual untuk dropdown Rekap GPS
+function addRekapGpsManualName() {
+    var input = document.getElementById('rekap_gps_manual_name');
+    if (!input) return;
+    var name = (input.value || '').toString().trim();
+    if (!name) return;
+    var manualKey = getRbmStorageKey('RBM_REKAP_GPS_MANUAL_NAMES');
+    var manualNames = safeParse(localStorage.getItem(manualKey), []);
+    if (!Array.isArray(manualNames)) manualNames = [];
+    if (manualNames.indexOf(name) < 0) manualNames.push(name);
+    manualNames.sort(function(a, b) { return String(a).localeCompare(String(b)); });
+    try { localStorage.setItem(manualKey, JSON.stringify(manualNames)); } catch(e) {}
+    input.value = '';
+    populateRekapGpsFilterNama();
+}
+
+if (typeof addRekapGpsManualName !== 'undefined') window.addRekapGpsManualName = addRekapGpsManualName;
 
 // Data rekap GPS untuk export (Excel/PDF) - sama filter dengan tampilan
 function getRekapAbsensiGpsDataForExport() {
@@ -10328,31 +10903,6 @@ async function _executeAbsensiGPS(type) {
         } catch (eFx) {}
     }
 
-    // ===== VERIFIKASI WAJAH =====
-    if (!registeredDescriptorArr) {
-        showCustomAlert(`❌ Data wajah untuk ${name} belum terdaftar! Silakan hubungi Admin/Manajer untuk mendaftarkan wajah Anda di menu Pengaturan.`, "Wajah Belum Terdaftar", "error");
-        return;
-    }
-
-    if (typeof faceapi !== 'undefined') {
-        let faceLoaded = window.isFaceApiLoaded;
-        if (typeof isFaceApiLoaded !== 'undefined') faceLoaded = faceLoaded || isFaceApiLoaded;
-        if (!faceLoaded) {
-            showCustomAlert("Sistem pengenalan wajah sedang dimuat atau gagal dimuat. Harap tunggu sebentar lalu coba lagi.", "Face ID Belum Siap", "warning");
-            return;
-        }
-        
-        // Cek flag verifikasi live (tidak memindai ulang untuk menghemat waktu)
-        if (!window._faceVerified) {
-            showCustomAlert("❌ Wajah belum terverifikasi! Pastikan wajah Anda cocok dan terlihat jelas di kamera sebelum menekan tombol.", "Gagal Verifikasi", "error");
-            return;
-        }
-    } else {
-        showCustomAlert("Sistem pengenalan wajah (Face API) tidak ditemukan!", "Error Sistem", "error");
-        return;
-    }
-    // ============================
-
     const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
         ? window._gpsKioskRosterEmployees
         : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
@@ -10758,6 +11308,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof printReservasiBill !== 'undefined') window.printReservasiBill = printReservasiBill;
   if (typeof deleteReservasi !== 'undefined') window.deleteReservasi = deleteReservasi;
   if (typeof formatRupiahInput !== 'undefined') window.formatRupiahInput = formatRupiahInput;
+  if (typeof resizeInput !== 'undefined') window.resizeInput = resizeInput;
   if (typeof addBonusAbsensiRow !== 'undefined') window.addBonusAbsensiRow = addBonusAbsensiRow;
   if (typeof calculateBonusAbsensiTotal !== 'undefined') window.calculateBonusAbsensiTotal = calculateBonusAbsensiTotal;
   if (typeof calculateBonusOmset !== 'undefined') window.calculateBonusOmset = calculateBonusOmset;

@@ -285,6 +285,8 @@
           pendingListContainer.innerHTML = '<p style="color:red; text-align:center;">Gagal memuat data.</p>';
       });
     }
+    // Agar tombol inline `onclick="fetchSubmissionsForOwner()"` bisa menemukan fungsi dari window global.
+    window.fetchSubmissionsForOwner = fetchSubmissionsForOwner;
     fetchSubmissionsForOwner();
 
   // --- MANAGER/DEFAULT WORKFLOW ---
@@ -345,7 +347,8 @@
           }
           
           allSubmissions.sort((a,b) => (b.data.createdAt || 0) - (a.data.createdAt || 0));
-          let html = '';
+          let pendingHtml = '';
+          let historyHtml = '';
           allSubmissions.forEach(sub => {
               const d = sub.data;
               const isTf = sub.type === 'tf';
@@ -357,12 +360,25 @@
               const timeStr = dateObj ? dateObj.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}) : '';
               const dateStr = dateObj ? dateObj.toLocaleDateString('id-ID') + ' ' + timeStr : (d.tanggal || d.tanggalPengajuan || d.periodStart || '-');
               const status = isGaji ? (d.statusOwner || 'pending') : (d.status || 'pending');
+              const isAlreadyDone = status === 'approved' || status === 'rejected';
               const statusColor = status === 'approved' ? '#059669' : (status === 'rejected' ? '#dc2626' : '#d97706');
               const statusText = status === 'approved' ? 'Disetujui' : (status === 'rejected' ? 'Ditolak' : 'Menunggu');
               
-              html += `<div style="background:#f9fafb; padding:12px; border-radius:8px; border:1px solid #e5e7eb; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;"><div><strong style="display:block; margin-bottom:4px; font-size:14px;">${title}</strong><span style="font-size:12px; color:#64748b;">${dateStr}</span></div><div style="text-align:right;"><strong style="font-size:14px; display:block; margin-bottom:4px;">Rp ${parseInt(total).toLocaleString('id-ID')}</strong><span style="font-size:11px; padding:2px 8px; border-radius:12px; background-color:${statusColor}20; color:${statusColor}; font-weight:bold;">${statusText}</span></div></div>`;
+              const cardHtml = `<div onclick="openOwnerPengajuanModal('${sub.id}')" style="cursor:pointer; background:#f9fafb; padding:12px; border-radius:8px; border:1px solid #e5e7eb; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;"><div><strong style="display:block; margin-bottom:4px; font-size:14px;">${title}</strong><span style="font-size:12px; color:#64748b;">${dateStr}</span></div><div style="text-align:right;"><strong style="font-size:14px; display:block; margin-bottom:4px;">Rp ${parseInt(total).toLocaleString('id-ID')}</strong><span style="font-size:11px; padding:2px 8px; border-radius:12px; background-color:${statusColor}20; color:${statusColor}; font-weight:bold;">${statusText}</span></div></div>`;
+              if (isAlreadyDone) historyHtml += cardHtml;
+              else pendingHtml += cardHtml;
           });
-          listContainer.innerHTML = html;
+
+          listContainer.innerHTML = `
+            <div style="margin-bottom:16px;">
+              <div style="font-weight:700; margin-bottom:10px; color:#1e40af;">Belum disetujui</div>
+              ${pendingHtml ? pendingHtml : '<p style="text-align:center; color:#888;">Tidak ada pengajuan yang menunggu.</p>'}
+            </div>
+            <div>
+              <div style="font-weight:700; margin-bottom:10px; color:#1e40af;">Sudah disetujui / ditolak</div>
+              ${historyHtml ? historyHtml : '<p style="text-align:center; color:#888;">Belum ada pengajuan yang sudah diproses.</p>'}
+            </div>
+          `;
 
           // [BARU] Tandai bahwa Manager sudah melihat update notifikasi
           let updates = {};
@@ -415,6 +431,8 @@
           renderList();
       });
     }
+    // Agar tombol inline `onclick="fetchSubmissionsForManager()"` bisa menemukan fungsi dari window global.
+    window.fetchSubmissionsForManager = fetchSubmissionsForManager;
     fetchSubmissionsForManager();
   }
 })();
@@ -432,12 +450,19 @@ function openOwnerPengajuanModal(id) {
   // [BARU] Tandai bahwa Owner sudah membaca pengajuan ini agar notifikasi hilang
   var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
   var isOwnerOrDev = String(u.role || '').toLowerCase() === 'owner' || (u.username || '').toLowerCase() === 'burhan';
+  var isManagerRole = String(u.role || '').toLowerCase() === 'manager';
   if (isOwnerOrDev && !d.viewedByOwner) {
       let dbPath = '';
       if (isTf) dbPath = `rbm_pro/pengajuan_tf/${sub.id}`;
       else if (isGaji) dbPath = `rbm_pro/gaji_pengajuan/${d._outlet}/${d._month}/${sub.id}`;
       else dbPath = `rbm_pro/petty_cash/pengajuan/${sub.id}`;
       firebase.database().ref(dbPath).update({ viewedByOwner: true });
+  } else if (isManagerRole && !d.viewedByManager) {
+      let dbPath = '';
+      if (isTf) dbPath = `rbm_pro/pengajuan_tf/${sub.id}`;
+      else if (isGaji) dbPath = `rbm_pro/gaji_pengajuan/${d._outlet}/${d._month}/${sub.id}`;
+      else dbPath = `rbm_pro/petty_cash/pengajuan/${sub.id}`;
+      firebase.database().ref(dbPath).update({ viewedByManager: true });
   }
 
   const modal = document.getElementById('ownerPengajuanModal');
@@ -600,7 +625,11 @@ function openOwnerPengajuanModal(id) {
   }
 
   let currentStatus = isGaji ? d.statusOwner : d.status;
-  if (currentStatus === 'approved' || currentStatus === 'rejected') {
+  if (isManagerRole) {
+      // Untuk manager, fokusnya detail. Tombol approve/tolak disembunyikan agar tidak salah update status.
+      approveBtn.style.display = 'none';
+      rejectBtn.style.display = 'none';
+  } else if (currentStatus === 'approved' || currentStatus === 'rejected') {
       approveBtn.style.display = 'none';
       rejectBtn.style.display = 'none';
       const statusColor = currentStatus === 'approved' ? 'green' : 'red';
@@ -612,8 +641,10 @@ function openOwnerPengajuanModal(id) {
   }
   
   modal.style.display = 'flex';
-  approveBtn.onclick = () => updatePengajuanStatus(sub.type, sub.id, 'approved');
-  rejectBtn.onclick = () => updatePengajuanStatus(sub.type, sub.id, 'rejected');
+  if (!isManagerRole) {
+    approveBtn.onclick = () => updatePengajuanStatus(sub.type, sub.id, 'approved');
+    rejectBtn.onclick = () => updatePengajuanStatus(sub.type, sub.id, 'rejected');
+  }
 }
 
 window.viewPengajuanDetail = function(id) {
@@ -767,15 +798,21 @@ window.viewPengajuanDetail = function(id) {
         var totalGrand = 0;
         var rowsGaji = '';
         employees.forEach((emp, idx) => {
-            let empKey = emp.id != null ? emp.id : idx;
+            // empKeyAbsensi: key historis untuk lookup `RBM_ABSENSI_DATA` (tanpa prefix).
+            const empKeyAbsensi = emp && emp.id != null ? emp.id : idx;
+            // empKeyGaji: key rekap yang disimpan ke `RBM_GAJI_...` (pakai prefix id_/name_/idx_).
+            const empKeyGaji = (emp && emp.id != null && emp.id !== '') ? ('id_' + String(emp.id))
+                : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
+
             let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
             dates.forEach(d => {
-                const key = `${d.toISOString().split('T')[0]}_${empKey}`;
+                const key = `${d.toISOString().split('T')[0]}_${empKeyAbsensi}`;
                 const status = absensiData[key] || '';
                 let countKey = status === 'O' ? 'OFF' : status;
                 if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
             });
-            const pData = gajiData[empKey] || {};
+
+            const pData = gajiData[empKeyGaji] || gajiData[empKeyAbsensi] || gajiData[idx] || {};
             const bank = emp.bank || '-';
             const noRek = emp.noRek || '-';
             const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
@@ -1072,11 +1109,19 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
 
         if (snap.employees && snap.gajiData && snap.absensiData) {
             let snapEmp = snap.employees.find(e => e.name === emp.nama || e.id == emp.empId);
-            let empKey = snapEmp ? (snapEmp.id != null ? snapEmp.id : snap.employees.indexOf(snapEmp)) : emp.empId;
+            // empKeyAbsensi: key historis untuk lookup RBM_ABSENSI_DATA (tanpa prefix).
+            let empKeyAbsensi = snapEmp ? (snapEmp.id != null ? snapEmp.id : snap.employees.indexOf(snapEmp)) : emp.empId;
+            // empKeyGaji: key rekap untuk lookup RBM_GAJI_... (pakai prefix id_/name_/idx_).
+            const empKeyGaji = snapEmp
+                ? (snapEmp.id != null ? ('id_' + String(snapEmp.id))
+                    : (snapEmp.name ? ('name_' + String(snapEmp.name).replace(/[.#$\[\]]/g, '_'))
+                        : ('idx_' + String(snap.employees.indexOf(snapEmp)))))
+                : null;
             
             if (snapEmp) {
                 gajiPokok = parseInt(snapEmp.gajiPokok) || 0;
-                const pData = snap.gajiData[empKey] || {};
+                const pData = (empKeyGaji && snap.gajiData && snap.gajiData[empKeyGaji]) ? snap.gajiData[empKeyGaji]
+                    : (snap.gajiData && (snap.gajiData[empKeyAbsensi] || snap.gajiData[snap.employees.indexOf(snapEmp)])) || {};
                 potHari = parseFloat(pData.potHari) || 0;
                 jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
                 hutang = parseInt(pData.hutang) || 0;
@@ -1087,7 +1132,7 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 const end = new Date(d.periodEnd);
                 while(curr <= end) {
                     const dateKey = curr.toISOString().split('T')[0];
-                    const absKey = `${dateKey}_${empKey}`;
+                    const absKey = `${dateKey}_${empKeyAbsensi}`;
                     if (snap.absensiData[absKey] === 'H') hkAktual++;
                     curr.setDate(curr.getDate() + 1);
                 }
@@ -1309,6 +1354,34 @@ window.confirm = function(msg) {
 <script src="rbm-pro-storage.js"></script>
 <script src="firebase-storage.js"></script>
 <script src="rbm-pro.js"></script>
+<script>
+// Auto-select jenis pengajuan dari URL agar tombol dari halaman lain langsung membuka form yang sesuai.
+(function(){
+  try {
+    var params = new URLSearchParams(window.location.search || '');
+    var jenis = params.get('jenis') || params.get('pengajuanJenis') || params.get('tambah');
+    if (!jenis) return;
+
+    var select = document.getElementById('jenis_pengajuan');
+    if (!select) return;
+    select.value = jenis;
+
+    // Pastikan fungsi createPengajuanForm sudah ter-load dari rbm-pro.js.
+    var attempts = 0;
+    var t = setInterval(function(){
+      attempts++;
+      try {
+        if (typeof createPengajuanForm === 'function') {
+          createPengajuanForm();
+          clearInterval(t);
+          return;
+        }
+      } catch(e) {}
+      if (attempts > 30) clearInterval(t);
+    }, 100);
+  } catch(e) {}
+})();
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
