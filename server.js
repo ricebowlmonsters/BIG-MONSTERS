@@ -589,6 +589,36 @@ app.get('/api/pembukuan', async (req, res) => {
             .filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k))
             .sort();
 
+        let saldoAwal = 0;
+        let totalCashMasuk = 0;
+        let totalKasKeluar = 0;
+        
+        for (const d of dateKeys) {
+            const node = outletNode[d] || {};
+            const kasMasuk = Array.isArray(node.kasMasuk) ? node.kasMasuk : [];
+            const kasKeluar = Array.isArray(node.kasKeluar) ? node.kasKeluar : [];
+            
+            if (from && d < from) {
+                for (const km of kasMasuk) {
+                    if (km?.keterangan && String(km.keterangan).toUpperCase() === 'CASH') {
+                        saldoAwal += parseFloat(km.fisik) || 0;
+                    }
+                }
+                for (const kk of kasKeluar) {
+                    saldoAwal -= parseFloat(kk.setor) || 0;
+                }
+            } else if ((!from || d >= from) && (!to || d <= to)) {
+                for (const km of kasMasuk) {
+                    if (km?.keterangan && String(km.keterangan).toUpperCase() === 'CASH') {
+                        totalCashMasuk += parseFloat(km.fisik) || 0;
+                    }
+                }
+                for (const kk of kasKeluar) {
+                    totalKasKeluar += parseFloat(kk.setor) || 0;
+                }
+            }
+        }
+
         const filteredDates = dateKeys.filter(d => (!from || d >= from) && (!to || d <= to));
         const totalDays = filteredDates.length;
         const totalPages = Math.max(1, Math.ceil(totalDays / daysPerPage));
@@ -613,7 +643,8 @@ app.get('/api/pembukuan', async (req, res) => {
 
         res.json({
             meta: { page, daysPerPage, totalDays, totalPages },
-            data: days
+            data: days,
+            summary: { saldoAwal, totalCashMasuk, totalKasKeluar, saldoAkhir: saldoAwal + totalCashMasuk - totalKasKeluar }
         });
     } catch (e) {
         res.status(500).json({ error: true, message: e.message || String(e) });

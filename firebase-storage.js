@@ -1478,17 +1478,12 @@
     // [FIX PERFORMA/STRUKTUR] hanya baca format per-outlet (hapus jalur flat)
     var path = getPembukuanPath(outletId);
     var query = db.ref(path);
-    if (tglAwal && tglAkhir) {
-        var dObjPath = new Date(tglAwal);
-        dObjPath.setMonth(dObjPath.getMonth() - 1);
-        var startBulanLaluPath = dObjPath.getFullYear() + '-' + ('0' + (dObjPath.getMonth() + 1)).slice(-2) + '-01';
-        query = query.orderByKey().startAt(startBulanLaluPath).endAt(tglAkhir);
-    } else if (tglAkhir) {
+    if (tglAkhir) {
         query = query.orderByKey().endAt(tglAkhir);
     }
     return query.once('value').then(function(snap) {
       var all = snap.val();
-      return parsePembukuanAll(all, tglAwal, tglAkhir);
+      return parsePembukuanAll(all, null, tglAkhir); // Kirim null agar semua histori terambil untuk kalkulasi saldo awal
     }).catch(function() { return []; });
   }
 

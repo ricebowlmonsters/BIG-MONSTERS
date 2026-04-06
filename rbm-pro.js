@@ -654,9 +654,6 @@ function savePembukuanToJpg() {
                 p.kasMasuk.forEach(m => {
                     if (m.keterangan && m.keterangan.toUpperCase() === 'CASH') {
                         let fisikVal = parseFloat(m.fisik) || 0;
-                        if (m.keterangan.toUpperCase() === 'VCR') {
-                            fisikVal = (parseFloat(m.vcr) || 0) * 20000;
-                        }
                         saldoAwalCashMasuk += fisikVal;
                     }
                 });
@@ -3396,11 +3393,10 @@ function loadPembukuanData() {
                     const meta = result.meta || {};
                     const totalPages = meta.totalPages || 1;
                     const days = Array.isArray(result.data) ? result.data : [];
+                    const summary = result.summary || { saldoAwal: 0, totalCashMasuk: 0, totalKasKeluar: 0, saldoAkhir: 0 };
 
                     // Render tabel ringan: kasMasuk + subtotal + kasKeluar (tanpa foto base64)
                     let html = '';
-                    let subtotalMasuk = 0;
-                    let subtotalKeluar = 0;
 
                     days.forEach(function(day) {
                         const tgl = day.tanggal || '';
@@ -3429,7 +3425,6 @@ function loadPembukuanData() {
                                 subCatatan += catatanVal;
                                 subFisik += fisikVal;
                                 subSelisih += selisihVal;
-                                if (ket && ket.toString().toUpperCase() === 'CASH') subtotalMasuk += fisikVal;
 
                                 html += '<tr>';
                                 if (i === 0) {
@@ -3465,7 +3460,6 @@ function loadPembukuanData() {
                         if (kasKeluar.length > 0) {
                             kasKeluar.forEach(function(kk) {
                                 const setor = parseFloat(kk.setor) || 0;
-                                subtotalKeluar += setor;
                                 html += `
                                     <tr style="background-color: #d1fae5;">
                                         <td style="vertical-align: middle; text-align: center; background-color: #d1fae5; font-weight: 500;">${tgl}</td>
@@ -3501,13 +3495,11 @@ function loadPembukuanData() {
                         <button class="btn btn-secondary" ${(page === totalPages) ? 'disabled' : ''} onclick="window._pbServerPage=(window._pbServerPage||1)+1; loadPembukuanData()">Next ➡️</button>
                     `;
 
-                    // Summary (subtotal halaman; saldo awal historis tidak dihitung di jalur cepat ini)
-                    const saldoAwal = 0;
-                    const saldoAkhir = saldoAwal + subtotalMasuk - subtotalKeluar;
-                    document.getElementById("pembukuan_saldo_awal").textContent = formatRupiah(saldoAwal);
-                    document.getElementById("pembukuan_total_cash").textContent = formatRupiah(subtotalMasuk);
-                    document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(subtotalKeluar);
-                    document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(saldoAkhir);
+                    // Summary mengambil data dari backend
+                    document.getElementById("pembukuan_saldo_awal").textContent = formatRupiah(summary.saldoAwal);
+                    document.getElementById("pembukuan_total_cash").textContent = formatRupiah(summary.totalCashMasuk);
+                    document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(summary.totalKasKeluar);
+                    document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(summary.saldoAkhir);
                     summaryEl.style.display = 'grid';
                     if (typeof window.showSyncIndicator === 'function') window.showSyncIndicator();
                 }).catch(function(err) {
@@ -3537,9 +3529,6 @@ function loadPembukuanData() {
                     p.kasMasuk.forEach(km => {
                         if (km.keterangan && km.keterangan.toUpperCase() === 'CASH') {
                             let fisikVal = parseFloat(km.fisik) || 0;
-                            if (km.keterangan.toUpperCase() === 'VCR') {
-                                fisikVal = (parseFloat(km.vcr) || 0) * 20000;
-                            }
                             saldoAwalCashMasuk += fisikVal;
                         }
                     });
@@ -3959,13 +3948,28 @@ function exportPembukuanToExcel() {
     pending = Array.isArray(pending) ? pending : [];
   let rows = [];
 
+  let saldoAwalCashMasuk = 0;
+  let saldoAwalKasKeluar = 0;
   let totalCashMasuk = 0;
   let totalKasKeluar = 0;
   let totalFisikSheet = 0;
 
   pending.forEach((item) => {
       const p = item.payload;
-      if (p.tanggal >= tglAwal && p.tanggal <= tglAkhir) {
+      if (p.tanggal < tglAwal) {
+          if (p.kasMasuk && p.kasMasuk.length > 0) {
+              p.kasMasuk.forEach(km => {
+                  if (km.keterangan && km.keterangan.toUpperCase() === 'CASH') {
+                      saldoAwalCashMasuk += parseFloat(km.fisik) || 0;
+                  }
+              });
+          }
+          if (p.kasKeluar && p.kasKeluar.length > 0) {
+              p.kasKeluar.forEach(kk => {
+                  saldoAwalKasKeluar += parseFloat(kk.setor) || 0;
+              });
+          }
+      } else if (p.tanggal >= tglAwal && p.tanggal <= tglAkhir) {
           if (p.kasMasuk && p.kasMasuk.length > 0) {
               p.kasMasuk.forEach((km) => {
                   let fisikVal = parseFloat(km.fisik) || 0;
@@ -4025,7 +4029,8 @@ function exportPembukuanToExcel() {
       }
   });
 
-  totalFisikSheet = totalCashMasuk - totalKasKeluar;
+  const saldoAwal = saldoAwalCashMasuk - saldoAwalKasKeluar;
+  totalFisikSheet = saldoAwal + totalCashMasuk - totalKasKeluar;
 
   const grouped = {};
   rows.forEach(r => {
@@ -4085,6 +4090,10 @@ function exportPembukuanToExcel() {
   xml += '  </Row>\n';
   
   xml += '  <Row>\n';
+  xml += `   <Cell ss:StyleID="sSummaryLabel" ss:MergeAcross="1"><Data ss:Type="String">Saldo Awal</Data></Cell>\n`;
+  xml += `   <Cell ss:StyleID="sSummaryValue"><Data ss:Type="String">${esc(formatRupiah(saldoAwal))}</Data></Cell>\n`;
+  xml += '  </Row>\n';
+  xml += '  <Row>\n';
   xml += `   <Cell ss:StyleID="sSummaryLabel" ss:MergeAcross="1"><Data ss:Type="String">Total Cash Masuk (G4)</Data></Cell>\n`;
   xml += `   <Cell ss:StyleID="sSummaryValue"><Data ss:Type="String">${esc(formatRupiah(totalCashMasuk))}</Data></Cell>\n`;
   xml += '  </Row>\n';
@@ -4093,7 +4102,7 @@ function exportPembukuanToExcel() {
   xml += `   <Cell ss:StyleID="sSummaryValue"><Data ss:Type="String">${esc(formatRupiah(totalKasKeluar))}</Data></Cell>\n`;
   xml += '  </Row>\n';
   xml += '  <Row>\n';
-  xml += `   <Cell ss:StyleID="sSummaryLabel" ss:MergeAcross="1"><Data ss:Type="String">Total Fisik (Sheet)</Data></Cell>\n`;
+  xml += `   <Cell ss:StyleID="sSummaryLabel" ss:MergeAcross="1"><Data ss:Type="String">Saldo Akhir (Total Fisik)</Data></Cell>\n`;
   xml += `   <Cell ss:StyleID="sSummaryValue"><Data ss:Type="String">${esc(formatRupiah(totalFisikSheet))}</Data></Cell>\n`;
   xml += '  </Row>\n';
   
