@@ -1,8 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <base target="_top">
   <meta charset="UTF-8">
+  <script>
+  (function(){
+    var b = document.createElement('base');
+    b.target = (location.protocol === 'file:') ? '_self' : '_top';
+    document.head.appendChild(b);
+  })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RBM Pro</title>
   <link rel="stylesheet" href="rbm-pro.css">
@@ -98,7 +104,7 @@
       <button type="button" class="btn btn-secondary" onclick="exportPembukuanToExcel()" style="background: #198754; color: white; border-color: #198754; margin-left: 8px;">Export Excel</button>
       <input type="file" id="import_pembukuan_file" accept=".xlsx,.xls" style="display:none" onchange="processImportPembukuanExcel(this)">
       <button type="button" class="btn btn-secondary" onclick="printPembukuanReport()" style="background: #0d6efd; color: white; border-color: #0d6efd; margin-left: 8px;">Print</button>
-      <button type="button" class="btn btn-secondary" onclick="savePembukuanToJpg()" style="background: #6610f2; color: white; border-color: #6610f2; margin-left: 8px;">Save JPG (1 Hari)</button>
+      <button type="button" class="btn btn-secondary" onclick="savePembukuanToJpg()" style="background: #6610f2; color: white; border-color: #6610f2; margin-left: 8px;">Save JPG (1 Bulan)</button>
     </div>
 
     <div class="summary-grid" id="pembukuan_summary" style="display:none">

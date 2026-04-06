@@ -502,6 +502,9 @@
             }
           });
 
+          function writeSummary(p) {
+            return db.ref(summaryPath).set(p).then(function() { return p; });
+          }
           var payload = {
             saldoAwal: saldoAwal,
             totalDebit: totalDebit,
@@ -509,7 +512,33 @@
             saldoAkhir: runningSaldo,
             updatedAt: firebase.database.ServerValue.TIMESTAMP
           };
-          return db.ref(summaryPath).set(payload).then(function() { return payload; });
+          // [FIX] List halaman pakai petty_cash_index; kalau node per-tanggal kosong/tidak sinkron, agregasi dari index.
+          if (totalDebit > 0 || totalKredit > 0) {
+            return writeSummary(payload);
+          }
+          var idxPath = getPettyCashIndexMonthPath(outletId, ym);
+          return db.ref(idxPath).once('value').then(function(idxSnap) {
+            var idxObj = idxSnap.val();
+            var td = 0, tk = 0;
+            if (idxObj && typeof idxObj === 'object') {
+              Object.keys(idxObj).forEach(function(k) {
+                var r = idxObj[k] || {};
+                td += parseFloat(r.debit || 0) || 0;
+                tk += parseFloat(r.kredit || 0) || 0;
+              });
+            }
+            if (td === 0 && tk === 0) {
+              return writeSummary(payload);
+            }
+            var run = saldoAwal - td + tk;
+            return writeSummary({
+              saldoAwal: saldoAwal,
+              totalDebit: td,
+              totalKredit: tk,
+              saldoAkhir: run,
+              updatedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+          });
         });
       });
   }
@@ -521,8 +550,19 @@
     var path = getPettyCashMonthSummaryPath(outletId, ym);
     return db.ref(path).once('value').then(function(snap) {
       var v = snap.val();
-      if (v && typeof v === 'object' && (v.totalDebit != null || v.totalKredit != null || v.saldoAkhir != null)) return v;
-      // kalau belum ada summary, build sekali (termasuk build bulan sebelumnya jika perlu)
+      if (v && typeof v === 'object' && (v.totalDebit != null || v.totalKredit != null || v.saldoAkhir != null)) {
+        var td = parseFloat(v.totalDebit);
+        var tk = parseFloat(v.totalKredit);
+        if (!isFinite(td)) td = 0;
+        if (!isFinite(tk)) tk = 0;
+        var sak = parseFloat(v.saldoAkhir);
+        var saw = parseFloat(v.saldoAwal);
+        if (!isFinite(saw)) saw = 0;
+        if (td !== 0 || tk !== 0) return v;
+        // debit & kredit 0: bisa bulan tanpa transaksi (saldo tetap) atau summary salah yang tersimpan {0,0,0}
+        if (isFinite(sak) && (sak !== 0 || saw !== 0)) return v;
+        return buildPettyCashMonthSummary(ym, outletId, 0);
+      }
       return buildPettyCashMonthSummary(ym, outletId, 0);
     }).catch(function() {
       return buildPettyCashMonthSummary(ym, outletId, 0).catch(function() {
@@ -829,16 +869,14 @@
     var ym = (tglAwalStr && /^\d{4}-\d{2}-\d{2}$/.test(tglAwalStr)) ? tglAwalStr.slice(0, 7) : '';
     if (ym && /^\d{4}-\d{2}$/.test(ym)) {
       var idxPath = getPettyCashIndexMonthPath(outletId, ym);
-      var idxQ = db.ref(idxPath).orderByKey();
-      if (cursor && cursor.key) {
-        if (desc) idxQ = idxQ.endAt(cursor.key);
-        else idxQ = idxQ.startAt(cursor.key);
-      }
-      // ambil lebih banyak supaya search tidak cepat habis
-      idxQ = desc ? idxQ.limitToLast(limit * 8) : idxQ.limitToFirst(limit * 8);
+      var summaryPath = getPettyCashMonthSummaryPath(outletId, ym);
 
-      return idxQ.once('value').then(function(snap) {
-        var obj = snap.val();
+      return Promise.all([
+        db.ref(summaryPath).once('value'),
+        db.ref(idxPath).orderByKey().once('value')
+      ]).then(function(snaps) {
+        var sumObj = snaps[0].val() || {};
+        var obj = snaps[1].val();
         if (!obj || typeof obj !== 'object') return null; // fallback ke slow path
 
         // [FIX] Kalau index masih pakai format lama (i tidak di-padding), cursor berbasis orderByKey bisa loncat.
@@ -853,40 +891,36 @@
         }
 
         var keys = keysRaw.sort();
-        if (desc) keys.reverse();
-        // cursor inclusive -> skip satu
-        if (cursor && cursor.key) {
-          var pos = keys.indexOf(cursor.key);
-          if (pos >= 0) keys = keys.slice(pos + 1);
-        }
-
-        var rows = [];
+        var saldoAwal = parseFloat(sumObj.saldoAwal) || 0;
+        var runningSaldo = saldoAwal;
+        var finalSaldoAkhir = saldoAwal;
+        
+        var allRows = [];
         var totalDebit = 0, totalKredit = 0;
-        var runningSaldo = 0;
-        var nextCursor = null;
 
+        // Iterasi berurutan dari awal bulan untuk menghitung saldo berjalan yang akurat
         for (var i = 0; i < keys.length; i++) {
           var k = keys[i];
           var r = obj[k] || {};
           var tgl = normalizeDateKeyToYyyyMmDd(r.tanggal || '');
-          if (tglAwalStr && tgl && tgl < tglAwalStr) continue;
-          if (tglAkhirStr && tgl && tgl > tglAkhirStr) continue;
-          var nama = (r.nama || '').toString();
-          if (search && nama.toLowerCase().indexOf(search) < 0) continue;
+          
           var debit = parseFloat(r.debit || 0) || 0;
           var kredit = parseFloat(r.kredit || 0) || 0;
-          // Index petty_cash_index menyimpan saldo per transaksi, jadi pakai langsung.
-          var saldoVal = parseFloat(r.saldo);
-          if (!isFinite(saldoVal)) {
-            runningSaldo = (parseFloat(r.saldo) || runningSaldo) - debit + kredit;
-            saldoVal = runningSaldo;
-          } else {
-            runningSaldo = saldoVal;
-          }
+          
+          runningSaldo = runningSaldo - debit + kredit;
+          
+          if (tglAkhirStr && tgl && tgl > tglAkhirStr) continue;
+          
+          finalSaldoAkhir = runningSaldo;
+          
+          if (tglAwalStr && tgl && tgl < tglAwalStr) continue;
+          var nama = (r.nama || '').toString();
+          if (search && nama.toLowerCase().indexOf(search) < 0) continue;
+          
           totalDebit += debit;
           totalKredit += kredit;
-          rows.push({
-            no: rows.length + 1,
+          
+          allRows.push({
             tanggal: r.tanggal || tgl,
             nama: nama,
             jumlah: r.jumlah,
@@ -894,20 +928,37 @@
             harga: r.harga,
             debit: debit,
             kredit: kredit,
-            saldo: saldoVal,
+            saldo: runningSaldo,
             hasFoto: false,
             foto: '',
             _firebaseDate: r.refDate || tgl,
             _firebaseIndexInDate: (r.refIndex != null ? r.refIndex : 0),
             _indexKey: k
           });
-          nextCursor = { key: k };
-          if (rows.length >= limit) break;
+        }
+
+        if (desc) allRows.reverse();
+
+        var startIndex = 0;
+        if (cursor && cursor.key) {
+          var pos = allRows.findIndex(function(x) { return x._indexKey === cursor.key; });
+          if (pos >= 0) startIndex = pos + 1;
+        }
+
+        var pageRows = allRows.slice(startIndex, startIndex + limit);
+        
+        for (var j = 0; j < pageRows.length; j++) {
+            pageRows[j].no = startIndex + j + 1;
+        }
+
+        var nextCursor = null;
+        if (startIndex + limit < allRows.length) {
+          nextCursor = { key: pageRows[pageRows.length - 1]._indexKey };
         }
 
         return {
-          data: rows,
-          summary: { totalDebit: totalDebit, totalKredit: totalKredit, saldoAkhir: rows.length ? (rows[rows.length - 1].saldo || 0) : 0, saldoAwal: 0 },
+          data: pageRows,
+          summary: { totalDebit: totalDebit, totalKredit: totalKredit, saldoAkhir: finalSaldoAkhir, saldoAwal: saldoAwal },
           page: { limit: limit, nextCursor: nextCursor }
         };
       }).then(function(res) {
@@ -1180,13 +1231,61 @@
       }).then(function() { return '✅ Transaksi petty cash disimpan di Firebase.'; });
   }
 
+  /** Setelah ubah/hapus transaksi di petty_cash/{tanggal}, bangun ulang entri index bulan ini agar list (fast path) konsisten. */
+  function syncPettyCashIndexForDate(outletId, dateStr) {
+    if (!init()) return Promise.resolve();
+    var d = normalizeDateKeyToYyyyMmDd(dateStr) || '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return Promise.resolve();
+    var ym = d.slice(0, 7);
+    var idxBase = getPettyCashIndexMonthPath(outletId, ym);
+    var datePath = getPettyCashDatePath(outletId, d);
+    return db.ref(idxBase).once('value').then(function(idxSnap) {
+      var idxObj = idxSnap.val() || {};
+      var updates = {};
+      Object.keys(idxObj).forEach(function(k) {
+        if (k.indexOf(d + '_') === 0) updates[idxBase + '/' + k] = null;
+      });
+      return db.ref(datePath).once('value').then(function(dateSnap) {
+        var node = dateSnap.val();
+        var arr = [];
+        if (node && Array.isArray(node.transactions)) arr = node.transactions.slice();
+        else if (node && node.transactions && typeof node.transactions === 'object') arr = Object.values(node.transactions);
+        for (var i = 0; i < arr.length; i++) {
+          var it = arr[i] || {};
+          var refIndexPadded = ('000000' + i).slice(-6);
+          var key = d + '_' + refIndexPadded;
+          var debit = parseFloat(it.debit || it.keluar || 0) || 0;
+          var kredit = parseFloat(it.kredit || it.masuk || 0) || 0;
+          updates[idxBase + '/' + key] = {
+            tanggal: d,
+            nama: (it.nama || '').toString(),
+            jumlah: it.jumlah != null ? it.jumlah : '',
+            satuan: it.satuan || '',
+            harga: it.harga,
+            debit: debit,
+            kredit: kredit,
+            refDate: d,
+            refIndex: i
+          };
+        }
+        if (Object.keys(updates).length === 0) return Promise.resolve();
+        return db.ref().update(updates).catch(function(e) { console.warn('syncPettyCashIndexForDate', e); });
+      });
+    }).then(function() {
+      try { return buildPettyCashMonthSummary(ym, outletId, 0).catch(function() {}); } catch (e) {}
+    });
+  }
+
   function deletePettyCashByDateAndIndex(dateStr, indexInDate, outletId) {
     if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
     var path = getPettyCashDatePath(outletId, dateStr);
+    var normDate = normalizeDateKeyToYyyyMmDd(dateStr) || dateStr;
     return db.ref(path).once('value').then(function(snap) {
       var node = snap.val();
       var arr = node && Array.isArray(node.transactions) ? node.transactions.slice() : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
-      if (indexInDate < 0 || indexInDate >= arr.length) return Promise.resolve();
+      if (indexInDate < 0 || indexInDate >= arr.length) {
+        return Promise.reject(new Error('Index transaksi tidak valid (data mungkin hanya di index — refresh halaman).'));
+      }
       arr.splice(indexInDate, 1);
       if (arr.length === 0) return db.ref(path).remove();
       return db.ref(path).set({
@@ -1194,6 +1293,8 @@
         transactions: arr,
         createdAt: node.createdAt || firebase.database.ServerValue.TIMESTAMP
       });
+    }).then(function() {
+      return syncPettyCashIndexForDate(outletId, normDate);
     }).then(function() { return '✅ Transaksi petty cash dihapus.'; });
   }
 
@@ -1220,7 +1321,9 @@
     return db.ref(path).once('value').then(function(snap) {
       var node = snap.val();
       var arr = node && Array.isArray(node.transactions) ? node.transactions.slice() : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
-      if (indexInDate < 0 || indexInDate >= arr.length) return Promise.resolve();
+      if (indexInDate < 0 || indexInDate >= arr.length) {
+        return Promise.reject(new Error('Index transaksi tidak valid atau data sumber kosong.'));
+      }
       var existing = arr[indexInDate] || {};
       arr[indexInDate] = {
         tanggal: data.tanggal != null ? data.tanggal : (existing.tanggal || dateStr),
@@ -1242,6 +1345,9 @@
         transactions: arr,
         createdAt: node.createdAt || firebase.database.ServerValue.TIMESTAMP
       });
+    }).then(function() {
+      var nd = normalizeDateKeyToYyyyMmDd(dateStr) || dateStr;
+      return syncPettyCashIndexForDate(outletId, nd);
     }).then(function() { return '✅ Transaksi petty cash diperbarui.'; });
   }
 

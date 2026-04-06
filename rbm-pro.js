@@ -24,7 +24,12 @@
   // Hanya Owner yang boleh menghapus/mengedit data yang sudah masuk; Manager hanya lihat & input baru
   window.rbmOnlyOwnerCanEditDelete = function() {
     if (_cachedOwnerCheck !== null) return _cachedOwnerCheck;
-    try { var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); _cachedOwnerCheck = (u.role === 'owner' || (u.username || '').toLowerCase() === 'burhan'); return _cachedOwnerCheck; } catch(e) { return false; }
+    try {
+      var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+      var role = (u.role || '').toString().toLowerCase();
+      _cachedOwnerCheck = (role === 'owner' || role === 'developer' || (u.username || '').toLowerCase() === 'burhan');
+      return _cachedOwnerCheck;
+    } catch(e) { return false; }
   };
   function setVal(id, val) { var e = document.getElementById(id); if (e) e.value = val; }
   function setPersistedVal(id, val) { 
@@ -620,10 +625,12 @@ function savePembukuanToJpg() {
     
     if (!monthVal) { alert("Pilih bulan terlebih dahulu."); return; }
     
-    // Gunakan tanggal awal sebagai target
-    const targetDate = monthVal + '-01';
-    
-    if(!confirm("Fitur Save JPG akan mencetak laporan harian untuk tanggal pertama bulan yang dipilih: " + targetDate + ". Lanjutkan?")) return;
+    if(!confirm("Fitur Save JPG akan mencetak laporan bulanan untuk: " + monthVal + ". Lanjutkan?")) return;
+
+    const [year, month] = monthVal.split('-');
+    const tglAwal = `${year}-${month}-01`;
+    const lastDay = new Date(year, parseInt(month, 10), 0).getDate();
+    const tglAkhir = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
 
     // Ambil data
     let pending = window._lastPembukuanPending;
@@ -632,73 +639,135 @@ function savePembukuanToJpg() {
     }
     if (!pending) pending = [];
 
-    // [BARU] Hitung Saldo Awal & Total Hari Ini (Kumulatif)
-    let saldoAwal = 0;
-    let totalMasuk = 0;
-    let totalKeluar = 0;
-    let dayData = null;
+    // Hitung Saldo Awal & Total Bulan Ini
+    let saldoAwalCashMasuk = 0;
+    let saldoAwalKasKeluar = 0;
+    const dataPeriode = [];
 
     pending.forEach(item => {
         const p = item.payload;
         if (!p || !p.tanggal) return;
 
-        if (p.tanggal < targetDate) {
-            // Akumulasi Saldo Awal (transaksi sebelum tanggal target)
+        if (p.tanggal < tglAwal) {
+            // Akumulasi Saldo Awal
             if (p.kasMasuk) {
                 p.kasMasuk.forEach(m => {
-                    let fisikVal = parseFloat(m.fisik) || 0;
-                    if (m.keterangan && m.keterangan.toUpperCase() === 'VCR') {
-                        fisikVal = (parseFloat(m.vcr) || 0) * 20000;
+                    if (m.keterangan && m.keterangan.toUpperCase() === 'CASH') {
+                        let fisikVal = parseFloat(m.fisik) || 0;
+                        if (m.keterangan.toUpperCase() === 'VCR') {
+                            fisikVal = (parseFloat(m.vcr) || 0) * 20000;
+                        }
+                        saldoAwalCashMasuk += fisikVal;
                     }
-                    saldoAwal += fisikVal;
                 });
             }
             if (p.kasKeluar) {
                 p.kasKeluar.forEach(k => {
-                    saldoAwal -= parseFloat(k.setor) || 0;
+                    saldoAwalKasKeluar += parseFloat(k.setor) || 0;
                 });
             }
-        } else if (p.tanggal === targetDate) {
-            // Data hari ini
-            dayData = item;
+        } else if (p.tanggal >= tglAwal && p.tanggal <= tglAkhir) {
+            // Data bulan ini
+            dataPeriode.push(item);
         }
     });
     
-    if (!dayData && saldoAwal === 0) {
-        alert("Tidak ada data untuk tanggal " + targetDate);
+    const saldoAwal = saldoAwalCashMasuk - saldoAwalKasKeluar;
+
+    let totalCashMasuk = 0;
+    let totalKasKeluar = 0;
+    let rows = [];
+
+    dataPeriode.forEach((item, parentIdx) => {
+        const p = item.payload;
+        if (p.kasMasuk && p.kasMasuk.length > 0) {
+            p.kasMasuk.forEach((km, subIdx) => {
+                let fisikVal = parseFloat(km.fisik) || 0;
+                let catatanVal = parseFloat(km.catatan) || 0;
+                let fisikDisplay = formatRupiah(fisikVal);
+                let selisihVal = 0;
+                
+                if(km.keterangan && km.keterangan.toUpperCase() === 'VCR') {
+                    const jmlVcr = parseFloat(km.vcr) || 0;
+                    fisikVal = jmlVcr * 20000;
+                    fisikDisplay = `${km.vcr} (VCR)`;
+                } else {
+                    selisihVal = fisikVal - catatanVal;
+                }
+
+                if (km.keterangan && km.keterangan.toUpperCase() === 'CASH') totalCashMasuk += fisikVal;
+
+                rows.push({
+                    tanggal: p.tanggal,
+                    keterangan: km.keterangan,
+                    catatan: km.catatan ? formatRupiah(km.catatan) : '-',
+                    fisik: fisikDisplay,
+                    selisih: (km.fisik || km.catatan) ? formatRupiah(selisihVal) : '-',
+                    catatanVal: catatanVal,
+                    fisikVal: fisikVal,
+                    selisihVal: selisihVal,
+                    type: 'kasMasuk'
+                });
+            });
+        }
+        if (p.kasKeluar && p.kasKeluar.length > 0) {
+            p.kasKeluar.forEach((kk, subIdx) => {
+                const setor = parseFloat(kk.setor) || 0;
+                totalKasKeluar += setor;
+
+                rows.push({
+                    tanggal: p.tanggal,
+                    keterangan: kk.keterangan,
+                    catatan: '-',
+                    fisik: formatRupiah(kk.setor),
+                    selisih: '-',
+                    catatanVal: 0,
+                    fisikVal: setor,
+                    selisihVal: 0,
+                    type: 'kasKeluar'
+                });
+            });
+        }
+    });
+
+    const saldoAkhir = saldoAwal + totalCashMasuk - totalKasKeluar;
+
+    if (rows.length === 0 && saldoAwal === 0) {
+        alert("Tidak ada data untuk bulan " + monthVal);
         return;
     }
 
-    // [BARU] Hitung subtotal untuk hari ini agar sesuai dengan tampilan tabel
-    let subtotalCatatan = 0;
-    let subtotalFisik = 0;
-    let subtotalSelisih = 0;
-    let subtotalKeluar = 0;
-    const p = dayData ? dayData.payload : { kasMasuk: [], kasKeluar: [] };
-
-    (p.kasMasuk || []).forEach(m => {
-        const catatanVal = parseFloat(m.catatan) || 0;
-        let fisikVal = parseFloat(m.fisik) || 0;
-        if (m.keterangan && m.keterangan.toUpperCase() === 'VCR') {
-            fisikVal = (parseFloat(m.vcr) || 0) * 20000;
+    const grouped = {};
+    rows.forEach(r => {
+        if (!grouped[r.tanggal]) { 
+            grouped[r.tanggal] = { masuk: [], keluar: [], subtotalCatatan: 0, subtotalFisik: 0, subtotalSelisih: 0 }; 
         }
-        subtotalCatatan += catatanVal;
-        subtotalFisik += fisikVal;
-        subtotalSelisih += (fisikVal - catatanVal);
-    });
-    (p.kasKeluar || []).forEach(k => {
-        subtotalKeluar += parseFloat(k.setor) || 0;
+        if (r.type === 'kasMasuk') {
+            grouped[r.tanggal].masuk.push(r);
+            grouped[r.tanggal].subtotalCatatan += r.catatanVal || 0;
+            grouped[r.tanggal].subtotalFisik += r.fisikVal || 0;
+            grouped[r.tanggal].subtotalSelisih += r.selisihVal || 0;
+        } else {
+            grouped[r.tanggal].keluar.push(r);
+        }
     });
 
-    const saldoAkhir = saldoAwal + subtotalFisik - subtotalKeluar;
+    let outletName = 'Semua Outlet';
+    const outletId = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+    if (outletId) {
+        try {
+            const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+            outletName = names[outletId] || (outletId.charAt(0).toUpperCase() + outletId.slice(1));
+        } catch(e) {}
+    }
 
     // Buat elemen HTML temporary untuk di-capture
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:absolute; top:-9999px; left:-9999px; width:600px; background:white; padding:30px; font-family:sans-serif; color:#333; border:1px solid #ccc;';
+    wrap.style.cssText = 'position:absolute; top:-9999px; left:-9999px; width:800px; background:white; padding:30px; font-family:sans-serif; color:#333; border:1px solid #ccc;';
     
     let html = `
-        <h2 style="text-align:center; margin:0 0 10px 0; color:#1e40af;">Laporan Pembukuan Harian</h2>
-        <p style="text-align:center; margin:0 0 20px 0; font-size:14px; color:#666;">Tanggal: ${targetDate}</p>
+        <h2 style="text-align:center; margin:0 0 10px 0; color:#1e40af;">Laporan Pembukuan Bulanan - ${outletName}</h2>
+        <p style="text-align:center; margin:0 0 20px 0; font-size:14px; color:#666;">Periode: ${monthVal}</p>
         
         <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:10px; margin-bottom:20px; background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
             <div style="text-align:center;">
@@ -706,12 +775,12 @@ function savePembukuanToJpg() {
                 <div style="font-size:14px; font-weight:bold; color:#6b7280;">${formatRupiah(saldoAwal)}</div>
             </div>
             <div style="text-align:center;">
-                <div style="font-size:11px; color:#666;">Masuk</div>
-                <div style="font-size:14px; font-weight:bold; color:#1e40af;">${formatRupiah(subtotalFisik)}</div>
+                <div style="font-size:11px; color:#666;">Masuk (CASH)</div>
+                <div style="font-size:14px; font-weight:bold; color:#1e40af;">${formatRupiah(totalCashMasuk)}</div>
             </div>
             <div style="text-align:center;">
                 <div style="font-size:11px; color:#666;">Keluar</div>
-                <div style="font-size:14px; font-weight:bold; color:#dc2626;">${formatRupiah(subtotalKeluar)}</div>
+                <div style="font-size:14px; font-weight:bold; color:#dc2626;">${formatRupiah(totalKasKeluar)}</div>
             </div>
             <div style="text-align:center;">
                 <div style="font-size:11px; color:#666;">Saldo Akhir</div>
@@ -722,6 +791,7 @@ function savePembukuanToJpg() {
         <table style="width:100%; border-collapse:collapse; font-size:12px;">
             <thead>
                 <tr style="background:#1e40af; color:white;">
+                    <th style="padding:8px; border:1px solid #ccc;">Tanggal</th>
                     <th style="padding:8px; border:1px solid #ccc;">Keterangan</th>
                     <th style="padding:8px; border:1px solid #ccc;">Catatan</th>
                     <th style="padding:8px; border:1px solid #ccc;">Fisik / Setor</th>
@@ -731,32 +801,55 @@ function savePembukuanToJpg() {
             <tbody>
     `;
 
-    // Render Rows
-    (p.kasMasuk || []).forEach(m => {
-        let fisikVal = parseFloat(m.fisik) || 0;
-        let fisikDisplay = formatRupiah(fisikVal);
-        if (m.keterangan && m.keterangan.toUpperCase() === 'VCR') {
-            fisikVal = (parseFloat(m.vcr) || 0) * 20000;
-            fisikDisplay = `${m.vcr} (VCR)`;
+    Object.keys(grouped).sort().forEach(date => {
+        const group = grouped[date];
+        
+        group.masuk.forEach((r, i) => {
+            html += '<tr>';
+            if (i === 0) {
+                html += `<td rowspan="${group.masuk.length}" style="vertical-align: middle; text-align: center; background-color: #f1f5f9; font-weight: 500; border:1px solid #eee;">${date}</td>`;
+            }
+            html += `
+                <td style="padding:6px; border:1px solid #eee;">${r.keterangan}</td>
+                <td style="padding:6px; border:1px solid #eee; text-align:right;">${r.catatan}</td>
+                <td style="padding:6px; border:1px solid #eee; text-align:right;">${r.fisik}</td>
+                <td style="padding:6px; border:1px solid #eee; text-align:right;">${r.selisih}</td>
+            `;
+            html += '</tr>';
+        });
+        
+        if (group.masuk.length > 0) {
+            html += `
+                <tr style="background: #e2e8f0; font-weight: bold;">
+                    <td colspan="2" style="padding:6px; border:1px solid #eee; text-align: center;">TOTAL ${date}</td>
+                    <td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(group.subtotalCatatan)}</td>
+                    <td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(group.subtotalFisik)}</td>
+                    <td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(group.subtotalSelisih)}</td>
+                </tr>
+            `;
         }
-        let selisihVal = fisikVal - (parseFloat(m.catatan) || 0);
-        html += `<tr><td style="padding:6px; border:1px solid #eee;">${m.keterangan}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(m.catatan)}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${fisikDisplay}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(selisihVal)}</td></tr>`;
-    });
 
-    // [BARU] Tambahkan baris subtotal
-    html += `<tr style="background:#e2e8f0; font-weight:bold;"><td style="padding:6px; border:1px solid #eee; text-align:center;">TOTAL</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(subtotalCatatan)}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(subtotalFisik)}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(subtotalSelisih)}</td></tr>`;
-
-    (p.kasKeluar || []).forEach(k => {
-        html += `<tr style="background:#f0fdf4;"><td style="padding:6px; border:1px solid #eee;">${k.keterangan}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">-</td><td style="padding:6px; border:1px solid #eee; text-align:right;">${formatRupiah(k.setor)}</td><td style="padding:6px; border:1px solid #eee; text-align:right;">-</td></tr>`;
+        group.keluar.forEach((r) => {
+            html += '<tr style="background-color: #f0fdf4;">';
+            html += `<td style="vertical-align: middle; text-align: center; border:1px solid #eee; font-weight: 500;">${date}</td>`;
+            html += `
+                <td style="padding:6px; border:1px solid #eee;">${r.keterangan}</td>
+                <td style="padding:6px; border:1px solid #eee; text-align:right;">-</td>
+                <td style="padding:6px; border:1px solid #eee; text-align:right;">${r.fisik}</td>
+                <td style="padding:6px; border:1px solid #eee; text-align:right;">-</td>
+            `;
+            html += '</tr>';
+        });
     });
 
     html += `</tbody></table>`;
     wrap.innerHTML = html;
     document.body.appendChild(wrap);
 
-    html2canvas(wrap, { scale: 2 }).then(canvas => {
+    html2canvas(wrap, { scale: 1.5 }).then(canvas => {
         const link = document.createElement('a');
-        link.download = `Laporan_Pembukuan_${targetDate}.jpg`;
+        const safeOutletName = outletName.replace(/[^a-zA-Z0-9]/g, '_');
+        link.download = `Laporan_Pembukuan_${safeOutletName}_${monthVal}.jpg`;
         link.href = canvas.toDataURL('image/jpeg', 0.9);
         link.click();
         document.body.removeChild(wrap);
@@ -852,11 +945,10 @@ function savePembukuanToJpg() {
             <button class="btn btn-secondary" ${window._pcCurrentPage === totalPages ? 'disabled' : ''} onclick="window._pcCurrentPage++; window.renderPettyCashPage()">Next ➡️</button>
         `;
 
-        // 5. Update Rekap Saldo
+        // 5. Update Rekap Saldo (Total Kredit = pemasukan bulan ini, bukan saldo awal + kredit)
         summaryEl.style.display = 'grid';
         if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
-        var totalDana = (summary.saldoAwal || 0) + (summary.totalKredit || 0);
-        if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(totalDana);
+        if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(summary.totalKredit || 0);
         if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
         if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
     }
@@ -925,12 +1017,11 @@ function savePembukuanToJpg() {
                 <button class="btn btn-secondary" ${(page === totalPages) ? 'disabled' : ''} onclick="window._pcCurrentPage=(window._pcCurrentPage||1)+1; loadPettyCashData()">Next ➡️</button>
             `;
 
-            // Summary (server)
+            // Summary (server): ledger penuh per outlet di API
             const summary = result.summary || {};
             summaryEl.style.display = 'grid';
             if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
-            var totalDana = (summary.saldoAwal || 0) + (summary.totalKredit || 0);
-            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(totalDana);
+            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(summary.totalKredit || 0);
             if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
             if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
             if (typeof window.showSyncIndicator === 'function') window.showSyncIndicator();
@@ -949,14 +1040,19 @@ function savePembukuanToJpg() {
         const searchNow = (document.getElementById("pc_search") ? (document.getElementById("pc_search").value || '') : '');
         const queryKey = [outlet || '', tglAwal || '', tglAkhir || '', (searchNow || '').trim().toLowerCase(), limit].join('|');
         const ym = (monthVal || '').toString().trim();
+        const cacheKey = (function(){
+          const o = (outlet || '').toString().toLowerCase().replace(/[^a-z0-9_]/g, '_') || 'default';
+          const ym2 = (monthVal || '').toString().trim();
+          const s = (searchNow || '').toString().trim().toLowerCase();
+          return 'rbm_pc_cache_v1|' + o + '|' + ym2 + '|' + encodeURIComponent(s) + '|limit=' + limit;
+        })();
 
-        // Reset paging jika query berubah (ganti outlet/bulan/search)
-        if (window._pcFbQueryKey !== queryKey) {
-          window._pcFbQueryKey = queryKey;
-          window._pcFbCursor = null;
-          window._pcFbPageIndex = 1;
-          window._pcFbPageCursors = [null]; // cursor untuk tiap halaman yang sudah dikunjungi
-        }
+        // [FIX] Setiap Tampilkan Data / Refresh / ganti filter: selalu mulai dari halaman 1.
+        // Jika tidak di-reset, _pcFbCursor dari navigasi "Next" tetap dipakai → tabel kosong/salah & rekap Rp 0.
+        window._pcFbQueryKey = queryKey;
+        window._pcFbCursor = null;
+        window._pcFbPageIndex = 1;
+        window._pcFbPageCursors = [null];
         window._pcFbSearch = searchNow;
 
         // [BARU] Summary per-bulan: ambil dari node ringkas (cepat).
@@ -969,22 +1065,25 @@ function savePembukuanToJpg() {
               totalKredit: parseFloat(ms.totalKredit) || 0,
               saldoAkhir: parseFloat(ms.saldoAkhir) || 0
             };
-            // Tampilkan summary walau list masih paging
+            // Tampilkan summary walau list masih paging (node rbm_pro/petty_cash_month_summary/{outlet}/{YYYY-MM})
             summaryEl.style.display = 'grid';
             if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(window._lastPettyCashSummary.totalDebit || 0);
             if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(window._lastPettyCashSummary.totalKredit || 0);
             if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(window._lastPettyCashSummary.saldoAkhir || 0);
             if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(window._lastPettyCashSummary.saldoAwal || 0);
-          }).catch(function(){});
+            try {
+              var raw = localStorage.getItem(cacheKey);
+              if (raw) {
+                var c = JSON.parse(raw);
+                c.ts = Date.now();
+                c.summary = window._lastPettyCashSummary;
+                localStorage.setItem(cacheKey, JSON.stringify(c));
+              }
+            } catch (e2) {}
+          }).catch(function(e) { try { console.warn('getPettyCashMonthSummary', e); } catch (x) {} });
         }
 
         // Cache lokal: tampil instan saat masuk ulang halaman, lalu refresh di background.
-        const cacheKey = (function(){
-          const o = (outlet || '').toString().toLowerCase().replace(/[^a-z0-9_]/g, '_') || 'default';
-          const ym = (monthVal || '').toString().trim();
-          const s = (searchNow || '').toString().trim().toLowerCase();
-          return 'rbm_pc_cache_v1|' + o + '|' + ym + '|' + encodeURIComponent(s) + '|limit=' + limit;
-        })();
         const cacheTtlMs = 5 * 60 * 1000; // 5 menit
 
         function tryRenderCacheIfFirstPage() {
@@ -1010,8 +1109,7 @@ function savePembukuanToJpg() {
             const summary = cached.summary || {};
             summaryEl.style.display = 'grid';
             if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
-            var totalDana = (summary.saldoAwal || 0) + (summary.totalKredit || 0);
-            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(totalDana);
+            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(summary.totalKredit || 0);
             if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
             if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
           } catch(e) {}
@@ -1020,10 +1118,13 @@ function savePembukuanToJpg() {
         function saveCacheIfFirstPage(result) {
           if (window._pcFbCursor) return;
           try {
+            var sm = (window._lastPettyCashSummary && typeof window._lastPettyCashSummary === 'object')
+              ? window._lastPettyCashSummary
+              : ((result && result.summary) ? result.summary : {});
             localStorage.setItem(cacheKey, JSON.stringify({
               ts: Date.now(),
               data: (result && result.data) ? result.data : [],
-              summary: (result && result.summary) ? result.summary : {}
+              summary: sm || {}
             }));
           } catch(e) {}
         }
@@ -1113,13 +1214,40 @@ function savePembukuanToJpg() {
               paginationEl.innerHTML = html;
             })();
 
-            // summary
-            const summary = window._lastPettyCashSummary || {};
-            summaryEl.style.display = 'grid';
-            if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(summary.totalDebit || 0);
-            if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(summary.totalKredit || 0);
-            if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(summary.saldoAkhir || 0);
-            if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(summary.saldoAwal || 0);
+            // Jika tabel ada nominal tapi rekap masih 0 (race / summary DB lama), ambil ulang ringkasan bulan
+            var rowsCheck = result && result.data ? result.data : [];
+            var hasNom = rowsCheck.some(function(r) {
+              return (parseFloat(r.debit) || 0) !== 0 || (parseFloat(r.kredit) || 0) !== 0;
+            });
+            var sum0 = window._lastPettyCashSummary && (parseFloat(window._lastPettyCashSummary.totalDebit) || 0) === 0
+              && (parseFloat(window._lastPettyCashSummary.totalKredit) || 0) === 0
+              && (parseFloat(window._lastPettyCashSummary.saldoAkhir) || 0) === 0
+              && (parseFloat(window._lastPettyCashSummary.saldoAwal) || 0) === 0;
+            if (hasNom && sum0 && FirebaseStorage.getPettyCashMonthSummary && /^\d{4}-\d{2}$/.test(ym)) {
+              FirebaseStorage.getPettyCashMonthSummary(ym, outlet).then(function(ms) {
+                ms = ms && typeof ms === 'object' ? ms : {};
+                window._lastPettyCashSummary = {
+                  saldoAwal: parseFloat(ms.saldoAwal) || 0,
+                  totalDebit: parseFloat(ms.totalDebit) || 0,
+                  totalKredit: parseFloat(ms.totalKredit) || 0,
+                  saldoAkhir: parseFloat(ms.saldoAkhir) || 0
+                };
+                summaryEl.style.display = 'grid';
+                if (document.getElementById("pc_total_debit")) document.getElementById("pc_total_debit").textContent = formatRupiah(window._lastPettyCashSummary.totalDebit || 0);
+                if (document.getElementById("pc_total_kredit")) document.getElementById("pc_total_kredit").textContent = formatRupiah(window._lastPettyCashSummary.totalKredit || 0);
+                if (document.getElementById("pc_saldo_akhir")) document.getElementById("pc_saldo_akhir").textContent = formatRupiah(window._lastPettyCashSummary.saldoAkhir || 0);
+                if (document.getElementById("pc_saldo_awal")) document.getElementById("pc_saldo_awal").textContent = formatRupiah(window._lastPettyCashSummary.saldoAwal || 0);
+                try {
+                  var raw2 = localStorage.getItem(cacheKey);
+                  if (raw2) {
+                    var c2 = JSON.parse(raw2);
+                    c2.ts = Date.now();
+                    c2.summary = window._lastPettyCashSummary;
+                    localStorage.setItem(cacheKey, JSON.stringify(c2));
+                  }
+                } catch (e3) {}
+              }).catch(function() {});
+            }
             if (typeof window.showSyncIndicator === 'function') window.showSyncIndicator();
           }).catch(function(err) {
             console.error(err);
@@ -2933,7 +3061,14 @@ function editPettyCashItemFirebase(firebaseDate, indexInDate) {
   var dataList = window._lastPettyCashData;
   if (!Array.isArray(dataList)) { showCustomAlert('Data tidak ditemukan. Silakan refresh tabel.', 'Peringatan', 'warning'); return; }
   var idx = parseInt(indexInDate, 10);
-  var row = dataList.find(function(r) { return (r._firebaseDate === firebaseDate || r._firebaseDate === String(firebaseDate)) && (r._firebaseIndexInDate === idx || r._firebaseIndexInDate === indexInDate); });
+  if (isNaN(idx)) idx = Number(indexInDate);
+  var fd = (firebaseDate != null ? String(firebaseDate) : '').trim();
+  var row = dataList.find(function(r) {
+    var rd = (r._firebaseDate != null ? String(r._firebaseDate) : '').trim();
+    if (rd !== fd && rd.replace(/\//g, '-') !== fd) return false;
+    var ri = r._firebaseIndexInDate;
+    return ri === idx || parseInt(ri, 10) === idx || String(ri) === String(indexInDate);
+  });
   if (!row) { showCustomAlert('Data tidak ditemukan.', 'Peringatan', 'warning'); return; }
   var data = {
     tanggal: row._firebaseDate || row.tanggal,
@@ -3808,7 +3943,17 @@ function editPembukuanItem(parentIdx, type, subIdx) {
 function exportPembukuanToExcel() {
   const tglAwal = document.getElementById("pembukuan_tanggal_awal").value;
   const tglAkhir = document.getElementById("pembukuan_tanggal_akhir").value;
-  const filename = `Laporan_Pembukuan_${tglAwal}_sd_${tglAkhir}.xls`;
+
+  let outletName = 'Semua Outlet';
+  const outletId = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+  if (outletId) {
+      try {
+          const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+          outletName = names[outletId] || (outletId.charAt(0).toUpperCase() + outletId.slice(1));
+      } catch(e) {}
+  }
+  const safeOutletName = outletName.replace(/[^a-zA-Z0-9]/g, '_');
+  const filename = `Laporan_Pembukuan_${safeOutletName}_${tglAwal}_sd_${tglAkhir}.xls`;
 
   function buildAndDownloadExcel(pending) {
     pending = Array.isArray(pending) ? pending : [];
@@ -3931,7 +4076,7 @@ function exportPembukuanToExcel() {
   xml += '  <Column ss:Width="60"/>\n';
 
   xml += '  <Row ss:Height="25">\n';
-  xml += `   <Cell ss:StyleID="sTitle" ss:MergeAcross="5"><Data ss:Type="String">Laporan Pembukuan</Data></Cell>\n`;
+  xml += `   <Cell ss:StyleID="sTitle" ss:MergeAcross="5"><Data ss:Type="String">Laporan Pembukuan - ${esc(outletName)}</Data></Cell>\n`;
   xml += '  </Row>\n';
   xml += '  <Row ss:Height="20">\n';
   xml += `   <Cell ss:StyleID="sSubtitle" ss:MergeAcross="5"><Data ss:Type="String">Periode: ${tglAwal} s/d ${tglAkhir}</Data></Cell>\n`;
@@ -4544,6 +4689,15 @@ function updateJadwalLegend() {
 
 let activeAbsensiMode = 'absensi';
 
+function getLocalDateKey(input) {
+    const d = input instanceof Date ? input : new Date(input);
+    if (isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
 function syncAbsensiPeriodAndRefresh() {
     if (window._absensiEmployeesDirty) {
         if (!confirm("Ada perubahan data karyawan yang belum disimpan! Lanjutkan refresh (perubahan akan hilang)?")) return;
@@ -4875,7 +5029,7 @@ function renderAbsensiTable(mode) {
         rekapHeaders.forEach(h => counts[h] = 0);
         
         dates.forEach(d => {
-            const dateKey = d.toISOString().split('T')[0];
+            const dateKey = getLocalDateKey(d);
             const key = `${dateKey}_${emp.id || index}`;
             const status = storedData[key] || '';
             
@@ -5188,7 +5342,7 @@ function renderRekapAbsensiReport() {
             
             // Date Cells
             dates.forEach(d => {
-                const dateKey = d.toISOString().split('T')[0];
+                const dateKey = getLocalDateKey(d);
                 const key = `${dateKey}_${emp.id || idx}`;
                 const status = absensiData[key] || '';
                 
@@ -5438,7 +5592,7 @@ function renderRekapGaji() {
         // 1. Hitung Absensi
         let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             const status = absensiData[key];
             
             let countKey = status;
@@ -5755,7 +5909,7 @@ async function submitGajiPengajuan() {
 
                 let jumlahH = 0;
                 dates.forEach(d => {
-                    const dateKey = d.toISOString().split('T')[0];
+                    const dateKey = getLocalDateKey(d);
                     const absKey = `${dateKey}_${empKeyAbsensi}`;
                     if (absensiData[absKey] === 'H') jumlahH++;
                 });
@@ -6028,7 +6182,7 @@ function generateAndShowSlip(idx) {
 
     let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
     dates.forEach(d => {
-        const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+        const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
         const status = absensiData[key];
         if (status && (counts.hasOwnProperty(status) || status === 'H')) {
             if(counts.hasOwnProperty(status)) counts[status]++;
@@ -6108,7 +6262,7 @@ function sendSlipEmail(idx) {
     let counts = { H:0 };
     let curr = new Date(tglAwal); const end = new Date(tglAkhir);
     while (curr <= end) {
-        const key = `${curr.toISOString().split('T')[0]}_${emp.id || idx}`;
+        const key = `${getLocalDateKey(curr)}_${emp.id || idx}`;
         if (absensiData[key] === 'H') counts.H++;
         curr.setDate(curr.getDate() + 1);
     }
@@ -6248,7 +6402,7 @@ function exportCompleteAbsensiExcel() {
         xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${idx + 1}</Data></Cell>\n<Cell ss:StyleID="sData"><Data ss:Type="String">${esc(emp.name)}</Data></Cell>\n<Cell ss:StyleID="sData"><Data ss:Type="String">${esc(emp.jabatan)}</Data></Cell>\n<Cell ss:StyleID="sCenter"><Data ss:Type="String">${esc(emp.joinDate)}</Data></Cell>\n`;
         xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${emp.sisaAL || 0}</Data></Cell>\n<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${emp.sisaDP || 0}</Data></Cell>\n<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${emp.sisaPH || 0}</Data></Cell>\n`;
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             const status = absensiData[key] || '';
             if (status && counts.hasOwnProperty(status)) counts[status]++;
             xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="String">${esc(status)}</Data></Cell>\n`;
@@ -6291,7 +6445,7 @@ function exportCompleteAbsensiExcel() {
         xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${idx + 1}</Data></Cell>\n<Cell ss:StyleID="sData"><Data ss:Type="String">${esc(emp.name)}</Data></Cell>\n<Cell ss:StyleID="sData"><Data ss:Type="String">${esc(emp.jabatan)}</Data></Cell>\n<Cell ss:StyleID="sCenter"><Data ss:Type="String">${esc(emp.joinDate)}</Data></Cell>\n`;
         xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${emp.sisaAL || 0}</Data></Cell>\n<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${emp.sisaDP || 0}</Data></Cell>\n<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${emp.sisaPH || 0}</Data></Cell>\n`;
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             const status = jadwalData[key] || '';
             if (status && counts.hasOwnProperty(status)) counts[status]++;
             xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="String">${esc(status)}</Data></Cell>\n`;
@@ -6333,7 +6487,7 @@ function exportCompleteAbsensiExcel() {
         xml += '<Row>\n';
         xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${idx + 1}</Data></Cell>\n<Cell ss:StyleID="sCenter"><Data ss:Type="String">${emp.id || '-'}</Data></Cell>\n<Cell ss:StyleID="sData"><Data ss:Type="String">${esc(emp.name)}</Data></Cell>\n<Cell ss:StyleID="sData"><Data ss:Type="String">${esc(emp.jabatan)}</Data></Cell>\n`;
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             const status = absensiData[key] || '';
             let countKey = status;
             if (status === 'O') countKey = 'OFF';
@@ -6392,7 +6546,7 @@ function exportCompleteAbsensiExcel() {
     employees.forEach((emp, idx) => {
         let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             const status = absensiData[key];
             let countKey = status;
             if (status === 'O') countKey = 'OFF';
@@ -6508,7 +6662,7 @@ function exportCompleteAbsensiPDF() {
         let counts = {H:0,R:0,O:0,S:0,I:0,A:0,DP:0,PH:0,AL:0};
         htmlAbsensi += `<tr><td>${idx+1}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td>`;
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             const status = absensiData[key] || '';
             let countKey = status === 'O' ? 'O' : status;
             if(counts.hasOwnProperty(countKey)) counts[countKey]++;
@@ -6530,7 +6684,7 @@ function exportCompleteAbsensiPDF() {
         let counts = {P:0,M:0,S:0,Off:0,PH:0,AL:0,DP:0};
         htmlJadwal += `<tr><td>${idx+1}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td>`;
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             const status = jadwalData[key] || '';
             if(counts.hasOwnProperty(status)) counts[status]++;
             htmlJadwal += `<td>${status}</td>`;
@@ -6550,7 +6704,7 @@ function exportCompleteAbsensiPDF() {
     employees.forEach((emp, idx) => {
         let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             const status = absensiData[key] || '';
             let countKey = status === 'O' ? 'OFF' : status;
             if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
@@ -6558,7 +6712,7 @@ function exportCompleteAbsensiPDF() {
         const totalSisaCuti = (parseInt(emp.sisaAL)||0) + (parseInt(emp.sisaDP)||0) + (parseInt(emp.sisaPH)||0);
         htmlLaporanAbsen += `<tr><td>${idx+1}</td><td>${emp.id || '-'}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td>`;
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             htmlLaporanAbsen += `<td>${absensiData[key] || ''}</td>`;
         });
         htmlLaporanAbsen += `<td>${counts.H}</td><td>${totalSisaCuti}</td><td>${counts.A}</td><td>${counts.I}</td><td>${counts.S}</td><td>${counts.OFF}</td><td>${counts.DP}</td><td>${counts.PH}</td><td>${counts.AL}</td><td>${dates.length}</td></tr>`;
@@ -6571,7 +6725,7 @@ function exportCompleteAbsensiPDF() {
     employees.forEach((emp, idx) => {
         let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             const status = absensiData[key] || '';
             let countKey = status === 'O' ? 'OFF' : status;
             if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
@@ -6738,8 +6892,25 @@ function updateJadwalPreview() {
         return;
     }
 
-    const employees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
-    const jadwalData = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_JADWAL_DATA')), {});
+    let employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    if (typeof getOrderedAbsensiEmployeesWithIndex === 'function') {
+        employees = getOrderedAbsensiEmployeesWithIndex(employees).map(function(item) {
+            var e = Object.assign({}, item.emp);
+            e._originalIndex = item.idx; // Simpan index asli untuk query jadwal
+            return e;
+        });
+    } else {
+        employees = employees.map(function(e, idx) {
+            var emp = Object.assign({}, e);
+            emp._originalIndex = idx;
+            return emp;
+        });
+    }
+
+    let jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
+    if (typeof activeAbsensiMode !== 'undefined' && activeAbsensiMode === 'jadwal' && window._absensiViewData) {
+        jadwalData = window._absensiViewData; // Gunakan data yang sedang diedit (belum disave)
+    }
 
     const dates = [];
     let curr = new Date(tglAwal);
@@ -6783,7 +6954,8 @@ function updateJadwalPreview() {
             <td style="border:1px solid #000; padding:6px;">${emp.jabatan}</td>`;
             
         dates.forEach(d => {
-            const key = `${d.toISOString().split('T')[0]}_${emp.id || idx}`;
+            const origIdx = emp._originalIndex !== undefined ? emp._originalIndex : idx;
+            const key = `${getLocalDateKey(d)}_${emp.id || origIdx}`;
             const status = jadwalData[key] || '';
             
             let bg = '';
@@ -6895,7 +7067,7 @@ async function downloadAllSlipsAsZip(event) {
             // Calculate Data (Logic same as renderRekapGaji)
             let counts = { H:0 };
             dates.forEach(d => {
-                const key = `${d.toISOString().split('T')[0]}_${emp.id || i}`;
+                const key = `${getLocalDateKey(d)}_${emp.id || i}`;
                 if (absensiData[key] === 'H') counts.H++;
             });
 
@@ -7937,7 +8109,7 @@ function renderReservasiCalendar() {
     // Current month days
     for (let i = 1; i <= daysInMonth; i++) {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-        const isToday = (dateStr === new Date().toISOString().split('T')[0]);
+        const isToday = (dateStr === getLocalDateKey(new Date()));
         
         // Find events
         const events = reservasiData.filter(r => r.tanggal === dateStr);
@@ -9612,6 +9784,7 @@ function populateGpsNames() {
         select.onchange = function() {
             window._cachedGpsName = null;
             updateGpsJadwalDisplay();
+            if (typeof checkDistance === 'function') checkDistance();
             const faceStatus = document.getElementById('face_id_status_info');
             if (!this.value) {
                 if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
@@ -9698,6 +9871,16 @@ function populateGpsNames() {
 window._faceVerified = false;
 window._faceVerificationInterval = null;
 
+function getRegisteredFaceDescriptorByName(name) {
+    if (!name) return null;
+    var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
+    var faceData = getCachedParsedStorage(faceKey, {});
+    if (!faceData || typeof faceData !== 'object') return null;
+    var raw = faceData[name];
+    var desc = normalizeGpsKioskDescriptor(raw);
+    return (desc && desc.length) ? desc : null;
+}
+
 window._playSuccessBeep = function() {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -9726,9 +9909,7 @@ window.startLiveFaceVerification = function() {
     // 0.50 = Agak longgar (lebih mudah mendeteksi, tapi berisiko tertukar)
     const FACE_MATCH_THRESHOLD = 0.45; // <-- SILAKAN UBAH ANGKA INI
 
-    const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-    const faceData = getCachedParsedStorage(faceKey, {});
-    const registeredDescriptorArr = faceData[name];
+    const registeredDescriptorArr = getRegisteredFaceDescriptorByName(name);
 
     if (!registeredDescriptorArr || !window.isFaceApiLoaded || typeof faceapi === 'undefined') {
         window._faceVerified = false;
@@ -10078,9 +10259,8 @@ function checkDistance() {
 
     // Kunci tombol jika wajah belum terdaftar
     if (name) {
-        var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-        var faceData = getCachedParsedStorage(faceKey, {});
-        if (!faceData[name]) {
+        var desc = getRegisteredFaceDescriptorByName(name);
+        if (!desc) {
             disableAll = true; 
         } else if (typeof faceapi !== 'undefined' && window.isFaceApiLoaded) {
             // Tombol hanya aktif jika wajah di kamera = true / cocok
@@ -10176,7 +10356,7 @@ async function loadRekapAbsensiGPS() {
         let curr = new Date(tglAwal);
         const end = new Date(tglAkhir);
         while (curr <= end) {
-            dates.push(new Date(curr).toISOString().split('T')[0]);
+            dates.push(getLocalDateKey(new Date(curr)));
             curr.setDate(curr.getDate() + 1);
         }
 
@@ -10781,6 +10961,11 @@ async function updateGpsJadwalDisplay() {
         myLogs = allLogs.filter(l => l.name === name && l.date === today);
     }
 
+    // Cache untuk kebutuhan:
+    // - Tombol "Lihat Riwayat Absensi Saya" (loadMyGpsHistory)
+    // - Validasi proses absen (processAbsensiGPS)
+    window._cachedGpsMyLogs = myLogs || [];
+
     const label = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift || 'Tidak ada jadwal';
     
     // Hitung sisa istirahat dari log spesifik ini
@@ -10975,9 +11160,11 @@ async function _executeAbsensiGPS(type) {
     logs.push(log);
     
     // [OPTIMASI KILAT & AMAN] Jangan gunakan setItem untuk gps_logs karena akan menimpa seluruh history!
+    // Pastikan log tersimpan ke struktur partitioned agar "Riwayat Absensi" bisa langsung terbaca.
     if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase()) {
-        var sfx = getRbmOutlet() ? '_' + getRbmOutlet().toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
-        var refPath = 'rbm_pro/gps_logs' + sfx;
+        var outlet = getRbmOutlet() || 'default';
+        var ym = today.substring(0, 7); // YYYY-MM
+        var refPath = 'rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym;
         if (window.RBMStorage._db) {
             window.RBMStorage._db.ref(refPath).push(log);
         }
@@ -11031,6 +11218,10 @@ function loadMyGpsHistory() {
     
     // Gunakan log spesifik yang sudah di-fetch oleh updateGpsJadwalDisplay
     let baseLogs = window._cachedGpsMyLogs || [];
+    if (!Array.isArray(baseLogs) || baseLogs.length === 0) {
+        // Fallback: ambil dari cache lokal/partitioned (untuk bulan berjalan)
+        try { baseLogs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []); } catch(e) {}
+    }
     
     // Dapatkan tanggal hari ini dengan format YYYY-MM-DD
     const now = new Date();
