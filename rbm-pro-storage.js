@@ -132,6 +132,8 @@
           // Jangan load inventaris secara global
       } else if (page.indexOf('pengajuan') >= 0) {
           // Jangan load pengajuan secara global
+          } else if (page.indexOf('reservasi') >= 0) {
+              nodesToLoad.push('reservasi_data' + sfx);
       } else {
           // Fallback minimal: jangan load node berat
       }
@@ -253,6 +255,12 @@
               if (rootVal[faceKey]) {
                   localStorage.setItem('RBM_FACE_DATA' + sfx, JSON.stringify(rootVal[faceKey]));
                   if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_FACE_DATA' + sfx];
+              }
+              
+              var resKey = 'reservasi_data' + sfx;
+              if (rootVal[resKey]) {
+                  localStorage.setItem('RBM_RESERVASI_DATA' + sfx, JSON.stringify(rootVal[resKey]));
+                  if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_RESERVASI_DATA' + sfx];
               }
           }
           if (rootVal.face_data) {
@@ -470,7 +478,7 @@
         
         // [PERBAIKAN] Simpan juga ke localStorage untuk cache offline/startup cepat
         // Khusus untuk data master yang sering dibaca (Karyawan, Config)
-        if (key.indexOf('RBM_EMPLOYEES') === 0 || key.indexOf('RBM_GPS_') === 0 || key.indexOf('RBM_FACE_DATA') === 0 || key.indexOf('RBM_GAJI_') === 0 || key.indexOf('RBM_BONUS_') === 0) {
+        if (key.indexOf('RBM_EMPLOYEES') === 0 || key.indexOf('RBM_GPS_') === 0 || key.indexOf('RBM_FACE_DATA') === 0 || key.indexOf('RBM_GAJI_') === 0 || key.indexOf('RBM_BONUS_') === 0 || key.indexOf('RBM_RESERVASI_') === 0) {
            try { localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); } catch(e) {}
         }
 

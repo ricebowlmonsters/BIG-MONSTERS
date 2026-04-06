@@ -135,6 +135,10 @@
               var a = document.getElementById('inv_tanggal_awal');
               var b = document.getElementById('inv_tanggal_akhir');
               monthOk = !!(a && a.value && b && b.value);
+            } else if (pageFast === 'lihat-reservasi-view' || pageFast === 'input-reservasi-view') {
+              var rs = document.getElementById('res_filter_start');
+              var re = document.getElementById('res_filter_end');
+              monthOk = !!(rs && rs.value && re && re.value);
             }
 
             if (outletOk && monthOk && typeof fn === 'function') {
@@ -169,6 +173,8 @@
         waitUntilReadyAndRun({ flag: '_rbmAutoLoadedStok', fn: renderStokTable });
       } else if (pageFast === 'absensi-view' && typeof syncAbsensiPeriodAndRefresh === 'function') {
         waitUntilReadyAndRun({ flag: '_rbmAutoLoadedAbsen', fn: syncAbsensiPeriodAndRefresh });
+      } else if ((pageFast === 'lihat-reservasi-view' || pageFast === 'input-reservasi-view') && typeof loadReservasiData === 'function') {
+        waitUntilReadyAndRun({ flag: '_rbmAutoLoadedRes', fn: function() { loadReservasiData(); if (typeof renderReservasiCalendar === 'function') renderReservasiCalendar(); } });
       }
     } catch(e) {}
 
