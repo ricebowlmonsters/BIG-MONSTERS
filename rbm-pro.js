@@ -2239,24 +2239,58 @@ function getPettyCashRecapForPengajuan(cb) {
         var lastKreditDate = '-';
         var totalDebitSince = 0;
         var detailsSince = [];
+        var runningSaldo = 0;
+        var saldoAtLastKredit = 0;
+        var unreimbursed = [];
         for (var i = 0; i < list.length; i++) {
             var r = list[i];
             var k = parseFloat(r.kredit || r.masuk) || 0;
             var d = parseFloat(r.debit || r.keluar) || parseFloat(r.total) || 0;
             if (r.jenis === 'pemasukan') k = parseFloat(r.total || r.harga) || 0;
             if (r.jenis === 'pengeluaran') d = parseFloat(r.total) || 0;
+            runningSaldo = runningSaldo - d + k;
             if (k > 0) {
                 lastKredit = k;
                 lastKreditDate = r.tanggal || r.date || '-';
-                totalDebitSince = 0;
-                detailsSince = [];
+                saldoAtLastKredit = runningSaldo;
+                
+                // Gunakan dana masuk untuk melunasi pengeluaran lama yang belum ter-reimburse
+                var remainingKredit = k;
+                while (unreimbursed.length > 0 && remainingKredit > 0) {
+                    if (remainingKredit >= unreimbursed[0]._remainingDebit) {
+                        remainingKredit -= unreimbursed[0]._remainingDebit;
+                        unreimbursed.shift(); // Lunas sepenuhnya
+                    } else {
+                        unreimbursed[0]._remainingDebit -= remainingKredit; // Lunas sebagian
+                        remainingKredit = 0;
+                    }
+                }
             } else if (d > 0) {
-                totalDebitSince += d;
-                detailsSince.push(r);
+                // Tambahkan pengeluaran ke dalam antrean
+                var clonedR = Object.assign({}, r);
+                clonedR._remainingDebit = d;
+                unreimbursed.push(clonedR);
             }
         }
-        var sisa = lastKredit - totalDebitSince;
-        cb({ lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince });
+        
+        // Rekap semua pengeluaran dalam antrean yang tersisa (belum ter-reimburse)
+        for (var j = 0; j < unreimbursed.length; j++) {
+            totalDebitSince += unreimbursed[j]._remainingDebit;
+            var item = Object.assign({}, unreimbursed[j]);
+            item.debit = item._remainingDebit;
+            item.keluar = item._remainingDebit;
+            item.total = item._remainingDebit;
+            detailsSince.push(item);
+        }
+        var sisa = runningSaldo;
+        var unreimbursedDates = detailsSince.map(function(d) { return d.tanggal || d.date; }).filter(Boolean).sort();
+        var rangeStr = '';
+        if (unreimbursedDates.length > 0) {
+            rangeStr = unreimbursedDates[0] === unreimbursedDates[unreimbursedDates.length - 1] 
+                ? ' (Tgl ' + unreimbursedDates[0] + ')' 
+                : ' (Tgl ' + unreimbursedDates[0] + ' s/d ' + unreimbursedDates[unreimbursedDates.length - 1] + ')';
+        }
+        cb({ lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit, unreimbursedDateRange: rangeStr });
     }
     
     // Menggunakan kueri langsung yang sangat cepat
@@ -2340,13 +2374,16 @@ function createPengajuanForm() {
             });
             detailsHtml += `</tbody></table>`;
         } else {
-            detailsHtml = `<p style="font-size:12px; color:#64748b; margin-top:10px; font-style:italic;">Belum ada pengeluaran sejak uang masuk terakhir.</p>`;
+            detailsHtml = `<p style="font-size:12px; color:#64748b; margin-top:10px; font-style:italic;">Belum ada pengeluaran yang perlu direimburse (sudah terganti semua).</p>`;
         }
 
+        var saldoSebelumnya = (parseFloat(recap.saldoAtLastKredit) || parseFloat(recap.lastKredit) || 0) - (parseFloat(recap.lastKredit) || 0);
         var html = `
             <div style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:15px;">
+                <p style="margin:0 0 5px; font-size:13px; color:#475569;">Sisa Saldo Sebelumnya: <strong>${formatRupiah(saldoSebelumnya)}</strong></p>
                 <p style="margin:0 0 5px; font-size:13px; color:#475569;">Dana Masuk Terakhir (${recap.lastKreditDate}): <strong>${formatRupiah(recap.lastKredit)}</strong></p>
-                <p style="margin:0 0 5px; font-size:13px; color:#dc2626;">Total Pengeluaran Sejak Itu: <strong>${formatRupiah(recap.totalDebitSince)}</strong></p>
+                <p style="margin:0 0 5px; font-size:13px; color:#475569;">Total Saldo (Setelah Dana Masuk): <strong>${formatRupiah(recap.saldoAtLastKredit || recap.lastKredit)}</strong></p>
+                <p style="margin:0 0 5px; font-size:13px; color:#dc2626;">Total Pengeluaran Belum Diganti${recap.unreimbursedDateRange || ''}: <strong>${formatRupiah(recap.totalDebitSince)}</strong></p>
                 <p style="margin:0 0 5px; font-size:14px; color:#16a34a; font-weight:bold;">Sisa Uang (Saldo Saat Ini): ${formatRupiah(recap.sisa)}</p>
                 ${detailsHtml}
             </div>

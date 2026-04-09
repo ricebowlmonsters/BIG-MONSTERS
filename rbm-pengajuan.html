@@ -557,20 +557,26 @@ function openOwnerPengajuanModal(id) {
           } else if (recap.detailsSince && typeof recap.detailsSince === 'object') {
             detailsSince = Object.values(recap.detailsSince);
           }
+          var saldoSebelumnya = (parseFloat(recap.saldoAtLastKredit) || parseFloat(recap.lastKredit) || 0) - (parseFloat(recap.lastKredit) || 0);
           html += `
             <div style="display: flex; justify-content: space-around; margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9fa;">
               <div style="text-align: center;">
-                <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Dana Masuk Terakhir</div>
-                <div style="font-size: 16px; font-weight: bold; color: #1e40af; margin-top: 4px;">Rp ${parseInt(recap.lastKredit||0).toLocaleString('id-ID')}</div>
-                <div style="font-size: 10px; color: #9ca3af; margin-top: 2px;">Tgl: ${recap.lastKreditDate || '-'}</div>
+                <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Sisa Sebelumnya</div>
+                <div style="font-size: 14px; font-weight: bold; color: #475569; margin-top: 4px;">Rp ${parseInt(saldoSebelumnya).toLocaleString('id-ID')}</div>
               </div>
               <div style="text-align: center;">
-                <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Total Pengeluaran</div>
-                <div style="font-size: 16px; font-weight: bold; color: #dc2626; margin-top: 4px;">Rp ${parseInt(recap.totalDebitSince||0).toLocaleString('id-ID')}</div>
+                <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Saldo Setelah TF Masuk</div>
+                <div style="font-size: 14px; font-weight: bold; color: #1e40af; margin-top: 4px;">Rp ${parseInt(recap.saldoAtLastKredit || recap.lastKredit || 0).toLocaleString('id-ID')}</div>
+                <div style="font-size: 10px; color: #9ca3af; margin-top: 2px;">Dana Masuk: Rp ${parseInt(recap.lastKredit||0).toLocaleString('id-ID')} | Tgl: ${recap.lastKreditDate || '-'}</div>
+              </div>
+              <div style="text-align: center;">
+                <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Pengeluaran Blm Diganti</div>
+                <div style="font-size: 14px; font-weight: bold; color: #dc2626; margin-top: 4px;">Rp ${parseInt(recap.totalDebitSince||0).toLocaleString('id-ID')}</div>
+                <div style="font-size: 10px; color: #dc2626; margin-top: 2px;">${recap.unreimbursedDateRange || ''}</div>
               </div>
               <div style="text-align: center;">
                 <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Sisa Saldo</div>
-                <div style="font-size: 16px; font-weight: bold; color: #059669; margin-top: 4px;">Rp ${parseInt(recap.sisa||0).toLocaleString('id-ID')}</div>
+                <div style="font-size: 14px; font-weight: bold; color: #059669; margin-top: 4px;">Rp ${parseInt(recap.sisa||0).toLocaleString('id-ID')}</div>
               </div>
             </div>`;
           if (detailsSince.length > 0) {
