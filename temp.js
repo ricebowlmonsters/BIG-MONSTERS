@@ -953,7 +953,7 @@ function createPembukuanRows() {
               return; 
           }
           if (dataMasuk.length > 0) {
-            const dataToSend = { tanggal, kasMasuk: dataMasuk, kasKeluar: [] };
+            const dataToSend = { tanggal, kasMasuk: dataMasuk, kasKeluar: [], isAppend: true };
             if (!isGoogleScript()) {
               savePendingToLocalStorage('PEMBUKUAN', dataToSend);
               showResultPembukuan('✅ Data disimpan sementara di perangkat. Buka dari Google Apps Script untuk sinkron ke sheet.');
@@ -997,7 +997,7 @@ function createPembukuanRows() {
               return;
           }
           Promise.all(filePromises).then(()=>{
-              const dataToSend={tanggal,kasMasuk:[],kasKeluar:dataKeluar};
+              const dataToSend={tanggal,kasMasuk:[],kasKeluar:dataKeluar, isAppend: true};
               if (!isGoogleScript()) {
                 savePendingToLocalStorage('PEMBUKUAN', dataToSend);
                 showResultPembukuan('✅ Data disimpan sementara di perangkat. Buka dari Google Apps Script untuk sinkron ke sheet.');
@@ -1646,6 +1646,7 @@ function loadPembukuanData() {
 
         let totalCashMasuk = 0;
         let totalKasKeluar = 0;
+        let totalSemuaMasuk = 0;
         let totalFisikSheet = 0;
         let totalCatatan = 0;
         let totalSelisih = 0;
@@ -1672,6 +1673,7 @@ function loadPembukuanData() {
                         }
 
                         if (km.keterangan && km.keterangan.toUpperCase() === 'CASH') totalCashMasuk += fisikVal;
+                    totalSemuaMasuk += catatanVal;
                         totalCatatan += catatanVal;
                         totalSelisih += selisihVal;
 
@@ -1741,6 +1743,7 @@ function loadPembukuanData() {
             document.getElementById("pembukuan_total_cash").textContent = "Rp 0";
             document.getElementById("pembukuan_total_keluar").textContent = "Rp 0";
             document.getElementById("pembukuan_total_fisik").textContent = "Rp 0";
+            if (document.getElementById("pembukuan_total_pendapatan")) document.getElementById("pembukuan_total_pendapatan").textContent = "Rp 0";
             summaryEl.style.display = 'grid';
             return;
         }
@@ -1823,8 +1826,8 @@ function loadPembukuanData() {
                     <td class="num">${r.selisih}</td>
                     <td>${r.foto}</td>
                     <td>
-                        <button class="btn-small-danger" style="background: #ffc107; color: #000;" onclick="editPembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Edit</button>
-                        <button class="btn-small-danger" onclick="deletePembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Hapus</button>
+                        <button type="button" class="btn-small-danger" style="background: #ffc107; color: #000;" onclick="editPembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Edit</button>
+                        <button type="button" class="btn-small-danger" onclick="deletePembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Hapus</button>
                     </td>
                 `;
                 html += '</tr>';
@@ -1836,6 +1839,7 @@ function loadPembukuanData() {
         document.getElementById("pembukuan_total_cash").textContent = formatRupiah(totalCashMasuk);
         document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(totalKasKeluar);
         document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(totalFisikSheet);
+        if (document.getElementById("pembukuan_total_pendapatan")) document.getElementById("pembukuan_total_pendapatan").textContent = formatRupiah(totalSemuaMasuk);
         summaryEl.style.display = 'grid';
     }, 50);
 }
@@ -1969,6 +1973,7 @@ function exportPembukuanToExcel() {
   let totalCashMasuk = 0;
   let totalKasKeluar = 0;
   let totalFisikSheet = 0;
+  let totalSemuaMasuk = 0;
 
   pending.forEach((item) => {
       const p = item.payload;
@@ -1990,6 +1995,7 @@ function exportPembukuanToExcel() {
                   if (km.keterangan && km.keterangan.toUpperCase() === 'CASH') {
                       totalCashMasuk += fisikVal;
                   }
+                  totalSemuaMasuk += catatanVal;
 
                   rows.push({
                       tanggal: p.tanggal,
@@ -2102,6 +2108,10 @@ function exportPembukuanToExcel() {
   xml += '  <Row>\n';
   xml += `   <Cell ss:StyleID="sSummaryLabel" ss:MergeAcross="1"><Data ss:Type="String">Total Fisik (Sheet)</Data></Cell>\n`;
   xml += `   <Cell ss:StyleID="sSummaryValue"><Data ss:Type="String">${esc(formatRupiah(totalFisikSheet))}</Data></Cell>\n`;
+  xml += '  </Row>\n';
+  xml += '  <Row>\n';
+  xml += `   <Cell ss:StyleID="sSummaryLabel" ss:MergeAcross="1"><Data ss:Type="String">Total Pendapatan</Data></Cell>\n`;
+  xml += `   <Cell ss:StyleID="sSummaryValue"><Data ss:Type="String">${esc(formatRupiah(totalSemuaMasuk))}</Data></Cell>\n`;
   xml += '  </Row>\n';
   
   xml += '  <Row>\n';

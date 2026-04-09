@@ -76,6 +76,7 @@
       var fmtFast = function(d) { return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); };
       var todayFast = fmtFast(nowFast);
       var firstDayFast = fmtFast(new Date(nowFast.getFullYear(), nowFast.getMonth(), 1));
+      var nextMonthEndFast = fmtFast(new Date(nowFast.getFullYear(), nowFast.getMonth() + 2, 0));
       var payrollStartFast = fmtFast(new Date(nowFast.getFullYear(), nowFast.getMonth() - 1, 26));
       var payrollEndFast = fmtFast(new Date(nowFast.getFullYear(), nowFast.getMonth(), 25));
       setPersistedVal("pc_bulan_filter", todayFast.slice(0, 7));
@@ -91,7 +92,7 @@
       setPersistedVal("absensi_tgl_awal", payrollStartFast);
       setPersistedVal("absensi_tgl_akhir", payrollEndFast);
       setPersistedVal("res_filter_start", firstDayFast);
-      setPersistedVal("res_filter_end", todayFast);
+      setPersistedVal("res_filter_end", nextMonthEndFast);
       setPersistedVal("rekap_gps_start", payrollStartFast);
       setPersistedVal("rekap_gps_end", payrollEndFast);
       setPersistedVal("riwayat_barang_start", firstDayFast);
@@ -183,6 +184,7 @@
     var fmt = function(d) { return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); };
     var today = fmt(now);
     var firstDay = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
+    var nextMonthEnd = fmt(new Date(now.getFullYear(), now.getMonth() + 2, 0));
     // Periode Gaji: Tanggal 26 Bulan Lalu s/d Tanggal 25 Bulan Ini
     var payrollStart = fmt(new Date(now.getFullYear(), now.getMonth() - 1, 26));
     var payrollEnd = fmt(new Date(now.getFullYear(), now.getMonth(), 25));
@@ -204,8 +206,8 @@
     // Periode absensi (26 s/d 25) harus tetap sesuai pilihan manual user
     setPersistedVal("absensi_tgl_awal", payrollStart);
     setPersistedVal("absensi_tgl_akhir", payrollEnd);
-    setVal("res_filter_start", firstDay);
-    setVal("res_filter_end", today);
+    setPersistedVal("res_filter_start", firstDay);
+    setPersistedVal("res_filter_end", nextMonthEnd);
     setPersistedVal("stok_bulan_filter", today.slice(0, 7));
     setPersistedVal("rekap_gps_start", payrollStart);
     setPersistedVal("rekap_gps_end", payrollEnd);
@@ -304,6 +306,7 @@
         else renderAbsensiTable();
     }
     if (viewId === 'reservasi-view' || viewId === 'lihat-reservasi-view') {
+        if (typeof loadReservasiData === 'function') loadReservasiData();
         renderReservasiCalendar();
     }
     if (viewId === 'stok-barang-view') {
@@ -679,6 +682,7 @@ function savePembukuanToJpg() {
 
     let totalCashMasuk = 0;
     let totalKasKeluar = 0;
+    let totalSemuaMasuk = 0;
     let rows = [];
 
     dataPeriode.forEach((item, parentIdx) => {
@@ -699,6 +703,7 @@ function savePembukuanToJpg() {
                 }
 
                 if (km.keterangan && km.keterangan.toUpperCase() === 'CASH') totalCashMasuk += fisikVal;
+                totalSemuaMasuk += catatanVal;
 
                 rows.push({
                     tanggal: p.tanggal,
@@ -772,6 +777,11 @@ function savePembukuanToJpg() {
         <h2 style="text-align:center; margin:0 0 10px 0; color:#1e40af;">Laporan Pembukuan Bulanan - ${outletName}</h2>
         <p style="text-align:center; margin:0 0 20px 0; font-size:14px; color:#666;">Periode: ${monthVal}</p>
         
+        <div style="margin-bottom:15px; background: linear-gradient(135deg, #059669 0%, #047857 100%); padding:15px; border-radius:8px; border:2px solid #34d399; text-align:center; color:white; box-shadow: 0 4px 10px rgba(5, 150, 103, 0.3);">
+            <div style="font-size:12px; font-weight:800; color:#a7f3d0; letter-spacing:0.5px;">💰 TOTAL PENDAPATAN (OMSET)</div>
+            <div style="font-size:24px; font-weight:800; text-shadow: 0 2px 4px rgba(0,0,0,0.3); margin-top:5px;">${formatRupiah(totalSemuaMasuk)}</div>
+        </div>
+
         <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:10px; margin-bottom:20px; background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
             <div style="text-align:center;">
                 <div style="font-size:11px; color:#666;">Saldo Awal</div>
@@ -926,7 +936,7 @@ function savePembukuanToJpg() {
         } else {
             tbody.innerHTML = pageData.map(function(row) {
                 var aksiBtn = (row._firebaseDate != null && row._firebaseIndexInDate != null)
-                    ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Hapus</button>'
+                    ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Edit</button><button type="button" class="btn-small-danger" onclick="deletePettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Hapus</button>'
                     : '-';
                 return '<tr><td>' + (row.no || '') + '</td><td>' + (row.tanggal || '') + '</td><td>' + (row.nama || '') + '</td><td class="num">' + (row.jumlah || '') + '</td><td>' + (row.satuan || '') + '</td><td class="num">' + (row.harga ? formatRupiah(row.harga) : '') + '</td><td class="num">' + (row.debit ? formatRupiah(row.debit) : '') + '</td><td class="num">' + (row.kredit ? formatRupiah(row.kredit) : '') + '</td><td class="num">' + (row.saldo ? formatRupiah(row.saldo) : '') + '</td><td>' + aksiBtn + '</td></tr>';
             }).join('');
@@ -1162,7 +1172,7 @@ function savePembukuanToJpg() {
             } else {
               tbody.innerHTML = data.map(function(row) {
                 var aksiBtn = (row._firebaseDate != null && row._firebaseIndexInDate != null)
-                  ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Edit</button><button class="btn-small-danger" onclick="deletePettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Hapus</button>'
+                      ? '<button type="button" class="btn btn-secondary" style="font-size:11px; padding:4px 8px; margin-right:4px; background:#ffc107; color:#000; border:none;" onclick="editPettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Edit</button><button type="button" class="btn-small-danger" onclick="deletePettyCashItemFirebase(\'' + (row._firebaseDate || '') + '\', ' + (row._firebaseIndexInDate ?? '') + ')">Hapus</button>'
                   : '-';
                 return '<tr><td>' + (row.no || '') + '</td><td>' + (row.tanggal || '') + '</td><td>' + (row.nama || '') + '</td><td class="num">' + (row.jumlah || '') + '</td><td>' + (row.satuan || '') + '</td><td class="num">' + (row.harga ? formatRupiah(row.harga) : '') + '</td><td class="num">' + (row.debit ? formatRupiah(row.debit) : '') + '</td><td class="num">' + (row.kredit ? formatRupiah(row.kredit) : '') + '</td><td class="num">' + (row.saldo ? formatRupiah(row.saldo) : '') + '</td><td>' + aksiBtn + '</td></tr>';
               }).join('');
@@ -2150,7 +2160,7 @@ function createPembukuanRows() {
               return; 
           }
           if (dataMasuk.length > 0) {
-            const dataToSend = { tanggal, kasMasuk: dataMasuk, kasKeluar: [] };
+            const dataToSend = { tanggal, kasMasuk: dataMasuk, kasKeluar: [], isAppend: true };
             if (useFirebaseBackend()) {
               FirebaseStorage.savePembukuan(dataToSend, getRbmOutlet()).then(showResultPembukuan).catch(function(err) { showResultPembukuan('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
             } else if (!isGoogleScript()) {
@@ -2188,7 +2198,7 @@ function createPembukuanRows() {
               return;
           }
           Promise.all(filePromises).then(()=>{
-              const dataToSend={tanggal,kasMasuk:[],kasKeluar:dataKeluar};
+              const dataToSend={tanggal,kasMasuk:[],kasKeluar:dataKeluar, isAppend: true};
               if (useFirebaseBackend()) {
                 FirebaseStorage.savePembukuan(dataToSend, getRbmOutlet()).then(showResultPembukuan).catch(function(err) { showResultPembukuan('❌ ' + (err && err.message ? err.message : 'Gagal menyimpan ke Firebase.')); });
               } else if (!isGoogleScript()) {
@@ -3506,6 +3516,7 @@ function loadPembukuanData() {
                     document.getElementById("pembukuan_total_cash").textContent = formatRupiah(summary.totalCashMasuk);
                     document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(summary.totalKasKeluar);
                     document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(summary.saldoAkhir);
+                    if (document.getElementById("pembukuan_total_pendapatan")) document.getElementById("pembukuan_total_pendapatan").textContent = formatRupiah(summary.totalSemuaMasuk || 0);
                     summaryEl.style.display = 'grid';
                     if (typeof window.showSyncIndicator === 'function') window.showSyncIndicator();
                 }).catch(function(err) {
@@ -3525,7 +3536,7 @@ function loadPembukuanData() {
         let saldoAwalKasKeluar = 0;
         const dataPeriode = [];
 
-        pending.forEach((item) => {
+        pending.forEach((item, origIdx) => {
             const p = item.payload;
             if (!p || !p.tanggal) return;
 
@@ -3546,6 +3557,7 @@ function loadPembukuanData() {
                 }
             } else if (p.tanggal >= tglAwal && p.tanggal <= tglAkhir) {
                 // Kumpulkan data untuk periode yang dipilih
+                item._origIdx = origIdx;
                 dataPeriode.push(item);
             }
         });
@@ -3555,10 +3567,12 @@ function loadPembukuanData() {
         // [DIUBAH] Tahap 2: Proses data HANYA untuk periode yang dipilih
         let totalCashMasuk = 0;
         let totalKasKeluar = 0;
+        let totalSemuaMasuk = 0;
         let rows = [];
 
-        dataPeriode.forEach((item, parentIdx) => { // Loop pada dataPeriode, bukan 'pending'
+        dataPeriode.forEach((item) => { // Loop pada dataPeriode
             const p = item.payload;
+            const parentIdx = item._origIdx;
             // Kas Masuk
             if (p.kasMasuk && p.kasMasuk.length > 0) {
                 p.kasMasuk.forEach((km, subIdx) => {
@@ -3576,6 +3590,7 @@ function loadPembukuanData() {
                     }
 
                     if (km.keterangan && km.keterangan.toUpperCase() === 'CASH') totalCashMasuk += fisikVal;
+                    totalSemuaMasuk += catatanVal;
 
                     const komentarFisik = km.komentarFisik || '';
                     const komentarSelisih = km.komentarSelisih || '';
@@ -3638,6 +3653,7 @@ function loadPembukuanData() {
             document.getElementById("pembukuan_total_cash").textContent = "Rp 0";
             document.getElementById("pembukuan_total_keluar").textContent = "Rp 0";
             document.getElementById("pembukuan_total_fisik").textContent = "Rp 0";
+            if (document.getElementById("pembukuan_total_pendapatan")) document.getElementById("pembukuan_total_pendapatan").textContent = "Rp 0";
             summaryEl.style.display = 'grid';
             return;
         }
@@ -3703,8 +3719,8 @@ function loadPembukuanData() {
                 <td class="num">${selisihCell}</td>
                 <td>${r.foto}</td>
                 <td>
-                    ${window.rbmOnlyOwnerCanEditDelete && window.rbmOnlyOwnerCanEditDelete() ? `<button class="btn-small-danger" style="background: #ffc107; color: #000;" onclick="editPembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Edit</button>
-                    <button class="btn-small-danger" onclick="deletePembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Hapus</button>` : '-'}
+                    ${window.rbmOnlyOwnerCanEditDelete && window.rbmOnlyOwnerCanEditDelete() ? `<button type="button" class="btn-small-danger" style="background: #ffc107; color: #000;" onclick="editPembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Edit</button>
+                    <button type="button" class="btn-small-danger" onclick="deletePembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Hapus</button>` : '-'}
                 </td>
             `;
             html += '</tr>';
@@ -3733,8 +3749,8 @@ function loadPembukuanData() {
                 <td class="num">${r.selisih}</td>
                 <td>${r.foto}</td>
                 <td>
-                    ${window.rbmOnlyOwnerCanEditDelete && window.rbmOnlyOwnerCanEditDelete() ? `<button class="btn-small-danger" style="background: #ffc107; color: #000;" onclick="editPembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Edit</button>
-                    <button class="btn-small-danger" onclick="deletePembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Hapus</button>` : '-'}
+                    ${window.rbmOnlyOwnerCanEditDelete && window.rbmOnlyOwnerCanEditDelete() ? `<button type="button" class="btn-small-danger" style="background: #ffc107; color: #000;" onclick="editPembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Edit</button>
+                    <button type="button" class="btn-small-danger" onclick="deletePembukuanItem(${r.parentIdx}, '${r.type}', ${r.subIdx})">Hapus</button>` : '-'}
                 </td>
             `;
             html += '</tr>';
@@ -3760,6 +3776,7 @@ function loadPembukuanData() {
             document.getElementById("pembukuan_total_cash").textContent = formatRupiah(totalCashMasuk);
             document.getElementById("pembukuan_total_keluar").textContent = formatRupiah(totalKasKeluar);
             document.getElementById("pembukuan_total_fisik").textContent = formatRupiah(saldoAkhir);
+            if (document.getElementById("pembukuan_total_pendapatan")) document.getElementById("pembukuan_total_pendapatan").textContent = formatRupiah(totalSemuaMasuk);
             summaryEl.style.display = 'grid';
         };
         
@@ -3959,6 +3976,7 @@ function exportPembukuanToExcel() {
   let totalCashMasuk = 0;
   let totalKasKeluar = 0;
   let totalFisikSheet = 0;
+  let totalSemuaMasuk = 0;
 
   pending.forEach((item) => {
       const p = item.payload;
@@ -3993,6 +4011,7 @@ function exportPembukuanToExcel() {
                   if (km.keterangan && km.keterangan.toUpperCase() === 'CASH') {
                       totalCashMasuk += fisikVal;
                   }
+                  totalSemuaMasuk += catatanVal;
 
                   rows.push({
                       tanggal: p.tanggal,
@@ -4110,6 +4129,10 @@ function exportPembukuanToExcel() {
   xml += '  <Row>\n';
   xml += `   <Cell ss:StyleID="sSummaryLabel" ss:MergeAcross="1"><Data ss:Type="String">Saldo Akhir (Total Fisik)</Data></Cell>\n`;
   xml += `   <Cell ss:StyleID="sSummaryValue"><Data ss:Type="String">${esc(formatRupiah(totalFisikSheet))}</Data></Cell>\n`;
+  xml += '  </Row>\n';
+  xml += '  <Row>\n';
+  xml += `   <Cell ss:StyleID="sSummaryLabel" ss:MergeAcross="1"><Data ss:Type="String">Total Pendapatan</Data></Cell>\n`;
+  xml += `   <Cell ss:StyleID="sSummaryValue"><Data ss:Type="String">${esc(formatRupiah(totalSemuaMasuk))}</Data></Cell>\n`;
   xml += '  </Row>\n';
   
   xml += '  <Row>\n';
@@ -11613,7 +11636,7 @@ function showCustomAlert(message, title, type) {
                 <div id="rbm-alert-icon" style="font-size:48px; margin-bottom:16px;"></div>
                 <h3 id="rbm-alert-title" style="margin:0 0 8px; color:#1e293b; font-size: 18px; font-weight: 700;"></h3>
                 <p id="rbm-alert-msg" style="margin:0 0 24px; color:#64748b; font-size:14px; line-height:1.5;"></p>
-                <button onclick="document.getElementById('rbm-custom-alert').style.display='none'" style="background:#1e40af; color:white; border:none; padding:12px 0; border-radius:10px; font-weight:600; cursor:pointer; width:100%; font-size:14px; transition: background 0.2s;">Tutup</button>
+                <button type="button" onclick="document.getElementById('rbm-custom-alert').style.display='none'" style="background:#1e40af; color:white; border:none; padding:12px 0; border-radius:10px; font-weight:600; cursor:pointer; width:100%; font-size:14px; transition: background 0.2s;">Tutup</button>
             </div>
         `;
         document.body.appendChild(modal);
@@ -11655,8 +11678,8 @@ function showCustomConfirm(message, title, onYes) {
                 <h3 id="rbm-confirm-title" style="margin:0 0 8px; color:#1e293b; font-size: 18px; font-weight: 700;"></h3>
                 <p id="rbm-confirm-msg" style="margin:0 0 24px; color:#64748b; font-size:14px; line-height:1.5;"></p>
                 <div style="display:flex; gap:10px;">
-                    <button id="rbm-confirm-no" style="flex:1; background:#e2e8f0; color:#475569; border:none; padding:12px 0; border-radius:10px; font-weight:600; cursor:pointer; font-size:14px;">Batal</button>
-                    <button id="rbm-confirm-yes" style="flex:1; background:#1e40af; color:white; border:none; padding:12px 0; border-radius:10px; font-weight:600; cursor:pointer; font-size:14px;">Ya, Lanjut</button>
+                    <button type="button" id="rbm-confirm-no" style="flex:1; background:#e2e8f0; color:#475569; border:none; padding:12px 0; border-radius:10px; font-weight:600; cursor:pointer; font-size:14px;">Batal</button>
+                    <button type="button" id="rbm-confirm-yes" style="flex:1; background:#1e40af; color:white; border:none; padding:12px 0; border-radius:10px; font-weight:600; cursor:pointer; font-size:14px;">Ya, Lanjut</button>
                 </div>
             </div>
         `;

@@ -592,6 +592,7 @@ app.get('/api/pembukuan', async (req, res) => {
         let saldoAwal = 0;
         let totalCashMasuk = 0;
         let totalKasKeluar = 0;
+        let totalSemuaMasuk = 0;
         
         for (const d of dateKeys) {
             const node = outletNode[d] || {};
@@ -609,6 +610,10 @@ app.get('/api/pembukuan', async (req, res) => {
                 }
             } else if ((!from || d >= from) && (!to || d <= to)) {
                 for (const km of kasMasuk) {
+                    let fVal = parseFloat(km.fisik) || 0;
+                    let cVal = parseFloat(km.catatan) || 0;
+                    totalSemuaMasuk += cVal;
+
                     if (km?.keterangan && String(km.keterangan).toUpperCase() === 'CASH') {
                         totalCashMasuk += parseFloat(km.fisik) || 0;
                     }
@@ -644,7 +649,7 @@ app.get('/api/pembukuan', async (req, res) => {
         res.json({
             meta: { page, daysPerPage, totalDays, totalPages },
             data: days,
-            summary: { saldoAwal, totalCashMasuk, totalKasKeluar, saldoAkhir: saldoAwal + totalCashMasuk - totalKasKeluar }
+            summary: { saldoAwal, totalCashMasuk, totalKasKeluar, saldoAkhir: saldoAwal + totalCashMasuk - totalKasKeluar, totalSemuaMasuk }
         });
     } catch (e) {
         res.status(500).json({ error: true, message: e.message || String(e) });

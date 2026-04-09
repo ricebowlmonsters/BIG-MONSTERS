@@ -82,7 +82,7 @@
       <label>Detail Transaksi</label>
       <div id="detail-container-pembukuan" class="detail-wrapper"></div>
     </div>
-    <button id="submitButtonPembukuan" class="btn btn-primary" onclick="submitDataPembukuan()">Simpan Data</button>
+    <button type="button" id="submitButtonPembukuan" class="btn btn-primary" onclick="submitDataPembukuan()">Simpan Data</button>
     <p id="outputPembukuan" class="output-msg"></p>
   </div>
 </div>
@@ -108,6 +108,10 @@
     </div>
 
     <div class="summary-grid" id="pembukuan_summary" style="display:none">
+      <div class="summary-card" style="grid-column: 1 / -1; background: linear-gradient(135deg, #059669 0%, #047857 100%); box-shadow: 0 10px 25px rgba(5, 150, 103, 0.5); border: 2px solid #34d399; position: relative; transform: translateY(-2px);">
+        <div class="label" style="color: #a7f3d0; font-size: 13px; font-weight: 800; letter-spacing: 0.5px;">💰 TOTAL PENDAPATAN (OMSET)</div>
+        <div class="value" id="pembukuan_total_pendapatan" style="color: #ffffff; font-size: 26px; font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">Rp 0</div>
+      </div>
       <div class="summary-card" style="background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);">
         <div class="label">Saldo Awal Periode (Cash) </div>
         <div class="value" id="pembukuan_saldo_awal">Rp 0</div>
@@ -117,7 +121,7 @@
         <div class="value" id="pembukuan_total_cash">Rp 0</div>
       </div>
       <div class="summary-card">
-        <div class="label">Cash Keluar </div>
+        <div class="label">Cash Keluar</div>
         <div class="value" id="pembukuan_total_keluar">Rp 0</div>
       </div>
       <div class="summary-card" style="background: linear-gradient(135deg, #64748b 0%, #475569 100%);">

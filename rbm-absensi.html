@@ -410,6 +410,14 @@
                   </div>
               </div>
               
+              <div style="margin-bottom: 10px;">
+                <label style="font-size: 11px; font-weight: 600;">Bulan Omset (Otomatis 1 Bulan Penuh)</label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="month" id="bonus_omset_bulan" onchange="fetchOmsetForBonus()" style="flex: 1; padding: 5px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box;">
+                    <button type="button" class="btn btn-secondary" onclick="fetchOmsetForBonus()" style="margin: 0; padding: 5px 10px; font-size: 12px; height: 30px; box-sizing: border-box;" title="Refresh Data Omset">🔄 Refresh</button>
+                </div>
+              </div>
+
               <div style="display: grid; grid-template-columns: 1fr 0.5fr 1fr; gap: 10px; margin-bottom: 15px;">
                 <div><label style="font-size: 11px;">Total Omset</label><input type="text" id="bonus_omset_total" placeholder="Rp 0" oninput="formatRupiahInput(this); calculateBonusOmset()"></div>
                 <div><label style="font-size: 11px;">Persen (%)</label><input type="number" id="bonus_omset_persen" placeholder="%" oninput="calculateBonusOmset()"></div>
@@ -569,5 +577,292 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+window.addEventListener('load', function() {
+    // Override fungsi kalkulasi bawaan rbm-pro.js untuk Bonus Omset
+    window.calculateBonusOmset = function() {
+        var totalInput = document.getElementById('bonus_omset_total');
+        var persenInput = document.getElementById('bonus_omset_persen');
+        var poolInput = document.getElementById('bonus_omset_pool');
+        
+        var total = parseFloat(totalInput.value.replace(/[^0-9]/g, '')) || 0;
+        var persen = parseFloat(persenInput.value) || 0;
+        var pool = Math.floor(total * (persen / 100));
+        
+        if (poolInput) {
+            poolInput.value = 'Rp ' + pool.toLocaleString('id-ID');
+        }
+        distributeBonusOmset(pool);
+    };
+
+    window.calculateBonusOmsetFromPool = function() {
+        var poolInput = document.getElementById('bonus_omset_pool');
+        if(!poolInput) return;
+        var pool = parseFloat(poolInput.value.replace(/[^0-9]/g, '')) || 0;
+        distributeBonusOmset(pool);
+    };
+
+    function distributeBonusOmset(pool) {
+        var tbody = document.getElementById('bonus_omset_tbody');
+        if (!tbody) return;
+        var rows = tbody.querySelectorAll('tr');
+        var checkedCount = 0;
+        rows.forEach(function(tr) {
+            var cb = tr.querySelector('input[type="checkbox"]');
+            if (cb && cb.checked) checkedCount++;
+        });
+        var nominal = checkedCount > 0 ? Math.floor(pool / checkedCount) : 0;
+        rows.forEach(function(tr) {
+            var cb = tr.querySelector('input[type="checkbox"]');
+            var inp = tr.querySelector('.bonus-nominal-input');
+            var span = tr.querySelector('.hidden-nominal');
+            if (cb && cb.checked && inp) {
+                inp.value = 'Rp ' + nominal.toLocaleString('id-ID');
+                if (span) span.textContent = inp.value;
+            } else if (inp) {
+                inp.value = 'Rp 0';
+                if (span) span.textContent = inp.value;
+            }
+        });
+    }
+
+    // Fetch data omset dari Firebase Pembukuan Keuangan
+    window.fetchOmsetForBonus = async function fetchOmsetForBonus() {
+        var bulanInput = document.getElementById('bonus_omset_bulan');
+        var ym = bulanInput ? bulanInput.value : '';
+        
+        // Jika belum dipilih, otomatis ambil bulan dari filter utama
+        if (!ym) {
+            var tglAwal = document.getElementById('absensi_tgl_awal').value;
+            if (tglAwal) {
+                ym = tglAwal.substring(0, 7);
+                if (bulanInput) bulanInput.value = ym;
+            }
+        }
+        if (!ym) return;
+
+        var parts = ym.split('-');
+        var lastDay = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10), 0).getDate();
+        var start = ym + '-01';
+        var end = ym + '-' + lastDay;
+
+        var selEl = document.getElementById('rbm-outlet-select');
+        var outlet = selEl ? selEl.value : '';
+        if (!outlet) return;
+
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            try {
+                var snap = await firebase.database().ref('rbm_pro/pembukuan/' + outlet)
+                    .orderByKey().startAt(start).endAt(end).once('value');
+                var data = snap.val();
+                var totalOmset = 0;
+                if (data) {
+                    Object.keys(data).forEach(function(dateKey) {
+                        var p = data[dateKey];
+                        if (p && p.kasMasuk) {
+                            var arr = Array.isArray(p.kasMasuk) ? p.kasMasuk : Object.values(p.kasMasuk);
+                            arr.forEach(function(km) {
+                                var val = String(km.catatan || '0').replace(/[^0-9,-]/g, '').replace(',', '.');
+                                totalOmset += parseFloat(val) || 0;
+                            });
+                        }
+                    });
+                }
+                var inputOmset = document.getElementById('bonus_omset_total');
+                if (inputOmset) {
+                    inputOmset.value = 'Rp ' + Math.round(totalOmset).toLocaleString('id-ID');
+                    calculateBonusOmset(); // Hitung ulang pool dan distribusikan
+                }
+            } catch(e) {
+                console.error("Gagal fetch omset:", e);
+            }
+        }
+    }
+
+    // Modifikasi tabel agar nominal bisa diedit per karyawan
+    function rewriteBonusOmsetTable() {
+        var tbody = document.getElementById('bonus_omset_tbody');
+        if (!tbody) return;
+        var rows = tbody.querySelectorAll('tr');
+        rows.forEach(function(tr) {
+            var tds = tr.querySelectorAll('td');
+            if (tds.length === 3) {
+                var nominalTd = tds[2];
+                if (!nominalTd.querySelector('input')) {
+                    var currentText = nominalTd.textContent.trim();
+                    // Menggunakan span hidden agar bisa dibaca oleh script submit bawaan
+                    nominalTd.innerHTML = `<input type="text" class="bonus-nominal-input" style="width: 100%; text-align: right; padding: 4px; border: 1px solid #ccc; border-radius: 4px; box-sizing:border-box;" value="${currentText}" oninput="if(typeof formatRupiahInput === 'function') formatRupiahInput(this); this.nextElementSibling.textContent = this.value;"><span class="hidden-nominal" style="display:none;">${currentText}</span>`;
+                }
+            }
+            var cb = tr.querySelector('input[type="checkbox"]');
+            if (cb && !cb.hasAttribute('data-hooked')) {
+                cb.setAttribute('data-hooked', 'true');
+                cb.addEventListener('change', function() {
+                    calculateBonusOmsetFromPool();
+                });
+            }
+        });
+    }
+
+    // Hook ke tab switch (tarik data omset saat tab Bonus dibuka)
+    var oldSwitch = window.switchAbsensiTab;
+    window.switchAbsensiTab = function(tab) {
+        if (oldSwitch) oldSwitch(tab);
+        if (tab === 'bonus') {
+            fetchOmsetForBonus();
+            setTimeout(rewriteBonusOmsetTable, 500); // Tunggu tabel render
+            setTimeout(rewriteBonusOmsetTable, 1000); 
+        }
+    };
+
+    // Hook ke perubahan tanggal / refresh
+    var oldSync = window.syncAbsensiPeriodAndRefresh;
+    window.syncAbsensiPeriodAndRefresh = function() {
+        if (oldSync) oldSync();
+        var tabBonus = document.getElementById('tab-content-bonus');
+        if (tabBonus && tabBonus.style.display !== 'none') {
+            fetchOmsetForBonus();
+            setTimeout(rewriteBonusOmsetTable, 500);
+        }
+    };
+    
+    // Coba rewrite saat onload jika kebetulan tab bonus sudah terbuka
+    setTimeout(rewriteBonusOmsetTable, 1500);
+});
+</script>
+<script>
+// FITUR: STATUS AKTIF/NON-AKTIF & CASCADE DELETE (HAPUS RIWAYAT PERMANEN)
+window.addEventListener('load', function() {
+    // 1. Override fungsi Simpan untuk menghapus riwayat jika karyawan dihapus (klik X)
+    var originalSave = window.saveAbsensiToFirebase;
+    if (typeof originalSave === 'function') {
+        window.saveAbsensiToFirebase = async function() {
+            var outletSel = document.getElementById('rbm-outlet-select');
+            var outlet = outletSel ? outletSel.value : '';
+            if (!outlet) return originalSave();
+
+            var db = typeof firebase !== 'undefined' ? firebase.database() : null;
+            if (!db) return originalSave();
+
+            // Ambil data karyawan di database SEBELUM disave
+            var snap = await db.ref('rbm_pro/employees/' + outlet).once('value');
+            var oldEmpsVal = snap.val() || [];
+            var oldEmps = Array.isArray(oldEmpsVal) ? oldEmpsVal : Object.values(oldEmpsVal);
+
+            // Ambil nama karyawan dari layar (yang tersisa)
+            var currentNames = [];
+            var trs = document.querySelectorAll('#absensi_tbody tr');
+            trs.forEach(function(tr) {
+                var inps = tr.querySelectorAll('input[type="text"]');
+                if (inps.length > 0 && inps[0].value) {
+                    currentNames.push(inps[0].value.trim().toLowerCase());
+                }
+            });
+
+            // Cari karyawan yang terhapus (ada di DB lama tapi tidak ada di layar)
+            var deletedEmps = oldEmps.filter(function(e) {
+                if (!e || !e.name) return false;
+                return !currentNames.includes(e.name.trim().toLowerCase());
+            });
+
+            // Jalankan save bawaan sistem
+            var saveResult = await originalSave();
+
+            // Jika ada yang dihapus, tawarkan penghapusan riwayat permanen
+            if (deletedEmps.length > 0) {
+                var namesStr = deletedEmps.map(function(e){ return e.name; }).join(', ');
+                if (confirm("Karyawan berikut telah dihapus dari daftar:\n" + namesStr + "\n\nApakah Anda juga ingin MENGHAPUS PERMANEN seluruh Riwayat Absensi, Jadwal, dan Data Gaji mereka?")) {
+                    var updates = {};
+                    var absSnap = await db.ref('rbm_pro/absensi_data/' + outlet).once('value');
+                    var jadSnap = await db.ref('rbm_pro/jadwal_data/' + outlet).once('value');
+                    
+                    var absData = absSnap.val() || {};
+                    var jadData = jadSnap.val() || {};
+
+                    deletedEmps.forEach(function(emp) {
+                        var empId = emp.id != null ? emp.id : oldEmps.indexOf(emp);
+                        
+                        // Hapus dari node absensi
+                        Object.keys(absData).forEach(function(k) {
+                            if (k.endsWith('_' + empId) || k.endsWith('_' + emp.name)) {
+                                updates['rbm_pro/absensi_data/' + outlet + '/' + k] = null;
+                            }
+                        });
+                        // Hapus dari node jadwal
+                        Object.keys(jadData).forEach(function(k) {
+                            if (k.endsWith('_' + empId) || k.endsWith('_' + emp.name)) {
+                                updates['rbm_pro/jadwal_data/' + outlet + '/' + k] = null;
+                            }
+                        });
+                    });
+
+                    if (Object.keys(updates).length > 0) {
+                        await db.ref().update(updates);
+                        alert("Riwayat Absensi & Jadwal berhasil dihapus secara permanen.");
+                        if (typeof window.syncAbsensiPeriodAndRefresh === 'function') {
+                            window.syncAbsensiPeriodAndRefresh();
+                        }
+                    }
+                }
+            }
+            return saveResult;
+        };
+    }
+
+    // 2. Tambahkan tombol Aktif/Non-Aktif ke tabel absensi secara otomatis
+    var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.addedNodes.length) {
+                var trs = document.querySelectorAll('#absensi_tbody tr');
+                trs.forEach(function(tr) {
+                    if (!tr.hasAttribute('data-status-hooked')) {
+                        tr.setAttribute('data-status-hooked', 'true');
+                        var nameInput = tr.querySelector('input[type="text"]');
+                        var actionTd = tr.lastElementChild; // Mengambil kolom terakhir (Aksi)
+                        if (nameInput && actionTd) {
+                            var btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.className = 'btn btn-secondary';
+                            
+                            btn.style.cssText = 'padding: 2px 6px; font-size: 10px; margin-right: 6px; height: 24px; vertical-align: middle; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;';
+                            var updateUI = function() {
+                                if (nameInput.value.includes('(Non-Aktif)')) {
+                                    btn.textContent = 'Aktifkan';
+                                    btn.style.background = '#dc2626';
+                                    btn.style.color = 'white';
+                                    tr.style.opacity = '0.6';
+                                } else {
+                                    btn.textContent = 'Non-Aktif';
+                                    btn.style.background = '#f1f5f9';
+                                    btn.style.color = '#475569';
+                                    tr.style.opacity = '1';
+                                }
+                            };
+                            
+                            btn.onclick = function() {
+                                if (nameInput.value.includes('(Non-Aktif)')) {
+                                    nameInput.value = nameInput.value.replace(' (Non-Aktif)', '').replace('(Non-Aktif)', '').trim();
+                                } else {
+                                    nameInput.value = nameInput.value.trim() + ' (Non-Aktif)';
+                                }
+                                updateUI();
+                                nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            };
+                            
+                            // Memasukkan tombol ke dalam kolom Aksi, tepat sebelum tombol X
+                            actionTd.insertBefore(btn, actionTd.firstChild);
+                            updateUI();
+                            nameInput.addEventListener('input', updateUI);
+                        }
+                    }
+                });
+            }
+        });
+    });
+    
+    var tbody = document.getElementById('absensi_tbody');
+    if (tbody) observer.observe(tbody, { childList: true, subtree: true });
+});
+</script>
 </body>
 </html>

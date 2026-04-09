@@ -1460,6 +1460,21 @@
     var o = outletId || '';
     // [FIX PERFORMA/STRUKTUR] selalu simpan per-outlet (hapus jalur flat)
     var key = getPembukuanPath(outletId) + '/' + (data.tanggal || Date.now());
+
+    if (data.isAppend) {
+      return db.ref(key).once('value').then(function(snap) {
+        var existing = snap.val() || {};
+        var kasMasuk = (existing.kasMasuk || []).concat(data.kasMasuk || []);
+        var kasKeluar = (existing.kasKeluar || []).concat(data.kasKeluar || []);
+        return db.ref(key).set({
+          tanggal: data.tanggal,
+          kasMasuk: kasMasuk,
+          kasKeluar: kasKeluar,
+          createdAt: existing.createdAt || firebase.database.ServerValue.TIMESTAMP
+        });
+      }).then(function() { return '✅ Data pembukuan disimpan di Firebase.'; });
+    }
+
     return db.ref(key).set({
       tanggal: data.tanggal,
       kasMasuk: data.kasMasuk || [],
