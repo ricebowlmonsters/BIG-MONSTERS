@@ -10097,6 +10097,17 @@ window.loadFaceApiModelsForAbsensi = async function(silent = false) {
             }
             return;
         }
+        
+        // [FITUR FACE ID DINONAKTIFKAN SEMENTARA]
+        // Langsung tampilkan pesan siap dan hentikan proses Face API
+        if (faceStatus) {
+            faceStatus.innerHTML = "✅ Siap. Silakan klik tombol Absen di bawah.";
+            faceStatus.style.color = "#15803d";
+            faceStatus.style.background = "#dcfce7";
+            faceStatus.style.borderColor = "#bbf7d0";
+        }
+        return;
+
         if (silent) return;
         
         const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
@@ -10333,6 +10344,7 @@ function checkDistance() {
     var disableAll = !inRange || !name;
 
     // Kunci tombol jika wajah belum terdaftar
+    /* [FITUR FACE ID DINONAKTIFKAN SEMENTARA]
     if (name) {
         var desc = getRegisteredFaceDescriptorByName(name);
         if (!desc) {
@@ -10342,6 +10354,7 @@ function checkDistance() {
             if (!window._faceVerified) disableAll = true;
         }
     }
+    */
     var statusMsg = "";
 
     if (name) {
@@ -10549,7 +10562,16 @@ async function loadRekapAbsensiGPS() {
                 const detailTelatEsc = JSON.stringify({ lines: detailTelat.lines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const telatHtml = (telat || punyaTelatPulangCepat) ? '<span style="color:#b91c1c; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailTelatModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', \'' + detailTelatEsc + '\')">Ya</span>' : '-';
                 const lupaHtml = lupaAbsen !== '-' ? '<span style="color:#b45309; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailLupaModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', ' + lupaMasuk + ', ' + lupaPulang + ', ' + lupaBreakOut + ', ' + lupaBreakIn + ')">' + lupaAbsen + '</span>' : '-';
-                const photosHtml = '-'; 
+                
+                const allDayLogs = [item.masuk, ...item.breakOuts, ...item.breakIns, item.pulang].filter(Boolean);
+                const hasAnyPhoto = allDayLogs.some(log => log.photo);
+                const photosHtml = hasAnyPhoto ? '<div style="display:flex; gap:4px; flex-wrap:wrap;">' + allDayLogs.map(log => {
+                    if (log.photo) {
+                        return `<img src="${log.photo}" style="height:36px; width:36px; object-fit:cover; border-radius:4px; cursor:pointer; border:1px solid #cbd5e1; background:#f8fafc;" title="${log.type} ${log.time}" onclick="if(this.src.indexOf('LAZY_SPLIT_') === -1) showImageModal(this.src, '${log.type} - ${log.time}')">`;
+                    }
+                    return '';
+                }).join('') + '</div>' : '-';
+
                 const breakStats = getBreakStats(filtered, item.name, item.date);
                 const totalIstirahat = breakStats.total > 0 ? breakStats.total + ' menit' : '-';
                 html += `<tr${telat || punyaTelatPulangCepat || lupaAbsen !== '-' ? ' style="background:#fef2f2;"' : ''}>
@@ -10594,7 +10616,10 @@ async function loadRekapAbsensiGPS() {
     if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsLogs) {
         const outlet = getRbmOutlet() || 'default';
         try {
-            let serverLogs = await FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir);
+            let serverLogs = await Promise.race([
+                FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir),
+                new Promise((resolve, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
+            ]);
             window._rbmParsedCache[getRbmStorageKey('RBM_GPS_LOGS')] = { data: serverLogs };
             if (JSON.stringify(cachedLogs) !== JSON.stringify(serverLogs)) {
                 renderTable(serverLogs);
@@ -10665,6 +10690,9 @@ function populateRekapGpsFilterNama() {
     
     // [FIX] Selalu gabungkan dengan data Master Karyawan agar nama yang belum absen tetap muncul
     var employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    if (!employees || employees.length === 0) {
+        employees = getCachedParsedStorage('RBM_EMPLOYEES', []);
+    }
     employees.forEach(function(emp) {
         var n = (emp && emp.name || '').trim();
         if (n && !seen[n]) { seen[n] = true; names.push(n); }
@@ -11017,12 +11045,12 @@ async function updateGpsJadwalDisplay() {
             // [SUPER CEPAT] Ambil Jadwal dan Histori Absen secara BERSAMAAN (Paralel)
             const [shiftSnap, logsSnap] = await Promise.all([
                 db.ref(`rbm_pro/jadwal/${outlet}/${ym}/${today}_${emp.id}`).once('value'),
-                db.ref(`rbm_pro/gps_logs_partitioned/${outlet}/${ym}`).orderByChild('date').equalTo(today).once('value')
+                db.ref(`rbm_pro/gps_logs_partitioned/${outlet}/${ym}`).limitToLast(300).once('value')
             ]);
             shift = shiftSnap.val() || '';
             const logsVal = logsSnap.val();
             if (logsVal) {
-                myLogs = Object.values(logsVal).filter(l => l.name === name);
+                myLogs = Object.values(logsVal).filter(l => l.name === name && l.date === today);
             }
         } catch (e) {
             console.warn("Gagal fetch data spesifik", e);
@@ -11124,10 +11152,16 @@ function processAbsensiGPS(type) {
 
     if (warning) {
         showCustomConfirm(warning, "Konfirmasi Absensi", function() {
-            _executeAbsensiGPS(type);
+            showCustomAlert("📸 Sedang menjepret foto dan memproses...<br>Mohon tunggu sejenak.", "Memproses", "info");
+            setTimeout(function() {
+                _executeAbsensiGPS(type).catch(e => console.error("Error execute:", e));
+            }, 400); // Beri jeda 400ms biar UI Popup benar-benar ke-render
         });
     } else {
-        _executeAbsensiGPS(type);
+        showCustomAlert("📸 Sedang menjepret foto dan memproses...<br>Mohon tunggu sejenak.", "Memproses", "info");
+        setTimeout(function() {
+            _executeAbsensiGPS(type).catch(e => console.error("Error execute:", e));
+        }, 400); // Beri jeda 400ms biar UI Popup benar-benar ke-render
     }
 }
 
@@ -11175,8 +11209,14 @@ async function _executeAbsensiGPS(type) {
     const canvas = document.getElementById('gps_canvas');
     const context = canvas.getContext('2d');
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // [OPTIMASI KILAT] Perkecil ukuran foto drastis agar HP tidak lemot/hang
+    const MAX_WIDTH = 200; // Turun ke 200 agar sangat ringan
+    let scale = 1;
+    if (video.videoWidth > MAX_WIDTH) {
+        scale = MAX_WIDTH / video.videoWidth;
+    }
+    canvas.width = video.videoWidth * scale;
+    canvas.height = video.videoHeight * scale;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     const dateStr = now.toLocaleDateString('id-ID');
@@ -11184,14 +11224,15 @@ async function _executeAbsensiGPS(type) {
     const locStr = `Lat: ${currentPos.latitude.toFixed(5)}, Lng: ${currentPos.longitude.toFixed(5)}`;
 
     context.fillStyle = "rgba(0, 0, 0, 0.5)";
-    context.fillRect(0, canvas.height - 60, canvas.width, 60);
-    context.font = "16px Arial";
-    context.fillStyle = "white";
-    context.fillText(`${name} - ${type}`, 10, canvas.height - 35);
+    context.fillRect(0, canvas.height - 40, canvas.width, 40);
     context.font = "12px Arial";
-    context.fillText(`${dateStr} ${timeStr} | ${locStr}`, 10, canvas.height - 15);
+    context.fillStyle = "white";
+    context.fillText(`${name} - ${type}`, 5, canvas.height - 22);
+    context.font = "9px Arial";
+    context.fillText(`${dateStr} ${timeStr} | ${locStr}`, 5, canvas.height - 8);
 
-    const photoData = canvas.toDataURL('image/jpeg', 0.7);
+    // [OPTIMASI KILAT] Gunakan toDataURL langsung karena resolusi sudah sangat kecil (toBlob kadang lambat di HP jadul)
+    const photoData = canvas.toDataURL('image/jpeg', 0.3);
 
     const log = {
         id: Date.now(),
@@ -11208,6 +11249,11 @@ async function _executeAbsensiGPS(type) {
     const gpsKey = getRbmStorageKey('RBM_GPS_LOGS');
     const logs = getCachedParsedStorage(gpsKey, []);
     const myLogs = window._cachedGpsMyLogs || [];
+    
+    // [OPTIMASI KILAT] Batasi sangat ketat max 3 log lokal agar proses Save/JSON.stringify instan (tidak nge-lag)
+    if (logs.length > 3) {
+        logs.splice(0, logs.length - 3);
+    }
 
     // Peringatan durasi istirahat (sebelum push log Selesai Istirahat)
     if (type === 'Istirahat Kembali' && empId !== null) {
@@ -11236,33 +11282,42 @@ async function _executeAbsensiGPS(type) {
     
     // [OPTIMASI KILAT & AMAN] Jangan gunakan setItem untuk gps_logs karena akan menimpa seluruh history!
     // Pastikan log tersimpan ke struktur partitioned agar "Riwayat Absensi" bisa langsung terbaca.
-    if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase()) {
-        var outlet = getRbmOutlet() || 'default';
-        var ym = today.substring(0, 7); // YYYY-MM
-        var refPath = 'rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym;
-        if (window.RBMStorage._db) {
-            window.RBMStorage._db.ref(refPath).push(log);
+    try {
+        if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase()) {
+            var outlet = getRbmOutlet() || 'default';
+            var ym = today.substring(0, 7); // YYYY-MM
+            var refPath = 'rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym;
+            if (window.RBMStorage._db) {
+                window.RBMStorage._db.ref(refPath).push(log).catch(function(e) { console.warn("Gagal push log:", e); });
+            }
+            try { localStorage.setItem(gpsKey, JSON.stringify(logs)); } catch(e){}
+        } else {
+            RBMStorage.setItem(gpsKey, JSON.stringify(logs));
         }
+    } catch (dbErr1) {
+        console.warn("DB Error 1:", dbErr1);
         try { localStorage.setItem(gpsKey, JSON.stringify(logs)); } catch(e){}
-    } else {
-        RBMStorage.setItem(gpsKey, JSON.stringify(logs));
     }
     window._cachedGpsName = null; // Reset cache agar UI status langsung terupdate
 
     // Jika absen Masuk: set Hadir (H) di tab Absensi & Jadwal
     if (type === 'Masuk' && empId !== null) {
         const absKey = `${today}_${empId}`;
-        if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase()) {
-            const outlet = getRbmOutlet() || 'default';
-            const ym = today.substring(0, 7);
-            const path = `rbm_pro/absensi/${outlet}/${ym}/${absKey}`;
-            if (window.RBMStorage._db) window.RBMStorage._db.ref(path).set('H');
-            const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
-            absensiData[absKey] = 'H';
-        } else {
-            const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
-            absensiData[absKey] = 'H';
-            RBMStorage.setItem(getRbmStorageKey('RBM_ABSENSI_DATA'), JSON.stringify(absensiData));
+        try {
+            if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase()) {
+                const outlet = getRbmOutlet() || 'default';
+                const ym = today.substring(0, 7);
+                const path = `rbm_pro/absensi/${outlet}/${ym}/${absKey}`;
+                if (window.RBMStorage._db) window.RBMStorage._db.ref(path).set('H').catch(function(e) { console.warn("Gagal set absensi:", e); });
+                const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+                absensiData[absKey] = 'H';
+            } else {
+                const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+                absensiData[absKey] = 'H';
+                RBMStorage.setItem(getRbmStorageKey('RBM_ABSENSI_DATA'), JSON.stringify(absensiData));
+            }
+        } catch (dbErr2) {
+            console.warn("DB Error 2:", dbErr2);
         }
     }
 

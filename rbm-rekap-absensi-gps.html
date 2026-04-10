@@ -2,13 +2,6 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <script>
-  (function(){
-    var b = document.createElement('base');
-    b.target = (location.protocol === 'file:') ? '_self' : '_top';
-    document.head.appendChild(b);
-  })();
-  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RBM Pro</title>
   <link rel="stylesheet" href="rbm-pro.css">
@@ -82,8 +75,8 @@
                 <button type="button" class="btn btn-secondary" onclick="addRekapGpsManualName()">Tambah</button>
             </div>
         </div>
-        <button class="btn btn-secondary" onclick="loadRekapAbsensiGPS()">Tampilkan</button>
-        <button class="btn btn-secondary" onclick="loadRekapAbsensiGPS()" title="Muat ulang data outlet terpilih" style="margin-left: 4px;">🔄 Refresh</button>
+        <button class="btn btn-secondary" onclick="window._rekapGpsPage=1; loadRekapAbsensiGPS()">Tampilkan</button>
+        <button class="btn btn-secondary" onclick="window._rekapGpsPage=1; loadRekapAbsensiGPS()" title="Muat ulang data outlet terpilih" style="margin-left: 4px;">🔄 Refresh</button>
         <button class="btn btn-secondary" onclick="exportRekapAbsensiGpsToExcel()" style="background: #198754; color: white; border-color: #198754;">Export Excel</button>
         <button class="btn btn-secondary" onclick="printRekapAbsensiGpsPdf()" style="background: #dc3545; color: white; border-color: #dc3545;">Save PDF</button>
         <button id="toggle-empty-rows-btn" class="btn btn-secondary" onclick="toggleEmptyRows()" title="Sembunyikan/Tampilkan Kosong" style="margin-left: 4px;">👁️</button>

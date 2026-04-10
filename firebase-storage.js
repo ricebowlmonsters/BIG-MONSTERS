@@ -74,7 +74,11 @@
             data.hasPhoto = true;
             var pushRef = origPush.call(this, data, onComplete);
             var key = pushRef.key;
-            var photoPath = this.path.pieces_.join('/').replace('gps_logs_partitioned', 'gps_logs_photos') + '/' + key;
+                var pathStrNorm = pathStr;
+                if (pathStrNorm.indexOf('https://') === 0) {
+                    pathStrNorm = pathStrNorm.replace(/^https:\/\/[^\/]+\//, '');
+                }
+                var photoPath = pathStrNorm.replace('gps_logs_partitioned', 'gps_logs_photos') + '/' + key;
             firebase.database().ref(photoPath).set(photoData);
             return pushRef;
         }
@@ -88,7 +92,11 @@
             var photoData = data.photo;
             data.photo = 'LAZY_PHOTO';
             data.hasPhoto = true;
-            var photoPath = this.path.pieces_.join('/').replace('gps_logs_partitioned', 'gps_logs_photos');
+                var pathStrNorm = pathStr;
+                if (pathStrNorm.indexOf('https://') === 0) {
+                    pathStrNorm = pathStrNorm.replace(/^https:\/\/[^\/]+\//, '');
+                }
+                var photoPath = pathStrNorm.replace('gps_logs_partitioned', 'gps_logs_photos');
             firebase.database().ref(photoPath).set(photoData);
         }
         return origSet.call(this, data, onComplete);
@@ -112,7 +120,11 @@
                 }
             });
             if (Object.keys(photoUpdates).length > 0) {
-                var photoPath = this.path.pieces_.join('/').replace('gps_logs_partitioned', 'gps_logs_photos');
+                    var pathStrNorm = pathStr;
+                    if (pathStrNorm.indexOf('https://') === 0) {
+                        pathStrNorm = pathStrNorm.replace(/^https:\/\/[^\/]+\//, '');
+                    }
+                    var photoPath = pathStrNorm.replace('gps_logs_partitioned', 'gps_logs_photos');
                 firebase.database().ref(photoPath).update(photoUpdates);
             }
         }
@@ -369,25 +381,28 @@
         var promises = months.map(function(ym) { return db.ref('rbm_pro/gps_logs_partitioned/' + (outlet || 'default') + '/' + ym).once('value'); });
         return Promise.all(promises).then(function(snaps) {
                 var safeOutlet = (outlet || 'default').replace(/[^a-zA-Z0-9_-]/g, '');
+                var merged = [];
 
             snaps.forEach(function(snap) {
                 var val = snap.val();
                 if (val && typeof val === 'object') {
                     Object.keys(val).forEach(function(k) {
                         var item = val[k];
-                        item._firebaseKey = k;
-                        
-                        // [PERFORMA] Jangan upload ulang foto raksasa yang macet, cukup ringankan di tampilan lokal
-                        if (item.photo && item.photo.length > 500 && item.photo.indexOf('LAZY_SPLIT_') === -1 && item.photo !== 'LAZY_PHOTO') {
-                            item.hasPhoto = true;
-                        }
-                        
-                        if (item.photo === 'LAZY_PHOTO' || item.hasPhoto) {
-                            var ymDate = item.date ? item.date.substring(0, 7) : 'unknown';
-                            item.photo = "data:image/svg+xml;utf8,<svg id='LAZY_SPLIT_" + safeOutlet + "_" + ymDate + "_" + k + "' xmlns='http://www.w3.org/2000/svg' width='60' height='60'><rect width='60' height='60' fill='lightgray' rx='4'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='11' fill='blue' font-weight='bold'>Lihat Foto</text></svg>";
-                        }
+                        if (item && typeof item === 'object') {
+                            item._firebaseKey = k;
+                            
+                            // [PERFORMA] Jangan upload ulang foto raksasa yang macet, cukup ringankan di tampilan lokal
+                            if (item.photo && item.photo.length > 500 && item.photo.indexOf('LAZY_SPLIT_') === -1 && item.photo !== 'LAZY_PHOTO') {
+                                item.hasPhoto = true;
+                            }
+                            
+                            if (item.photo === 'LAZY_PHOTO' || item.hasPhoto) {
+                                var ymDate = item.date ? item.date.substring(0, 7) : 'unknown';
+                                item.photo = "data:image/svg+xml;utf8,<svg id='LAZY_SPLIT_" + safeOutlet + "_" + ymDate + "_" + k + "' xmlns='http://www.w3.org/2000/svg' width='60' height='60'><rect width='60' height='60' fill='lightgray' rx='4'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='11' fill='blue' font-weight='bold'>Lihat Foto</text></svg>";
+                            }
 
-                        merged.push(item);
+                            merged.push(item);
+                        }
                     });
                 }
             });
@@ -1961,7 +1976,8 @@
           if (target && target.tagName === 'IMG' && target.src && target.src.indexOf('LAZY_SPLIT_') >= 0) {
               e.preventDefault(); 
               e.stopPropagation();
-              var srcDecoded = decodeURIComponent(target.src);
+                    var srcDecoded = target.src;
+                    try { srcDecoded = decodeURIComponent(target.src); } catch(err) {}
               var match = srcDecoded.match(/id=['"]LAZY_SPLIT_([^_]+)_([^_]+)_([^'"]+)['"]/);
               if (match) {
                   var outlet = match[1];

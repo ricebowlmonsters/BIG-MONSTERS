@@ -2,13 +2,6 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <script>
-  (function(){
-    var b = document.createElement('base');
-    b.target = (location.protocol === 'file:') ? '_self' : '_top';
-    document.head.appendChild(b);
-  })();
-  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RBM Pro</title>
   <link rel="stylesheet" href="rbm-pro.css">
@@ -172,7 +165,7 @@ function fallbackCopy(url, feedback) {
 
     <div class="form-section rbm-absen-name-section">
         <label>Nama Karyawan</label>
-        <select id="gps_absen_name" onchange="updateGpsJadwalDisplay()">
+        <select id="gps_absen_name" onchange="updateGpsJadwalDisplay();">
             <option value="">-- Pilih Nama --</option>
             <!-- Populated by JS -->
         </select>
@@ -289,5 +282,11 @@ function fallbackCopy(url, feedback) {
 <script src="rbm-pro.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <!-- [PERFORMA] jszip/xlsx tidak dibutuhkan untuk absensi karyawan. -->
+<script>
+function checkFaceIdRegistration() {
+    // [FITUR DINONAKTIFKAN SEMENTARA]
+    return;
+}
+</script>
 </body>
 </html>

@@ -12,6 +12,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RBM Pro</title>
   <link rel="stylesheet" href="rbm-pro.css">
+  <style>
+    /* CSS untuk Kalender Reservasi */
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .calendar-day-header {
+      text-align: center;
+      font-weight: bold;
+      color: #4b5563;
+      padding: 8px 0;
+      background: #f3f4f6;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .calendar-day {
+      min-height: 85px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 4px;
+      background: #fff;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      overflow: hidden;
+    }
+    .calendar-day:hover { border-color: #4C2A85; box-shadow: 0 4px 8px rgba(76, 42, 133, 0.15); transform: translateY(-2px); }
+    .calendar-day.other-month { background: #f9fafb; opacity: 0.4; pointer-events: none; }
+    .calendar-day.today { border-color: #3b82f6; background: #eff6ff; border-width: 2px; }
+    .calendar-day-number { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 2px; text-align: right; padding-right: 4px; }
+    .cal-event { 
+      font-size: 10px; padding: 4px 6px; border-radius: 4px; color: #fff; 
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600;
+    }
+    .indoor { background-color: #3b82f6; } /* Biru */
+    .outdoor { background-color: #10b981; } /* Hijau */
+    .vip { background-color: #8b5cf6; } /* Ungu */
+    .meeting { background-color: #f59e0b; } /* Kuning/Oranye */
+  </style>
 </head>
 <body>
 <script>
@@ -221,5 +264,299 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ================= RESERVASI LOGIC =================
+
+// Fungsi pengaman agar data selalu berupa Array yang bersih (mengatasi error null/object dari Firebase)
+function getSafeReservasiData(key) {
+    let data = [];
+    try {
+        if (typeof getCachedParsedStorage === 'function') {
+            data = getCachedParsedStorage(key, []);
+        } else {
+            data = JSON.parse(localStorage.getItem(key) || '[]');
+        }
+    } catch(e) { data = []; }
+    
+    // Paksa menjadi array jika Firebase mengembalikan object
+    if (!Array.isArray(data)) {
+        if (data && typeof data === 'object') {
+            data = Object.keys(data).map(k => data[k]);
+        } else {
+            data = [];
+        }
+    }
+    // Bersihkan dari null atau data kosong
+    return data.filter(d => d !== null && d !== undefined && d.id);
+}
+
+function submitReservasi() {
+    const pj = document.getElementById("res_pj").value;
+    const nama = document.getElementById("res_nama").value;
+    const wa = document.getElementById("res_wa").value;
+    const tanggal = document.getElementById("res_tanggal").value;
+    const jamMulai = document.getElementById("res_jam_mulai").value;
+    const jamSelesai = document.getElementById("res_jam_selesai").value;
+    const jmlTamu = document.getElementById("res_jml_tamu").value;
+    const ruangan = document.getElementById("res_ruangan").value;
+    const meja = document.getElementById("res_meja").value;
+    const fasilitas = document.getElementById("res_fasilitas").value;
+    const dp = document.getElementById("res_dp").value;
+
+    if (!nama || !tanggal || !jamMulai) {
+        alert("Nama, Tanggal, dan Jam Mulai wajib diisi!");
+        return;
+    }
+
+    const storageKey = getRbmStorageKey('RBM_RESERVASI_DATA');
+    let reservasiData = getSafeReservasiData(storageKey);
+
+    const timestamp = new Date().toISOString();
+    const id = "RES-" + Date.now().toString().slice(-6);
+
+    const newRes = {
+        id, pj, timestamp, nama, tanggal, jamMulai, jamSelesai, wa, jmlTamu, ruangan, meja, fasilitas, dp
+    };
+
+    reservasiData.push(newRes);
+    
+    if (window.RBMStorage && typeof window.RBMStorage.setItem === 'function') {
+        window.RBMStorage.setItem(storageKey, JSON.stringify(reservasiData));
+    } else {
+        localStorage.setItem(storageKey, JSON.stringify(reservasiData));
+    }
+    
+    if (window._rbmParsedCache) {
+        window._rbmParsedCache[storageKey] = { data: reservasiData };
+    }
+    
+    alert("✅ Reservasi Berhasil Disimpan!");
+    
+    document.getElementById("res_nama").value = "";
+    document.getElementById("res_wa").value = "";
+    document.getElementById("res_jml_tamu").value = "";
+    document.getElementById("res_meja").value = "";
+    document.getElementById("res_fasilitas").value = "";
+    document.getElementById("res_dp").value = "";
+    
+    loadReservasiData();
+    if (typeof renderReservasiCalendar === 'function') renderReservasiCalendar();
+}
+
+function loadReservasiData() {
+    const tglAwal = document.getElementById("res_filter_start").value;
+    const tglAkhir = document.getElementById("res_filter_end").value;
+    const tbody = document.getElementById("reservasi_tbody");
+    if (!tbody) return;
+    
+    const storageKey = getRbmStorageKey('RBM_RESERVASI_DATA');
+    let allData = getSafeReservasiData(storageKey);
+    
+    const filtered = allData.filter(d => d.tanggal && d.tanggal >= tglAwal && d.tanggal <= tglAkhir);
+    
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Tidak ada data reservasi pada rentang tanggal ini.</td></tr>';
+        return;
+    }
+
+    filtered.sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+
+    let html = '';
+    filtered.forEach((res) => {
+        const dpFormatted = res.dp ? 'Rp ' + parseInt(res.dp).toLocaleString('id-ID') : 'Rp 0';
+        html += `<tr>
+            <td><span style="font-size:11px; font-weight:bold; color:#1e40af;">${res.id}</span></td>
+            <td>${res.tanggal}</td>
+            <td>${res.nama}<br><span style="font-size:10px; color:#666;">${res.wa || '-'}</span></td>
+            <td>${res.jamMulai} - ${res.jamSelesai}</td>
+            <td style="text-align:center;">${res.jmlTamu}</td>
+            <td>${res.ruangan}</td>
+            <td style="text-align:right;">${dpFormatted}</td>
+            <td>
+                <button class="btn-small-danger" style="background:#0d6efd;" onclick="printReservasiBill('${res.id}')">Print Bill</button>
+                ${window.rbmOnlyOwnerCanEditDelete && window.rbmOnlyOwnerCanEditDelete() ? `<button class="btn-small-danger" onclick="deleteReservasi('${res.id}')">Hapus</button>` : '-'}
+            </td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+function deleteReservasi(id) {
+    if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { alert('Hanya Owner yang dapat menghapus data.'); return; }
+    if(!confirm("Hapus data reservasi ini?")) return;
+    const storageKey = getRbmStorageKey('RBM_RESERVASI_DATA');
+    let allData = getSafeReservasiData(storageKey);
+    
+    allData = allData.filter(d => d.id !== id);
+    
+    if (window.RBMStorage && typeof window.RBMStorage.setItem === 'function') {
+        window.RBMStorage.setItem(storageKey, JSON.stringify(allData));
+    } else {
+        localStorage.setItem(storageKey, JSON.stringify(allData));
+    }
+    if (window._rbmParsedCache) {
+        window._rbmParsedCache[storageKey] = { data: allData };
+    }
+    loadReservasiData();
+    if (typeof renderReservasiCalendar === 'function') renderReservasiCalendar();
+}
+
+function printReservasiBill(id) {
+    const storageKey = getRbmStorageKey('RBM_RESERVASI_DATA');
+    let allData = getSafeReservasiData(storageKey);
+    
+    const res = allData.find(d => d.id === id);
+    if (!res) return;
+
+    const dpFormatted = res.dp ? 'Rp ' + parseInt(res.dp).toLocaleString('id-ID') : 'Rp 0';
+    const html = `
+    <!DOCTYPE html>
+    <html><head><title>Bill Reservasi</title>
+    <style>
+        body { font-family: 'Courier New', monospace; padding: 20px; font-size: 12px; color: #000; }
+        .header { text-align: center; border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 15px; }
+        .row { display: flex; margin-bottom: 5px; }
+        .label { width: 100px; font-weight: bold; }
+        .val { flex: 1; }
+        .footer { text-align: center; margin-top: 20px; border-top: 2px dashed #000; padding-top: 10px; }
+        @media print { body { padding: 0; } }
+    </style>
+    </head><body>
+        <div class="header">
+            <h2 style="margin:0;">RICE BOWL MONSTERS</h2>
+            <p style="margin:5px 0;">BUKTI RESERVASI</p>
+            <p style="margin:0; font-size:10px;">ID: ${res.id}</p>
+        </div>
+        <div class="row"><div class="label">PJ</div><div class="val">: ${res.pj || '-'}</div></div>
+        <div class="row"><div class="label">Tgl Pesan</div><div class="val">: ${new Date(res.timestamp).toLocaleDateString('id-ID')}</div></div>
+        <br>
+        <div class="row"><div class="label">Nama</div><div class="val">: ${res.nama}</div></div>
+        <div class="row"><div class="label">No WA</div><div class="val">: ${res.wa || '-'}</div></div>
+        <div class="row"><div class="label">Tgl Acara</div><div class="val">: ${res.tanggal}</div></div>
+        <div class="row"><div class="label">Waktu</div><div class="val">: ${res.jamMulai} s/d ${res.jamSelesai}</div></div>
+        <div class="row"><div class="label">Jml Tamu</div><div class="val">: ${res.jmlTamu} Orang</div></div>
+        <div class="row"><div class="label">Ruangan</div><div class="val">: ${res.ruangan}</div></div>
+        <div class="row"><div class="label">Meja</div><div class="val">: ${res.meja || '-'}</div></div>
+        <div class="row"><div class="label">Fasilitas</div><div class="val">: ${res.fasilitas || '-'}</div></div>
+        <br>
+        <div class="row" style="font-size:14px; font-weight:bold;">
+            <div class="label">DP MASUK</div>
+            <div class="val">: ${dpFormatted}</div>
+        </div>
+        <div class="footer">
+            <p>Terima Kasih atas Reservasi Anda</p>
+            <p style="font-size:10px;">Harap simpan bukti ini</p>
+        </div>
+    </body></html>`;
+    
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.srcdoc = html;
+    document.body.appendChild(iframe);
+
+    setTimeout(() => {
+        try {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        } catch (e) {
+            console.warn('Gagal memanggil print:', e);
+        }
+        setTimeout(() => { 
+            try { document.body.removeChild(iframe); } catch(e) {} 
+        }, 1000);
+    }, 1000);
+}
+
+let calCurrentDate = new Date();
+
+function renderReservasiCalendar() {
+    const grid = document.getElementById('calendar_grid');
+    const monthYear = document.getElementById('cal_month_year');
+    if (!grid || !monthYear) return;
+
+    const year = calCurrentDate.getFullYear();
+    const month = calCurrentDate.getMonth();
+    
+    const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    monthYear.innerText = `${monthNames[month]} ${year}`;
+
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startDayOfWeek = firstDay.getDay();
+
+    let html = '';
+    const days = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+    days.forEach(d => html += `<div class="calendar-day-header">${d}</div>`);
+
+    for (let i = 0; i < startDayOfWeek; i++) {
+        html += `<div class="calendar-day other-month"></div>`;
+    }
+
+    const storageKey = getRbmStorageKey('RBM_RESERVASI_DATA');
+    let reservasiData = getSafeReservasiData(storageKey);
+
+    for (let i = 1; i <= daysInMonth; i++) {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        
+        const now = new Date();
+        const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+        const isToday = (dateStr === todayStr);
+        
+        const events = reservasiData.filter(r => r && r.tanggal === dateStr);
+        
+        let eventsHtml = '';
+        events.forEach(ev => {
+            let colorClass = 'indoor';
+            if (ev.ruangan && ev.ruangan.toLowerCase().includes('outdoor')) colorClass = 'outdoor';
+            else if (ev.ruangan && ev.ruangan.toLowerCase().includes('vip')) colorClass = 'vip';
+            else if (ev.ruangan && ev.ruangan.toLowerCase().includes('meeting')) colorClass = 'meeting';
+            
+            eventsHtml += `<div class="cal-event ${colorClass}" title="${ev.nama} (${ev.jamMulai}-${ev.jamSelesai}) - ${ev.ruangan}">${ev.jamMulai} ${ev.nama}</div>`;
+        });
+
+        html += `<div class="calendar-day ${isToday ? 'today' : ''}" onclick="selectCalendarDate('${dateStr}')">
+            <div class="calendar-day-number">${i}</div>
+            ${eventsHtml}
+        </div>`;
+    }
+
+    grid.innerHTML = html;
+}
+
+function changeCalendarMonth(offset) {
+    calCurrentDate.setMonth(calCurrentDate.getMonth() + offset);
+    renderReservasiCalendar();
+}
+
+function selectCalendarDate(dateStr) {
+    var el = document.getElementById("res_tanggal");
+    if (el) el.value = dateStr;
+    showView('input-reservasi-view');
+    if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus();
+    }
+}
+
+// Inisialisasi data saat halaman dimuat (Sync Firebase)
+window.addEventListener('load', function() {
+    function initReservasi() {
+        loadReservasiData();
+        if (typeof renderReservasiCalendar === 'function') renderReservasiCalendar();
+    }
+    
+    initReservasi(); // Load cepat dari cache lokal
+    
+    if (window.RBMStorage && typeof window.RBMStorage.ready === 'function') {
+        window.RBMStorage.ready().then(initReservasi).catch(initReservasi);
+    }
+});
+</script>
 </body>
 </html>
