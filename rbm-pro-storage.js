@@ -95,6 +95,7 @@
          }
       } catch(e) {}
       var sfx = outlet ? '_' + outlet.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
+      var exactSfx = outlet ? '_' + outlet : '';
 
       // [PERFORMA KRUSIAL]
       // Sebelumnya kita selalu meload employees/face_data saat buka halaman apa pun.
@@ -182,28 +183,32 @@
                       // Sinkronkan node penting ke localStorage agar bisa langsung dipakai halaman aktif
                       try {
                           if (node.indexOf('employees') === 0) {
-                              localStorage.setItem('RBM_EMPLOYEES' + sfx, JSON.stringify(val));
-                              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_EMPLOYEES' + sfx];
+                              localStorage.setItem('RBM_EMPLOYEES' + exactSfx, JSON.stringify(val));
+                              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_EMPLOYEES' + exactSfx];
                           } else if (node.indexOf('face_data') === 0) {
-                              localStorage.setItem('RBM_FACE_DATA' + sfx, JSON.stringify(val));
-                              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_FACE_DATA' + sfx];
+                              localStorage.setItem('RBM_FACE_DATA' + exactSfx, JSON.stringify(val));
+                              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_FACE_DATA' + exactSfx];
                           } else if (node.indexOf('gps_config') === 0) {
-                              localStorage.setItem('RBM_GPS_CONFIG' + sfx, JSON.stringify(val));
-                              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_GPS_CONFIG' + sfx];
+                              localStorage.setItem('RBM_GPS_CONFIG' + exactSfx, JSON.stringify(val));
+                              if (window._rbmParsedCache) {
+                                  delete window._rbmParsedCache['RBM_GPS_CONFIG' + exactSfx];
+                              }
                               if (typeof window !== 'undefined' && window.RBM_PAGE === 'absensi-gps-view') {
                                   window._cachedOfficeConfig = null;
                                   setTimeout(function() { try { if (typeof window.loadOfficeConfig === 'function') window.loadOfficeConfig(); } catch (e) {} }, 0);
                               }
                           } else if (node.indexOf('gps_jam_config') === 0) {
-                              localStorage.setItem('RBM_GPS_JAM_CONFIG' + sfx, JSON.stringify(val));
-                              if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_GPS_JAM_CONFIG' + sfx];
+                              localStorage.setItem('RBM_GPS_JAM_CONFIG' + exactSfx, JSON.stringify(val));
+                              if (window._rbmParsedCache) {
+                                  delete window._rbmParsedCache['RBM_GPS_JAM_CONFIG' + exactSfx];
+                              }
                               if (typeof window !== 'undefined' && window.RBM_PAGE === 'absensi-gps-view') {
                                   setTimeout(function() { try { if (typeof window.loadJamConfig === 'function') window.loadJamConfig(); } catch (e) {} }, 0);
                               }
                           } else if (node.indexOf('jadwal/') === 0) {
                               // Simpan ke cache path agar fallback RBMStorage.getItem('RBM_JADWAL_DATA_*') bisa membaca cepat.
                               if (window._rbmParsedCache) {
-                                  var jadwalKey = 'RBM_JADWAL_DATA' + sfx;
+                                  var jadwalKey = 'RBM_JADWAL_DATA' + exactSfx;
                                   window._rbmParsedCache[jadwalKey] = { data: val || {} };
                               }
                               if (typeof window !== 'undefined' && window.RBM_PAGE === 'absensi-gps-view' && typeof window.updateGpsJadwalDisplay === 'function') {
@@ -241,26 +246,42 @@
           if (sfx) {
               var empKey = 'employees' + sfx;
               if (rootVal[empKey]) {
-                  localStorage.setItem('RBM_EMPLOYEES' + sfx, JSON.stringify(rootVal[empKey]));
-                  if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_EMPLOYEES' + sfx];
+                  localStorage.setItem('RBM_EMPLOYEES' + exactSfx, JSON.stringify(rootVal[empKey]));
+                  if (window._rbmParsedCache) {
+                      delete window._rbmParsedCache['RBM_EMPLOYEES' + exactSfx];
+                  }
               }
               
               var gpsKey = 'gps_config' + sfx;
-              if (rootVal[gpsKey]) localStorage.setItem('RBM_GPS_CONFIG' + sfx, JSON.stringify(rootVal[gpsKey]));
+              if (rootVal[gpsKey]) {
+                  localStorage.setItem('RBM_GPS_CONFIG' + exactSfx, JSON.stringify(rootVal[gpsKey]));
+                  if (window._rbmParsedCache) {
+                      delete window._rbmParsedCache['RBM_GPS_CONFIG' + exactSfx];
+                  }
+              }
               
               var jamKey = 'gps_jam_config' + sfx;
-              if (rootVal[jamKey]) localStorage.setItem('RBM_GPS_JAM_CONFIG' + sfx, JSON.stringify(rootVal[jamKey]));
+              if (rootVal[jamKey]) {
+                  localStorage.setItem('RBM_GPS_JAM_CONFIG' + exactSfx, JSON.stringify(rootVal[jamKey]));
+                  if (window._rbmParsedCache) {
+                      delete window._rbmParsedCache['RBM_GPS_JAM_CONFIG' + exactSfx];
+                  }
+              }
 
               var faceKey = 'face_data' + sfx;
               if (rootVal[faceKey]) {
-                  localStorage.setItem('RBM_FACE_DATA' + sfx, JSON.stringify(rootVal[faceKey]));
-                  if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_FACE_DATA' + sfx];
+                  localStorage.setItem('RBM_FACE_DATA' + exactSfx, JSON.stringify(rootVal[faceKey]));
+                  if (window._rbmParsedCache) {
+                      delete window._rbmParsedCache['RBM_FACE_DATA' + exactSfx];
+                  }
               }
               
               var resKey = 'reservasi_data' + sfx;
               if (rootVal[resKey]) {
-                  localStorage.setItem('RBM_RESERVASI_DATA' + sfx, JSON.stringify(rootVal[resKey]));
-                  if (window._rbmParsedCache) delete window._rbmParsedCache['RBM_RESERVASI_DATA' + sfx];
+                  localStorage.setItem('RBM_RESERVASI_DATA' + exactSfx, JSON.stringify(rootVal[resKey]));
+                  if (window._rbmParsedCache) {
+                      delete window._rbmParsedCache['RBM_RESERVASI_DATA' + exactSfx];
+                  }
               }
           }
           if (rootVal.face_data) {

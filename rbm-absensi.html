@@ -420,13 +420,20 @@
 
               <div style="display: grid; grid-template-columns: 1fr 0.5fr 1fr; gap: 10px; margin-bottom: 15px;">
                 <div><label style="font-size: 11px;">Total Omset</label><input type="text" id="bonus_omset_total" placeholder="Rp 0" oninput="formatRupiahInput(this); calculateBonusOmset()"></div>
-                <div><label style="font-size: 11px;">Persen (%)</label><input type="number" id="bonus_omset_persen" placeholder="%" oninput="calculateBonusOmset()"></div>
+                <div><label style="font-size: 11px;">Persen (%)</label><input type="number" id="bonus_omset_persen" placeholder="2" value="2" oninput="calculateBonusOmset()"></div>
                 <div><label style="font-size: 11px;">Total Dibagi</label><input type="text" id="bonus_omset_pool" placeholder="Rp 0" oninput="formatRupiahInput(this); calculateBonusOmsetFromPool()" style="background: white; border: 1px solid #ccc; padding: 5px; border-radius: 4px; font-weight: bold; color: #059669; width: 100%; box-sizing: border-box;"></div>
               </div>
 
               <table class="data-table" style="font-size: 12px;">
                 <thead><tr><th>Nama</th><th style="text-align: center; width: 60px;">Dapat?</th><th style="text-align: right;">Nominal</th></tr></thead>
                 <tbody id="bonus_omset_tbody"></tbody>
+                <tfoot id="bonus_omset_tfoot">
+                    <tr style="background-color: #f1f5f9;">
+                        <td><input type="text" id="bonus_omset_extra_name" placeholder="Ket (Makan-makan, dll)" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; box-sizing:border-box;"></td>
+                        <td style="text-align: center; font-weight:bold; color:#64748b;">-</td>
+                        <td><input type="text" id="bonus_omset_extra_nominal" placeholder="Rp 0" oninput="if(typeof formatRupiahInput === 'function') formatRupiahInput(this); recalculateOmsetPoolFromManual()" style="width: 100%; text-align: right; padding: 4px; border: 1px solid #ccc; border-radius: 4px; box-sizing:border-box; color:#ef4444; font-weight:bold;"></td>
+                    </tr>
+                </tfoot>
               </table>
             </div>
         </div>
@@ -592,6 +599,11 @@ window.addEventListener('load', function() {
         if (poolInput) {
             poolInput.value = 'Rp ' + pool.toLocaleString('id-ID');
         }
+        var tbody = document.getElementById('bonus_omset_tbody');
+        if (tbody) {
+            var inputs = tbody.querySelectorAll('.bonus-nominal-input');
+            inputs.forEach(function(inp) { inp.removeAttribute('data-manual'); });
+        }
         distributeBonusOmset(pool);
     };
 
@@ -599,19 +611,29 @@ window.addEventListener('load', function() {
         var poolInput = document.getElementById('bonus_omset_pool');
         if(!poolInput) return;
         var pool = parseFloat(poolInput.value.replace(/[^0-9]/g, '')) || 0;
+        var tbody = document.getElementById('bonus_omset_tbody');
+        if (tbody) {
+            var inputs = tbody.querySelectorAll('.bonus-nominal-input');
+            inputs.forEach(function(inp) { inp.removeAttribute('data-manual'); });
+        }
         distributeBonusOmset(pool);
     };
 
     function distributeBonusOmset(pool) {
         var tbody = document.getElementById('bonus_omset_tbody');
         if (!tbody) return;
+        
+        var extraInput = document.getElementById('bonus_omset_extra_nominal');
+        var extraNominal = extraInput ? (parseInt(extraInput.value.replace(/[^0-9]/g, '')) || 0) : 0;
+        var remainingPool = Math.max(0, pool - extraNominal);
+
         var rows = tbody.querySelectorAll('tr');
         var checkedCount = 0;
         rows.forEach(function(tr) {
             var cb = tr.querySelector('input[type="checkbox"]');
             if (cb && cb.checked) checkedCount++;
         });
-        var nominal = checkedCount > 0 ? Math.floor(pool / checkedCount) : 0;
+        var nominal = checkedCount > 0 ? Math.floor(remainingPool / checkedCount) : 0;
         rows.forEach(function(tr) {
             var cb = tr.querySelector('input[type="checkbox"]');
             var inp = tr.querySelector('.bonus-nominal-input');
@@ -691,17 +713,25 @@ window.addEventListener('load', function() {
                 if (!nominalTd.querySelector('input')) {
                     var currentText = nominalTd.textContent.trim();
                     // Menggunakan span hidden agar bisa dibaca oleh script submit bawaan
-                    nominalTd.innerHTML = `<input type="text" class="bonus-nominal-input" style="width: 100%; text-align: right; padding: 4px; border: 1px solid #ccc; border-radius: 4px; box-sizing:border-box;" value="${currentText}" oninput="if(typeof formatRupiahInput === 'function') formatRupiahInput(this); this.nextElementSibling.textContent = this.value;"><span class="hidden-nominal" style="display:none;">${currentText}</span>`;
+                    nominalTd.innerHTML = `<input type="text" class="bonus-nominal-input" style="width: 100%; text-align: right; padding: 4px; border: 1px solid #ccc; border-radius: 4px; box-sizing:border-box;" value="${currentText}" oninput="if(typeof formatRupiahInput === 'function') formatRupiahInput(this); this.nextElementSibling.textContent = this.value; if(typeof recalculateOmsetPoolFromManual === 'function') recalculateOmsetPoolFromManual(this);"><span class="hidden-nominal bonus-omset-nominal-display" style="display:none;">${currentText}</span>`;
                 }
             }
             var cb = tr.querySelector('input[type="checkbox"]');
             if (cb && !cb.hasAttribute('data-hooked')) {
                 cb.setAttribute('data-hooked', 'true');
                 cb.addEventListener('change', function() {
-                    calculateBonusOmsetFromPool();
+                    var tr = this.closest('tr');
+                    var inp = tr ? tr.querySelector('.bonus-nominal-input') : null;
+                    if (!this.checked && inp) {
+                        inp.value = 'Rp 0';
+                        if (inp.nextElementSibling) inp.nextElementSibling.textContent = 'Rp 0';
+                        inp.removeAttribute('data-manual');
+                    }
+                    if(typeof recalculateOmsetPoolFromManual === 'function') recalculateOmsetPoolFromManual();
                 });
             }
         });
+        if(typeof recalculateOmsetPoolFromManual === 'function') recalculateOmsetPoolFromManual();
     }
 
     // Hook ke tab switch (tarik data omset saat tab Bonus dibuka)
@@ -728,6 +758,56 @@ window.addEventListener('load', function() {
     
     // Coba rewrite saat onload jika kebetulan tab bonus sudah terbuka
     setTimeout(rewriteBonusOmsetTable, 1500);
+    
+    // Fungsi untuk merekap manual dan membagi otomatis sisa ke karyawan lainnya
+    window.recalculateOmsetPoolFromManual = function(editedInput) {
+        var poolInput = document.getElementById('bonus_omset_pool');
+        if (!poolInput) return;
+        
+        var poolVal = parseInt(poolInput.value.replace(/[^0-9]/g, '')) || 0;
+        var tbody = document.getElementById('bonus_omset_tbody');
+        if (!tbody) return;
+        
+        var extraInput = document.getElementById('bonus_omset_extra_nominal');
+        var extraNominal = extraInput ? (parseInt(extraInput.value.replace(/[^0-9]/g, '')) || 0) : 0;
+        var poolAvailable = Math.max(0, poolVal - extraNominal);
+
+        if (editedInput) {
+            editedInput.setAttribute('data-manual', 'true');
+        }
+
+        var rows = tbody.querySelectorAll('tr');
+        var manualTotal = 0;
+        var autoInputs = [];
+
+        rows.forEach(function(tr) {
+            var cb = tr.querySelector('.bonus-omset-check');
+            var inp = tr.querySelector('.bonus-nominal-input');
+            if (!cb || !inp) return;
+
+            if (cb.checked) {
+                if (inp.getAttribute('data-manual') === 'true') {
+                    var val = parseInt(inp.value.replace(/[^0-9]/g, ''), 10) || 0;
+                    manualTotal += val;
+                } else {
+                    autoInputs.push(inp);
+                }
+            }
+        });
+
+        var remaining = poolAvailable - manualTotal;
+        var autoVal = 0;
+        if (autoInputs.length > 0) {
+            autoVal = remaining > 0 ? Math.floor(remaining / autoInputs.length) : 0;
+            autoInputs.forEach(function(inp) {
+                inp.value = 'Rp ' + autoVal.toLocaleString('id-ID');
+                if (inp.nextElementSibling) inp.nextElementSibling.textContent = inp.value;
+            });
+        }
+        
+        var info = document.getElementById('alokasi_manual_info');
+        if (info) info.innerHTML = '';
+    };
 });
 </script>
 <script>

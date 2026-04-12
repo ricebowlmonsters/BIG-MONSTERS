@@ -89,8 +89,20 @@
             </table>
         </div>
         <button type="button" class="btn-secondary" onclick="addGpsShiftRow()" style="font-size:11px; padding:5px 10px;">+ Tambah Shift</button>
-        <div class="row-group" style="margin-top:14px; display:flex; gap:15px; align-items:flex-end; flex-wrap:wrap;">
-            <div><label style="font-size:11px;">Perhitungan telat (untuk Rekap Gaji)</label><input type="number" id="gps_menit_telat_per_jam" placeholder="10" value="10" min="1" style="width:60px;"> menit = 1 jam potongan</div>
+        
+        <div class="row-group" style="margin-top:14px; display:flex; flex-direction:column; gap:12px; background:#f8fafc; padding:12px; border-radius:6px; border:1px solid #cbd5e1;">
+            <div>
+                <label style="font-size:11px; font-weight:bold; color:#1e40af; display:block; margin-bottom:4px;">Perhitungan Telat (untuk Rekap Gaji)</label>
+                <div style="font-size:11px; display:flex; align-items:center; gap:6px;">Tiap <input type="number" id="gps_menit_telat_per_jam" placeholder="10" value="10" min="1" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"> menit keterlambatan = dihitung 1 jam potongan.</div>
+            </div>
+            <div style="border-top:1px dashed #cbd5e1; padding-top:10px;">
+                <label style="font-size:11px; font-weight:bold; color:#b45309; display:block; margin-bottom:4px;">Potongan Lupa Absen (Fingerprint)</label>
+                <div style="font-size:11px; display:flex; align-items:center; gap:6px;">Denda <input type="number" id="gps_potongan_lupa_absen_jam" placeholder="7" value="7" min="0" step="0.5" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"> jam potongan per kali karyawan lupa absen.</div>
+            </div>
+            <div style="border-top:1px dashed #cbd5e1; padding-top:10px;">
+                <label style="font-size:11px; font-weight:bold; color:#0f172a; display:block; margin-bottom:4px;">Toleransi Keterlambatan</label>
+                <div style="font-size:11px; display:flex; align-items:center; gap:6px;">Maklumi telat hingga <input type="number" id="gps_toleransi_telat_menit" placeholder="0" value="0" min="0" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"> menit sebelum mulai dipotong.</div>
+            </div>
         </div>
         <button class="btn-secondary" onclick="saveJamConfig()" style="font-size:11px; padding:5px 10px; margin-top:10px;">Simpan Pengaturan Jam</button>
     </div>

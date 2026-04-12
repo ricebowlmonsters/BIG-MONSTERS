@@ -3154,6 +3154,68 @@ function closeImageModal() {
   if (modal) modal.style.display = 'none';
 }
 
+window.fetchAndShowGpsPhoto = function(date, firebaseKey, logId, caption, btn) {
+    if (btn.getAttribute('data-fetching') === 'true') return;
+    btn.setAttribute('data-fetching', 'true');
+    var originalText = btn.innerText;
+    btn.innerText = '⏳';
+    btn.style.pointerEvents = 'none';
+    btn.disabled = true;
+    var outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : 'default';
+    var ym = date.substring(0, 7);
+
+    var processPhoto = function(photoBase64) {
+        btn.innerText = originalText;
+        btn.style.pointerEvents = 'auto';
+        btn.disabled = false;
+        btn.removeAttribute('data-fetching');
+        if (photoBase64 && typeof photoBase64 === 'string' && photoBase64.length > 100 && photoBase64.indexOf('LAZY_SPLIT_') === -1 && photoBase64 !== 'LAZY_PHOTO') {
+            showImageModal(photoBase64, caption);
+        } else {
+            alert('Foto tidak ditemukan di database server.');
+        }
+    };
+
+    if (window.RBMStorage && window.RBMStorage._useFirebase && window.RBMStorage._db) {
+        var fetchByKey = function(key) {
+            var photoPath = 'rbm_pro/gps_logs_photos/' + outlet + '/' + ym + '/' + key;
+            window.RBMStorage._db.ref(photoPath).once('value').then(function(snap) {
+                var p = snap.val();
+                if (p && typeof p === 'string' && p.length > 100 && p !== 'LAZY_PHOTO' && p.indexOf('LAZY_SPLIT_') === -1) {
+                    processPhoto(p);
+                } else {
+                    window.RBMStorage._db.ref('rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym + '/' + key + '/photo').once('value').then(function(snap2) {
+                        processPhoto(snap2.val());
+                    }).catch(function() { processPhoto(null); });
+                }
+            }).catch(function() { processPhoto(null); });
+        };
+
+        if (firebaseKey && firebaseKey !== 'undefined' && firebaseKey !== 'null') {
+            fetchByKey(firebaseKey);
+        } else if (logId && logId !== 'undefined') {
+            window.RBMStorage._db.ref('rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym).orderByChild('id').equalTo(Number(logId)).once('value').then(function(snap) {
+                var val = snap.val();
+                if (val) {
+                    var keys = Object.keys(val);
+                    if (keys.length > 0) fetchByKey(keys[0]);
+                    else processPhoto(null);
+                } else processPhoto(null);
+            }).catch(function() { processPhoto(null); });
+        } else { processPhoto(null); }
+    } else {
+        var cacheData = window._rbmParsedCache && window._rbmParsedCache[getRbmStorageKey('RBM_GPS_LOGS')] ? window._rbmParsedCache[getRbmStorageKey('RBM_GPS_LOGS')].data : [];
+        var foundPhoto = null;
+        for (var i = 0; i < cacheData.length; i++) {
+            if (cacheData[i].id == logId) {
+                foundPhoto = cacheData[i].photo;
+                break;
+            }
+        }
+        processPhoto(foundPhoto);
+    }
+};
+
 function calculateSisaUangPengajuan() {
     var dateEl = document.getElementById("pengajuan_saldo_date");
     var outEl = document.getElementById("pengajuan_sisa_uang_val");
@@ -5373,6 +5435,9 @@ function renderRekapAbsensiReport() {
     const tbody = document.getElementById("rekap_absen_tbody");
     const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
+    const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
+    const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
 
     // 1. Build Header
     let hRow1 = `
@@ -5385,6 +5450,7 @@ function renderRekapAbsensiReport() {
             <th rowspan="2" style="border:1px solid black; padding:4px; width:40px;">TOTAL HARI KERJA</th>
             <th rowspan="2" style="border:1px solid black; padding:4px; width:40px;">TOTAL SISA CUTI</th>
             <th colspan="8" style="border:1px solid black; padding:4px;">ABSENSI/TIDAK HADIR</th>
+            <th colspan="2" style="border:1px solid black; padding:4px;">POTONGAN</th>
         </tr>
         <tr>`;
     
@@ -5398,6 +5464,8 @@ function renderRekapAbsensiReport() {
     absTypes.forEach(t => {
         hRow1 += `<th style="border:1px solid black; padding:2px; min-width:25px;">${t}</th>`;
     });
+    hRow1 += `<th style="border:1px solid black; padding:2px; min-width:35px;">HARI</th>`;
+    hRow1 += `<th style="border:1px solid black; padding:2px; min-width:40px;">TELAT (JAM)</th>`;
     hRow1 += `</tr>`;
     thead.innerHTML = hRow1;
 
@@ -5450,6 +5518,16 @@ function renderRekapAbsensiReport() {
             row += `<td style="border:1px solid black; padding:4px; text-align:center;">${counts.AL || '-'}</td>`;
             row += `<td style="border:1px solid black; padding:4px; text-align:center;">${totalJml}</td>`;
 
+            const empKey = (emp && emp.id != null && emp.id !== '') ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
+            const pData = gajiPeriodData[empKey] || {};
+            const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+            const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
+            const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+            let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+
+            row += `<td style="border:1px solid black; padding:4px; text-align:center;">${potHari || '-'}</td>`;
+            row += `<td style="border:1px solid black; padding:4px; text-align:center;">${jamTerlambat || '-'}</td>`;
+
             row += `</tr>`;
             bodyHtml += row;
         });
@@ -5494,13 +5572,22 @@ function generateKodeSetupAbsensi() {
 
 function printRekapAbsensiArea() {
     const printContent = document.getElementById('printable-rekap-area').innerHTML;
-    const originalContent = document.body.innerHTML;
+    const printWindow = window.open('', '', 'height=600,width=900');
+    if (!printWindow) { alert('Izinkan pop-up untuk mencetak.'); return; }
     
-    const printStyle = '<style>@media print { @page { size: landscape; margin: 10mm; } body { zoom: 0.65; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 0; margin: 0; } table { width: 100% !important; max-width: 100% !important; border-collapse: collapse; } th, td { white-space: nowrap; padding: 4px; } }</style>';
-    document.body.innerHTML = printStyle + printContent;
-    window.print();
-    document.body.innerHTML = originalContent;
-    window.location.reload();
+    const html = `<html><head><title>Print Rekap Absensi</title>
+    <style>
+      @media print { @page { size: landscape; margin: 10mm; } body { zoom: 0.65; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      body { font-family: sans-serif; padding: 20px; color: #000; }
+      table { width: 100% !important; border-collapse: collapse; }
+      th, td { white-space: nowrap; padding: 4px; border: 1px solid #ccc; text-align: center; }
+    </style>
+    </head><body>${printContent}</body></html>`;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
 }
 
 function resizeInput(el) {
@@ -5681,12 +5768,8 @@ function renderRekapGaji() {
         // 2. Ambil Data Tersimpan / Default
         const pData = gajiPeriodData[empKey] || {};
         const totalMenitTelatGps = getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir);
-        let jamTerlambat = 0;
-        if (pData.jamTerlambat !== undefined) {
-            jamTerlambat = parseFloat(pData.jamTerlambat);
-        } else if (totalMenitTelatGps > 0) {
-            jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
-        }
+        const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
         
         // Static Data (Save to Employee Object)
         const bank = emp.bank || '';
@@ -5750,7 +5833,7 @@ function renderRekapGaji() {
             <td style="text-align:right;">${formatRupiah(totalPotKehadiran)}</td>
 
             <!-- Keterlambatan -->
-            <td><input type="number" data-field="jamTerlambat" value="${jamTerlambat}" oninput="resizeInput(this)" style="width:${wJam}px; text-align:center; padding:5px;" placeholder="0"></td>
+            <td><input type="number" data-field="jamTerlambat" value="${jamTerlambat}" oninput="resizeInput(this); this.setAttribute('data-edited', 'true');" style="width:${wJam}px; text-align:center; padding:5px;" placeholder="0"></td>
             <td style="text-align:right; font-size:9px;">${formatRupiah(potTerlambatPerJam)}</td>
             <td style="text-align:right;">${formatRupiah(totalPotTerlambat)}</td>
 
@@ -5818,7 +5901,18 @@ async function saveRekapGajiData() {
         if (!gajiData[empId]) gajiData[empId] = {};
         if (inpHkTarget) gajiData[empId].hkTarget = parseInt(inpHkTarget.value, 10) || 0;
         if (inpPotHari) gajiData[empId].potHari = parseFloat(inpPotHari.value) || 0;
-        if (inpJamTerlambat) gajiData[empId].jamTerlambat = parseFloat(inpJamTerlambat.value) || 0;
+        if (inpJamTerlambat) {
+            if (inpJamTerlambat.getAttribute('data-edited') === 'true') {
+                gajiData[empId].jamTerlambatManual = parseFloat(inpJamTerlambat.value) || 0;
+                var valStr = inpJamTerlambat.value.trim();
+                if (valStr === '') {
+                    delete gajiData[empId].jamTerlambatManual; // Lepas pengunci manual agar kembali otomatis (GPS)
+                } else {
+                    gajiData[empId].jamTerlambatManual = parseFloat(valStr) || 0;
+                }
+            }
+            delete gajiData[empId].jamTerlambat; // Bersihkan data nyangkut lama
+        }
         if (inpHutang) gajiData[empId].hutang = parseRp(inpHutang.value);
         if (inpTunjangan) gajiData[empId].tunjangan = parseRp(inpTunjangan.value);
         if (selMetode) gajiData[empId].metodeBayar = selMetode.value || 'TF';
@@ -5975,9 +6069,9 @@ async function submitGajiPengajuan() {
                 const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
                 const gajiPokok = parseInt(emp.gajiPokok) || 0;
                 const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
-                let jamTerlambat = pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : 0;
                 const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-                if (totalMenitTelatGps > 0) jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
+                const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+                let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
                 const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
                 const tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : 0;
                 const metodeBayar = pData.metodeBayar || 'TF';
@@ -6224,12 +6318,22 @@ function updatePeriodGaji(start, end, empId, field, val) {
 
 function printRekapGaji() {
     const printContent = document.getElementById('printable-gaji-area').innerHTML;
-    const originalContent = document.body.innerHTML;
-    const printStyle = '<style>@media print { @page { size: landscape; margin: 10mm; } body { zoom: 0.6; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 0; margin: 0; } table { width: 100% !important; max-width: 100% !important; border-collapse: collapse; } th, td { white-space: nowrap; padding: 4px; } }</style>';
-    document.body.innerHTML = printStyle + printContent;
-    window.print();
-    document.body.innerHTML = originalContent;
-    window.location.reload();
+    const printWindow = window.open('', '', 'height=600,width=900');
+    if (!printWindow) { alert('Izinkan pop-up untuk mencetak.'); return; }
+    
+    const html = `<html><head><title>Print Rekap Gaji</title>
+    <style>
+      @media print { @page { size: landscape; margin: 10mm; } body { zoom: 0.6; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+      body { font-family: sans-serif; padding: 20px; color: #000; }
+      table { width: 100% !important; border-collapse: collapse; }
+      th, td { white-space: nowrap; padding: 4px; border: 1px solid #ccc; text-align: center; }
+    </style>
+    </head><body>${printContent}</body></html>`;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
 }
 
 let currentSlipIdx = -1;
@@ -6270,9 +6374,10 @@ function generateAndShowSlip(idx) {
     const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
     const gajiPokok = parseInt(emp.gajiPokok) || 0;
     const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
-    let jamTerlambat = pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : 0;
     const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-    if (totalMenitTelatGps > 0) jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
+    const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+    let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+
     const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
     const tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : 0;
 
@@ -6346,9 +6451,10 @@ function sendSlipEmail(idx) {
     const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
     const gajiPokok = parseInt(emp.gajiPokok) || 0;
     const potHari = parseFloat(pData.potHari) || 0;
-    let jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
     const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-    if (totalMenitTelatGps > 0) jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
+    const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+    let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+
     const hutang = parseInt(pData.hutang) || 0;
     const tunjangan = parseInt(pData.tunjangan) || 0;
     const gajiPerHari = Math.round(gajiPokok / 30);
@@ -6537,9 +6643,10 @@ function exportCompleteAbsensiExcel() {
     dates.forEach(() => xml += '<Column ss:Width="30"/>\n');
     xml += '<Column ss:Width="60"/>\n<Column ss:Width="60"/>\n'; // Total HK, Sisa Cuti
     rekapAbsenHeaders.forEach(() => xml += '<Column ss:Width="35"/>\n');
+    xml += '<Column ss:Width="60"/>\n<Column ss:Width="70"/>\n'; // Pot Hari, Telat Jam
 
-    xml += `<Row ss:Height="25"><Cell ss:StyleID="sTitle" ss:MergeAcross="${5 + dates.length + rekapAbsenHeaders.length}"><Data ss:Type="String">REKAPITULASI KEHADIRAN</Data></Cell></Row>\n`;
-    xml += `<Row ss:Height="20"><Cell ss:StyleID="sSubtitle" ss:MergeAcross="${5 + dates.length + rekapAbsenHeaders.length}"><Data ss:Type="String">Periode: ${tglAwal} s/d ${tglAkhir}</Data></Cell></Row>\n`;
+    xml += `<Row ss:Height="25"><Cell ss:StyleID="sTitle" ss:MergeAcross="${7 + dates.length + rekapAbsenHeaders.length}"><Data ss:Type="String">REKAPITULASI KEHADIRAN</Data></Cell></Row>\n`;
+    xml += `<Row ss:Height="20"><Cell ss:StyleID="sSubtitle" ss:MergeAcross="${7 + dates.length + rekapAbsenHeaders.length}"><Data ss:Type="String">Periode: ${tglAwal} s/d ${tglAkhir}</Data></Cell></Row>\n`;
     xml += '<Row ss:Height="10"></Row>\n';
 
     xml += '<Row ss:Height="20">\n';
@@ -6551,10 +6658,13 @@ function exportCompleteAbsensiExcel() {
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Total HK</Data></Cell>\n';
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Sisa Cuti</Data></Cell>\n';
     xml += `<Cell ss:StyleID="sHeaderBlue" ss:MergeAcross="${rekapAbsenHeaders.length - 1}"><Data ss:Type="String">Absensi</Data></Cell>\n`;
+    xml += `<Cell ss:StyleID="sHeader" ss:MergeAcross="1"><Data ss:Type="String">Potongan</Data></Cell>\n`;
     xml += '</Row>\n';
     xml += '<Row ss:Height="20">\n';
     dates.forEach((d, i) => { xml += `<Cell ss:StyleID="sDateHeader" ${i === 0 ? 'ss:Index="5"' : ''}><Data ss:Type="String">${d.getDate()}</Data></Cell>\n`; });
     rekapAbsenHeaders.forEach((h, i) => { xml += `<Cell ss:StyleID="sHeaderBlue" ${i === 0 ? `ss:Index="${7 + dates.length}"` : ''}><Data ss:Type="String">${h}</Data></Cell>\n`; });
+    xml += `<Cell ss:StyleID="sHeaderBlue"><Data ss:Type="String">Hari</Data></Cell>\n`;
+    xml += `<Cell ss:StyleID="sHeaderBlue"><Data ss:Type="String">Telat (Jam)</Data></Cell>\n`;
     xml += '</Row>\n';
 
     employees.forEach((emp, idx) => {
@@ -6579,6 +6689,18 @@ function exportCompleteAbsensiExcel() {
                 xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${counts[h]}</Data></Cell>\n`;
             }
         });
+
+        const empKey = (emp && emp.id != null && emp.id !== '') ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
+        const pData = gajiData[empKey] || {};
+        const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+        const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+        const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
+        const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+
+        xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${potHari}</Data></Cell>\n`;
+        xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${jamTerlambat}</Data></Cell>\n`;
+
         xml += '</Row>\n';
     });
     xml += '</Table>\n</Worksheet>\n';
@@ -6772,10 +6894,10 @@ function exportCompleteAbsensiPDF() {
     // --- 3. LAPORAN ABSEN (halaman sendiri) ---
     var htmlLaporanAbsen = styleBlock + `<h2>REKAP ABSENSI / LAPORAN ABSEN</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
         <th rowspan="2">No</th><th rowspan="2">ID</th><th rowspan="2">Nama</th><th rowspan="2">Jabatan</th>
-        <th colspan="${dates.length}">Periode</th><th rowspan="2">Total HK</th><th rowspan="2">Sisa Cuti</th><th colspan="8">Absensi</th></tr><tr>`;
+        <th colspan="${dates.length}">Periode</th><th rowspan="2">Total HK</th><th rowspan="2">Sisa Cuti</th><th colspan="8">Absensi</th><th colspan="2">Potongan</th></tr><tr>`;
     dates.forEach(d => htmlLaporanAbsen += `<th>${d.getDate()}</th>`);
     ['A','I','S','OFF','DP','PH','AL','JML'].forEach(h => htmlLaporanAbsen += `<th>${h}</th>`);
-    htmlLaporanAbsen += `</tr></thead><tbody>`;
+    htmlLaporanAbsen += `<th>Hari</th><th>Telat (Jam)</th></tr></thead><tbody>`;
     employees.forEach((emp, idx) => {
         let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
         dates.forEach(d => {
@@ -6790,7 +6912,15 @@ function exportCompleteAbsensiPDF() {
             const key = `${getLocalDateKey(d)}_${emp.id || idx}`;
             htmlLaporanAbsen += `<td>${absensiData[key] || ''}</td>`;
         });
-        htmlLaporanAbsen += `<td>${counts.H}</td><td>${totalSisaCuti}</td><td>${counts.A}</td><td>${counts.I}</td><td>${counts.S}</td><td>${counts.OFF}</td><td>${counts.DP}</td><td>${counts.PH}</td><td>${counts.AL}</td><td>${dates.length}</td></tr>`;
+        const empKey = (emp && emp.id != null && emp.id !== '') ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
+        const pData = gajiData[empKey] || {};
+        const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+        const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+        const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
+        const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+
+        htmlLaporanAbsen += `<td>${counts.H}</td><td>${totalSisaCuti}</td><td>${counts.A}</td><td>${counts.I}</td><td>${counts.S}</td><td>${counts.OFF}</td><td>${counts.DP}</td><td>${counts.PH}</td><td>${counts.AL}</td><td>${dates.length}</td><td>${potHari || '-'}</td><td>${jamTerlambat || '-'}</td></tr>`;
     });
     htmlLaporanAbsen += `</tbody></table>`;
 
@@ -6814,9 +6944,10 @@ function exportCompleteAbsensiPDF() {
         const hkAktual = counts.H;
         const gajiPokok = parseInt(emp.gajiPokok) || 0;
         const potHari = parseFloat(pData.potHari) || 0;
-        let jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
         const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-        if (totalMenitTelatGps > 0) jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
+        const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+
         const hutang = parseInt(pData.hutang) || 0;
         const tunjangan = parseInt(pData.tunjangan) || 0;
         const metodeBayar = pData.metodeBayar || 'TF';
@@ -7151,9 +7282,10 @@ async function downloadAllSlipsAsZip(event) {
             const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
             const gajiPokok = parseInt(emp.gajiPokok) || 0;
             const potHari = parseFloat(pData.potHari) || 0;
-            let jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
             const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || i, emp.name, tglAwal, tglAkhir) : 0;
-            if (totalMenitTelatGps > 0) jamTerlambat = Math.round((totalMenitTelatGps / configTelat) * 10) / 10;
+            const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+
             const hutang = parseInt(pData.hutang) || 0;
             const tunjangan = parseInt(pData.tunjangan) || 0;
 
@@ -7600,8 +7732,8 @@ function renderBonusTab() {
     if (!tglAwal || !tglAkhir) return;
 
     const key = getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir);
-    const savedData = getCachedParsedStorage(key, { absensi: [], omset: { total: 0, persen: 0, excludedIds: [] } });
-    const omsetData = savedData.omset || { total: 0, persen: 0, pool: 0, excludedIds: [] };
+    const savedData = getCachedParsedStorage(key, { absensi: [], omset: { total: 0, persen: 2, pool: 0, excludedIds: [], manualNominals: {}, extraName: '', extraNominal: 0 } });
+    const omsetData = savedData.omset || { total: 0, persen: 2, pool: 0, excludedIds: [], manualNominals: {}, extraName: '', extraNominal: 0 };
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
 
     // Tombol Atur Urutan hanya untuk Developer
@@ -7637,25 +7769,33 @@ function renderBonusTab() {
 
     // --- 2. Render Bonus Omset ---
     document.getElementById("bonus_omset_total").value = omsetData.total ? formatRupiah(omsetData.total) : "";
-    document.getElementById("bonus_omset_persen").value = omsetData.persen || "";
+    document.getElementById("bonus_omset_persen").value = omsetData.persen !== undefined ? omsetData.persen : 2;
     document.getElementById("bonus_omset_pool").value = omsetData.pool ? formatRupiah(omsetData.pool) : "";
+    
+    const extraNameEl = document.getElementById("bonus_omset_extra_name");
+    const extraNomEl = document.getElementById("bonus_omset_extra_nominal");
+    if (extraNameEl) extraNameEl.value = omsetData.extraName || '';
+    if (extraNomEl) extraNomEl.value = omsetData.extraNominal ? formatRupiah(omsetData.extraNominal) : '';
 
     const omsetTbody = document.getElementById("bonus_omset_tbody");
     omsetTbody.innerHTML = "";
     
     employees.forEach(emp => {
         const isExcluded = (omsetData.excludedIds || []).includes(emp.id);
+        const savedNominal = (omsetData.manualNominals && omsetData.manualNominals[emp.id] !== undefined) ? omsetData.manualNominals[emp.id] : null;
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td>${emp.name}<br><span style="font-size:10px; color:#666;">${emp.jabatan}</span></td>
             <td style="text-align:center;">
                 <input type="checkbox" class="bonus-omset-check" value="${emp.id}" ${!isExcluded ? 'checked' : ''} onchange="calculateBonusOmsetFromPool()">
             </td>
-            <td style="text-align:right;" class="bonus-omset-nominal-display">-</td>
+            <td style="text-align:right;" class="bonus-omset-nominal-display">${savedNominal !== null ? formatRupiah(savedNominal) : '-'}</td>
         `;
         omsetTbody.appendChild(tr);
     });
-    if (omsetData.pool > 0) {
+    if (omsetData.manualNominals && Object.keys(omsetData.manualNominals).length > 0) {
+        // Biarkan data manual
+    } else if (omsetData.pool > 0) {
         calculateBonusOmsetFromPool();
     } else {
         calculateBonusOmset();
@@ -7730,9 +7870,27 @@ function saveBonusData() {
     const omsetPersen = parseFloat(document.getElementById("bonus_omset_persen").value) || 0;
     const omsetPool = parseInt(document.getElementById("bonus_omset_pool").value.replace(/[^0-9]/g, '')) || 0;
     const excludedIds = [];
-    document.querySelectorAll(".bonus-omset-check:not(:checked)").forEach(cb => excludedIds.push(parseInt(cb.value)));
+    const manualNominals = {};
+    document.querySelectorAll("#bonus_omset_tbody tr").forEach(tr => {
+        const cb = tr.querySelector(".bonus-omset-check");
+        if (cb && !cb.checked) excludedIds.push(parseInt(cb.value));
+        
+        const inputEl = tr.querySelector(".bonus-nominal-input");
+        const nomEl = tr.querySelector(".bonus-omset-nominal-display");
+        const valText = inputEl ? inputEl.value : (nomEl ? nomEl.textContent : "");
+        const nominal = parseInt(valText.replace(/[^0-9]/g, '')) || 0;
+        
+        if (cb && cb.value) {
+            manualNominals[cb.value] = nominal;
+        }
+    });
+    
+    const extraNameEl = document.getElementById("bonus_omset_extra_name");
+    const extraNomEl = document.getElementById("bonus_omset_extra_nominal");
+    const extraName = extraNameEl ? extraNameEl.value : "";
+    const extraNominal = extraNomEl ? (parseInt(extraNomEl.value.replace(/[^0-9]/g, '')) || 0) : 0;
 
-    const data = { absensi: absensiData, omset: { total: omsetTotal, persen: omsetPersen, pool: omsetPool, excludedIds } };
+    const data = { absensi: absensiData, omset: { total: omsetTotal, persen: omsetPersen, pool: omsetPool, excludedIds, manualNominals, extraName, extraNominal } };
     RBMStorage.setItem(getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir), JSON.stringify(data));
     window._rbmParsedCache[getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir)] = { data: data };
     if (typeof AppPopup !== 'undefined') AppPopup.success("Data Bonus tersimpan.", "Sukses");
@@ -7826,10 +7984,20 @@ function exportBonusOmsetExcel() {
         const nameHtml = tr.cells[0].innerHTML;
         const name = nameHtml.split('<br>')[0]; // Ambil nama saja
         const checked = tr.querySelector(".bonus-omset-check").checked;
-        const nominal = tr.querySelector(".bonus-omset-nominal-display").innerText;
+        const inputEl = tr.querySelector(".bonus-nominal-input");
+        const nomEl = tr.querySelector(".bonus-omset-nominal-display");
+        const nominal = inputEl ? inputEl.value : (nomEl ? nomEl.textContent : "");
         
         xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="Number">${i+1}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${name}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${checked ? 'Dapat' : 'Tidak'}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${nominal}</Data></Cell></Row>`;
     });
+    
+    const extraNameEl = document.getElementById("bonus_omset_extra_name");
+    const extraNomEl = document.getElementById("bonus_omset_extra_nominal");
+    if (extraNameEl || extraNomEl) {
+        const eName = extraNameEl ? extraNameEl.value : "Lain-lain";
+        const eNominal = extraNomEl ? extraNomEl.value : "Rp 0";
+        xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="Number">-</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${eName}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">-</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${eNominal}</Data></Cell></Row>`;
+    }
 
     xml += '</Table></Worksheet></Workbook>';
 
@@ -7863,10 +8031,21 @@ function exportBonusOmsetPDF() {
         const nameHtml = tr.cells[0].innerHTML;
         const name = nameHtml.split('<br>')[0];
         const checked = tr.querySelector(".bonus-omset-check").checked;
-        const nominal = tr.querySelector(".bonus-omset-nominal-display").innerText;
+        const inputEl = tr.querySelector(".bonus-nominal-input");
+        const nomEl = tr.querySelector(".bonus-omset-nominal-display");
+        const nominal = inputEl ? inputEl.value : (nomEl ? nomEl.textContent : "");
         
         html += `<tr><td style="text-align:center;">${i+1}</td><td>${name}</td><td style="text-align:center;">${checked ? '✅' : '-'}</td><td style="text-align:right;">${nominal}</td></tr>`;
     });
+    
+    const extraNameEl = document.getElementById("bonus_omset_extra_name");
+    const extraNomEl = document.getElementById("bonus_omset_extra_nominal");
+    if (extraNameEl || extraNomEl) {
+        const eName = extraNameEl ? extraNameEl.value : "Lain-lain";
+        const eNominal = extraNomEl ? extraNomEl.value : "Rp 0";
+        html += `<tr style="background:#f1f5f9;"><td style="text-align:center;">-</td><td>${eName}</td><td style="text-align:center;">-</td><td style="text-align:right; font-weight:bold;">${eNominal}</td></tr>`;
+    }
+    
     html += `</tbody></table></body></html>`;
 
     const win = window.open('', '', 'height=600,width=800');
@@ -7964,8 +8143,10 @@ async function submitBonusOmsetPengajuan() {
                 const checkEl = tr.querySelector(".bonus-omset-check");
                 const checked = checkEl ? checkEl.checked : false;
                 
+                const inputEl = tr.querySelector(".bonus-nominal-input");
                 const nomEl = tr.querySelector(".bonus-omset-nominal-display");
-                const nominal = nomEl ? parseInt(nomEl.innerText.replace(/[^0-9]/g, '')) || 0 : 0;
+                const valText = inputEl ? inputEl.value : (nomEl ? nomEl.textContent : "");
+                const nominal = parseInt(valText.replace(/[^0-9]/g, '')) || 0;
                 
                 if (checked && nominal > 0) {
                     totalGrand += nominal;
@@ -7976,6 +8157,14 @@ async function submitBonusOmsetPengajuan() {
                     items.push({ empId: empId, nama: name, jabatan: jabatan, grandTotal: nominal, metodeBayar: 'TF', keterangan: 'Bonus Omset' });
                 }
             });
+            
+            const extraNameEl = document.getElementById("bonus_omset_extra_name");
+            const extraNomEl = document.getElementById("bonus_omset_extra_nominal");
+            const extraNominal = extraNomEl ? (parseInt(extraNomEl.value.replace(/[^0-9]/g, '')) || 0) : 0;
+            if (extraNominal > 0) {
+                totalGrand += extraNominal;
+                items.push({ empId: 'extra', nama: extraNameEl ? extraNameEl.value || 'Lainnya' : 'Lainnya', jabatan: '-', grandTotal: extraNominal, metodeBayar: 'TF', keterangan: 'Bonus Omset (Extra)' });
+            }
 
             if (totalGrand === 0) {
                 if(!confirm("Total bonus omset adalah Rp 0. Lanjutkan pengajuan?")) return;
@@ -9562,18 +9751,29 @@ var RBM_GPS_JAM_DEFAULTS = {
 };
 
 var RBM_GPS_SHIFTS_DEFAULT = [
-    { code: 'P', name: 'Pagi', jamMasuk: '08:30', jamPulang: '17:00', durasiIstirahat: 60 },
-    { code: 'M', name: 'Middle', jamMasuk: '12:30', jamPulang: '21:00', durasiIstirahat: 60 },
-    { code: 'S', name: 'Sore', jamMasuk: '16:30', jamPulang: '17:00', durasiIstirahat: 60 }
+    { code: 'P', name: 'Pagi', jamMasuk: '08:30', jamMasukSPV: '08:15', jamPulang: '17:00', durasiIstirahat: 60 },
+    { code: 'M', name: 'Middle', jamMasuk: '12:30', jamMasukSPV: '12:20', jamPulang: '21:00', durasiIstirahat: 60 },
+    { code: 'S', name: 'Sore', jamMasuk: '16:30', jamMasukSPV: '16:20', jamPulang: '17:00', durasiIstirahat: 60 }
 ];
 
 function getGpsJamConfig() {
     var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_GPS_JAM_CONFIG') : 'RBM_GPS_JAM_CONFIG';
     var stored = getCachedParsedStorage(key, {});
-    if (stored.shifts && Array.isArray(stored.shifts) && stored.shifts.length > 0) {
+    
+    var rawShifts = stored.shifts;
+    var validShifts = [];
+    if (Array.isArray(rawShifts)) {
+        validShifts = rawShifts;
+    } else if (rawShifts && typeof rawShifts === 'object') {
+        validShifts = Object.keys(rawShifts).sort(function(a, b) { return parseInt(a, 10) - parseInt(b, 10); }).map(function(k) { return rawShifts[k]; });
+    }
+    
+    if (validShifts.length > 0) {
         return {
-            shifts: stored.shifts,
-            menitTelatPerJamGaji: typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10)
+            shifts: validShifts,
+            menitTelatPerJamGaji: typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10),
+            toleransiTelatMenit: typeof stored.toleransiTelatMenit === 'number' ? stored.toleransiTelatMenit : (parseInt(stored.toleransiTelatMenit, 10) || 0),
+            potonganLupaAbsenJam: typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7)
         };
     }
     var num = function(v, def) { var n = parseInt(v, 10); return (n >= 0 && n <= 999) ? n : def; };
@@ -9588,8 +9788,18 @@ function getGpsJamConfig() {
         durasiIstirahatPagi: num(stored.durasiIstirahatPagi, RBM_GPS_JAM_DEFAULTS.durasiIstirahatPagi),
         durasiIstirahatMiddle: num(stored.durasiIstirahatMiddle, RBM_GPS_JAM_DEFAULTS.durasiIstirahatMiddle),
         durasiIstirahatSore: num(stored.durasiIstirahatSore, RBM_GPS_JAM_DEFAULTS.durasiIstirahatSore),
-        menitTelatPerJamGaji: typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10)
+        menitTelatPerJamGaji: typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10),
+        toleransiTelatMenit: typeof stored.toleransiTelatMenit === 'number' ? stored.toleransiTelatMenit : (parseInt(stored.toleransiTelatMenit, 10) || 0),
+        potonganLupaAbsenJam: typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7)
     };
+}
+
+function getPotonganLupaAbsenJamFromConfig() {
+    return getGpsJamConfig().potonganLupaAbsenJam;
+}
+
+function getToleransiTelatMenitFromConfig() {
+    return getGpsJamConfig().toleransiTelatMenit;
 }
 
 function getShiftByCodeFromConfig(shiftCode) {
@@ -9620,26 +9830,50 @@ function getDurasiIstirahatMenitFromConfig(shift) {
     return 60;
 }
 
-function getBatasMasukFromConfig(shift) {
-    var s = getShiftByCodeFromConfig(shift);
-    if (s && s.jamMasuk) return s.jamMasuk;
+function getBatasMasukFromConfig(shift, jabatan) {
     var c = getGpsJamConfig();
-    if (c.shifts) return '';
-    if (shift === 'P') return c.jamMasukPagi;
-    if (shift === 'M') return c.jamMasukMiddle;
-    if (shift === 'S') return c.jamMasukSore;
-    return (typeof JADWAL_BATAS_MASUK !== 'undefined' && JADWAL_BATAS_MASUK[shift]) ? JADWAL_BATAS_MASUK[shift] : '';
+    var s = getShiftByCodeFromConfig(shift);
+    
+    var isManagerOrSPV = false;
+    if (jabatan) {
+        var jab = String(jabatan).toLowerCase();
+        if (jab.includes('manager') || jab.includes('menejer') || jab.includes('spv') || jab.includes('supervisor')) {
+            isManagerOrSPV = true;
+        }
+    }
+    
+    if (s) {
+        if (isManagerOrSPV && s.jamMasukSPV) return s.jamMasukSPV;
+        if (s.jamMasuk) return s.jamMasuk;
+    }
+    
+    var baseTime = '';
+    if (!c.shifts) {
+        if (shift === 'P') baseTime = c.jamMasukPagi;
+        else if (shift === 'M') baseTime = c.jamMasukMiddle;
+        else if (shift === 'S') baseTime = c.jamMasukSore;
+    }
+    if (!baseTime && typeof JADWAL_BATAS_MASUK !== 'undefined' && JADWAL_BATAS_MASUK[shift]) {
+        baseTime = JADWAL_BATAS_MASUK[shift];
+    }
+    return baseTime;
 }
 
-function getBatasPulangFromConfig(shift) {
-    var s = getShiftByCodeFromConfig(shift);
-    if (s && s.jamPulang) return s.jamPulang;
+function getBatasPulangFromConfig(shift, jabatan) {
     var c = getGpsJamConfig();
-    if (c.shifts) return '';
-    if (shift === 'P') return c.jamPulangPagi;
-    if (shift === 'M') return c.jamPulangMiddle;
-    if (shift === 'S') return c.jamPulangSore;
-    return (typeof JADWAL_BATAS_PULANG !== 'undefined' && JADWAL_BATAS_PULANG[shift]) ? JADWAL_BATAS_PULANG[shift] : '';
+    var baseTime = '';
+    var s = getShiftByCodeFromConfig(shift);
+    if (s && s.jamPulang) {
+        baseTime = s.jamPulang;
+    } else if (!c.shifts) {
+        if (shift === 'P') baseTime = c.jamPulangPagi;
+        else if (shift === 'M') baseTime = c.jamPulangMiddle;
+        else if (shift === 'S') baseTime = c.jamPulangSore;
+    }
+    if (!baseTime && typeof JADWAL_BATAS_PULANG !== 'undefined' && JADWAL_BATAS_PULANG[shift]) {
+        baseTime = JADWAL_BATAS_PULANG[shift];
+    }
+    return baseTime;
 }
 
 function getMenitTelatPerJamGajiFromConfig() {
@@ -9650,11 +9884,12 @@ function addGpsShiftRow(shift) {
     var tbody = document.getElementById('gps_shifts_tbody');
     if (!tbody) return;
     var row = document.createElement('tr');
-    var s = shift || { code: '', name: '', jamMasuk: '08:00', jamPulang: '17:00', durasiIstirahat: 60 };
+    var s = shift || { code: '', name: '', jamMasuk: '08:00', jamMasukSPV: '08:00', jamPulang: '17:00', durasiIstirahat: 60 };
     row.innerHTML =
         '<td><input type="text" class="gps-shift-code" placeholder="P" value="' + (s.code || '').replace(/"/g, '&quot;') + '" style="width:100%; max-width:60px;" maxlength="8"></td>' +
         '<td><input type="text" class="gps-shift-name" placeholder="Nama shift" value="' + (s.name || '').replace(/"/g, '&quot;') + '" style="width:100%;"></td>' +
         '<td><input type="time" class="gps-shift-masuk" value="' + (s.jamMasuk || '08:00') + '" style="width:100%;"></td>' +
+        '<td><input type="time" class="gps-shift-masuk-spv" value="' + (s.jamMasukSPV || s.jamMasuk || '08:00') + '" style="width:100%;" title="Jam Masuk Manager/SPV"></td>' +
         '<td><input type="time" class="gps-shift-pulang" value="' + (s.jamPulang || '17:00') + '" style="width:100%;"></td>' +
         '<td><input type="number" class="gps-shift-istirahat" value="' + (s.durasiIstirahat != null ? s.durasiIstirahat : 60) + '" min="0" max="999" style="width:70px;"></td>' +
         '<td><button type="button" class="btn-secondary" onclick="this.closest(\'tr\').remove()" style="padding:2px 6px; font-size:11px;">Hapus</button></td>';
@@ -9666,14 +9901,41 @@ function loadJamConfig() {
     var stored = getCachedParsedStorage(key, {});
     var tbody = document.getElementById('gps_shifts_tbody');
     if (tbody) {
+        var thead = tbody.parentElement.querySelector('thead tr');
+        if (thead && !thead.getAttribute('data-spv-added')) {
+            for (var j = 0; j < thead.children.length; j++) {
+                if (thead.children[j].textContent.includes('Jam Masuk') || thead.children[j].textContent.includes('Masuk')) {
+                    var th = document.createElement('th');
+                    th.textContent = 'Masuk Mgr/SPV';
+                    thead.insertBefore(th, thead.children[j].nextSibling);
+                    break;
+                }
+            }
+            thead.setAttribute('data-spv-added', 'true');
+        }
         tbody.innerHTML = '';
-        var shifts = stored.shifts && Array.isArray(stored.shifts) && stored.shifts.length > 0
-            ? stored.shifts
-            : RBM_GPS_SHIFTS_DEFAULT;
+        
+        var rawShifts = stored.shifts;
+        var validShifts = [];
+        if (Array.isArray(rawShifts)) {
+            validShifts = rawShifts;
+        } else if (rawShifts && typeof rawShifts === 'object') {
+            validShifts = Object.keys(rawShifts).sort(function(a, b) { return parseInt(a, 10) - parseInt(b, 10); }).map(function(k) { return rawShifts[k]; });
+        }
+        var shifts = validShifts.length > 0 ? validShifts : RBM_GPS_SHIFTS_DEFAULT;
         for (var i = 0; i < shifts.length; i++) addGpsShiftRow(shifts[i]);
     }
     var menitEl = document.getElementById('gps_menit_telat_per_jam');
     if (menitEl) menitEl.value = (typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10));
+    var tolEl = document.getElementById('gps_toleransi_telat_menit');
+    if (tolEl) tolEl.value = (typeof stored.toleransiTelatMenit === 'number' ? stored.toleransiTelatMenit : (parseInt(stored.toleransiTelatMenit, 10) || 0));
+    var lupaEl = document.getElementById('gps_potongan_lupa_absen_jam');
+    if (lupaEl) lupaEl.value = (typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7));
+    
+    var existingConfig = document.getElementById('spv_mgr_jam_config');
+    if (existingConfig) {
+        existingConfig.style.display = 'none';
+    }
 }
 
 function saveJamConfig() {
@@ -9686,22 +9948,39 @@ function saveJamConfig() {
             var code = (r.querySelector('.gps-shift-code') && r.querySelector('.gps-shift-code').value || '').trim();
             var name = (r.querySelector('.gps-shift-name') && r.querySelector('.gps-shift-name').value || '').trim();
             var jamMasuk = r.querySelector('.gps-shift-masuk') && r.querySelector('.gps-shift-masuk').value;
+            var jamMasukSPV = r.querySelector('.gps-shift-masuk-spv') && r.querySelector('.gps-shift-masuk-spv').value;
             var jamPulang = r.querySelector('.gps-shift-pulang') && r.querySelector('.gps-shift-pulang').value;
-            var durasi = parseInt(r.querySelector('.gps-shift-istirahat') && r.querySelector('.gps-shift-istirahat').value, 10);
+            var durasiEl = r.querySelector('.gps-shift-istirahat');
+            var durasi = (durasiEl && durasiEl.value !== '') ? parseInt(durasiEl.value, 10) : 60;
             if (!code) continue;
             shifts.push({
                 code: code,
                 name: name || code,
                 jamMasuk: jamMasuk || '08:00',
+                jamMasukSPV: jamMasukSPV || jamMasuk || '08:00',
                 jamPulang: jamPulang || '17:00',
                 durasiIstirahat: (durasi >= 0 && durasi <= 999) ? durasi : 60
             });
         }
     }
     if (shifts.length === 0) shifts = RBM_GPS_SHIFTS_DEFAULT;
-    var menitTelatPerJamGaji = parseInt(document.getElementById('gps_menit_telat_per_jam') && document.getElementById('gps_menit_telat_per_jam').value, 10) || 10;
+    
+    var mEl = document.getElementById('gps_menit_telat_per_jam');
+    var menitTelatPerJamGaji = (mEl && mEl.value !== '') ? parseInt(mEl.value, 10) : 10;
+    
+    var tolEl = document.getElementById('gps_toleransi_telat_menit');
+    var toleransiTelatMenit = (tolEl && tolEl.value !== '') ? parseInt(tolEl.value, 10) : 0;
+    
+    var lupaEl = document.getElementById('gps_potongan_lupa_absen_jam');
+    var potonganLupaAbsenJam = (lupaEl && lupaEl.value !== '') ? parseFloat(lupaEl.value) : 7;
+    
     var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_GPS_JAM_CONFIG') : 'RBM_GPS_JAM_CONFIG';
-    var p = RBMStorage.setItem(key, JSON.stringify({ shifts: shifts, menitTelatPerJamGaji: menitTelatPerJamGaji }));
+    var objToSave = { shifts: shifts, menitTelatPerJamGaji: menitTelatPerJamGaji, toleransiTelatMenit: toleransiTelatMenit, potonganLupaAbsenJam: potonganLupaAbsenJam };
+    
+    window._rbmParsedCache = window._rbmParsedCache || {};
+    window._rbmParsedCache[key] = { data: objToSave };
+    
+    var p = RBMStorage.setItem(key, JSON.stringify(objToSave));
     if (p && typeof p.then === 'function') {
         p.then(function() { alert("Pengaturan Jam Disimpan!"); }).catch(function(err) { alert("Gagal menyimpan: " + (err && err.message ? err.message : 'periksa koneksi')); });
     } else {
@@ -10492,33 +10771,16 @@ async function loadRekapAbsensiGPS() {
         });
 
         if (keys.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="10" class="table-empty">Tidak ada data pada halaman ini.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Tidak ada data pada halaman ini.</td></tr>';
         } else {
             const empMap = {};
             employees.forEach(e => { empMap[e.name] = e; });
 
-            function isTelat(date, name, masukLog) {
-                if (!masukLog || !masukLog.time) return false;
-                const emp = empMap[name];
-                const empId = emp ? (emp.id != null ? emp.id : employees.indexOf(emp)) : null;
-                if (empId === null) return false;
-                const jadwalKey = `${date}_${empId}`;
-                const shift = jadwalData[jadwalKey];
-                const batas = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift) : null) || JADWAL_BATAS_MASUK[shift];
-                if (!batas) return false;
-                const menitBatas = parseTimeToMinutes(batas);
-                const menitMasuk = parseTimeToMinutes(masukLog.time);
-                return menitMasuk > menitBatas;
-            }
-            function hasTelatAtauPulangCepat(item, date, name) {
-                const d = getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMap);
-                return d.totalMenit > 0;
-            }
             function getLupaAbsen(item) {
                 const lupa = [];
                 if (!item.masuk) lupa.push('Masuk');
-                if (item.breakOuts.length > item.breakIns.length) lupa.push('Istirahat Kembali');
-                if (item.breakIns.length > item.breakOuts.length) lupa.push('Istirahat Keluar');
+                if (item.breakOuts.length === 0 || item.breakIns.length > item.breakOuts.length) lupa.push('Istirahat Keluar');
+                if (item.breakIns.length === 0 || item.breakOuts.length > item.breakIns.length) lupa.push('Istirahat Kembali');
                 if (!item.pulang) lupa.push('Pulang');
                 if (lupa.length === 0) return '-';
                 return 'Lupa ' + lupa.join(' & ');
@@ -10529,7 +10791,7 @@ async function loadRekapAbsensiGPS() {
                 const item = grouped[k];
                 if (!item.hasLog) {
                     if (showEmpty) {
-                        html += `<tr style="background:#f8fafc; color:#94a3b8;"><td>${item.date}</td><td>${item.name}</td><td colspan="8" style="text-align:center; font-style:italic; font-size:12px;">Tidak ada data absensi (Belum Absen / Libur)</td></tr>`;
+                        html += `<tr style="background:#f8fafc; color:#94a3b8;"><td>${item.date}</td><td>${item.name}</td><td colspan="7" style="text-align:center; font-style:italic; font-size:12px;">Tidak ada data absensi (Belum Absen / Libur)</td></tr>`;
                     }
                     return;
                 }
@@ -10543,38 +10805,35 @@ async function loadRekapAbsensiGPS() {
                     const renderSingleLog = (log) => {
                         if (!log || log.id == null) return '<span>-</span>';
                         const captionEsc = buildGpsLogCaption(log).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                        const timeHtml = `<span title="${captionEsc.replace(/&quot;/g,'"')}" style="color:#0f172a;">${log.time}</span>`;
+                        
+                        let timeHtml = '';
+                        if (log.photo && typeof log.photo === 'string' && log.photo.length > 100 && log.photo.indexOf('LAZY_SPLIT_') === -1) {
+                            timeHtml = `<span title="Klik untuk lihat foto: ${captionEsc.replace(/&quot;/g,'"')}" style="color:#1d4ed8; cursor:pointer; font-weight:600; text-decoration:underline;" onclick="showImageModal('${log.photo}', '${log.type} - ${log.time}')">📷 ${log.time}</span>`;
+                        } else {
+                            timeHtml = `<span title="Klik untuk lihat foto: ${captionEsc.replace(/&quot;/g,'"')}" style="color:#1d4ed8; cursor:pointer; font-weight:600; text-decoration:underline;" onclick="fetchAndShowGpsPhoto('${log.date}', '${log._firebaseKey || ''}', '${log.id}', '${log.type} - ${log.time}', this)">📷 ${log.time}</span>`;
+                        }
+                        
                         const deleteHtml = canDelete ? ` <span style="cursor:pointer; color:#dc3545; font-size:14px; vertical-align:middle; margin-left:4px;" onclick="deleteSingleGpsLog(${log.id})" title="Hapus absensi ini">&#x2715;</span>` : '';
                         return `<div style="white-space:nowrap; display:flex; align-items:center; justify-content:flex-start;">${timeHtml}${deleteHtml}</div>`;
                     };
                     if (!logOrArray) return renderSingleLog(null);
-                    if (Array.isArray(logOrArray)) return logOrArray.length > 0 ? logOrArray.map(renderSingleLog).join('') : '-';
+                    if (Array.isArray(logOrArray)) return logOrArray.length > 0 ? logOrArray.map(renderSingleLog).join('<br>') : '-';
                     return renderSingleLog(logOrArray);
                 };
-                const telat = isTelat(item.date, item.name, item.masuk);
                 const detailTelat = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData, empMap);
-                const punyaTelatPulangCepat = detailTelat.totalMenit > 0;
+                const isBenarBenarTelat = detailTelat.totalMenit > 0;
                 const lupaAbsen = getLupaAbsen(item);
                 const lupaMasuk = !item.masuk;
                 const lupaPulang = !item.pulang;
-                const lupaBreakOut = item.breakIns.length > item.breakOuts.length;
-                const lupaBreakIn = item.breakOuts.length > item.breakIns.length;
+                const lupaBreakOut = item.breakOuts.length === 0 || item.breakIns.length > item.breakOuts.length;
+                const lupaBreakIn = item.breakIns.length === 0 || item.breakOuts.length > item.breakIns.length;
                 const detailTelatEsc = JSON.stringify({ lines: detailTelat.lines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                const telatHtml = (telat || punyaTelatPulangCepat) ? '<span style="color:#b91c1c; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailTelatModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', \'' + detailTelatEsc + '\')">Ya</span>' : '-';
+                const telatHtml = isBenarBenarTelat ? '<span style="color:#b91c1c; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailTelatModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', \'' + detailTelatEsc + '\')">Ya (' + detailTelat.totalMenit + 'm)</span>' : '-';
                 const lupaHtml = lupaAbsen !== '-' ? '<span style="color:#b45309; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailLupaModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', ' + lupaMasuk + ', ' + lupaPulang + ', ' + lupaBreakOut + ', ' + lupaBreakIn + ')">' + lupaAbsen + '</span>' : '-';
-                
-                const allDayLogs = [item.masuk, ...item.breakOuts, ...item.breakIns, item.pulang].filter(Boolean);
-                const hasAnyPhoto = allDayLogs.some(log => log.photo);
-                const photosHtml = hasAnyPhoto ? '<div style="display:flex; gap:4px; flex-wrap:wrap;">' + allDayLogs.map(log => {
-                    if (log.photo) {
-                        return `<img src="${log.photo}" style="height:36px; width:36px; object-fit:cover; border-radius:4px; cursor:pointer; border:1px solid #cbd5e1; background:#f8fafc;" title="${log.type} ${log.time}" onclick="if(this.src.indexOf('LAZY_SPLIT_') === -1) showImageModal(this.src, '${log.type} - ${log.time}')">`;
-                    }
-                    return '';
-                }).join('') + '</div>' : '-';
 
                 const breakStats = getBreakStats(filtered, item.name, item.date);
                 const totalIstirahat = breakStats.total > 0 ? breakStats.total + ' menit' : '-';
-                html += `<tr${telat || punyaTelatPulangCepat || lupaAbsen !== '-' ? ' style="background:#fef2f2;"' : ''}>
+                html += `<tr${isBenarBenarTelat || lupaAbsen !== '-' ? ' style="background:#fef2f2;"' : ''}>
                     <td>${item.date}</td>
                     <td>${item.name}</td>
                     <td>${renderCell(item.masuk)}</td>
@@ -10584,7 +10843,6 @@ async function loadRekapAbsensiGPS() {
                     <td>${renderCell(item.pulang)}</td>
                     <td>${telatHtml}</td>
                     <td>${lupaHtml}</td>
-                    <td>${photosHtml}</td>
                 </tr>`;
             });
             tbody.innerHTML = html;
@@ -10610,20 +10868,27 @@ async function loadRekapAbsensiGPS() {
     if (cachedLogs.length > 0) {
         renderTable(cachedLogs);
     } else {
-        tbody.innerHTML = '<tr><td colspan="10" class="table-loading">Memuat data dari server... ⏳</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="table-loading">Memuat data dari server... ⏳</td></tr>';
     }
 
     if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsLogs) {
         const outlet = getRbmOutlet() || 'default';
         try {
+            // [PERBAIKAN] Tarik juga Jadwal agar kalkulasi telat akurat di Rekap GPS
+            if (FirebaseStorage.loadAbsensiJadwal) {
+                let jadwalServer = await FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', tglAwal, tglAkhir);
+                if (jadwalServer) {
+                    window._rbmParsedCache[getRbmStorageKey('RBM_JADWAL_DATA')] = { data: jadwalServer };
+                }
+            }
+
             let serverLogs = await Promise.race([
                 FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir),
                 new Promise((resolve, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
             ]);
             window._rbmParsedCache[getRbmStorageKey('RBM_GPS_LOGS')] = { data: serverLogs };
-            if (JSON.stringify(cachedLogs) !== JSON.stringify(serverLogs)) {
+                // Langsung render tanpa JSON.stringify untuk mencegah browser hang!
                 renderTable(serverLogs);
-            }
         } catch(e) {}
     }
 }
@@ -10769,8 +11034,8 @@ function getRekapAbsensiGpsDataForExport() {
         const telat = telatDetail.totalMenit > 0 ? 'Ya (' + telatDetail.totalMenit + ' menit)' : '-';
         let lupa = [];
         if (!item.masuk) lupa.push('Masuk');
-        if (item.breakOuts.length > item.breakIns.length) lupa.push('Istirahat Kembali');
-        if (item.breakIns.length > item.breakOuts.length) lupa.push('Istirahat Keluar');
+            if (item.breakOuts.length === 0 || item.breakIns.length > item.breakOuts.length) lupa.push('Istirahat Keluar');
+            if (item.breakIns.length === 0 || item.breakOuts.length > item.breakIns.length) lupa.push('Istirahat Kembali');
         if (!item.pulang) lupa.push('Pulang');
         const lupaAbsen = lupa.length ? 'Lupa ' + lupa.join(' & ') : '-';
         const foto = [item.masuk, ...item.breakOuts, ...item.breakIns, item.pulang].filter(Boolean).length ? 'Ada' : '-';
@@ -10810,7 +11075,6 @@ function exportRekapAbsensiGpsToExcel() {
             <td>${r.pulang}</td>
             <td>${r.telat}</td>
             <td>${r.lupaAbsen}</td>
-            <td>${r.foto}</td>
         </tr>`;
     });
     const html = `
@@ -10823,7 +11087,7 @@ function exportRekapAbsensiGpsToExcel() {
     <p style="text-align:center;margin:5px 0 15px;">Riwayat absensi foto dan lokasi. Periode: ${data.tglAwal} s/d ${data.tglAkhir}</p>
     <table>
     <thead><tr>
-        <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Total Istirahat</th><th>Pulang</th><th>Telat</th><th>Lupa Absen</th><th>Foto</th>
+        <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Total Istirahat</th><th>Pulang</th><th>Telat</th><th>Lupa Absen</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
     </table>
@@ -10860,7 +11124,6 @@ function printRekapAbsensiGpsPdf() {
             <td>${r.pulang}</td>
             <td>${r.telat}</td>
             <td>${r.lupaAbsen}</td>
-            <td>${r.foto}</td>
         </tr>`;
     });
     const html = `
@@ -10881,7 +11144,7 @@ function printRekapAbsensiGpsPdf() {
     <p class="period">Riwayat absensi foto dan lokasi. Periode: ${data.tglAwal} s/d ${data.tglAkhir}</p>
     <table>
     <thead><tr>
-      <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Total Istirahat</th><th>Pulang</th><th>Telat</th><th>Lupa Absen</th><th>Foto</th>
+      <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Total Istirahat</th><th>Pulang</th><th>Telat</th><th>Lupa Absen</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
     </table>
@@ -10912,16 +11175,22 @@ function getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMa
     if (empId === null) return { totalMenit: 0, lines: [], jamUntukGaji: 0 };
     const jadwalKey = `${date}_${empId}`;
     const shift = jadwalData[jadwalKey];
-    const batasMasuk = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift) : null) || JADWAL_BATAS_MASUK[shift];
-    const batasPulang = (typeof getBatasPulangFromConfig === 'function' ? getBatasPulangFromConfig(shift) : null) || JADWAL_BATAS_PULANG[shift];
+    const batasMasuk = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift, emp.jabatan) : null) || JADWAL_BATAS_MASUK[shift];
+    const batasPulang = (typeof getBatasPulangFromConfig === 'function' ? getBatasPulangFromConfig(shift, emp.jabatan) : null) || JADWAL_BATAS_PULANG[shift];
+    const toleransi = typeof getToleransiTelatMenitFromConfig === 'function' ? getToleransiTelatMenitFromConfig() : 0;
     const lines = [];
     let menitTelatMasuk = 0, menitPulangCepat = 0;
     if (item.masuk && item.masuk.time && batasMasuk) {
         const menitBatas = parseTimeToMinutes(batasMasuk);
         const menitMasuk = parseTimeToMinutes(item.masuk.time);
         if (menitMasuk > menitBatas) {
-            menitTelatMasuk = menitMasuk - menitBatas;
-            lines.push('Telat Masuk: ' + menitTelatMasuk + ' menit (Batas ' + batasMasuk + ', Masuk ' + item.masuk.time + ')');
+            const telatAsli = menitMasuk - menitBatas;
+            if (telatAsli <= toleransi) {
+                lines.push('Telat Masuk: ' + telatAsli + ' mnt (Dimaafkan krn toleransi ' + toleransi + ' mnt)');
+            } else {
+                    menitTelatMasuk = telatAsli;
+                    lines.push('Telat Masuk: ' + telatAsli + ' mnt (Melebihi toleransi ' + toleransi + ' mnt, dihitung FULL dari batas ' + batasMasuk + ')');
+            }
         }
     }
     if (item.pulang && item.pulang.time && batasPulang) {
@@ -10963,8 +11232,8 @@ function showDetailLupaModal(date, name, lupaMasuk, lupaPulang, lupaBreakOut, lu
     title.textContent = 'Detail Lupa Absen - ' + name + ' (' + date + ')';
     const lines = [];
     if (lupaMasuk) lines.push('Tidak ada catatan absen <strong>Masuk</strong> pada tanggal ini.');
-    if (lupaBreakOut) lines.push('Tidak ada catatan absen <strong>Istirahat Keluar</strong> pada tanggal ini.');
-    if (lupaBreakIn) lines.push('Tidak ada catatan absen <strong>Istirahat Kembali</strong> pada tanggal ini.');
+        if (lupaBreakOut) lines.push('Tidak ada catatan absen <strong>Istirahat Keluar</strong> pada tanggal ini (atau jumlah tidak sesuai).');
+        if (lupaBreakIn) lines.push('Tidak ada catatan absen <strong>Istirahat Kembali</strong> pada tanggal ini (atau jumlah tidak sesuai).');
     if (lupaPulang) lines.push('Tidak ada catatan absen <strong>Pulang</strong> pada tanggal ini.');
     body.innerHTML = lines.length ? lines.map(l => '<p style="margin:8px 0;">' + l + '</p>').join('') : '<p>-</p>';
     document.getElementById('gpsDetailModal').style.display = 'flex';
@@ -10979,25 +11248,68 @@ function closeGpsDetailModal() {
 function getTotalMenitTelatFromGps(empId, empName, tglAwal, tglAkhir) {
     const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
     const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
+    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
     const empMap = {};
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     employees.forEach(e => empMap[e.name] = e);
     
     const byDate = {};
     logs.forEach(log => {
-        if (log.name !== empName) return;
+        if ((log.name || '').trim().toLowerCase() !== (empName || '').trim().toLowerCase()) return;
         if (log.date < tglAwal || log.date > tglAkhir) return;
         const key = log.date;
-        if (!byDate[key]) byDate[key] = { masuk: null, pulang: null };
+        if (!byDate[key]) byDate[key] = { masuk: null, pulang: null, breakOuts: [], breakIns: [] };
         if (log.type === 'Masuk') byDate[key].masuk = log;
-        if (log.type === 'Pulang') byDate[key].pulang = log;
+        else if (log.type === 'Pulang') byDate[key].pulang = log;
+        else if (log.type === 'Istirahat Keluar') byDate[key].breakOuts.push(log);
+        else if (log.type === 'Istirahat Kembali') byDate[key].breakIns.push(log);
     });
     let totalMenit = 0;
-    Object.keys(byDate).forEach(date => {
-        const item = byDate[date];
-        const d = getDetailTelatUntukRekap(date, empName, item, employees, jadwalData, empMap);
-        totalMenit += d.totalMenit;
+    let totalLupaAbsenKali = 0;
+
+    const dates = [];
+    let curr = new Date(tglAwal);
+    const end = new Date(tglAkhir);
+    while (curr <= end) {
+        dates.push(new Date(curr));
+        curr.setDate(curr.getDate() + 1);
+    }
+
+    dates.forEach(d => {
+        const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        const absKey = `${dateStr}_${empId}`;
+        const item = byDate[dateStr] || { masuk: null, pulang: null, breakOuts: [], breakIns: [] };
+        
+        if (byDate[dateStr]) {
+            const detailTelat = getDetailTelatUntukRekap(dateStr, empName, item, employees, jadwalData, empMap);
+            totalMenit += detailTelat.totalMenit;
+        }
+
+        if (absensiData[absKey] === 'H') {
+            if (!item.masuk) totalLupaAbsenKali += 1;
+            if (!item.pulang) totalLupaAbsenKali += 1;
+            
+            if (item.breakOuts.length === 0) {
+                totalLupaAbsenKali += 1;
+            } else if (item.breakIns.length > item.breakOuts.length) {
+                totalLupaAbsenKali += (item.breakIns.length - item.breakOuts.length);
+            }
+            
+            if (item.breakIns.length === 0) {
+                totalLupaAbsenKali += 1;
+            } else if (item.breakOuts.length > item.breakIns.length) {
+                totalLupaAbsenKali += (item.breakOuts.length - item.breakIns.length);
+            }
+        }
     });
+
+    const configLupaAbsenJam = typeof getPotonganLupaAbsenJamFromConfig === 'function' ? getPotonganLupaAbsenJamFromConfig() : 7;
+    const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+    
+    if (totalLupaAbsenKali > 0) {
+        totalMenit += (totalLupaAbsenKali * configLupaAbsenJam * configTelat);
+    }
+
     return totalMenit;
 }
 
@@ -11085,6 +11397,42 @@ async function updateGpsJadwalDisplay() {
     }
 
     if (shift && !isOnLeave) {
+            const batasMasuk = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift, emp.jabatan) : null) || (typeof JADWAL_BATAS_MASUK !== 'undefined' ? JADWAL_BATAS_MASUK[shift] : null);
+            if (batasMasuk) {
+                const hasMasuk = myLogs && myLogs.some(l => l.type === 'Masuk');
+                const toleransi = typeof getToleransiTelatMenitFromConfig === 'function' ? getToleransiTelatMenitFromConfig() : 0;
+                const menitBatas = parseTimeToMinutes(batasMasuk);
+                
+                if (!hasMasuk) {
+                    const menitSekarang = now.getHours() * 60 + now.getMinutes();
+                    if (menitSekarang > menitBatas) {
+                        const menitTelat = menitSekarang - menitBatas;
+                        if (toleransi > 0 && menitTelat <= toleransi) {
+                            info += `<br><span style="color:#b45309; font-weight:bold; font-size:0.9em;">Batas Masuk: ${batasMasuk} (Telat ${menitTelat} menit - Dimaafkan)</span>`;
+                        } else {
+                            info += `<br><span style="color:#dc2626; font-weight:bold; font-size:0.9em;">⚠️ Anda Telat ${menitTelat} menit (Batas Masuk: ${batasMasuk})</span>`;
+                        }
+                    } else {
+                        info += `<br><span style="color:#16a34a; font-weight:bold; font-size:0.9em;">Batas Masuk: ${batasMasuk} (Belum telat)</span>`;
+                    }
+                } else {
+                    const masukLog = myLogs.find(l => l.type === 'Masuk');
+                    if (masukLog && masukLog.time) {
+                        const menitMasuk = parseTimeToMinutes(masukLog.time);
+                        if (menitMasuk > menitBatas) {
+                            const menitTelat = menitMasuk - menitBatas;
+                            if (toleransi > 0 && menitTelat <= toleransi) {
+                                info += `<br><span style="color:#b45309; font-weight:bold; font-size:0.9em;">Waktu Masuk: ${masukLog.time} (Telat ${menitTelat} menit - Dimaafkan)</span>`;
+                            } else {
+                                info += `<br><span style="color:#dc2626; font-weight:bold; font-size:0.9em;">⚠️ Waktu Masuk: ${masukLog.time} (Telat ${menitTelat} menit)</span>`;
+                            }
+                        } else {
+                            info += `<br><span style="color:#16a34a; font-weight:bold; font-size:0.9em;">Waktu Masuk: ${masukLog.time} (Tepat waktu)</span>`;
+                        }
+                    }
+                }
+            }
+
         info += `<br><span style="font-size:0.9em; color:#555;">Jatah Istirahat: ${batasMenit} menit.</span>`;
         if (stats.total > 0) {
             info += `<br><span style="font-size:0.9em; color:#555;">Terpakai: ${stats.total} menit.</span>`;
@@ -11326,14 +11674,22 @@ async function _executeAbsensiGPS(type) {
         const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
         const jadwalKey = `${today}_${empId}`;
         const shift = jadwalData[jadwalKey];
-        const batas = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift) : null) || JADWAL_BATAS_MASUK[shift];
+        const batas = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift, emp ? emp.jabatan : null) : null) || JADWAL_BATAS_MASUK[shift];
         if (batas) {
             const menitBatas = parseTimeToMinutes(batas);
             const jamNow = now.getHours();
             const menitNow = now.getMinutes();
             const menitSekarang = jamNow * 60 + menitNow;
             if (menitSekarang > menitBatas) {
-                showCustomAlert("⚠️ Anda tercatat TELAT.<br>Batas masuk " + ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift) + ": " + batas + "<br>Waktu Anda: " + timeStr, "Terlambat", "warning");
+                const menitTelat = menitSekarang - menitBatas;
+                const toleransi = typeof getToleransiTelatMenitFromConfig === 'function' ? getToleransiTelatMenitFromConfig() : 0;
+                let pesanTelat = "⚠️ Anda tercatat TELAT <b>" + menitTelat + " menit</b>.<br>";
+                
+                if (toleransi > 0 && menitTelat <= toleransi) {
+                    pesanTelat = "⚠️ Anda telat <b>" + menitTelat + " menit</b> (Masih dimaafkan toleransi " + toleransi + " menit).<br>";
+                }
+                
+                showCustomAlert(pesanTelat + "Batas masuk " + ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift) + ": " + batas + "<br>Waktu Anda: " + timeStr, "Terlambat", "warning");
             }
         }
     }
@@ -11671,6 +12027,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof closeRusakDetailModal !== 'undefined') window.closeRusakDetailModal = closeRusakDetailModal;
   if (typeof showDetailTelatModal !== 'undefined') window.showDetailTelatModal = showDetailTelatModal;
   if (typeof closeGpsDetailModal !== 'undefined') window.closeGpsDetailModal = closeGpsDetailModal;
+  if (typeof fetchAndShowGpsPhoto !== 'undefined') window.fetchAndShowGpsPhoto = fetchAndShowGpsPhoto;
   if (typeof calculatePettyCashRowTotal !== 'undefined') window.calculatePettyCashRowTotal = calculatePettyCashRowTotal;
   if (typeof triggerPcFoto !== 'undefined') window.triggerPcFoto = triggerPcFoto;
   if (typeof removePettyCashInputRow !== 'undefined') window.removePettyCashInputRow = removePettyCashInputRow;
