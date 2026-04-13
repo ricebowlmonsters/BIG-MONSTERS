@@ -709,10 +709,18 @@
               try { existing = existingRaw ? JSON.parse(existingRaw) : []; } catch(e) {}
 
               var newLogs = jsonData.map(function(row) {
+                var rawDate = row['Tanggal'] || row['Date'] || new Date().toISOString().slice(0,10);
+                if (rawDate && rawDate.indexOf('/') !== -1) {
+                    var p = rawDate.split('/');
+                    if(p.length===3) rawDate = p[2] + '-' + ('0'+p[1]).slice(-2) + '-' + ('0'+p[0]).slice(-2);
+                }
+                var rawTime = row['Jam'] || row['Time'] || '00:00:00';
+                if (rawTime.length === 5) rawTime += ':00';
+
                 return {
                   id: Date.now() + Math.random(),
-                  date: row['Tanggal'] || row['Date'] || new Date().toISOString().slice(0,10),
-                  time: row['Jam'] || row['Time'] || '00:00:00',
+                  date: rawDate,
+                  time: rawTime,
                   name: row['Nama'] || row['Name'] || 'Unknown',
                   type: row['Tipe'] || row['Type'] || 'Masuk',
                   lat: row['Lat'] || null,
@@ -722,11 +730,24 @@
                 };
               });
 
-              var combined = existing.concat(newLogs);
-              this.setItem(storageKey, JSON.stringify(combined)).then(function() {
-                alert('✅ Berhasil Import ' + newLogs.length + ' data GPS Logs ke ' + storageKey);
-                location.reload();
-              });
+              if (this._useFirebase && this._db) {
+                  var promises = [];
+                  var o = outletId || 'default';
+                  newLogs.forEach((log) => {
+                      var ym = log.date.substring(0, 7);
+                      if (ym.length === 7) promises.push(this._db.ref('rbm_pro/gps_logs_partitioned/' + o + '/' + ym).push(log));
+                  });
+                  Promise.all(promises).then(function() {
+                      alert('✅ Berhasil Import ' + newLogs.length + ' data GPS Logs ke Firebase');
+                      location.reload();
+                  });
+              } else {
+                  var combined = existing.concat(newLogs);
+                  this.setItem(storageKey, JSON.stringify(combined)).then(function() {
+                    alert('✅ Berhasil Import ' + newLogs.length + ' data GPS Logs ke ' + storageKey);
+                    location.reload();
+                  });
+              }
 
             } else {
               // --- IMPORT REKAP ABSENSI (Format Lama) ---

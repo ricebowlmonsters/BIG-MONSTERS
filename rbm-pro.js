@@ -6336,6 +6336,30 @@ function printRekapGaji() {
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
 }
 
+function saveRekapGajiToJpg() {
+    let area = null;
+    const activeModal = document.querySelector('.modal-overlay[style*="display: flex"] .modal-content');
+    if (activeModal) {
+        area = activeModal.querySelector('#printable-gaji-area') || activeModal;
+    } else {
+        area = document.getElementById('printable-gaji-area');
+    }
+    if (!area) { alert('Area laporan tidak ditemukan.'); return; }
+    
+    const tglAwal = document.getElementById("absensi_tgl_awal") ? document.getElementById("absensi_tgl_awal").value : 'Laporan';
+    const tglAkhir = document.getElementById("absensi_tgl_akhir") ? document.getElementById("absensi_tgl_akhir").value : 'Gaji';
+    const filename = `Laporan_Gaji_${tglAwal}_sd_${tglAkhir}.jpg`;
+
+    html2canvas(area, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL("image/jpeg", 0.9);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }).catch(err => { alert("Gagal menyimpan JPG: " + err); });
+}
+
 let currentSlipIdx = -1;
 
 function generateAndShowSlip(idx) {
@@ -11925,6 +11949,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof closeJadwalModal !== 'undefined') window.closeJadwalModal = closeJadwalModal;
   if (typeof printRekapAbsensiArea !== 'undefined') window.printRekapAbsensiArea = printRekapAbsensiArea;
   if (typeof printRekapGaji !== 'undefined') window.printRekapGaji = printRekapGaji;
+  if (typeof saveRekapGajiToJpg !== 'undefined') window.saveRekapGajiToJpg = saveRekapGajiToJpg;
   if (typeof saveRekapGajiData !== 'undefined') window.saveRekapGajiData = saveRekapGajiData;
   if (typeof submitGajiPengajuan !== 'undefined') window.submitGajiPengajuan = submitGajiPengajuan;
   if (typeof loadRiwayatGajiPengajuan !== 'undefined') window.loadRiwayatGajiPengajuan = loadRiwayatGajiPengajuan;

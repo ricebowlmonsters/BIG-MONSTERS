@@ -104,6 +104,7 @@
   <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #e5e7eb; padding-bottom: 15px;">
     <button id="tab-pending" class="btn btn-primary" onclick="switchOwnerTab('pending')" style="width: auto;">Pengajuan Baru</button>
     <button id="tab-history" class="btn btn-secondary" onclick="switchOwnerTab('history')" style="width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;">Riwayat Persetujuan</button>
+    <button id="tab-create" class="btn btn-secondary" onclick="switchOwnerTab('create')" style="width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;">Buat Pengajuan</button>
     <button id="btn-refresh-owner" class="btn btn-secondary" onclick="fetchSubmissionsForOwner()" style="width: auto; margin-left: auto;">🔄 Refresh</button>
   </div>
 
@@ -126,27 +127,71 @@
   window.switchOwnerTab = function(tab) {
       const pendingBtn = document.getElementById('tab-pending');
       const historyBtn = document.getElementById('tab-history');
+      const createBtn = document.getElementById('tab-create');
       const pendingList = document.getElementById('pengajuan-pending-list');
       const historyList = document.getElementById('pengajuan-history-list');
+      const createView = document.getElementById('pengajuan-view');
   
+      if (pendingBtn) { pendingBtn.className = 'btn btn-secondary'; pendingBtn.style.cssText = 'width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;'; }
+      if (historyBtn) { historyBtn.className = 'btn btn-secondary'; historyBtn.style.cssText = 'width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;'; }
+      if (createBtn) { createBtn.className = 'btn btn-secondary'; createBtn.style.cssText = 'width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;'; }
+
+      if (pendingList) pendingList.style.display = 'none';
+      if (historyList) historyList.style.display = 'none';
+      if (createView) createView.style.display = 'none';
+
       if (tab === 'pending') {
-          pendingBtn.className = 'btn btn-primary';
-          pendingBtn.style.cssText = 'width: auto;';
-          historyBtn.className = 'btn btn-secondary';
-          historyBtn.style.cssText = 'width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;';
-          pendingList.style.display = 'block';
-          historyList.style.display = 'none';
-      } else {
-          historyBtn.className = 'btn btn-primary';
-          historyBtn.style.cssText = 'width: auto;';
-          pendingBtn.className = 'btn btn-secondary';
-          pendingBtn.style.cssText = 'width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;';
-          pendingList.style.display = 'none';
-          historyList.style.display = 'block';
+          if (pendingBtn) { pendingBtn.className = 'btn btn-primary'; pendingBtn.style.cssText = 'width: auto;'; }
+          if (pendingList) pendingList.style.display = 'block';
+      } else if (tab === 'history') {
+          if (historyBtn) { historyBtn.className = 'btn btn-primary'; historyBtn.style.cssText = 'width: auto;'; }
+          if (historyList) historyList.style.display = 'block';
+      } else if (tab === 'create') {
+          if (createBtn) { createBtn.className = 'btn btn-primary'; createBtn.style.cssText = 'width: auto;'; }
+          if (createView) createView.style.display = 'block';
       }
   };
 
   var isOwnerOrDev = String(u.role || '').toLowerCase() === 'owner' || (u.username || '').toLowerCase() === 'burhan';
+  
+  if (sel) {
+      sel.innerHTML = '';
+      if (isOwnerOrDev) {
+          var optAll = document.createElement('option');
+          optAll.value = 'semua';
+          optAll.textContent = 'Semua Outlet';
+          sel.appendChild(optAll);
+      }
+      outlets.forEach(function(id) {
+          var opt = document.createElement('option');
+          opt.value = id;
+          opt.textContent = names[id] || (id.charAt(0).toUpperCase() + id.slice(1));
+          sel.appendChild(opt);
+      });
+      
+      if (String(u.role || '').toLowerCase() === 'manager' && u.outlet) {
+          sel.value = u.outlet;
+          sel.disabled = true;
+      } else {
+          var last = localStorage.getItem('rbm_last_selected_outlet');
+          if (last && (outlets.indexOf(last) >= 0 || (isOwnerOrDev && last === 'semua'))) {
+              sel.value = last;
+          } else if (isOwnerOrDev) {
+              sel.value = 'semua';
+          } else if (outlets.length) {
+              sel.value = outlets[0];
+          }
+          sel.addEventListener('change', function() { 
+              localStorage.setItem('rbm_last_selected_outlet', sel.value); 
+              if (isOwnerOrDev && typeof fetchSubmissionsForOwner === 'function') {
+                  fetchSubmissionsForOwner();
+              } else if (!isOwnerOrDev && typeof fetchSubmissionsForManager === 'function') {
+                  fetchSubmissionsForManager();
+              }
+          });
+      }
+  }
+
   // --- OWNER WORKFLOW ---
   if (isOwnerOrDev) {
     document.querySelector('.rbm-page-title').textContent = 'Persetujuan Pengajuan';
@@ -156,8 +201,6 @@
     style.innerHTML = '#pengajuan-view { display: none !important; }';
     document.head.appendChild(style);
 
-    var outletCard = document.querySelector('.rbm-outlet-card');
-    if (outletCard) outletCard.style.display = 'none';
     
     document.getElementById('owner-view-container').style.display = 'block';
 
@@ -182,6 +225,8 @@
       let pcLoaded = false;
       let gajiLoaded = false;
       
+      const selectedOutlet = document.getElementById('rbm-outlet-select') ? document.getElementById('rbm-outlet-select').value : 'semua';
+
       const renderList = () => {
           if (!tfLoaded || !pcLoaded || !gajiLoaded) return;
           
@@ -192,6 +237,10 @@
               if (dataMap) {
                   Object.keys(dataMap).forEach(k => {
                       const item = { id: k, type: type, data: dataMap[k] };
+                      
+                      const itemOutlet = item.data.outlet || item.data.outletId || item.data._outlet || '';
+                      if (selectedOutlet !== 'semua' && itemOutlet && itemOutlet !== selectedOutlet) return;
+                      
                       let itemStatus = item.data.status || 'pending';
                       if (type === 'gaji') itemStatus = item.data.statusOwner || 'pending';
                       
@@ -297,25 +346,6 @@
 
   // --- MANAGER/DEFAULT WORKFLOW ---
   } else {
-    if (sel) {
-      sel.innerHTML = '';
-      outlets.forEach(function(id) {
-        var opt = document.createElement('option');
-        opt.value = id;
-        opt.textContent = names[id] || (id.charAt(0).toUpperCase() + id.slice(1));
-        sel.appendChild(opt);
-      });
-      if (String(u.role || '').toLowerCase() === 'manager' && u.outlet) {
-        sel.value = u.outlet;
-        sel.disabled = true;
-      } else {
-        var last = localStorage.getItem('rbm_last_selected_outlet');
-        if (last && outlets.indexOf(last) >= 0) sel.value = last;
-        else if (outlets.length) sel.value = outlets[0];
-        sel.addEventListener('change', function() { localStorage.setItem('rbm_last_selected_outlet', sel.value); });
-      }
-    }
-
     // Tampilkan riwayat pengajuan khusus untuk manager
     setTimeout(function() {
       var historySection = document.getElementById('manager-history-section');
@@ -626,6 +656,7 @@ function openOwnerPengajuanModal(id) {
   
   const approveBtn = document.getElementById('approveBtn');
   const rejectBtn = document.getElementById('rejectBtn');
+  const deleteBtn = document.getElementById('deleteBtn');
   const btnLaporan = document.getElementById('btnLaporanLengkap');
   
   if (isGaji) {
@@ -634,6 +665,13 @@ function openOwnerPengajuanModal(id) {
       btnLaporan.onclick = () => isBonusData ? viewBonusDetail(sub.id) : viewPengajuanDetail(sub.id);
   } else {
       btnLaporan.style.display = 'none';
+  }
+
+  if (isOwnerOrDev) {
+      deleteBtn.style.display = 'inline-block';
+      deleteBtn.onclick = () => deletePengajuan(sub.type, sub.id);
+  } else {
+      deleteBtn.style.display = 'none';
   }
 
   let currentStatus = isGaji ? d.statusOwner : d.status;
@@ -698,7 +736,7 @@ window.viewPengajuanDetail = function(id) {
 
         var styleBlock = '<style>body{font-family:sans-serif;font-size:12px;padding:20px;background:#f3f4f6;} .page{background:white;padding:20px;margin-bottom:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);overflow-x:auto;} h2,h3{text-align:center;margin:5px 0;color:#1e40af;} table{width:100%;border-collapse:collapse;margin-top:15px;white-space:nowrap;} th,td{border:1px solid #cbd5e1;padding:8px;text-align:center;} th{background-color:#1e40af;color:#fff;position:sticky;top:0;} .text-left{text-align:left;} .text-right{text-align:right;} tr:nth-child(even){background-color:#f8fafc;} tr:hover{background-color:#e2e8f0;} @media print { @page { size: landscape; margin: 10mm; } body { padding:0; background:white; -webkit-print-color-adjust: exact; print-color-adjust: exact; zoom: 0.6; } .page { box-shadow:none; margin:0; padding:0; page-break-after:always; overflow:visible; width:100%; max-width:100%; display:block; } table { font-size:10px; width:100%; max-width:100%; } th, td { padding:4px; white-space: nowrap; } button { display:none !important; } }</style>';
 
-        var headerHtml = '<div style="text-align: center; margin-bottom: 25px; font-family: \\\'Times New Roman\\\', serif; border-bottom: 3px double #1e293b; padding-bottom: 15px;">' +
+        var headerHtml = '<div style="text-align: center; margin-bottom: 25px; font-family: &quot;Times New Roman&quot;, Times, serif; border-bottom: 3px double #1e293b; padding-bottom: 15px;">' +
             '<h1 style="margin: 0; font-size: 22px; text-transform: uppercase; color:#1e293b;">LAPORAN GAJI & ABSENSI LENGKAP</h1>' +
             '<h2 style="margin: 5px 0 0; font-size: 16px; color:#475569;">CABANG ' + outletName.toUpperCase() + '</h2>';
             
@@ -905,9 +943,65 @@ window.viewPengajuanDetail = function(id) {
             <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Pulang</th>
         </tr></thead><tbody>${rowsGps}</tbody></table>${htmlTandaTangan}</div>`;
 
-        var finalHtml = '<html><head><title>Detail Laporan Pengajuan</title>' + styleBlock + '</head><body>' +
+        var scriptBlockExt = '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></scr' + 'ipt>' +
+            '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></scr' + 'ipt>' +
+            '<script>' +
+            'async function saveToJpg() {' +
+            '  var btnDiv = document.getElementById("action-buttons");' +
+            '  var origDisplay = btnDiv ? btnDiv.style.display : "";' +
+            '  if(btnDiv) btnDiv.style.display = "none";' +
+            '  window.scrollTo(0, 0);' +
+            '  var ths = document.querySelectorAll("th");' +
+            '  for(var k=0; k<ths.length; k++) { ths[k].style.position = "static"; }' +
+            '  var pages = document.querySelectorAll(".page");' +
+            '  try {' +
+            '    if (pages.length > 1) {' +
+            '      var zip = new JSZip();' +
+            '      for (var i = 0; i < pages.length; i++) {' +
+            '        var canvas = await html2canvas(pages[i], { scale: 1.5, backgroundColor: "#ffffff" });' +
+            '        var imgData = canvas.toDataURL("image/jpeg", 0.9).split(",")[1];' +
+            '        var pageName = "";' +
+            '        if (i === 0) pageName = "1_Absensi";' +
+            '        else if (i === 1) pageName = "2_Jadwal";' +
+            '        else if (i === 2) pageName = "3_Rekap_Absensi";' +
+            '        else if (i === 3) pageName = "4_Rekap_Gaji";' +
+            '        else if (i === 4) pageName = "5_Rekap_GPS";' +
+            '        else pageName = "Halaman_" + (i + 1);' +
+            '        zip.file("Laporan_" + pageName + ".jpg", imgData, {base64: true});' +
+            '      }' +
+            '      var content = await zip.generateAsync({type:"blob"});' +
+            '      var a = document.createElement("a");' +
+            '      a.href = URL.createObjectURL(content);' +
+            '      a.download = "Laporan_Lengkap_Gaji.zip";' +
+            '      document.body.appendChild(a);' +
+            '      a.click();' +
+            '      document.body.removeChild(a);' +
+            '    } else {' +
+            '      var target = pages.length ? pages[0] : document.body;' +
+            '      var canvas = await html2canvas(target, { scale: 1.5, backgroundColor: "#ffffff" });' +
+            '      var a = document.createElement("a");' +
+            '      a.href = canvas.toDataURL("image/jpeg", 0.9);' +
+            '      a.download = "Laporan_Lengkap_Gaji.jpg";' +
+            '      document.body.appendChild(a);' +
+            '      a.click();' +
+            '      document.body.removeChild(a);' +
+            '    }' +
+            '  } catch(err) {' +
+            '    alert("Gagal menyimpan JPG: " + err);' +
+            '  } finally {' +
+            '    if(btnDiv) btnDiv.style.display = origDisplay;' +
+            '    for(var m=0; m<ths.length; m++) { ths[m].style.position = ""; }' +
+            '  }' +
+            '}' +
+            '</scr' + 'ipt>';
+
+        var finalHtml = '<html><head><title>Detail Laporan Pengajuan</title>' + styleBlock + scriptBlockExt + '</head><body>' +
             htmlAbsensi + htmlJadwal + htmlLaporanAbsen + htmlGaji + htmlGps +
-            '<div style="text-align:center; margin:30px 0;"><button onclick="window.print()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#10b981; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Print / PDF</button><button onclick="window.close()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#1e40af; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1);">Tutup Halaman</button></div>' +
+            '<div id="action-buttons" style="text-align:center; margin:30px 0;">' +
+            '<button onclick="window.print()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#10b981; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Print / PDF</button>' +
+            '<button onclick="saveToJpg()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#0dcaf0; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Save JPG</button>' +
+            '<button onclick="window.close()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#1e40af; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1);">Tutup Halaman</button>' +
+            '</div>' +
             '</body></html>';
 
         var viewWindow = window.open('', '_blank');
@@ -1000,7 +1094,7 @@ window.viewBonusDetail = function(id) {
 
     var styleBlock = '<style>body{font-family:sans-serif;font-size:12px;padding:20px;background:#f3f4f6;} .page{background:white;padding:20px;margin-bottom:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);overflow-x:auto;} h2,h3{text-align:center;margin:5px 0;color:#1e40af;} table{width:100%;border-collapse:collapse;margin-top:15px;white-space:nowrap;} th,td{border:1px solid #cbd5e1;padding:8px;text-align:center;} th{background-color:#1e40af;color:#fff;} .text-left{text-align:left;} .text-right{text-align:right;} tr:nth-child(even){background-color:#f8fafc;} tr:hover{background-color:#e2e8f0;} @media print { @page { size: portrait; margin: 10mm; } body { padding:0; background:white; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .page { box-shadow:none; margin:0; padding:0; overflow:visible; width:100%; max-width:100%; display:block; } table { width:100%; max-width:100%; } button { display:none !important; } }</style>';
 
-    var headerHtml = '<div style="text-align: center; margin-bottom: 25px; font-family: \\\'Times New Roman\\\', serif; border-bottom: 3px double #1e293b; padding-bottom: 15px;">' +
+    var headerHtml = '<div style="text-align: center; margin-bottom: 25px; font-family: &quot;Times New Roman&quot;, Times, serif; border-bottom: 3px double #1e293b; padding-bottom: 15px;">' +
         '<h1 style="margin: 0; font-size: 22px; text-transform: uppercase; color:#1e293b;">LAPORAN PENGAJUAN BONUS</h1>' +
         '<h2 style="margin: 5px 0 0; font-size: 16px; color:#475569;">CABANG ' + outletName.toUpperCase() + '</h2>';
         
@@ -1077,10 +1171,59 @@ window.viewBonusDetail = function(id) {
         </tfoot>
     </table>`;
 
-    var finalHtml = '<html><head><title>Laporan Pengajuan Bonus</title>' + styleBlock + '</head><body>' +
-        '<div class="page">' + headerHtml + noteHtml + htmlTable + htmlTandaTangan + '</div>' +
-        '<div style="text-align:center; margin:30px 0;"><button onclick="window.print()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#10b981; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Print / PDF</button><button onclick="window.close()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#1e40af; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1);">Tutup Halaman</button></div>' +
-        '</body></html>';
+        var scriptBlockExt = '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></scr' + 'ipt>' +
+            '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></scr' + 'ipt>' +
+            '<script>' +
+            'async function saveToJpg() {' +
+            '  var btnDiv = document.getElementById("action-buttons");' +
+            '  var origDisplay = btnDiv ? btnDiv.style.display : "";' +
+            '  if(btnDiv) btnDiv.style.display = "none";' +
+            '  window.scrollTo(0, 0);' +
+            '  var ths = document.querySelectorAll("th");' +
+            '  for(var k=0; k<ths.length; k++) { ths[k].style.position = "static"; }' +
+            '  var pages = document.querySelectorAll(".page");' +
+            '  try {' +
+            '    if (pages.length > 1) {' +
+            '      var zip = new JSZip();' +
+            '      for (var i = 0; i < pages.length; i++) {' +
+            '        var canvas = await html2canvas(pages[i], { scale: 1.5, backgroundColor: "#ffffff" });' +
+            '        var imgData = canvas.toDataURL("image/jpeg", 0.9).split(",")[1];' +
+            '        zip.file("Laporan_Halaman_" + (i+1) + ".jpg", imgData, {base64: true});' +
+            '      }' +
+            '      var content = await zip.generateAsync({type:"blob"});' +
+            '      var a = document.createElement("a");' +
+            '      a.href = URL.createObjectURL(content);' +
+            '      a.download = "Laporan_Pengajuan_Bonus.zip";' +
+            '      document.body.appendChild(a);' +
+            '      a.click();' +
+            '      document.body.removeChild(a);' +
+            '    } else {' +
+            '      var target = pages.length ? pages[0] : document.body;' +
+            '      var canvas = await html2canvas(target, { scale: 1.5, backgroundColor: "#ffffff" });' +
+            '      var a = document.createElement("a");' +
+            '      a.href = canvas.toDataURL("image/jpeg", 0.9);' +
+            '      a.download = "Laporan_Pengajuan_Bonus.jpg";' +
+            '      document.body.appendChild(a);' +
+            '      a.click();' +
+            '      document.body.removeChild(a);' +
+            '    }' +
+            '  } catch(err) {' +
+            '    alert("Gagal menyimpan JPG: " + err);' +
+            '  } finally {' +
+            '    if(btnDiv) btnDiv.style.display = origDisplay;' +
+            '    for(var m=0; m<ths.length; m++) { ths[m].style.position = ""; }' +
+            '  }' +
+            '}' +
+            '</scr' + 'ipt>';
+
+        var finalHtml = '<html><head><title>Laporan Pengajuan Bonus</title>' + styleBlock + scriptBlockExt + '</head><body>' +
+            '<div class="page">' + headerHtml + noteHtml + htmlTable + htmlTandaTangan + '</div>' +
+            '<div id="action-buttons" style="text-align:center; margin:30px 0;">' +
+            '<button onclick="window.print()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#10b981; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Print / PDF</button>' +
+            '<button onclick="saveToJpg()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#0dcaf0; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Save JPG</button>' +
+            '<button onclick="window.close()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#1e40af; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1);">Tutup Halaman</button>' +
+            '</div>' +
+            '</body></html>';
 
     var viewWindow = window.open('', '_blank');
     viewWindow.document.write(finalHtml);
@@ -1193,6 +1336,29 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
     const printWin = window.open('', '', 'width=800,height=600'); printWin.document.write(htmlContent); printWin.document.close(); printWin.focus(); setTimeout(() => { printWin.print(); printWin.close(); }, 500);
 };
 
+window.deletePengajuan = function(type, id) {
+    AppPopup.confirm(`Yakin ingin menghapus permanen pengajuan ini?`, 'Konfirmasi Hapus', function() {
+        let dbPath = '';
+        if (type === 'tf') {
+            dbPath = `rbm_pro/pengajuan_tf/${id}`;
+        } else if (type === 'gaji') {
+            const sub = window._pengajuanDataMap[id];
+            dbPath = `rbm_pro/gaji_pengajuan/${sub.data._outlet}/${sub.data._month}/${id}`;
+        } else {
+            dbPath = `rbm_pro/petty_cash/pengajuan/${id}`;
+        }
+        
+        firebase.database().ref(dbPath).remove().then(() => {
+            AppPopup.success('Pengajuan berhasil dihapus.');
+            closeOwnerPengajuanModal();
+            if (window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+            if (typeof fetchSubmissionsForOwner === 'function') fetchSubmissionsForOwner();
+        }).catch(err => {
+            AppPopup.error('Gagal menghapus: ' + (err.message || err));
+        });
+    });
+};
+
 function closeOwnerPengajuanModal() { document.getElementById('ownerPengajuanModal').style.display = 'none'; }
 
 function updatePengajuanStatus(type, id, status) {
@@ -1279,6 +1445,7 @@ function updatePengajuanStatus(type, id, status) {
       <button id="btnLaporanLengkap" class="btn btn-secondary" style="display:none; background: #8b5cf6; color: white; border: none; flex: 1; min-width: 150px;">📊 Laporan Lengkap</button>
       <button id="approveBtn" class="btn btn-primary" style="margin-top: 0; flex: 1; min-width: 100px;">Setujui (ACC)</button>
       <button id="rejectBtn" class="btn btn-small-danger" style="font-size: 14px; padding: 10px 20px; flex: 1; min-width: 80px;">Tolak</button>
+      <button id="deleteBtn" class="btn btn-small-danger" style="font-size: 14px; padding: 10px 20px; flex: 1; min-width: 80px; background-color: #dc2626; color: white; border: none; display: none;">Hapus</button>
       <button id="printBtn" class="btn btn-secondary" onclick="window.print()" style="background-color: #6c757d; color: white; border: none; flex: 1; min-width: 100px;">Print (A4)</button>
     </div>
   </div>
@@ -1377,6 +1544,11 @@ window.confirm = function(msg) {
     var select = document.getElementById('jenis_pengajuan');
     if (!select) return;
     select.value = jenis;
+
+    // Jika owner/dev, otomatis pindah ke tab buat pengajuan
+    if (typeof switchOwnerTab === 'function') {
+        switchOwnerTab('create');
+    }
 
     // Pastikan fungsi createPengajuanForm sudah ter-load dari rbm-pro.js.
     var attempts = 0;

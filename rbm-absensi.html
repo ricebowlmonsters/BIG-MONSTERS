@@ -98,12 +98,26 @@
       <button id="tab-btn-laporan" class="tab-btn" onclick="switchAbsensiTab('laporan')">Laporan Absen</button>
       <button id="tab-btn-gaji" class="tab-btn" onclick="switchAbsensiTab('gaji')">Rekap Gaji</button>
       <button id="tab-btn-bonus" class="tab-btn" onclick="switchAbsensiTab('bonus')">Bonus</button>
+      <button id="tab-btn-bonus-dev" class="tab-btn" onclick="switchAbsensiTab('bonus-dev')" style="display:none; color: #8b5cf6; font-weight: bold;">Bonus (Burhan)</button>
       <div style="margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           <span style="font-size: 12px; font-weight: 600; color: #64748b;">Export:</span>
           <button class="btn btn-primary" onclick="exportCompleteAbsensiExcel()" style="font-size: 12px; padding: 8px 12px; background: #198754; border: none; width: auto; margin: 0;">Excel</button>
           <button class="btn btn-primary" onclick="exportCompleteAbsensiPDF()" style="font-size: 12px; padding: 8px 12px; background: #dc3545; border: none; width: auto; margin: 0;">PDF</button>
       </div>
     </div>
+
+    <script>
+      (function() {
+        try {
+          var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+          var isDev = (u.username || '').toLowerCase() === 'burhan' || (u.role || '').toLowerCase() === 'developer';
+          if (isDev) {
+            var btn = document.getElementById('tab-btn-bonus-dev');
+            if (btn) btn.style.display = 'inline-block';
+          }
+        } catch(e) {}
+      })();
+    </script>
 
     <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 0 0 var(--radius-lg) var(--radius-lg); padding: 20px; box-shadow: var(--shadow); overflow-x: hidden; max-width: 100%;">
     
@@ -217,6 +231,7 @@
           <button class="btn btn-primary" onclick="saveRekapGajiData()" style="background-color: var(--primary); width: auto; margin: 0;">Simpan Perubahan</button>
           <button class="btn btn-primary" onclick="downloadAllSlipsAsZip(event)" style="background-color: #198754; border: none; width: auto; margin: 0;">Download Semua Slip (ZIP)</button>
           <button class="btn btn-primary" onclick="printRekapGaji()" style="background-color: #dc3545; border: none; width: auto; margin: 0;">Print Slip/Rekap PDF</button>
+          <button class="btn btn-primary" onclick="saveRekapGajiToJpg()" style="background-color: #0dcaf0; border: none; width: auto; margin: 0; color: white;">Save JPG</button>
         </div>
 
         <!-- PENGAJUAN GAJI (ke Owner & Manager) -->
@@ -237,12 +252,18 @@
           (function() {
             try {
               var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-              var role = String(u.role || '').toLowerCase();
-              if (role === 'owner') {
+              var isOwnerOrDev = String(u.role || '').toLowerCase() === 'owner' || (u.username || '').toLowerCase() === 'burhan';
+              if (isOwnerOrDev) {
                 var btnGaji = document.getElementById('btn-submit-gaji');
                 var btnPc = document.getElementById('btn-submit-pettycash');
-                if (btnGaji) btnGaji.style.display = 'none';
-                if (btnPc) btnPc.style.display = 'none';
+                if (btnGaji) {
+                    btnGaji.style.display = 'inline-block';
+                    btnGaji.textContent = 'Pengajuan Gaji (Ke Diri Sendiri)';
+                }
+                if (btnPc) {
+                    btnPc.style.display = 'inline-block';
+                    btnPc.textContent = 'Pengajuan Petty Cash (Ke Diri Sendiri)';
+                }
               }
             } catch (e) {}
           })();
@@ -436,6 +457,51 @@
                 </tfoot>
               </table>
             </div>
+        </div>
+    </div>
+
+    <!-- BONUS DEV (Burhan) -->
+    <div id="tab-content-bonus-dev" style="display:none;">
+        <div class="filter-row" style="margin-bottom: 15px;">
+            <label style="font-size: 12px; font-weight: bold;">Bulan Omset:</label>
+            <input type="month" id="bonus_dev_bulan" class="form-input" style="width: 200px; padding: 6px;">
+            <button class="btn btn-primary" onclick="fetchOmsetGlobalDev()" style="width: auto;">Tarik Data Omset Global</button>
+        </div>
+        
+        <div style="border: 1px solid #e2e8f0; border-radius: 8px; background: white; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid #8b5cf6; padding-bottom: 10px; margin-bottom: 20px;">
+                <div>
+                    <h3 style="margin:0; color: #8b5cf6; font-size: 18px; text-transform: uppercase;">Laporan Bonus Omset Global (0.2%)</h3>
+                    <p style="margin:5px 0 0; font-size: 14px; color:#475569;">Penerima: <strong>Puji Shohibul Burhan</strong></p>
+                </div>
+                <div style="display:flex; gap:5px;">
+                    <button class="btn-small-danger" style="background:#8b5cf6; padding: 4px 8px;" onclick="submitBonusDevPengajuan()">Ajukan</button>
+                    <button class="btn-small-danger" style="background:#198754; padding: 4px 8px;" onclick="exportBonusDevExcel()">Excel</button>
+                    <button class="btn-small-danger" style="background:#dc3545; padding: 4px 8px;" onclick="exportBonusDevPDF()">PDF</button>
+                </div>
+            </div>
+            <table class="data-table" id="bonus_dev_table" style="font-size: 13px; width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr>
+                        <th style="width: 50px; text-align: center; border: 1px solid #e2e8f0; padding: 10px;">No</th>
+                        <th style="text-align: left; border: 1px solid #e2e8f0; padding: 10px;">Nama Outlet</th>
+                        <th style="text-align: right; border: 1px solid #e2e8f0; padding: 10px;">Total Pendapatan (Omset)</th>
+                    </tr>
+                </thead>
+                <tbody id="bonus_dev_tbody">
+                    <tr><td colspan="3" class="table-empty" style="text-align:center; padding: 20px;">Pilih bulan dan klik Tarik Data</td></tr>
+                </tbody>
+                <tfoot>
+                    <tr style="background: #f1f5f9; font-weight: bold;">
+                        <td colspan="2" style="text-align: right; padding: 10px; border: 1px solid #e2e8f0;">GRAND TOTAL OMSET SEMUA OUTLET:</td>
+                        <td id="bonus_dev_grand_total" style="text-align: right; padding: 10px; color: #1e40af; font-size: 15px; border: 1px solid #e2e8f0;">Rp 0</td>
+                    </tr>
+                    <tr style="background: #dcfce7; font-weight: bold;">
+                        <td colspan="2" style="text-align: right; padding: 10px; color: #166534; font-size: 16px; border: 1px solid #e2e8f0;">BONUS 0.2% (PUJI SHOHIBUL BURHAN):</td>
+                        <td id="bonus_dev_hasil" style="text-align: right; padding: 10px; color: #166534; font-size: 18px; border: 1px solid #e2e8f0;">Rp 0</td>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
     </div>
 
@@ -738,6 +804,27 @@ window.addEventListener('load', function() {
     var oldSwitch = window.switchAbsensiTab;
     window.switchAbsensiTab = function(tab) {
         if (oldSwitch) oldSwitch(tab);
+            
+            var bonusDevTab = document.getElementById('tab-content-bonus-dev');
+            if (bonusDevTab) {
+                if (tab === 'bonus-dev') {
+                    document.getElementById('tab-content-input').style.display = 'none';
+                    document.getElementById('tab-content-laporan').style.display = 'none';
+                    document.getElementById('tab-content-gaji').style.display = 'none';
+                    document.getElementById('tab-content-bonus').style.display = 'none';
+                    bonusDevTab.style.display = 'block';
+                    
+                    var bulanInput = document.getElementById('bonus_dev_bulan');
+                    if (bulanInput && !bulanInput.value) {
+                        var now = new Date();
+                        bulanInput.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+                        fetchOmsetGlobalDev();
+                    }
+                } else {
+                    bonusDevTab.style.display = 'none';
+                }
+            }
+
         if (tab === 'bonus') {
             fetchOmsetForBonus();
             setTimeout(rewriteBonusOmsetTable, 500); // Tunggu tabel render
@@ -807,6 +894,146 @@ window.addEventListener('load', function() {
         
         var info = document.getElementById('alokasi_manual_info');
         if (info) info.innerHTML = '';
+    };
+
+    window.fetchOmsetGlobalDev = async function() {
+        var bulanInput = document.getElementById('bonus_dev_bulan');
+        var ym = bulanInput ? bulanInput.value : '';
+        if (!ym) return alert("Pilih bulan terlebih dahulu.");
+        
+        var tbody = document.getElementById('bonus_dev_tbody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="3" class="table-loading" style="text-align:center; padding:20px;">Menarik data dari seluruh outlet... ⏳</td></tr>';
+        
+        var parts = ym.split('-');
+        var lastDay = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10), 0).getDate();
+        var start = ym + '-01';
+        var end = ym + '-' + lastDay;
+        
+        var outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+        var names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+        
+        if (outlets.length === 0) {
+            if (tbody) tbody.innerHTML = '<tr><td colspan="3" class="table-empty" style="text-align:center;">Tidak ada data outlet.</td></tr>';
+            return;
+        }
+        
+        var grandTotalOmset = 0;
+        var html = '';
+        
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            try {
+                for (let i = 0; i < outlets.length; i++) {
+                    let outletId = outlets[i];
+                    let outletName = names[outletId] || outletId.toUpperCase();
+                    let totalOmset = 0;
+                    
+                    let snap = await firebase.database().ref('rbm_pro/pembukuan/' + outletId)
+                        .orderByKey().startAt(start).endAt(end).once('value');
+                    let data = snap.val();
+                    
+                    if (data) {
+                        Object.keys(data).forEach(function(dateKey) {
+                            var p = data[dateKey];
+                            if (p && p.kasMasuk) {
+                                var arr = Array.isArray(p.kasMasuk) ? p.kasMasuk : Object.values(p.kasMasuk);
+                                arr.forEach(function(km) {
+                                    var val = String(km.catatan || '0').replace(/[^0-9,-]/g, '').replace(',', '.');
+                                    totalOmset += parseFloat(val) || 0;
+                                });
+                            }
+                        });
+                    }
+                    
+                    grandTotalOmset += totalOmset;
+                    
+                    html += '<tr>' +
+                        '<td style="text-align: center; padding: 10px; border: 1px solid #e2e8f0;">' + (i+1) + '</td>' +
+                        '<td style="text-align: left; font-weight: 600; padding: 10px; border: 1px solid #e2e8f0;">' + outletName + '</td>' +
+                        '<td style="text-align: right; padding: 10px; border: 1px solid #e2e8f0;">Rp ' + Math.round(totalOmset).toLocaleString('id-ID') + '</td>' +
+                    '</tr>';
+                }
+                
+                if (tbody) tbody.innerHTML = html;
+                
+                var grandTotalEl = document.getElementById('bonus_dev_grand_total');
+                var hasilEl = document.getElementById('bonus_dev_hasil');
+                
+                if (grandTotalEl) grandTotalEl.textContent = 'Rp ' + Math.round(grandTotalOmset).toLocaleString('id-ID');
+                
+                var bonus = Math.floor(grandTotalOmset * 0.002); // Hitungan 0.2%
+                if (hasilEl) hasilEl.textContent = 'Rp ' + bonus.toLocaleString('id-ID');
+                
+            } catch(e) {
+                console.error("Gagal fetch omset global:", e);
+                if (tbody) tbody.innerHTML = '<tr><td colspan="3" class="table-empty" style="text-align:center; color:red;">Gagal memuat data: ' + e.message + '</td></tr>';
+            }
+        } else {
+            if (tbody) tbody.innerHTML = '<tr><td colspan="3" class="table-empty" style="text-align:center;">Firebase tidak terhubung.</td></tr>';
+        }
+    };
+
+    window.submitBonusDevPengajuan = async function() {
+        var bulanInput = document.getElementById('bonus_dev_bulan');
+        var ym = bulanInput ? bulanInput.value : '';
+        if (!ym) return alert("Tarik data omset terlebih dahulu.");
+        
+        var h = document.getElementById("bonus_dev_hasil").innerText;
+        var gt = document.getElementById("bonus_dev_grand_total").innerText;
+        var nominal = parseInt(h.replace(/[^0-9]/g, '')) || 0;
+        
+        if (nominal <= 0) return alert("Total bonus masih Rp 0.");
+        if (!confirm("Ajukan Bonus Global (0.2%) sebesar " + h + " ke Owner?")) return;
+
+        openRekeningPencairanModal(async function(rekInfo) {
+            try {
+                const items = [{ empId: 'burhan_dev', nama: 'Puji Shohibul Burhan', jabatan: 'Developer', grandTotal: nominal, metodeBayar: 'TF', keterangan: 'Bonus Omset Global 0.2% Semua Outlet' }];
+                const note = `Pengajuan BONUS GLOBAL DEV periode ${ym}<br><span style="font-size:11px; color:#475569;">&bull; Total Omset Semua Outlet: <b>${gt}</b></span>`;
+                await FirebaseStorage.saveGajiPengajuan({ 
+                    outletId: 'semua', monthKey: ym, periodStart: ym + '-01', periodEnd: ym + '-31', requester: 'Burhan', totalGrand: nominal, note: note,
+                    bank: rekInfo.bank, rekening: rekInfo.rekening, atasnama: rekInfo.atasnama 
+                }, items);
+                alert('Pengajuan Bonus Global berhasil dikirim ke Owner.');
+            } catch (e) {
+                alert('Gagal mengajukan: ' + (e.message || e));
+            }
+        });
+    };
+
+    window.exportBonusDevExcel = function() {
+        var bulanInput = document.getElementById('bonus_dev_bulan');
+        var ym = bulanInput ? bulanInput.value : '';
+        if (!ym) return alert("Tarik data omset terlebih dahulu.");
+        
+        let xml = '<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
+        xml += '<Styles><Style ss:ID="sHeader"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#8b5cf6" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center"/></Style><Style ss:ID="sData"><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style></Styles>';
+        xml += '<Worksheet ss:Name="Bonus Global"><Table><Column ss:Width="50"/><Column ss:Width="200"/><Column ss:Width="150"/>';
+        xml += `<Row><Cell ss:MergeAcross="2" ss:StyleID="sHeader"><Data ss:Type="String">LAPORAN BONUS OMSET GLOBAL (0.2%) - ${ym}</Data></Cell></Row>`;
+        xml += '<Row><Cell ss:StyleID="sHeader"><Data ss:Type="String">No</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">Nama Outlet</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">Total Pendapatan</Data></Cell></Row>';
+        document.querySelectorAll("#bonus_dev_tbody tr").forEach((tr) => {
+            const tds = tr.querySelectorAll("td");
+            if (tds.length === 3) xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="String">${tds[0].innerText}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${tds[1].innerText}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${tds[2].innerText}</Data></Cell></Row>`;
+        });
+        xml += `<Row><Cell ss:MergeAcross="1" ss:StyleID="sData"><Data ss:Type="String">GRAND TOTAL OMSET SEMUA OUTLET:</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${document.getElementById("bonus_dev_grand_total").innerText}</Data></Cell></Row>`;
+        xml += `<Row><Cell ss:MergeAcross="1" ss:StyleID="sData"><Data ss:Type="String">BONUS 0.2% (PUJI SHOHIBUL BURHAN):</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${document.getElementById("bonus_dev_hasil").innerText}</Data></Cell></Row>`;
+        xml += '</Table></Worksheet></Workbook>';
+        const blob = new Blob([xml], {type: 'application/vnd.ms-excel'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Bonus_Global_${ym}.xls`; a.click();
+    };
+
+    window.exportBonusDevPDF = function() {
+        var bulanInput = document.getElementById('bonus_dev_bulan');
+        var ym = bulanInput ? bulanInput.value : '';
+        if (!ym) return alert("Tarik data omset terlebih dahulu.");
+        let html = `<html><head><title>Bonus Global</title><style>body{font-family:sans-serif;} table{width:100%;border-collapse:collapse;font-size:12px;} th,td{border:1px solid #ccc;padding:8px;} th{background:#8b5cf6;color:white;}</style></head><body>`;
+        html += `<h2 style="text-align:center; color:#8b5cf6;">Laporan Bonus Omset Global (0.2%)</h2><p style="text-align:center; margin-bottom:20px;">Bulan: ${ym}<br>Penerima: <strong>Puji Shohibul Burhan</strong></p><table><thead><tr><th>No</th><th>Nama Outlet</th><th>Total Pendapatan</th></tr></thead><tbody>`;
+        document.querySelectorAll("#bonus_dev_tbody tr").forEach((tr) => {
+            const tds = tr.querySelectorAll("td");
+            if (tds.length === 3) html += `<tr><td style="text-align:center;">${tds[0].innerText}</td><td>${tds[1].innerText}</td><td style="text-align:right;">${tds[2].innerText}</td></tr>`;
+        });
+        html += `<tr style="background:#f1f5f9; font-weight:bold;"><td colspan="2" style="text-align:right;">GRAND TOTAL OMSET SEMUA OUTLET:</td><td style="text-align:right;">${document.getElementById("bonus_dev_grand_total").innerText}</td></tr>`;
+        html += `<tr style="background:#dcfce7; font-weight:bold;"><td colspan="2" style="text-align:right; color:#166534;">BONUS 0.2% (PUJI SHOHIBUL BURHAN):</td><td style="text-align:right; color:#166534;">${document.getElementById("bonus_dev_hasil").innerText}</td></tr></tbody></table></body></html>`;
+        const win = window.open('', '', 'height=600,width=800'); win.document.write(html); win.document.close(); win.focus();
+        setTimeout(() => { win.print(); win.close(); }, 500);
     };
 });
 </script>
@@ -942,6 +1169,37 @@ window.addEventListener('load', function() {
     
     var tbody = document.getElementById('absensi_tbody');
     if (tbody) observer.observe(tbody, { childList: true, subtree: true });
+});
+</script>
+<script>
+// Menambahkan tombol "Save JPG" secara otomatis pada modal detail pengajuan gaji
+window.addEventListener('load', function() {
+    var observer = new MutationObserver(function(mutations) {
+        var buttons = document.querySelectorAll('button');
+        buttons.forEach(function(btn) {
+            // Deteksi tombol Print / PDF
+            if ((btn.textContent.includes('Print') || btn.textContent.includes('PDF')) && !btn.hasAttribute('data-jpg-added')) {
+                var parent = btn.parentElement;
+                // Pastikan ini berada di baris yang sama dengan tombol Tutup Halaman
+                if (parent && (parent.innerHTML.includes('Tutup Halaman') || parent.innerHTML.includes('Tutup'))) {
+                    btn.setAttribute('data-jpg-added', 'true');
+                    
+                    var saveJpgBtn = document.createElement('button');
+                    saveJpgBtn.className = btn.className;
+                    saveJpgBtn.textContent = 'Save JPG';
+                    saveJpgBtn.style.cssText = btn.style.cssText;
+                    saveJpgBtn.style.backgroundColor = '#0dcaf0'; // Warna Cyan
+                    saveJpgBtn.style.borderColor = '#0dcaf0';
+                    saveJpgBtn.style.color = '#fff';
+                    saveJpgBtn.style.marginLeft = '8px';
+                    saveJpgBtn.onclick = function() { if (typeof saveRekapGajiToJpg === 'function') saveRekapGajiToJpg(); };
+                    
+                    parent.insertBefore(saveJpgBtn, btn.nextSibling);
+                }
+            }
+        });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
 });
 </script>
 </body>
