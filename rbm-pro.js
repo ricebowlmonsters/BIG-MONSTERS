@@ -5138,6 +5138,22 @@ function renderAbsensiTable(mode) {
     ordered.forEach((item, displayIndex) => {
         const emp = item.emp;
         const index = item.idx; // index asli (untuk key & update/remove)
+        
+        let jabOpts = '<option value="-">-</option>';
+        const jabatans = ['Manager Regional', 'Manager Outlet', 'Supervisor', 'Admin', 'Crew'];
+        let isMatched = false;
+        jabatans.forEach(j => {
+            if (emp.jabatan === j) {
+                jabOpts += `<option value="${j}" selected>${j}</option>`;
+                isMatched = true;
+            } else {
+                jabOpts += `<option value="${j}">${j}</option>`;
+            }
+        });
+        if (emp.jabatan && emp.jabatan !== '-' && !isMatched) {
+            jabOpts += `<option value="${emp.jabatan}" selected>${emp.jabatan}</option>`;
+        }
+
         // Static Info (Email dihapus; Jabatan, Join Date, Sisa Cuti bisa dilipat via icon di samping Save/Print Jadwal)
         let rowHtml = `<tr>
             <td style="position:sticky; left:0; background:white; z-index:5;">${displayIndex + 1}</td>
@@ -5145,7 +5161,9 @@ function renderAbsensiTable(mode) {
                 <input type="text" name="emp_name_${index}" aria-label="Nama Karyawan" value="${emp.name}" onchange="updateEmployee(${index}, 'name', this.value)" style="border:none; width:100%; padding:0;">
             </td>
             <td class="col-jabatan">
-                <input type="text" name="emp_jabatan_${index}" aria-label="Jabatan Karyawan" value="${emp.jabatan}" onchange="updateEmployee(${index}, 'jabatan', this.value)" style="border:none; width:80px; padding:0;">
+                <select name="emp_jabatan_${index}" aria-label="Jabatan Karyawan" onchange="updateEmployee(${index}, 'jabatan', this.value)" style="border:1px solid #e2e8f0; border-radius:4px; width:115px; padding:2px; font-size:11px; background:white; color:#334155;">
+                    ${jabOpts}
+                </select>
             </td>
             <td class="col-joindate">
                 <input type="date" name="emp_joindate_${index}" aria-label="Tanggal Masuk" value="${emp.joinDate || ''}" onchange="updateEmployee(${index}, 'joinDate', this.value)" style="border:none; width:100px; padding:0; font-size:11px;">
@@ -5767,8 +5785,10 @@ function renderRekapGaji() {
 
         // 2. Ambil Data Tersimpan / Default
         const pData = gajiPeriodData[empKey] || {};
-        const totalMenitTelatGps = getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir);
+        const detailTelatGaji = typeof getDetailTelatGaji === 'function' ? getDetailTelatGaji(emp.id || idx, emp.name, tglAwal, tglAkhir) : { totalMenit: 0, detailLines: [] };
+        const totalMenitTelatGps = detailTelatGaji.totalMenit;
         const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        const detailTelatEsc = JSON.stringify({ lines: detailTelatGaji.detailLines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
         let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
         
         // Static Data (Save to Employee Object)
@@ -5833,7 +5853,9 @@ function renderRekapGaji() {
             <td style="text-align:right;">${formatRupiah(totalPotKehadiran)}</td>
 
             <!-- Keterlambatan -->
-            <td><input type="number" data-field="jamTerlambat" value="${jamTerlambat}" oninput="resizeInput(this); this.setAttribute('data-edited', 'true');" style="width:${wJam}px; text-align:center; padding:5px;" placeholder="0"></td>
+            <td onclick="showDetailTelatModal('Periode ${tglAwal} - ${tglAkhir}', '${(emp.name || '').replace(/'/g, "\\'")}', '${detailTelatEsc}')" style="cursor:pointer; text-decoration:underline; color:#b91c1c;">
+                <input type="number" data-field="jamTerlambat" value="${jamTerlambat}" oninput="resizeInput(this); this.setAttribute('data-edited', 'true');" style="width:${wJam}px; text-align:center; padding:5px; cursor:pointer;" placeholder="0">
+            </td>
             <td style="text-align:right; font-size:9px;">${formatRupiah(potTerlambatPerJam)}</td>
             <td style="text-align:right;">${formatRupiah(totalPotTerlambat)}</td>
 
@@ -10163,100 +10185,11 @@ function populateGpsNames() {
             window._cachedGpsName = null;
             updateGpsJadwalDisplay();
             if (typeof checkDistance === 'function') checkDistance();
-            const faceStatus = document.getElementById('face_id_status_info');
-            if (!this.value) {
-                if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
-                if (faceStatus) {
-                    faceStatus.innerHTML = "✅ Sistem AI Siap. Silakan pilih nama Anda.";
-                    faceStatus.style.color = "#15803d";
-                    faceStatus.style.background = "#f0fdf4";
-                    faceStatus.style.borderColor = "#bbf7d0";
-                }
-                return;
-            }
-            // Face ID per karyawan: ambil dari gps_kiosk/faces/{id} (1 read), fallback blob lama setelah model siap.
-            (function gpsLoadFaceThenModels() {
-                var nameSel = document.getElementById('gps_absen_name');
-                var name = nameSel ? nameSel.value : '';
-                if (!name) return;
-                
-                function goModels() {
-                    if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi(false);
-                }
-
-                // [OPTIMASI KILAT] Cek memori HP dulu! Jika wajah sudah pernah didownload, LANGSUNG JALAN tanpa nunggu server.
-                var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-                var faceDataCache = getCachedParsedStorage(faceKey, {});
-                if (faceDataCache[name] && faceDataCache[name].length > 0) {
-                    goModels();
-                    return; // Berhenti di sini, lompat ke pemindaian
-                }
-
-                var outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
-                var emList = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
-                    ? window._gpsKioskRosterEmployees
-                    : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
-                var emp = emList.find(function(e) { return e && e.name === name; });
-                var empIdToUse = (emp && emp.id != null) ? emp.id : (emp ? emList.indexOf(emp) : null);
-                if (typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
-                    typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskFace) {
-                    var fallbackToMaster = function() {
-                        // [PERBAIKAN] Fallback: Cari wajah spesifik ini langsung ke Data Master (Gudang Utama)
-                        var sfx = outlet ? '_' + outlet.toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
-                        firebase.database().ref('rbm_pro/face_data' + sfx + '/' + name).once('value').then(function(snap) {
-                            var masterRaw = snap.val();
-                            var masterDesc = normalizeGpsKioskDescriptor(masterRaw);
-                            if (masterDesc && masterDesc.length) {
-                                var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-                                var fd = getCachedParsedStorage(faceKey, {});
-                                fd[name] = masterDesc;
-                                window._rbmParsedCache[faceKey] = { data: fd };
-                                // FIX: Hanya simpan di memori lokal HP, jangan timpa ulang ke Firebase!
-                                try { localStorage.setItem(faceKey, JSON.stringify(fd)); } catch(e) {}
-                            }
-                            goModels();
-                        }).catch(goModels);
-                    };
-                    if (empIdToUse != null) {
-                        FirebaseStorage.loadGpsKioskFace(outlet, empIdToUse).then(function(raw) {
-                            var desc = normalizeGpsKioskDescriptor(raw);
-                            if (desc && desc.length) {
-                                var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-                                var fd = getCachedParsedStorage(faceKey, {});
-                                fd[name] = desc;
-                                window._rbmParsedCache[faceKey] = { data: fd };
-                                // FIX: Hanya simpan di memori lokal HP, jangan timpa ulang ke Firebase!
-                                try { localStorage.setItem(faceKey, JSON.stringify(fd)); } catch(e) {}
-                                goModels();
-                            } else {
-                                fallbackToMaster();
-                            }
-                        }).catch(fallbackToMaster);
-                    } else {
-                        fallbackToMaster();
-                    }
-                } else {
-                    goModels();
-                }
-            })();
         };
     }
     // [PERFORMA] Jangan hitung jadwal/sisa cuti saat startup.
     // Tampilkan detail hanya setelah karyawan memilih nama.
     if (select.value) updateGpsJadwalDisplay();
-}
-
-window._faceVerified = false;
-window._faceVerificationInterval = null;
-
-function getRegisteredFaceDescriptorByName(name) {
-    if (!name) return null;
-    var faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-    var faceData = getCachedParsedStorage(faceKey, {});
-    if (!faceData || typeof faceData !== 'object') return null;
-    var raw = faceData[name];
-    var desc = normalizeGpsKioskDescriptor(raw);
-    return (desc && desc.length) ? desc : null;
 }
 
 window._playSuccessBeep = function() {
@@ -10273,238 +10206,6 @@ window._playSuccessBeep = function() {
         gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.1);
         osc.stop(ctx.currentTime + 0.1);
     } catch(e) {}
-};
-
-window.startLiveFaceVerification = function() {
-    if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
-    const nameSel = document.getElementById('gps_absen_name');
-    const name = nameSel ? nameSel.value : '';
-    if (!name) return;
-
-    // ===== PENGATURAN KEKETATAN FACE ID =====
-    // 0.40 = Sangat ketat (wajah dan cahaya harus sama persis)
-    // 0.45 = Standar / Ideal
-    // 0.50 = Agak longgar (lebih mudah mendeteksi, tapi berisiko tertukar)
-    const FACE_MATCH_THRESHOLD = 0.45; // <-- SILAKAN UBAH ANGKA INI
-
-    const registeredDescriptorArr = getRegisteredFaceDescriptorByName(name);
-
-    if (!registeredDescriptorArr || !window.isFaceApiLoaded || typeof faceapi === 'undefined') {
-        window._faceVerified = false;
-        if (typeof checkDistance === 'function') checkDistance();
-        return;
-    }
-
-    const registeredDescriptor = new Float32Array(registeredDescriptorArr);
-    const video = document.getElementById('gps_video');
-    const faceStatus = document.getElementById('face_id_status_info');
-    const scannerUI = document.getElementById('gps_scanner_ui');
-    if (scannerUI) scannerUI.style.display = 'block'; // Tampilkan Laser Scanner
-
-    let isProcessing = false;
-    window._faceVerificationActive = true; // Flag untuk menghentikan loop
-
-    const scanLoop = async () => {
-        if (!window._faceVerificationActive) return;
-        if (isProcessing) return;
-        
-        if (!video || !video.videoWidth || video.paused || video.ended) {
-            window._faceVerificationInterval = setTimeout(scanLoop, 500);
-            return;
-        }
-
-        // OPTIMASI: Jika sudah diverifikasi, pelankan scan agar tidak boros baterai/CPU HP
-        if (window._faceVerified) {
-            window._faceVerificationInterval = setTimeout(scanLoop, 2000);
-            return;
-        }
-        
-        isProcessing = true;
-        try {
-            // PENGATURAN AI UNTUK PENCAHAYAAN GELAP:
-            // inputSize: 224 (Diturunkan dari 320 agar kalkulasi AI di HP jauh lebih cepat/tidak lag)
-            // scoreThreshold: 0.3 (lebih sensitif mendeteksi wajah samar, default 0.5)
-            const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 });
-            const detection = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
-            
-            if (!detection) {
-                window._faceVerified = false;
-                if (faceStatus) {
-                    faceStatus.innerHTML = "🔍 Wajah tidak terdeteksi di kamera...";
-                    faceStatus.style.color = "#b45309";
-                    faceStatus.style.background = "#fffbeb";
-                    faceStatus.style.borderColor = "#fde68a";
-                }
-            } else {
-                const distance = faceapi.euclideanDistance(detection.descriptor, registeredDescriptor);
-                if (distance > FACE_MATCH_THRESHOLD) {
-                    window._faceVerified = false;
-                    if (faceStatus) {
-                        faceStatus.innerHTML = `❌ Wajah tidak cocok!<br>Ini bukan wajah ${name}. (Skor Jarak: ${distance.toFixed(2)}/${FACE_MATCH_THRESHOLD})<br>Pastikan Anda memilih nama yang benar.`;
-                        faceStatus.style.color = "#b91c1c";
-                        faceStatus.style.background = "#fef2f2";
-                        faceStatus.style.borderColor = "#fecaca";
-                    }
-                } else {
-                    if (!window._faceVerified) {
-                        window._faceVerified = true;
-                        if (typeof window._playSuccessBeep === 'function') window._playSuccessBeep();
-                    }
-                    if (faceStatus) {
-                        faceStatus.innerHTML = "✅ Wajah Terverifikasi. Tombol Absen Aktif.";
-                        faceStatus.style.color = "#15803d";
-                        faceStatus.style.background = "#dcfce7";
-                        faceStatus.style.borderColor = "#bbf7d0";
-                    }
-                }
-            }
-            if (typeof checkDistance === 'function') checkDistance();
-        } catch (e) {
-            console.error(e);
-        }
-        isProcessing = false;
-        
-        // OPTIMASI: Cek setiap 400ms (Sangat responsif dibanding 1.5 detik)
-        window._faceVerificationInterval = setTimeout(scanLoop, 400);
-    };
-    
-    // Jalankan loop pertama kali
-    scanLoop();
-};
-
-window.stopLiveFaceVerification = function() {
-    window._faceVerificationActive = false;
-    if (window._faceVerificationInterval) {
-        clearTimeout(window._faceVerificationInterval);
-        window._faceVerificationInterval = null;
-    }
-    const scannerUI = document.getElementById('gps_scanner_ui');
-    if (scannerUI) scannerUI.style.display = 'none'; // Sembunyikan Laser Scanner
-    window._faceVerified = false;
-};
-
-window.isFaceApiLoaded = window.isFaceApiLoaded || false;
-window._faceApiLoading = window._faceApiLoading || false;
-window.loadFaceApiModelsForAbsensi = async function(silent = false) {
-    const faceStatus = document.getElementById('face_id_status_info');
-    const nameSel = document.getElementById('gps_absen_name');
-    const name = nameSel ? nameSel.value : '';
-
-    const updateUIForLoaded = () => {
-        if (!name) {
-            if (faceStatus) {
-                faceStatus.innerHTML = "✅ Sistem AI Siap. Silakan pilih nama Anda.";
-                faceStatus.style.color = "#15803d";
-                faceStatus.style.background = "#f0fdf4";
-                faceStatus.style.borderColor = "#bbf7d0";
-            }
-            return;
-        }
-        
-        // [FITUR FACE ID DINONAKTIFKAN SEMENTARA]
-        // Langsung tampilkan pesan siap dan hentikan proses Face API
-        if (faceStatus) {
-            faceStatus.innerHTML = "✅ Siap. Silakan klik tombol Absen di bawah.";
-            faceStatus.style.color = "#15803d";
-            faceStatus.style.background = "#dcfce7";
-            faceStatus.style.borderColor = "#bbf7d0";
-        }
-        return;
-
-        if (silent) return;
-        
-        const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-        const faceData = getCachedParsedStorage(faceKey, {});
-        if (!faceData[name]) {
-            if (faceStatus) {
-                faceStatus.innerHTML = "❌ Wajah belum terdaftar. Hubungi Manager.";
-                faceStatus.style.color = "#b91c1c";
-                faceStatus.style.background = "#fef2f2";
-                faceStatus.style.borderColor = "#fecaca";
-            }
-            if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
-        } else {
-            if (faceStatus) {
-                faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memulai pemindaian wajah...</span>';
-                faceStatus.style.color = "#1d4ed8";
-                faceStatus.style.background = "#eff6ff";
-                faceStatus.style.borderColor = "#bfdbfe";
-            }
-            if (typeof window.startLiveFaceVerification === 'function') window.startLiveFaceVerification();
-        }
-    };
-
-    if (window.isFaceApiLoaded) {
-        updateUIForLoaded();
-        return;
-    }
-
-    if (window._faceApiLoading) {
-        if (!silent && faceStatus) {
-            faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memuat model AI Face ID...</span>';
-            faceStatus.style.color = "#b45309";
-            faceStatus.style.background = "#fffbeb";
-            faceStatus.style.borderColor = "#fde68a";
-        }
-        const checkInterval = setInterval(() => {
-            if (window.isFaceApiLoaded) {
-                clearInterval(checkInterval);
-                updateUIForLoaded();
-            } else if (!window._faceApiLoading) {
-                clearInterval(checkInterval);
-                if (faceStatus && !silent) {
-                    faceStatus.innerHTML = "❌ Gagal memuat Face ID. Periksa koneksi internet.";
-                    faceStatus.style.color = "#b91c1c";
-                    faceStatus.style.background = "#fef2f2";
-                    faceStatus.style.borderColor = "#fecaca";
-                }
-            }
-        }, 200);
-        return;
-    }
-
-    window._faceApiLoading = true;
-    if (faceStatus && !silent) {
-        faceStatus.innerHTML = '<span class="rbm-spinner"></span><span class="pulse-text">Memuat model AI Face ID...</span>';
-        faceStatus.style.color = "#b45309";
-        faceStatus.style.background = "#fffbeb";
-        faceStatus.style.borderColor = "#fde68a";
-    }
-    try {
-        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
-        
-        let waitCount = 0;
-        while (typeof faceapi === 'undefined' && waitCount < 20) {
-            await new Promise(r => setTimeout(r, 250));
-            waitCount++;
-        }
-
-        if (typeof faceapi !== 'undefined') {
-            await Promise.all([
-                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-                faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-                faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-            ]);
-            window.isFaceApiLoaded = true;
-            updateUIForLoaded();
-        } else {
-            throw new Error("Library Face API tidak ditemukan atau gagal dimuat.");
-        }
-    } catch (e) {
-        console.error("Face API Load Error:", e);
-        if (faceStatus) {
-            if (window.location.protocol === 'file:') {
-                faceStatus.innerHTML = "❌ Gagal memuat Face ID.<br>Aplikasi harus dijalankan lewat <b>Live Server</b>, bukan file:///";
-            } else {
-                faceStatus.innerHTML = "❌ Gagal memuat Face ID. Periksa koneksi internet.";
-            }
-            faceStatus.style.color = "#b91c1c";
-            faceStatus.style.background = "#fef2f2";
-            faceStatus.style.borderColor = "#fecaca";
-        }
-    } finally {
-        window._faceApiLoading = false;
-    }
 };
 
 function initAbsensiHardware() {
@@ -10646,18 +10347,6 @@ function checkDistance() {
     
     var disableAll = !inRange || !name;
 
-    // Kunci tombol jika wajah belum terdaftar
-    /* [FITUR FACE ID DINONAKTIFKAN SEMENTARA]
-    if (name) {
-        var desc = getRegisteredFaceDescriptorByName(name);
-        if (!desc) {
-            disableAll = true; 
-        } else if (typeof faceapi !== 'undefined' && window.isFaceApiLoaded) {
-            // Tombol hanya aktif jika wajah di kamera = true / cocok
-            if (!window._faceVerified) disableAll = true;
-        }
-    }
-    */
     var statusMsg = "";
 
     if (name) {
@@ -10719,7 +10408,7 @@ function getBreakStats(logs, name, date) {
             }
         }
     });
-    return { total, lastOut };
+        return { total: Math.round(total), lastOut }; // Total waktu dikunci ke angka bulat
 }
 
 async function loadRekapAbsensiGPS() {
@@ -10765,8 +10454,12 @@ async function loadRekapAbsensiGPS() {
             const key = `${log.date}_${log.name}`;
             if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: true };
             grouped[key].hasLog = true;
-            if (log.type === 'Masuk' && !grouped[key].masuk) grouped[key].masuk = log;
-            else if (log.type === 'Pulang') grouped[key].pulang = log;
+            if (log.type === 'Masuk') {
+                if (!grouped[key].masuk || parseTimeToMinutes(log.time) < parseTimeToMinutes(grouped[key].masuk.time)) grouped[key].masuk = log;
+            }
+            else if (log.type === 'Pulang') {
+                if (!grouped[key].pulang || parseTimeToMinutes(log.time) > parseTimeToMinutes(grouped[key].pulang.time)) grouped[key].pulang = log;
+            }
             else if (log.type === 'Istirahat Keluar') grouped[key].breakOuts.push(log);
             else if (log.type === 'Istirahat Kembali') grouped[key].breakIns.push(log);
         });
@@ -10802,9 +10495,15 @@ async function loadRekapAbsensiGPS() {
 
             function getLupaAbsen(item) {
                 const lupa = [];
+                const emp = empMap[item.name];
+                const jabatan = emp ? (emp.jabatan || '').toLowerCase() : '';
+                const isManagerOrSpv = jabatan.includes('manager') || jabatan.includes('spv') || jabatan.includes('supervisor') || jabatan.includes('menejer');
+
                 if (!item.masuk) lupa.push('Masuk');
-                if (item.breakOuts.length === 0 || item.breakIns.length > item.breakOuts.length) lupa.push('Istirahat Keluar');
-                if (item.breakIns.length === 0 || item.breakOuts.length > item.breakIns.length) lupa.push('Istirahat Kembali');
+                if (!isManagerOrSpv) {
+                    if (item.breakOuts.length === 0) lupa.push('Istirahat Keluar');
+                    if (item.breakIns.length === 0) lupa.push('Istirahat Kembali');
+                }
                 if (!item.pulang) lupa.push('Pulang');
                 if (lupa.length === 0) return '-';
                 return 'Lupa ' + lupa.join(' & ');
@@ -10847,10 +10546,15 @@ async function loadRekapAbsensiGPS() {
                 const detailTelat = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData, empMap);
                 const isBenarBenarTelat = detailTelat.totalMenit > 0;
                 const lupaAbsen = getLupaAbsen(item);
+                
+                const empLupa = empMap[item.name];
+                const jabLupa = empLupa ? (empLupa.jabatan || '').toLowerCase() : '';
+                const isMgrSpvLupa = jabLupa.includes('manager') || jabLupa.includes('spv') || jabLupa.includes('supervisor') || jabLupa.includes('menejer');
+
                 const lupaMasuk = !item.masuk;
                 const lupaPulang = !item.pulang;
-                const lupaBreakOut = item.breakOuts.length === 0 || item.breakIns.length > item.breakOuts.length;
-                const lupaBreakIn = item.breakIns.length === 0 || item.breakOuts.length > item.breakIns.length;
+                const lupaBreakOut = !isMgrSpvLupa && item.breakOuts.length === 0;
+                const lupaBreakIn = !isMgrSpvLupa && item.breakIns.length === 0;
                 const detailTelatEsc = JSON.stringify({ lines: detailTelat.lines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const telatHtml = isBenarBenarTelat ? '<span style="color:#b91c1c; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailTelatModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', \'' + detailTelatEsc + '\')">Ya (' + detailTelat.totalMenit + 'm)</span>' : '-';
                 const lupaHtml = lupaAbsen !== '-' ? '<span style="color:#b45309; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailLupaModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', ' + lupaMasuk + ', ' + lupaPulang + ', ' + lupaBreakOut + ', ' + lupaBreakIn + ')">' + lupaAbsen + '</span>' : '-';
@@ -11045,8 +10749,12 @@ function getRekapAbsensiGpsDataForExport() {
     filtered.forEach(log => {
         const key = `${log.date}_${log.name}`;
         if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null };
-        if (log.type === 'Masuk' && !grouped[key].masuk) grouped[key].masuk = log;
-        else if (log.type === 'Pulang') grouped[key].pulang = log;
+        if (log.type === 'Masuk') {
+            if (!grouped[key].masuk || parseTimeToMinutes(log.time) < parseTimeToMinutes(grouped[key].masuk.time)) grouped[key].masuk = log;
+        }
+        else if (log.type === 'Pulang') {
+            if (!grouped[key].pulang || parseTimeToMinutes(log.time) > parseTimeToMinutes(grouped[key].pulang.time)) grouped[key].pulang = log;
+        }
         else if (log.type === 'Istirahat Keluar') grouped[key].breakOuts.push(log);
         else if (log.type === 'Istirahat Kembali') grouped[key].breakIns.push(log);
     });
@@ -11056,10 +10764,17 @@ function getRekapAbsensiGpsDataForExport() {
         const item = grouped[k];
         const telatDetail = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData, empMap);
         const telat = telatDetail.totalMenit > 0 ? 'Ya (' + telatDetail.totalMenit + ' menit)' : '-';
+        
+        const empLupa = empMap[item.name];
+        const jabLupa = empLupa ? (empLupa.jabatan || '').toLowerCase() : '';
+        const isMgrSpvLupa = jabLupa.includes('manager') || jabLupa.includes('spv') || jabLupa.includes('supervisor') || jabLupa.includes('menejer');
+
         let lupa = [];
         if (!item.masuk) lupa.push('Masuk');
-            if (item.breakOuts.length === 0 || item.breakIns.length > item.breakOuts.length) lupa.push('Istirahat Keluar');
-            if (item.breakIns.length === 0 || item.breakOuts.length > item.breakIns.length) lupa.push('Istirahat Kembali');
+        if (!isMgrSpvLupa) {
+            if (item.breakOuts.length === 0) lupa.push('Istirahat Keluar');
+            if (item.breakIns.length === 0) lupa.push('Istirahat Kembali');
+        }
         if (!item.pulang) lupa.push('Pulang');
         const lupaAbsen = lupa.length ? 'Lupa ' + lupa.join(' & ') : '-';
         const foto = [item.masuk, ...item.breakOuts, ...item.breakIns, item.pulang].filter(Boolean).length ? 'Ada' : '-';
@@ -11189,8 +10904,8 @@ const MENIT_TELAT_PER_JAM_GAJI = 10; // 10 menit = 1 jam untuk potongan gaji
 function parseTimeToMinutes(timeStr) {
     if (!timeStr) return 0;
     const parts = String(timeStr).replace(/,/g, '.').split(/[.:]/).map(n => parseInt(n, 10) || 0);
-    const h = parts[0] || 0, m = parts[1] || 0;
-    return h * 60 + m;
+    const h = parts[0] || 0, m = parts[1] || 0, s = parts[2] || 0;
+    return h * 60 + m + (s / 60); // Masukkan detik sebagai desimal agar deteksi sangat presisi
 }
 
 function getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMap) {
@@ -11208,7 +10923,7 @@ function getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMa
         const menitBatas = parseTimeToMinutes(batasMasuk);
         const menitMasuk = parseTimeToMinutes(item.masuk.time);
         if (menitMasuk > menitBatas) {
-            const telatAsli = menitMasuk - menitBatas;
+            const telatAsli = Math.ceil(menitMasuk - menitBatas); // Dibulatkan ke atas, lewat detik = telat 1 mnt
             if (telatAsli <= toleransi) {
                 lines.push('Telat Masuk: ' + telatAsli + ' mnt (Dimaafkan krn toleransi ' + toleransi + ' mnt)');
             } else {
@@ -11221,7 +10936,7 @@ function getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMa
         const menitBatas = parseTimeToMinutes(batasPulang);
         const menitPulang = parseTimeToMinutes(item.pulang.time);
         if (menitPulang < menitBatas) {
-            menitPulangCepat = menitBatas - menitPulang;
+            menitPulangCepat = Math.ceil(menitBatas - menitPulang); // Dibulatkan ke atas
             lines.push('Pulang Cepat: ' + menitPulangCepat + ' menit (Batas ' + batasPulang + ', Pulang ' + item.pulang.time + ')');
         }
     }
@@ -11283,8 +10998,12 @@ function getTotalMenitTelatFromGps(empId, empName, tglAwal, tglAkhir) {
         if (log.date < tglAwal || log.date > tglAkhir) return;
         const key = log.date;
         if (!byDate[key]) byDate[key] = { masuk: null, pulang: null, breakOuts: [], breakIns: [] };
-        if (log.type === 'Masuk') byDate[key].masuk = log;
-        else if (log.type === 'Pulang') byDate[key].pulang = log;
+        if (log.type === 'Masuk') {
+            if (!byDate[key].masuk || parseTimeToMinutes(log.time) < parseTimeToMinutes(byDate[key].masuk.time)) byDate[key].masuk = log;
+        }
+        else if (log.type === 'Pulang') {
+            if (!byDate[key].pulang || parseTimeToMinutes(log.time) > parseTimeToMinutes(byDate[key].pulang.time)) byDate[key].pulang = log;
+        }
         else if (log.type === 'Istirahat Keluar') byDate[key].breakOuts.push(log);
         else if (log.type === 'Istirahat Kembali') byDate[key].breakIns.push(log);
     });
@@ -11313,16 +11032,13 @@ function getTotalMenitTelatFromGps(empId, empName, tglAwal, tglAkhir) {
             if (!item.masuk) totalLupaAbsenKali += 1;
             if (!item.pulang) totalLupaAbsenKali += 1;
             
-            if (item.breakOuts.length === 0) {
-                totalLupaAbsenKali += 1;
-            } else if (item.breakIns.length > item.breakOuts.length) {
-                totalLupaAbsenKali += (item.breakIns.length - item.breakOuts.length);
-            }
-            
-            if (item.breakIns.length === 0) {
-                totalLupaAbsenKali += 1;
-            } else if (item.breakOuts.length > item.breakIns.length) {
-                totalLupaAbsenKali += (item.breakOuts.length - item.breakIns.length);
+            const emp = empMap[empName];
+            const jabatan = emp ? (emp.jabatan || '').toLowerCase() : '';
+            const isManagerOrSpv = jabatan.includes('manager') || jabatan.includes('spv') || jabatan.includes('supervisor') || jabatan.includes('menejer');
+
+            if (!isManagerOrSpv) {
+                if (item.breakOuts.length === 0) totalLupaAbsenKali += 1;
+                if (item.breakIns.length === 0) totalLupaAbsenKali += 1;
             }
         }
     });
@@ -11337,21 +11053,62 @@ function getTotalMenitTelatFromGps(empId, empName, tglAwal, tglAkhir) {
     return totalMenit;
 }
 
+function getDetailTelatGaji(empId, empName, tglAwal, tglAkhir) {
+    const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
+    const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
+    const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
+    const empMap = {};
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    employees.forEach(e => empMap[e.name] = e);
+    
+    const byDate = {};
+    logs.forEach(log => {
+        if ((log.name || '').trim().toLowerCase() !== (empName || '').trim().toLowerCase()) return;
+        if (log.date < tglAwal || log.date > tglAkhir) return;
+        const key = log.date;
+        if (!byDate[key]) byDate[key] = { masuk: null, pulang: null, breakOuts: [], breakIns: [] };
+        if (log.type === 'Masuk') {
+            if (!byDate[key].masuk || parseTimeToMinutes(log.time) < parseTimeToMinutes(byDate[key].masuk.time)) byDate[key].masuk = log;
+        }
+        else if (log.type === 'Pulang') {
+            if (!byDate[key].pulang || parseTimeToMinutes(log.time) > parseTimeToMinutes(byDate[key].pulang.time)) byDate[key].pulang = log;
+        }
+        else if (log.type === 'Istirahat Keluar') byDate[key].breakOuts.push(log);
+        else if (log.type === 'Istirahat Kembali') byDate[key].breakIns.push(log);
+    });
+    let totalMenit = 0;
+    let totalLupaAbsenKali = 0;
+    const detailLines = [];
+
+    const dates = [];
+    let curr = new Date(tglAwal);
+    const end = new Date(tglAkhir);
+    while (curr <= end) { dates.push(new Date(curr)); curr.setDate(curr.getDate() + 1); }
+
+    dates.forEach(d => {
+        const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        const absKey = `${dateStr}_${empId}`;
+        const item = byDate[dateStr] || { masuk: null, pulang: null, breakOuts: [], breakIns: [] };
+        if (byDate[dateStr]) {
+            const detailTelat = getDetailTelatUntukRekap(dateStr, empName, item, employees, jadwalData, empMap);
+            if (detailTelat.totalMenit > 0) {
+                totalMenit += detailTelat.totalMenit;
+                detailLines.push(`<b>${dateStr}:</b> Terlambat ${detailTelat.totalMenit} menit.`);
+                detailTelat.lines.forEach(l => detailLines.push(`- ${l}`));
+            }
+        }
+    });
+
+    return { totalMenit, detailLines };
+}
+
 async function updateGpsJadwalDisplay() {
     const name = document.getElementById('gps_absen_name').value;
     const box = document.getElementById('gps_jadwal_display');
     const textEl = document.getElementById('gps_jadwal_text');
-    const faceStatus = document.getElementById('face_id_status_info');
     if (!box || !textEl) return;
     if (!name) {
         box.style.display = 'none';
-        if (faceStatus && window.isFaceApiLoaded) {
-            faceStatus.innerHTML = "✅ Sistem AI Siap. Silakan pilih nama Anda.";
-            faceStatus.style.color = "#15803d";
-            faceStatus.style.background = "#f0fdf4";
-            faceStatus.style.borderColor = "#bbf7d0";
-        }
-        if (typeof window.stopLiveFaceVerification === 'function') window.stopLiveFaceVerification();
         return;
     }
 
@@ -11407,6 +11164,14 @@ async function updateGpsJadwalDisplay() {
 
     const label = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shift]) || shift || 'Tidak ada jadwal';
     
+    let shiftHtml = `<div style="display:flex; align-items:center; justify-content:space-between; background: linear-gradient(135deg, #4C2A85 0%, #6b21a8 100%); color:white; padding:12px 16px; border-radius:10px; box-shadow:0 4px 6px rgba(76,42,133,0.2); margin-bottom:12px;">
+        <div style="display:flex; flex-direction:column;">
+            <span style="font-size:11px; text-transform:uppercase; letter-spacing:1px; opacity:0.8;">Shift Hari Ini</span>
+            <span style="font-size:18px; font-weight:700; margin-top:2px;">${shift ? `${shift} (${label})` : label}</span>
+        </div>
+        <div style="font-size:24px; opacity: 0.8;">🏢</div>
+    </div>`;
+
     // Hitung sisa istirahat dari log spesifik ini
     const stats = getBreakStats(myLogs, name, today);
     const batasMenit = typeof getDurasiIstirahatMenitFromConfig === 'function' ? getDurasiIstirahatMenitFromConfig(shift) : 60;
@@ -11432,12 +11197,21 @@ async function updateGpsJadwalDisplay() {
                     if (menitSekarang > menitBatas) {
                         const menitTelat = menitSekarang - menitBatas;
                         if (toleransi > 0 && menitTelat <= toleransi) {
-                            info += `<br><span style="color:#b45309; font-weight:bold; font-size:0.9em;">Batas Masuk: ${batasMasuk} (Telat ${menitTelat} menit - Dimaafkan)</span>`;
+                            info += `<div style="background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #f59e0b; padding:10px 12px; border-radius:8px; margin-top:10px;">
+                                        <div style="color:#b45309; font-weight:bold; font-size:13px; display:flex; align-items:center; gap:6px;"><span style="font-size:16px;">⚠️</span><span>Belum Absen Masuk (Telat ${menitTelat} menit)</span></div>
+                                        <div style="color:#92400e; font-size:11px; margin-top:2px; margin-left:22px;">Batas Masuk: <strong>${batasMasuk}</strong> (Dimaafkan toleransi)</div>
+                                     </div>`;
                         } else {
-                            info += `<br><span style="color:#dc2626; font-weight:bold; font-size:0.9em;">⚠️ Anda Telat ${menitTelat} menit (Batas Masuk: ${batasMasuk})</span>`;
+                            info += `<div style="background:#fef2f2; border:1px solid #fecaca; border-left:4px solid #ef4444; padding:10px 12px; border-radius:8px; margin-top:10px;">
+                                        <div style="color:#b91c1c; font-weight:bold; font-size:13px; display:flex; align-items:center; gap:6px;"><span style="font-size:16px;">🚨</span><span>Anda Telat ${menitTelat} Menit</span></div>
+                                        <div style="color:#7f1d1d; font-size:11px; margin-top:2px; margin-left:22px;">Batas Masuk: <strong>${batasMasuk}</strong></div>
+                                     </div>`;
                         }
                     } else {
-                        info += `<br><span style="color:#16a34a; font-weight:bold; font-size:0.9em;">Batas Masuk: ${batasMasuk} (Belum telat)</span>`;
+                        info += `<div style="background:#dcfce7; border:1px solid #bbf7d0; border-left:4px solid #22c55e; padding:10px 12px; border-radius:8px; margin-top:10px;">
+                                    <div style="color:#166534; font-weight:bold; font-size:13px; display:flex; align-items:center; gap:6px;"><span style="font-size:16px;">✅</span><span>Belum Absen Masuk</span></div>
+                                    <div style="color:#14532d; font-size:11px; margin-top:2px; margin-left:22px;">Batas Masuk: <strong>${batasMasuk}</strong> (Belum telat)</div>
+                                 </div>`;
                     }
                 } else {
                     const masukLog = myLogs.find(l => l.type === 'Masuk');
@@ -11446,49 +11220,91 @@ async function updateGpsJadwalDisplay() {
                         if (menitMasuk > menitBatas) {
                             const menitTelat = menitMasuk - menitBatas;
                             if (toleransi > 0 && menitTelat <= toleransi) {
-                                info += `<br><span style="color:#b45309; font-weight:bold; font-size:0.9em;">Waktu Masuk: ${masukLog.time} (Telat ${menitTelat} menit - Dimaafkan)</span>`;
+                                info += `<div style="background:#fffbeb; border:1px solid #fde68a; border-left:4px solid #f59e0b; padding:10px 12px; border-radius:8px; margin-top:10px;">
+                                            <div style="color:#b45309; font-weight:bold; font-size:13px; display:flex; align-items:center; gap:6px;"><span style="font-size:16px;">⚠️</span><span>Waktu Masuk: ${masukLog.time}</span></div>
+                                            <div style="color:#92400e; font-size:11px; margin-top:2px; margin-left:22px;">Batas: <strong>${batasMasuk}</strong> (Telat ${menitTelat} menit - Dimaafkan)</div>
+                                         </div>`;
                             } else {
-                                info += `<br><span style="color:#dc2626; font-weight:bold; font-size:0.9em;">⚠️ Waktu Masuk: ${masukLog.time} (Telat ${menitTelat} menit)</span>`;
+                                info += `<div style="background:#fef2f2; border:1px solid #fecaca; border-left:4px solid #ef4444; padding:10px 12px; border-radius:8px; margin-top:10px;">
+                                            <div style="color:#b91c1c; font-weight:bold; font-size:13px; display:flex; align-items:center; gap:6px;"><span style="font-size:16px;">🚨</span><span>Waktu Masuk: ${masukLog.time}</span></div>
+                                            <div style="color:#7f1d1d; font-size:11px; margin-top:2px; margin-left:22px;">Batas: <strong>${batasMasuk}</strong> (Telat ${menitTelat} menit)</div>
+                                         </div>`;
                             }
                         } else {
-                            info += `<br><span style="color:#16a34a; font-weight:bold; font-size:0.9em;">Waktu Masuk: ${masukLog.time} (Tepat waktu)</span>`;
+                            info += `<div style="background:#dcfce7; border:1px solid #bbf7d0; border-left:4px solid #22c55e; padding:10px 12px; border-radius:8px; margin-top:10px;">
+                                        <div style="color:#166534; font-weight:bold; font-size:13px; display:flex; align-items:center; gap:6px;"><span style="font-size:16px;">✅</span><span>Waktu Masuk: ${masukLog.time}</span></div>
+                                        <div style="color:#14532d; font-size:11px; margin-top:2px; margin-left:22px;">Tepat Waktu</div>
+                                     </div>`;
                         }
                     }
                 }
             }
 
-        info += `<br><span style="font-size:0.9em; color:#555;">Jatah Istirahat: ${batasMenit} menit.</span>`;
-        if (stats.total > 0) {
-            info += `<br><span style="font-size:0.9em; color:#555;">Terpakai: ${stats.total} menit.</span>`;
-        }
-        
+        const sisa = batasMenit - stats.total;
+        let restStatusHtml = sisa >= 0 
+          ? `<div style="font-size:16px; font-weight:700; color:#16a34a;">${sisa} <span style="font-size:10px; font-weight:500;">mnt</span></div>`
+          : `<div style="font-size:16px; font-weight:700; color:#dc2626;">-${Math.abs(sisa)} <span style="font-size:10px; font-weight:500;">mnt (Over)</span></div>`;
+
+        info += `
+        <div style="display:flex; justify-content:space-between; background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:8px; margin-top:10px;">
+            <div style="text-align:center; flex:1; border-right:1px solid #e2e8f0;">
+                <div style="font-size:10px; color:#64748b; text-transform:uppercase;">Jatah Istirahat</div>
+                <div style="font-size:14px; font-weight:700; color:#334155; margin-top:2px;">${batasMenit} <span style="font-size:10px; font-weight:500;">mnt</span></div>
+            </div>
+            <div style="text-align:center; flex:1; border-right:1px solid #e2e8f0;">
+                <div style="font-size:10px; color:#64748b; text-transform:uppercase;">Terpakai</div>
+                <div style="font-size:14px; font-weight:700; color:#334155; margin-top:2px;">${stats.total} <span style="font-size:10px; font-weight:500;">mnt</span></div>
+            </div>
+            <div style="text-align:center; flex:1;">
+                <div style="font-size:10px; color:#64748b; text-transform:uppercase;">Sisa</div>
+                ${restStatusHtml}
+            </div>
+        </div>`;
+
         if (stats.lastOut !== null) {
-            const currentMinutes = now.getHours() * 60 + now.getMinutes();
-            let currentDur = currentMinutes - stats.lastOut;
+            const currentMinutes = now.getHours() * 60 + now.getMinutes() + (now.getSeconds() / 60);
+            let currentDur = Math.round(currentMinutes - stats.lastOut);
             if (currentDur < 0) currentDur += 24 * 60;
-            info += `<br><span style="color:#d97706; font-weight:bold;">Sedang Istirahat: ${currentDur} menit.</span>`;
-        } else {
-            const sisa = batasMenit - stats.total;
-            info += sisa >= 0 ? `<br><span style="color:#16a34a; font-weight:bold;">Sisa: ${sisa} menit.</span>` : `<br><span style="color:#dc2626; font-weight:bold;">Over: ${Math.abs(sisa)} menit.</span>`;
+            info += `<div style="background:#fffbeb; border:1px solid #fde68a; color:#b45309; padding:10px 12px; border-radius:8px; margin-top:10px; font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px;">
+                <span style="font-size:16px; animation: pulse 1.5s infinite;">☕</span> Sedang Istirahat: ${currentDur} menit berjalan...
+            </div>`;
         }
     }
 
-    let cutiInfo = `<br><br><div style="font-size:0.9em; color:#374151; background:#f8fafc; padding:8px; border-radius:6px; border:1px solid #e2e8f0; margin-top:8px;">
-        <strong>Sisa Cuti Kamu:</strong><br>
-        <span style="display:inline-block; margin-right:10px;">AL: <strong>${emp.sisaAL || 0}</strong></span>
-        <span style="display:inline-block; margin-right:10px;">DP: <strong>${emp.sisaDP || 0}</strong></span>
-        <span style="display:inline-block;">PH: <strong>${emp.sisaPH || 0}</strong></span>
+    let cutiInfo = `
+    <div style="margin-top:16px;">
+        <div style="font-size:12px; font-weight:700; color:#475569; margin-bottom:8px; display:flex; align-items:center; gap:6px; text-transform:uppercase;">
+            <span style="font-size:14px;">🏖️</span> Sisa Cuti Kamu
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
+            <div style="background:#eff6ff; border:1px solid #bfdbfe; padding:10px; border-radius:8px; text-align:center;">
+                <div style="font-size:10px; color:#1d4ed8; font-weight:600;">Tahunan (AL)</div>
+                <div style="font-size:18px; font-weight:800; color:#1e40af; margin-top:2px;">${emp.sisaAL || 0}</div>
+            </div>
+            <div style="background:#f0fdf4; border:1px solid #bbf7d0; padding:10px; border-radius:8px; text-align:center;">
+                <div style="font-size:10px; color:#15803d; font-weight:600;">Day Off (DP)</div>
+                <div style="font-size:18px; font-weight:800; color:#166534; margin-top:2px;">${emp.sisaDP || 0}</div>
+            </div>
+            <div style="background:#fef2f2; border:1px solid #fecaca; padding:10px; border-radius:8px; text-align:center;">
+                <div style="font-size:10px; color:#b91c1c; font-weight:600;">Libur (PH)</div>
+                <div style="font-size:18px; font-weight:800; color:#991b1b; margin-top:2px;">${emp.sisaPH || 0}</div>
+            </div>
+        </div>
     </div>`;
 
     let quote = '';
     if (isOnLeave) {
         let leaveName = leaveCode === 'AL' ? 'Cuti Tahunan (AL)' : (leaveCode === 'PH' ? 'Public Holiday (PH)' : 'Day Off Payment (DP)');
-        quote = `<br><div style="font-style:italic; color:#059669; font-size:1em; font-weight:bold; border-top:1px solid #e5e7eb; padding-top:12px; margin-top:8px;">"Selamat menikmati ${leaveName} kamu! Lepaskan penat, nikmati waktumu, dan kembalilah dengan energi baru!" 🌴✨</div>`;
+        quote = `<div style="background: linear-gradient(135deg, #ecfdf5 0%, #dcfce7 100%); border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 16px; font-style: italic; color: #065f46; font-size: 13px; line-height: 1.5; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+        "Selamat menikmati ${leaveName} kamu! Lepaskan penat, nikmati waktumu, dan kembalilah dengan energi baru!" 🌴✨
+        </div>`;
     } else {
-        quote = `<br><div style="font-style:italic; color:#6b7280; font-size:0.9em; border-top:1px solid #e5e7eb; padding-top:8px; margin-top:8px;">"Lakukan rutinitas pekerjaanmu dengan senang hati. Jangan lupa istirahat jika lelah!" 💪😊</div>`;
+        quote = `<div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-left: 4px solid #8b5cf6; padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 16px; font-style: italic; color: #475569; font-size: 13px; line-height: 1.5; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+        "Lakukan rutinitas pekerjaanmu dengan senang hati. Jangan lupa istirahat jika lelah!" 💪😊
+        </div>`;
     }
 
-    textEl.innerHTML = (shift ? `<strong>${shift} (${label})</strong>` : `<strong>${label}</strong>`) + info + cutiInfo + quote;
+    textEl.innerHTML = shiftHtml + info + cutiInfo + quote;
     box.style.display = 'block';
     
     if (typeof checkDistance === 'function') checkDistance();
@@ -11527,13 +11343,13 @@ function processAbsensiGPS(type) {
             showCustomAlert("📸 Sedang menjepret foto dan memproses...<br>Mohon tunggu sejenak.", "Memproses", "info");
             setTimeout(function() {
                 _executeAbsensiGPS(type).catch(e => console.error("Error execute:", e));
-            }, 400); // Beri jeda 400ms biar UI Popup benar-benar ke-render
+                    }, 50); // Beri jeda 50ms biar UI Popup benar-benar ke-render
         });
     } else {
         showCustomAlert("📸 Sedang menjepret foto dan memproses...<br>Mohon tunggu sejenak.", "Memproses", "info");
         setTimeout(function() {
             _executeAbsensiGPS(type).catch(e => console.error("Error execute:", e));
-        }, 400); // Beri jeda 400ms biar UI Popup benar-benar ke-render
+                }, 50); // Beri jeda 50ms biar UI Popup benar-benar ke-render
     }
 }
 
@@ -11542,32 +11358,6 @@ async function _executeAbsensiGPS(type) {
     if (!currentPos) { showCustomAlert("Lokasi belum ditemukan! Pastikan GPS aktif.", "GPS Error", "error"); return; }
 
     const video = document.getElementById('gps_video');
-    const faceKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_FACE_DATA') : 'RBM_FACE_DATA';
-    const faceData = getCachedParsedStorage(faceKey, {});
-    var registeredDescriptorArr = faceData[name];
-    if (!registeredDescriptorArr && typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
-        typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskFace) {
-        const emListF = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
-            ? window._gpsKioskRosterEmployees
-            : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
-        const empF = emListF.find(function(e) { return e && e.name === name; });
-        const empIdF = (empF && empF.id != null) ? empF.id : (empF ? emListF.indexOf(empF) : null);
-        try {
-            var outletF = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
-            if (empIdF != null) {
-                var rawF = await FirebaseStorage.loadGpsKioskFace(outletF || 'default', empIdF);
-                var descF = normalizeGpsKioskDescriptor(rawF);
-                if (descF && descF.length) registeredDescriptorArr = descF;
-            }
-            if (!registeredDescriptorArr) {
-                var sfx = outletF ? '_' + outletF.toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
-                var snapMaster = await firebase.database().ref('rbm_pro/face_data' + sfx + '/' + name).once('value');
-                var masterRaw = snapMaster.val();
-                var masterDesc = normalizeGpsKioskDescriptor(masterRaw);
-                if (masterDesc && masterDesc.length) registeredDescriptorArr = masterDesc;
-            }
-        } catch (eFx) {}
-    }
 
     const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
         ? window._gpsKioskRosterEmployees
@@ -11582,7 +11372,7 @@ async function _executeAbsensiGPS(type) {
     const context = canvas.getContext('2d');
 
     // [OPTIMASI KILAT] Perkecil ukuran foto drastis agar HP tidak lemot/hang
-    const MAX_WIDTH = 200; // Turun ke 200 agar sangat ringan
+    const MAX_WIDTH = 100; // Turun ke 200 agar sangat ringan
     let scale = 1;
     if (video.videoWidth > MAX_WIDTH) {
         scale = MAX_WIDTH / video.videoWidth;
@@ -11631,8 +11421,8 @@ async function _executeAbsensiGPS(type) {
     if (type === 'Istirahat Kembali' && empId !== null) {
         const stats = getBreakStats(myLogs, name, today);
         if (stats.lastOut !== null) {
-            var menitSelesai = now.getHours() * 60 + now.getMinutes();
-            var durasiIni = menitSelesai - stats.lastOut;
+            var menitSelesai = now.getHours() * 60 + now.getMinutes() + (now.getSeconds() / 60);
+            var durasiIni = Math.round(menitSelesai - stats.lastOut);
             if (durasiIni < 0) durasiIni += 24 * 60;
             var totalDurasi = stats.total + durasiIni;
 
@@ -11703,9 +11493,10 @@ async function _executeAbsensiGPS(type) {
             const menitBatas = parseTimeToMinutes(batas);
             const jamNow = now.getHours();
             const menitNow = now.getMinutes();
-            const menitSekarang = jamNow * 60 + menitNow;
+            const detikNow = now.getSeconds();
+            const menitSekarang = jamNow * 60 + menitNow + (detikNow / 60); // Ikut sertakan presisi detik
             if (menitSekarang > menitBatas) {
-                const menitTelat = menitSekarang - menitBatas;
+                const menitTelat = Math.ceil(menitSekarang - menitBatas); // Dibulatkan ke atas
                 const toleransi = typeof getToleransiTelatMenitFromConfig === 'function' ? getToleransiTelatMenitFromConfig() : 0;
                 let pesanTelat = "⚠️ Anda tercatat TELAT <b>" + menitTelat + " menit</b>.<br>";
                 
@@ -12015,6 +11806,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof calculateBonusAbsensiTotal !== 'undefined') window.calculateBonusAbsensiTotal = calculateBonusAbsensiTotal;
   if (typeof calculateBonusOmset !== 'undefined') window.calculateBonusOmset = calculateBonusOmset;
   if (typeof calculateBonusOmsetFromPool !== 'undefined') window.calculateBonusOmsetFromPool = calculateBonusOmsetFromPool;
+  if (typeof openRekeningPencairanModal !== 'undefined') window.openRekeningPencairanModal = openRekeningPencairanModal;
   if (typeof closeRekeningPencairanModal !== 'undefined') window.closeRekeningPencairanModal = closeRekeningPencairanModal;
   if (typeof processPengajuanWithRekening !== 'undefined') window.processPengajuanWithRekening = processPengajuanWithRekening;
   if (typeof updateGpsJadwalDisplay !== 'undefined') window.updateGpsJadwalDisplay = updateGpsJadwalDisplay;
@@ -12086,10 +11878,6 @@ if (window.RBM_PAGE === 'absensi-gps-view') {
         // [OPTIMASI 2] Langsung isi nama dari cache localStorage, jangan tunggu DB
         if (window.populateGpsNames) window.populateGpsNames();
         
-        // [CANGGIH] Preload AI Face API di background secara senyap saat halaman baru dibuka
-        setTimeout(function() {
-            if (typeof window.loadFaceApiModelsForAbsensi === 'function') window.loadFaceApiModelsForAbsensi(true);
-        }, 50); // Dipercepat dari 800ms menjadi 50ms agar segera di-download
     }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', runGpsEarlyInit);

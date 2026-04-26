@@ -752,7 +752,8 @@ window.viewPengajuanDetail = function(id) {
             ? '<div style="color:#059669; font-weight:bold; font-size:11px; margin: 10px auto 10px; border: 2px solid #059669; padding: 4px; border-radius: 4px; display: inline-block; transform: rotate(-5deg);">DISETUJUI DIGITAL</div>' 
             : '<br><br><br>';
         var approverName = isApproved ? (d.approvedOwnerBy || 'Puji Shohibul Burhan') : 'Puji Shohibul Burhan';
-        var approverRole = isApproved ? 'Owner / Manager Regional' : 'Manager Regional';
+        approverName = approverName.replace(' (Auto-ACC)', '').replace('(Auto-ACC)', '');
+        var approverRole = 'Manager Regional';
 
         var htmlTandaTangan = `
             <div style="margin-top: 50px; display: flex; justify-content: space-between; font-family: Arial, sans-serif; font-size: 14px; page-break-inside: avoid; padding: 0 50px;">
@@ -1110,7 +1111,8 @@ window.viewBonusDetail = function(id) {
         ? '<div style="color:#059669; font-weight:bold; font-size:11px; margin: 10px auto 10px; border: 2px solid #059669; padding: 4px; border-radius: 4px; display: inline-block; transform: rotate(-5deg);">DISETUJUI DIGITAL</div>' 
         : '<br><br><br>';
     var approverName = isApproved ? (d.approvedOwnerBy || 'Puji Shohibul Burhan') : 'Puji Shohibul Burhan';
-    var approverRole = isApproved ? 'Owner / Manager Regional' : 'Manager Regional';
+    approverName = approverName.replace(' (Auto-ACC)', '').replace('(Auto-ACC)', '');
+    var approverRole = 'Manager Regional';
 
     var htmlTandaTangan = `
         <div style="margin-top: 50px; display: flex; justify-content: space-between; font-family: Arial, sans-serif; font-size: 14px; page-break-inside: avoid; padding: 0 50px;">

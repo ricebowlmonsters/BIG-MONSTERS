@@ -14,9 +14,13 @@
   <script src="firebase-storage.js"></script>
   <script>
     // [PERBAIKAN] Pastikan halaman login tidak terbuka di dalam iframe (mencegah error index ganda)
-    if (window.self !== window.top) {
-      window.top.location = window.self.location;
-    }
+    try {
+      if (window.self !== window.top) {
+        if (window.location.protocol !== 'file:') {
+          window.top.location = window.self.location;
+        }
+      }
+    } catch(e) {}
   </script>
 </head>
 <body>

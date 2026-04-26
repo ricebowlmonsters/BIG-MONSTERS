@@ -15,7 +15,7 @@
 </head>
 <body>
 <script>
-(function(){ var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); if (u.role === 'staff') { window.location.href = 'index.html'; } })();
+(function(){ var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); if (u.role === 'staff') { try { if (window.top && window.location.protocol !== 'file:') window.top.location.href = 'index.html'; else window.location.href = 'index.html'; } catch(e) { window.location.href = 'index.html'; } } })();
 </script>
 <header class="rbm-page-header">
   <a href="index.html" class="rbm-back-btn">&#8249;</a>
@@ -475,7 +475,7 @@
                     <p style="margin:5px 0 0; font-size: 14px; color:#475569;">Penerima: <strong>Puji Shohibul Burhan</strong></p>
                 </div>
                 <div style="display:flex; gap:5px;">
-                    <button class="btn-small-danger" style="background:#8b5cf6; padding: 4px 8px;" onclick="submitBonusDevPengajuan()">Ajukan</button>
+                    <button class="btn-small-danger" style="background:#8b5cf6; padding: 4px 8px;" onclick="submitBonusDevPengajuan()">Ajukan (Ke Diri Sendiri)</button>
                     <button class="btn-small-danger" style="background:#198754; padding: 4px 8px;" onclick="exportBonusDevExcel()">Excel</button>
                     <button class="btn-small-danger" style="background:#dc3545; padding: 4px 8px;" onclick="exportBonusDevPDF()">PDF</button>
                 </div>
@@ -973,6 +973,10 @@ window.addEventListener('load', function() {
     };
 
     window.submitBonusDevPengajuan = async function() {
+        if (typeof firebase === 'undefined' || !firebase.database) {
+            return alert('Mode Online (Firebase) diperlukan untuk pengajuan.');
+        }
+
         var bulanInput = document.getElementById('bonus_dev_bulan');
         var ym = bulanInput ? bulanInput.value : '';
         if (!ym) return alert("Tarik data omset terlebih dahulu.");
@@ -982,17 +986,37 @@ window.addEventListener('load', function() {
         var nominal = parseInt(h.replace(/[^0-9]/g, '')) || 0;
         
         if (nominal <= 0) return alert("Total bonus masih Rp 0.");
-        if (!confirm("Ajukan Bonus Global (0.2%) sebesar " + h + " ke Owner?")) return;
+        if (!confirm("Ajukan Bonus Global (0.2%) sebesar " + h + " ke Diri Sendiri (Owner/Developer)?")) return;
+
+        var detailOmset = '';
+        var trs = document.querySelectorAll("#bonus_dev_tbody tr");
+        trs.forEach(function(tr) {
+            var tds = tr.querySelectorAll("td");
+            if (tds.length === 3) {
+                var outName = tds[1].innerText.trim();
+                var outVal = tds[2].innerText.trim();
+                detailOmset += `<br>&bull; Omset ${outName}: <b>${outVal}</b>`;
+            }
+        });
 
         openRekeningPencairanModal(async function(rekInfo) {
             try {
                 const items = [{ empId: 'burhan_dev', nama: 'Puji Shohibul Burhan', jabatan: 'Developer', grandTotal: nominal, metodeBayar: 'TF', keterangan: 'Bonus Omset Global 0.2% Semua Outlet' }];
-                const note = `Pengajuan BONUS GLOBAL DEV periode ${ym}<br><span style="font-size:11px; color:#475569;">&bull; Total Omset Semua Outlet: <b>${gt}</b></span>`;
-                await FirebaseStorage.saveGajiPengajuan({ 
+                const note = `Pengajuan BONUS GLOBAL DEV periode ${ym}<br><span style="font-size:12px; color:#475569; display:inline-block; margin-top:5px;">&bull; Total Omset Semua Outlet: <b style="color:#1e40af;">${gt}</b>${detailOmset}</span>`;
+                
+                const payload = { 
                     outletId: 'semua', monthKey: ym, periodStart: ym + '-01', periodEnd: ym + '-31', requester: 'Burhan', totalGrand: nominal, note: note,
-                    bank: rekInfo.bank, rekening: rekInfo.rekening, atasnama: rekInfo.atasnama 
-                }, items);
-                alert('Pengajuan Bonus Global berhasil dikirim ke Owner.');
+                    bank: rekInfo.bank, rekening: rekInfo.rekening, atasnama: rekInfo.atasnama, items: items,
+                    statusOwner: 'approved', approvedOwnerBy: 'Puji Shohibul Burhan',
+                    createdAt: firebase.database.ServerValue.TIMESTAMP, updatedAt: firebase.database.ServerValue.TIMESTAMP,
+                    viewedByOwner: false, viewedByManager: false
+                };
+                await firebase.database().ref('rbm_pro/gaji_pengajuan/semua/' + ym).push(payload);
+
+                alert('Pengajuan Bonus Global berhasil dikirim & di-ACC Otomatis (Cek di Riwayat Persetujuan).');
+                if (window.self !== window.top) {
+                    window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+                }
             } catch (e) {
                 alert('Gagal mengajukan: ' + (e.message || e));
             }
