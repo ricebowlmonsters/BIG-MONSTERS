@@ -720,7 +720,8 @@ window.viewPengajuanDetail = function(id) {
         btn.disabled = true;
     }
 
-    const renderLaporan = (employees, absensiData, jadwalData, gajiData, gpsLogs) => {
+    const processLaporan = (restoreConfig) => {
+        const renderLaporan = (employees, absensiData, jadwalData, gajiData, gpsLogs) => {
         const dates = [];
         let curr = new Date(tglAwal);
         const end = new Date(tglAkhir);
@@ -773,6 +774,75 @@ window.viewPengajuanDetail = function(id) {
                 </div>
             </div>
         `;
+
+        const parseTime = (timeStr) => {
+            if (!timeStr) return 0;
+            const parts = String(timeStr).replace(/,/g, '.').split(/[.:]/).map(n => parseInt(n, 10) || 0);
+            return (parts[0] || 0) * 60 + (parts[1] || 0);
+        };
+
+        const getLocalDateStr = (d) => {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        };
+
+        const getLatenessForEmp = (empId, empName) => {
+            const empMap = {};
+            employees.forEach(e => empMap[e.name] = e);
+            const byDate = {};
+            (gpsLogs || []).forEach(log => {
+                if ((log.name || '').trim().toLowerCase() !== (empName || '').trim().toLowerCase()) return;
+                if (log.date < tglAwal || log.date > tglAkhir) return;
+                const key = log.date;
+                if (!byDate[key]) byDate[key] = { masuk: null, pulang: null, breakOuts: [], breakIns: [] };
+                if (log.type === 'Masuk') {
+                    if (!byDate[key].masuk || parseTime(log.time) < parseTime(byDate[key].masuk.time)) byDate[key].masuk = log;
+                }
+                else if (log.type === 'Pulang') {
+                    if (!byDate[key].pulang || parseTime(log.time) > parseTime(byDate[key].pulang.time)) byDate[key].pulang = log;
+                }
+                if (log.type === 'Istirahat Keluar') byDate[key].breakOuts.push(log);
+                if (log.type === 'Istirahat Kembali') byDate[key].breakIns.push(log);
+            });
+            let totalMenit = 0;
+        let totalLupaAbsenKali = 0;
+        
+        dates.forEach(d => {
+            const dateStr = getLocalDateStr(d);
+            const absKey = `${dateStr}_${empId}`;
+            const item = byDate[dateStr];
+            
+            if (item) {
+                if (typeof getDetailTelatUntukRekap === 'function') {
+                    const detailTelat = getDetailTelatUntukRekap(dateStr, empName, item, employees, jadwalData, empMap);
+                    totalMenit += detailTelat.totalMenit;
+                }
+            }
+            
+            if (absensiData && absensiData[absKey] === 'H') {
+                const it = item || { masuk: null, pulang: null, breakOuts: [], breakIns: [] };
+                if (!it.masuk) totalLupaAbsenKali += 1;
+                if (!it.pulang) totalLupaAbsenKali += 1;
+                
+                const empInfo = empMap[empName];
+                const jabatan = empInfo ? (empInfo.jabatan || '').toLowerCase() : '';
+                const isManagerOrSpv = jabatan.includes('manager') || jabatan.includes('spv') || jabatan.includes('supervisor') || jabatan.includes('menejer');
+
+                if (!isManagerOrSpv) {
+                    if (it.breakOuts.length === 0) totalLupaAbsenKali += 1;
+                    if (it.breakIns.length === 0) totalLupaAbsenKali += 1;
+                }
+            }
+        });
+
+        const configLupaAbsenJam = typeof getPotonganLupaAbsenJamFromConfig === 'function' ? getPotonganLupaAbsenJamFromConfig() : 7;
+        const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+        
+        if (totalLupaAbsenKali > 0) {
+            totalMenit += (totalLupaAbsenKali * configLupaAbsenJam * configTelat);
+        }
+
+            return totalMenit;
+        };
 
         // --- 1. ABSENSI ---
         var htmlAbsensi = `<div class="page">${headerHtml}<h2>LAPORAN ABSENSI HARIAN</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
@@ -869,10 +939,17 @@ window.viewPengajuanDetail = function(id) {
             const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
             const hkAktual = counts.H;
             const gajiPokok = parseInt(emp.gajiPokok) || 0;
-            const potHari = parseFloat(pData.potHari) || 0;
-            const jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
+            const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+            const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+            const totalMenitTelatGps = getLatenessForEmp(empKeyAbsensi, emp.name);
+            const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+            let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : (pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : calcGpsJam);
             const hutang = parseInt(pData.hutang) || 0;
-            const tunjangan = parseInt(pData.tunjangan) || 0;
+            let defaultTunjangan = 0;
+            if (emp.jabatan === 'Manager Regional') defaultTunjangan = 500000;
+            else if (emp.jabatan === 'Manager Outlet') defaultTunjangan = 350000;
+            else if (emp.jabatan === 'Supervisor') defaultTunjangan = 250000;
+            const tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : defaultTunjangan;
             const metodeBayar = pData.metodeBayar || 'TF';
             const gajiPerHari = Math.round(gajiPokok / 30);
             const potTerlambatPerJam = Math.round(gajiPokok / 240);
@@ -907,42 +984,85 @@ window.viewPengajuanDetail = function(id) {
         htmlGaji += `<div style="text-align:right; font-size:18px; font-weight:bold; margin-top:15px; padding:15px; background:#e2e8f0; border-radius:6px; color:#1e40af;">TOTAL PENGELUARAN GAJI: ${formatMoney(totalGrand)}</div>${htmlTandaTangan}</div>`;
 
         // --- 5. REKAP ABSENSI GPS ---
-        var groupedGps = {};
-        (gpsLogs || []).forEach(log => {
-            const key = `${log.date}_${log.name}`;
-            if (!groupedGps[key]) groupedGps[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null };
-            if (log.type === 'Masuk' && !groupedGps[key].masuk) groupedGps[key].masuk = log;
-            else if (log.type === 'Pulang') groupedGps[key].pulang = log;
-            else if (log.type === 'Istirahat Keluar') groupedGps[key].breakOuts.push(log);
-            else if (log.type === 'Istirahat Kembali') groupedGps[key].breakIns.push(log);
-        });
-        
-        var gpsKeys = Object.keys(groupedGps).sort((a, b) => {
-            if (groupedGps[a].date !== groupedGps[b].date) return groupedGps[a].date.localeCompare(groupedGps[b].date);
-            return groupedGps[a].name.localeCompare(groupedGps[b].name);
-        });
+        var htmlGps = '';
+        const empMap = {};
+        employees.forEach(e => empMap[e.name] = e);
 
-        var rowsGps = '';
-        gpsKeys.forEach(k => {
-            const item = groupedGps[k];
-            const formatTime = (log) => log ? log.time : '-';
-            const formatTimes = (arr) => arr && arr.length ? arr.map(l => l.time).join(', ') : '-';
+        employees.forEach((emp, idx) => {
+            const empKey = emp.id != null ? emp.id : idx;
+            const empName = emp.name || '-';
             
-            rowsGps += `<tr>
-                <td>${item.date}</td>
-                <td class="text-left">${item.name}</td>
-                <td>${formatTime(item.masuk)}</td>
-                <td>${formatTimes(item.breakOuts)}</td>
-                <td>${formatTimes(item.breakIns)}</td>
-                <td>${formatTime(item.pulang)}</td>
-            </tr>`;
-        });
-        
-        if (rowsGps === '') rowsGps = `<tr><td colspan="6" style="text-align:center;">Tidak ada data GPS pada periode ini.</td></tr>`;
+            let rowsGps = '';
+            
+            dates.forEach(d => {
+                const dateStr = d.toISOString().split('T')[0];
+                const absKey = `${dateStr}_${empKey}`;
+                const status = absensiData[absKey] || '';
+                const shift = jadwalData[absKey] || '';
+                
+                let dayLogs = (gpsLogs || []).filter(l => l.name === empName && l.date === dateStr);
+                
+                let masuk = null, pulang = null;
+                let breakOuts = [], breakIns = [];
+                
+                dayLogs.forEach(log => {
+                    if (log.type === 'Masuk') masuk = log;
+                    if (log.type === 'Pulang') pulang = log;
+                    if (log.type === 'Istirahat Keluar') breakOuts.push(log);
+                    if (log.type === 'Istirahat Kembali') breakIns.push(log);
+                });
 
-        var htmlGps = `<div class="page">${headerHtml}<h2>REKAP ABSENSI GPS (LOGS)</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
-            <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Pulang</th>
-        </tr></thead><tbody>${rowsGps}</tbody></table>${htmlTandaTangan}</div>`;
+                const itemLog = { date: dateStr, name: empName, masuk, pulang, breakOuts, breakIns };
+                let telatMark = '';
+                
+                if (typeof getDetailTelatUntukRekap === 'function') {
+                    const detailTelat = getDetailTelatUntukRekap(dateStr, empName, itemLog, employees, jadwalData, empMap);
+                    if (detailTelat.totalMenit > 0) {
+                        telatMark = `<br><span style="color:#dc2626; font-size:10px; font-weight:bold;">(Telat ${detailTelat.totalMenit}m)</span>`;
+                    }
+                }
+
+                let lupaArr = [];
+                const jabLow = (emp.jabatan || '').toLowerCase();
+                const isMgr = jabLow.includes('manager') || jabLow.includes('spv') || jabLow.includes('supervisor');
+                
+                if (status === 'H') {
+                    if (!masuk) lupaArr.push('Masuk');
+                    if (!pulang) lupaArr.push('Pulang');
+                    if (!isMgr) {
+                        if (breakOuts.length === 0) lupaArr.push('Istirahat');
+                    }
+                }
+                
+                let lupaMark = lupaArr.length > 0 ? `<span style="color:#d97706; font-weight:bold;">Lupa: ${lupaArr.join(', ')}</span>` : '-';
+                if (status !== 'H' && !masuk && !pulang) {
+                    lupaMark = `<span style="color:#64748b;">${status || 'Belum Absen'}</span>`;
+                }
+
+                const formatTime = (log) => log ? log.time : '-';
+                const formatTimes = (arr) => arr && arr.length ? arr.map(l => l.time).join(', ') : '-';
+                
+                let trBg = (lupaArr.length > 0 || telatMark !== '') ? 'background-color:#fef2f2;' : '';
+
+                rowsGps += `<tr style="${trBg}">
+                    <td>${dateStr}</td>
+                    <td>${shift || '-'}</td>
+                    <td style="font-weight:bold;">${formatTime(masuk)}${telatMark}</td>
+                    <td>${formatTimes(breakOuts)}</td>
+                    <td>${formatTimes(breakIns)}</td>
+                    <td style="font-weight:bold;">${formatTime(pulang)}</td>
+                    <td>${lupaMark}</td>
+                </tr>`;
+            });
+
+            if (rowsGps === '') rowsGps = `<tr><td colspan="7" style="text-align:center;">Tidak ada data pada periode ini.</td></tr>`;
+
+            htmlGps += `<div class="page">${headerHtml}<h2>REKAP ABSENSI GPS (LOGS)</h2>
+            <h3 style="margin-top:0; color:#475569;">Karyawan: <span style="color:#1e40af; text-decoration:underline; font-weight:bold;">${emp.name}</span> | Periode: ${tglAwal} s/d ${tglAkhir}</h3>
+            <table><thead><tr>
+                <th>Tanggal</th><th>Shift</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Pulang</th><th>Keterangan</th>
+            </tr></thead><tbody>${rowsGps}</tbody></table>${htmlTandaTangan}</div>`;
+        });
 
         var scriptBlockExt = '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></scr' + 'ipt>' +
             '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></scr' + 'ipt>' +
@@ -1073,7 +1193,61 @@ window.viewPengajuanDetail = function(id) {
         }
         alert("Gagal memuat data dari server: " + err.message);
     });
-};
+    }; // Tutup processLaporan
+
+    if (typeof firebase !== 'undefined' && firebase.database) {
+        firebase.database().ref('rbm_pro/storage/RBM_GPS_JAM_CONFIG_' + outlet).once('value').then(snapConfig => {
+            let jamConfigVal = snapConfig.val();
+            let jamConfigObj = null;
+            if (typeof jamConfigVal === 'string') {
+                try { jamConfigObj = JSON.parse(jamConfigVal); } catch(e) {}
+            } else if (jamConfigVal && typeof jamConfigVal === 'object') {
+                jamConfigObj = jamConfigVal;
+            }
+            
+            const originalGetGpsJamConfig = window.getGpsJamConfig;
+            if (jamConfigObj && typeof window.getGpsJamConfig === 'function') {
+                window.getGpsJamConfig = function() {
+                    const stored = jamConfigObj || {};
+                    var rawShifts = stored.shifts;
+                    var validShifts = [];
+                    if (Array.isArray(rawShifts)) {
+                        validShifts = rawShifts;
+                    } else if (rawShifts && typeof rawShifts === 'object') {
+                        validShifts = Object.keys(rawShifts).sort(function(a, b) { return parseInt(a, 10) - parseInt(b, 10); }).map(function(k) { return rawShifts[k]; });
+                    }
+                    if (validShifts.length > 0) {
+                        return {
+                            shifts: validShifts,
+                            menitTelatPerJamGaji: typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10),
+                            toleransiTelatMenit: typeof stored.toleransiTelatMenit === 'number' ? stored.toleransiTelatMenit : (parseInt(stored.toleransiTelatMenit, 10) || 0),
+                            potonganLupaAbsenJam: typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7)
+                        };
+                    }
+                    var num = function(v, def) { var n = parseInt(v, 10); return (n >= 0 && n <= 999) ? n : def; };
+                    return {
+                        shifts: null,
+                        jamMasukPagi: stored.jamMasukPagi || '08:30',
+                        jamPulangPagi: stored.jamPulangPagi || '17:00',
+                        jamMasukMiddle: stored.jamMasukMiddle || '12:30',
+                        jamPulangMiddle: stored.jamPulangMiddle || '21:00',
+                        jamMasukSore: stored.jamMasukSore || '16:30',
+                        jamPulangSore: stored.jamPulangSore || '17:00',
+                        durasiIstirahatPagi: num(stored.durasiIstirahatPagi, 60),
+                        durasiIstirahatMiddle: num(stored.durasiIstirahatMiddle, 60),
+                        durasiIstirahatSore: num(stored.durasiIstirahatSore, 60),
+                        menitTelatPerJamGaji: typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10),
+                        toleransiTelatMenit: typeof stored.toleransiTelatMenit === 'number' ? stored.toleransiTelatMenit : (parseInt(stored.toleransiTelatMenit, 10) || 0),
+                        potonganLupaAbsenJam: typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7)
+                    };
+                };
+            }
+            processLaporan(() => { if (originalGetGpsJamConfig) window.getGpsJamConfig = originalGetGpsJamConfig; });
+        }).catch(() => { processLaporan(() => {}); });
+    } else {
+        processLaporan(() => {});
+    }
+}; // Tutup window.viewPengajuanDetail
 
 window.viewBonusDetail = function(id) {
     const sub = window._pengajuanDataMap[id];
@@ -1258,6 +1432,54 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
     }
     if (!snap) snap = {};
 
+        const outletIdForConfig = d.outlet || d._outlet || '';
+
+        const processSlip = (restoreConfig) => {
+    const parseTime = (timeStr) => {
+        if (!timeStr) return 0;
+        const parts = String(timeStr).replace(/,/g, '.').split(/[.:]/).map(n => parseInt(n, 10) || 0);
+        return (parts[0] || 0) * 60 + (parts[1] || 0);
+    };
+
+    const getLatenessForEmp = (empId, empName) => {
+        const empMap = {};
+        (snap.employees || []).forEach(e => empMap[e.name] = e);
+        const byDate = {};
+        (snap.gpsLogs || []).forEach(log => {
+            if ((log.name || '').trim().toLowerCase() !== (empName || '').trim().toLowerCase()) return;
+            if (log.date < periodStart || log.date > periodEnd) return;
+            const key = log.date;
+            if (!byDate[key]) byDate[key] = { masuk: null, pulang: null, breakOuts: [], breakIns: [] };
+            if (log.type === 'Masuk') byDate[key].masuk = log;
+            if (log.type === 'Pulang') byDate[key].pulang = log;
+            if (log.type === 'Istirahat Keluar') byDate[key].breakOuts.push(log);
+            if (log.type === 'Istirahat Kembali') byDate[key].breakIns.push(log);
+        });
+        let totalMenit = 0;
+            let currDate = new Date(periodStart);
+            const endDate = new Date(periodEnd);
+            const datesLoop = [];
+            while (currDate <= endDate) {
+                datesLoop.push(new Date(currDate));
+                currDate.setDate(currDate.getDate() + 1);
+            }
+            datesLoop.forEach(d => {
+                const dateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                const item = byDate[dateStr] || { masuk: null, pulang: null, breakOuts: [], breakIns: [] };
+                
+                if (byDate[dateStr]) {
+                    if (typeof getDetailTelatUntukRekap === 'function') {
+                        const detailTelat = getDetailTelatUntukRekap(dateStr, empName, item, snap.employees || [], snap.jadwalData || {}, empMap);
+                        if (detailTelat.totalMenit > 0) {
+                            totalMenit += detailTelat.totalMenit;
+                        }
+                    }
+                }
+            });
+
+        return totalMenit;
+    };
+
     let detailsHtml = '';
 
     if (!isBonus) {
@@ -1279,10 +1501,19 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 gajiPokok = parseInt(snapEmp.gajiPokok) || 0;
                 const pData = (empKeyGaji && snap.gajiData && snap.gajiData[empKeyGaji]) ? snap.gajiData[empKeyGaji]
                     : (snap.gajiData && (snap.gajiData[empKeyAbsensi] || snap.gajiData[snap.employees.indexOf(snapEmp)])) || {};
-                potHari = parseFloat(pData.potHari) || 0;
-                jamTerlambat = parseFloat(pData.jamTerlambat) || 0;
+                potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+                
+                const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+                const totalMenitTelatGps = getLatenessForEmp(empKeyAbsensi, snapEmp.name);
+                const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+                jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : (pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : calcGpsJam);
                 hutang = parseInt(pData.hutang) || 0;
-                tunjangan = parseInt(pData.tunjangan) || 0;
+                
+                let defaultTunjangan = 0;
+                if (snapEmp.jabatan === 'Manager Regional') defaultTunjangan = 500000;
+                else if (snapEmp.jabatan === 'Manager Outlet') defaultTunjangan = 350000;
+                else if (snapEmp.jabatan === 'Supervisor') defaultTunjangan = 250000;
+                tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : defaultTunjangan;
 
                 let hkAktual = 0;
                 let curr = new Date(d.periodStart);
@@ -1336,6 +1567,61 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 <div style="margin-top: 50px; width: 250px; font-size: 14px; text-align: center; float: right;"><p style="margin-bottom: 70px;">Sidoarjo, ${dateStr}<br>Dikeluarkan Oleh:</p><p style="font-weight: bold; text-decoration: underline; margin: 0;">Management</p></div><div style="clear: both;"></div>
             </div></body></html>`;
     const printWin = window.open('', '', 'width=800,height=600'); printWin.document.write(htmlContent); printWin.document.close(); printWin.focus(); setTimeout(() => { printWin.print(); printWin.close(); }, 500);
+            if (typeof restoreConfig === 'function') restoreConfig();
+        }; // Tutup processSlip
+
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            firebase.database().ref('rbm_pro/storage/RBM_GPS_JAM_CONFIG_' + outletIdForConfig).once('value').then(snapConfig => {
+                let jamConfigVal = snapConfig.val();
+                let jamConfigObj = null;
+                if (typeof jamConfigVal === 'string') {
+                    try { jamConfigObj = JSON.parse(jamConfigVal); } catch(e) {}
+                } else if (jamConfigVal && typeof jamConfigVal === 'object') {
+                    jamConfigObj = jamConfigVal;
+                }
+                
+                const originalGetGpsJamConfig = window.getGpsJamConfig;
+                if (jamConfigObj && typeof window.getGpsJamConfig === 'function') {
+                    window.getGpsJamConfig = function() {
+                        const stored = jamConfigObj || {};
+                        var rawShifts = stored.shifts;
+                        var validShifts = [];
+                        if (Array.isArray(rawShifts)) {
+                            validShifts = rawShifts;
+                        } else if (rawShifts && typeof rawShifts === 'object') {
+                            validShifts = Object.keys(rawShifts).sort(function(a, b) { return parseInt(a, 10) - parseInt(b, 10); }).map(function(k) { return rawShifts[k]; });
+                        }
+                        if (validShifts.length > 0) {
+                            return {
+                                shifts: validShifts,
+                                menitTelatPerJamGaji: typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10),
+                                toleransiTelatMenit: typeof stored.toleransiTelatMenit === 'number' ? stored.toleransiTelatMenit : (parseInt(stored.toleransiTelatMenit, 10) || 0),
+                                potonganLupaAbsenJam: typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7)
+                            };
+                        }
+                        var num = function(v, def) { var n = parseInt(v, 10); return (n >= 0 && n <= 999) ? n : def; };
+                        return {
+                            shifts: null,
+                            jamMasukPagi: stored.jamMasukPagi || '08:30',
+                            jamPulangPagi: stored.jamPulangPagi || '17:00',
+                            jamMasukMiddle: stored.jamMasukMiddle || '12:30',
+                            jamPulangMiddle: stored.jamPulangMiddle || '21:00',
+                            jamMasukSore: stored.jamMasukSore || '16:30',
+                            jamPulangSore: stored.jamPulangSore || '17:00',
+                            durasiIstirahatPagi: num(stored.durasiIstirahatPagi, 60),
+                            durasiIstirahatMiddle: num(stored.durasiIstirahatMiddle, 60),
+                            durasiIstirahatSore: num(stored.durasiIstirahatSore, 60),
+                            menitTelatPerJamGaji: typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10),
+                            toleransiTelatMenit: typeof stored.toleransiTelatMenit === 'number' ? stored.toleransiTelatMenit : (parseInt(stored.toleransiTelatMenit, 10) || 0),
+                            potonganLupaAbsenJam: typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7)
+                        };
+                    };
+                }
+                processSlip(() => { if (originalGetGpsJamConfig) window.getGpsJamConfig = originalGetGpsJamConfig; });
+            }).catch(() => { processSlip(() => {}); });
+        } else {
+            processSlip(() => {});
+        }
 };
 
 window.deletePengajuan = function(type, id) {
@@ -1353,7 +1639,9 @@ window.deletePengajuan = function(type, id) {
         firebase.database().ref(dbPath).remove().then(() => {
             AppPopup.success('Pengajuan berhasil dihapus.');
             closeOwnerPengajuanModal();
-            if (window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+            try {
+                if (window.location.protocol !== 'file:' && window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+            } catch(e) {}
             if (typeof fetchSubmissionsForOwner === 'function') fetchSubmissionsForOwner();
         }).catch(err => {
             AppPopup.error('Gagal menghapus: ' + (err.message || err));
@@ -1387,9 +1675,9 @@ function updatePengajuanStatus(type, id, status) {
         firebase.database().ref(dbPath).update(payload).then(() => {
             AppPopup.success('Status berhasil diupdate.');
             closeOwnerPengajuanModal();
-            if (window.self !== window.top) {
-                window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
-            }
+            try {
+                if (window.location.protocol !== 'file:' && window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+            } catch(e) {}
         }).catch(err => {
             console.error(err);
             var msg = (err && (err.message || err.code)) ? (err.message || err.code) : (err ? String(err) : 'unknown error');
@@ -1668,3 +1956,138 @@ window.confirm = function(msg) {
 </script>
 </body>
 </html>
+Pilih Outlet:
+
+Rice Bowl Monsters - Royal
+Absensi, Jadwal & Gaji
+Kelola jadwal, absensi, laporan, dan gaji karyawan
+
+Absensi
+Jadwal
+Laporan Absen
+Rekap Gaji
+Bonus
+Bonus (Burhan)
+Export:
+Excel
+PDF
+Tanggal Mulai
+
+26/03/2026
+Tanggal Selesai
+
+25/04/2026
+Periode ini dipakai untuk Absensi, Jadwal, Laporan Absen, Rekap Gaji & Bonus
+Simpan Perubahan
+Download Semua Slip (ZIP)
+Print Slip/Rekap PDF
+Save JPG
+Ajukan Laporan Lengkap (Owner)
+🔄 Riwayat (Refresh)
+Pengajuan Petty Cash (Ke Diri Sendiri)
+REKAP ABSENSI & RINCIAN GAJI
+Absensi Periode 26 Maret 2026 s/d 25 April 2026
+
+NO	NAMA	JABATAN	BANK	NO REK	HK
+TARGET	HK
+AKTUAL	ABSENSI	GAJI POKOK	GAJI/HARI	POTONGAN KEHADIRAN	KETERLAMBATAN	HUTANG	UANG MAKAN	TUNJANGAN	GRAND TOTAL	PEMBAYARAN	AKSI
+A	I	S	OFF	DP	PH	AL	JML	HARI	Rp	JAM	RATE/JAM	TOTAL
+1	Mita Cahya	Manager Outlet	
+MANDIRI 
+1420022626682
+26
+20	-	-	-	3	2	4	2	31	
+Rp 2.900.000
+Rp 96.667	
+0
+Rp 0	
+0
+Rp 12.083	Rp 0	
+Rp 0
+Rp 200.000	
+Rp 350.000
+Rp 3.450.000	
+TF
+Slip Email
+2	Avin Hiskia Vani	Crew	
+MANDIRI 
+1420023523003
+26
+25	-	-	-	4	-	2	-	31	
+Rp 2.400.000
+Rp 80.000	
+0
+Rp 0	
+5,9
+Rp 10.000	Rp 59.000	
+Rp 0
+Rp 250.000	
+Rp 0
+Rp 2.591.000	
+TF
+Slip Email
+3	Dhasa Ahmad Dhani	Crew	
+TF MITA 
+26
+25	-	-	-	4	-	-	2	31	
+Rp 2.400.000
+Rp 80.000	
+0
+Rp 0	
+1,4
+Rp 10.000	Rp 14.000	
+Rp 0
+Rp 250.000	
+Rp 0
+Rp 2.636.000	
+TF
+Slip Email
+4	Wahyu	Crew	
+TF MITA
+26
+14	-	-	-	2	-	-	-	31	
+Rp 2.000.000
+Rp 66.667	
+16
+Rp 1.066.672	
+0
+Rp 8.333	Rp 0	
+Rp 0
+Rp 140.000	
+Rp 0
+Rp 1.073.328	
+TF
+Slip Email
+TOTAL PENGELUARAN GAJI: Rp 9.750.328	
+Sidoarjo, 27 April 2026
+
+Di buat:
+
+
+
+
+Puji Shohibul Burhan (Developer)
+
+Owner
+
+ 
+
+Di setujui:
+
+
+
+
+Puji Shohibul Burhan
+
+Manager Regional
+
+ 
+
+Di setujui:
+
+
+
+
+Puji Shohibul Burhan
+
+Manager Regional
