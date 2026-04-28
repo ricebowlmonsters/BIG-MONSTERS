@@ -2577,7 +2577,9 @@ function submitDataPengajuan() {
       } else {
         google.script.run.withSuccessHandler(showResultPengajuan).simpanDataPengajuanTF(payload);
       }
-      if (window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+      try {
+        if (window.location.protocol !== 'file:' && window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+      } catch(e) {}
     }).catch(error => {
       showError("❌ Gagal memproses file: " + error);
     });
@@ -2635,7 +2637,9 @@ function submitDataPengajuan() {
       } else {
         google.script.run.withSuccessHandler(showResultPengajuan).simpanDataPengajuanPC(payload);
       }
-      if (window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+      try {
+        if (window.location.protocol !== 'file:' && window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+      } catch(e) {}
     }).catch(error => {
       showError("❌ Gagal memproses file: " + error);
     });
@@ -4977,6 +4981,7 @@ function switchAbsensiTab(mode) {
     document.getElementById('tab-content-laporan').style.display = 'none';
     document.getElementById('tab-content-gaji').style.display = 'none';
     document.getElementById('tab-content-bonus').style.display = 'none';
+    if (document.getElementById('tab-content-pencairan')) document.getElementById('tab-content-pencairan').style.display = 'none';
 
     if (mode === 'absensi' || mode === 'jadwal') {
         document.getElementById('tab-content-input').style.display = 'block';
@@ -4996,6 +5001,9 @@ function switchAbsensiTab(mode) {
     } else if (mode === 'bonus') {
         document.getElementById('tab-content-bonus').style.display = 'block';
         renderBonusTab();
+    } else if (mode === 'pencairan') {
+        if (document.getElementById('tab-content-pencairan')) document.getElementById('tab-content-pencairan').style.display = 'block';
+        if (typeof renderPencairanTab === 'function') renderPencairanTab();
     }
 }
 
@@ -6060,6 +6068,7 @@ async function submitGajiPengajuan() {
                 const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
                 const gajiPokok = parseInt(emp.gajiPokok) || 0;
                 const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+                const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
                 const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
                 const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
                 let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
@@ -6071,10 +6080,14 @@ async function submitGajiPengajuan() {
                 const metodeBayar = pData.metodeBayar || 'TF';
 
                 let jumlahH = 0;
+                let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
                 dates.forEach(d => {
                     const dateKey = getLocalDateKey(d);
                     const absKey = `${dateKey}_${empKeyAbsensi}`;
-                    if (absensiData[absKey] === 'H') jumlahH++;
+                    const status = absensiData[absKey] || '';
+                    if (status === 'H') jumlahH++;
+                    let countKey = status === 'O' ? 'OFF' : status;
+                    if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
                 });
 
                 const gajiPerHari = Math.round(gajiPokok / 30);
@@ -6084,15 +6097,28 @@ async function submitGajiPengajuan() {
                 const totalPotKehadiran = Math.round(potHari * gajiPerHari);
                 const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
 
-                const totalPendapatan = gajiPokok + tunjangan + uangMakan;
-                const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
+                const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
 
                 items.push({
                     empId: empKey,
                     nama: emp.name || '',
                     jabatan: emp.jabatan || '',
                     grandTotal: grandTotal,
-                    metodeBayar: metodeBayar
+                    metodeBayar: metodeBayar,
+                    // [BARU] Kirim semua komponen kalkulasi agar tidak perlu hitung ulang di sisi Owner
+                    jamTerlambat: jamTerlambat,
+                    potonganTerlambat: totalPotTerlambat,
+                    potonganKehadiran: totalPotKehadiran,
+                    gajiPokok: gajiPokok,
+                    gajiPerHari: gajiPerHari,
+                    potHari: potHari,
+                    potTerlambatPerJam: potTerlambatPerJam,
+                    hutang: hutang,
+                    uangMakan: uangMakan,
+                    tunjangan: tunjangan,
+                    hkAktual: jumlahH,
+                    hkTarget: hkTarget,
+                    counts: counts
                 });
                 totalGrand += Number(grandTotal) || 0;
             });
@@ -11854,6 +11880,422 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof samakanTotal !== 'undefined') window.samakanTotal = samakanTotal;
   if (typeof isiOtomatisDataBank !== 'undefined') window.isiOtomatisDataBank = isiOtomatisDataBank;
   if (typeof applyKeteranganColor !== 'undefined') window.applyKeteranganColor = applyKeteranganColor;
+
+    window.pencairanMode = 'cuti';
+
+    window.togglePencairanMode = function(mode) {
+        window.pencairanMode = mode;
+        const btnCuti = document.getElementById('subtab-cuti');
+        const btnLembur = document.getElementById('subtab-lembur');
+        if (btnCuti && btnLembur) {
+            btnCuti.className = mode === 'cuti' ? 'btn btn-primary' : 'btn btn-secondary';
+            btnLembur.className = mode === 'lembur' ? 'btn btn-primary' : 'btn btn-secondary';
+        }
+        if (typeof renderPencairanTab === 'function') renderPencairanTab();
+    };
+
+    window.renderPencairanTab = function() {
+        const tglAwal = document.getElementById("absensi_tgl_awal").value;
+        const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
+        if (!tglAwal || !tglAkhir) return;
+
+        const mode = window.pencairanMode || 'cuti';
+
+        const titleEl = document.getElementById('pencairan_title');
+        const lblTotalEl = document.getElementById('pencairan_lbl_total');
+        if (titleEl) titleEl.innerText = mode === 'cuti' ? 'Pencairan Cuti' : 'Pencairan Lembur';
+        if (lblTotalEl) lblTotalEl.innerText = mode === 'cuti' ? 'CUTI' : 'LEMBUR';
+
+        const thead = document.getElementById('pencairan_thead');
+        if (thead) {
+            if (mode === 'cuti') {
+                thead.innerHTML = `
+                    <tr>
+                        <th rowspan="2" style="text-align: center; border: 1px solid #e2e8f0; width:40px;">No</th>
+                        <th rowspan="2" style="text-align: left; border: 1px solid #e2e8f0;">Nama Karyawan</th>
+                        <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Gaji/Hari</th>
+                        <th colspan="3" style="text-align: center; border: 1px solid #e2e8f0;">Pencairan Cuti (Hari)</th>
+                        <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Total Pencairan Cuti</th>
+                    </tr>
+                    <tr>
+                        <th style="text-align: center; border: 1px solid #e2e8f0; width:70px;">AL</th>
+                        <th style="text-align: center; border: 1px solid #e2e8f0; width:70px;">DP</th>
+                        <th style="text-align: center; border: 1px solid #e2e8f0; width:70px;">PH</th>
+                    </tr>
+                `;
+                const colSpanEl = document.getElementById('pencairan_grand_colspan');
+                if(colSpanEl) colSpanEl.colSpan = 6;
+            } else {
+                thead.innerHTML = `
+                    <tr>
+                        <th rowspan="2" style="text-align: center; border: 1px solid #e2e8f0; width:40px;">No</th>
+                        <th rowspan="2" style="text-align: left; border: 1px solid #e2e8f0;">Nama Karyawan</th>
+                        <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Rate/Jam</th>
+                        <th colspan="2" style="text-align: center; border: 1px solid #e2e8f0;">Lembur</th>
+                        <th rowspan="2" style="text-align: center; border: 1px solid #e2e8f0; width:100px;">Tanggal Lembur</th>
+                        <th rowspan="2" style="text-align: center; border: 1px solid #e2e8f0; width:150px;">Alasan Lembur</th>
+                        <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Total Pencairan Lembur</th>
+                    </tr>
+                    <tr>
+                        <th style="text-align: center; border: 1px solid #e2e8f0; width:70px;">Hari</th>
+                        <th style="text-align: center; border: 1px solid #e2e8f0; width:70px;">Jam</th>
+                    </tr>
+                `;
+                const colSpanEl = document.getElementById('pencairan_grand_colspan');
+                if(colSpanEl) colSpanEl.colSpan = 7;
+            }
+        }
+
+        const keyPencairan = getRbmStorageKey('RBM_PENCAIRAN_' + tglAwal + '_' + tglAkhir);
+        const savedData = getCachedParsedStorage(keyPencairan, {});
+        const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+        const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
+        const gajiData = getCachedParsedStorage(gajiPeriodKey, {});
+
+        const tbody = document.getElementById('pencairan_tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        let grandTotalPencairan = 0;
+
+        employees.forEach((emp, idx) => {
+            const empKey = (emp && emp.id !== undefined && emp.id !== null && emp.id !== '') ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
+            
+            let gajiPokok = 0;
+            if (emp.gajiPokok) {
+                gajiPokok = parseInt(emp.gajiPokok) || 0;
+            }
+
+            const gajiPerHari = Math.round(gajiPokok / 30);
+            const ratePerJam = Math.round(gajiPokok / 240);
+            const empPencKey = emp.id != null ? String(emp.id) : String(idx);
+            const pData = savedData[empPencKey] || {};
+            
+            const cairAL = parseFloat(pData.cairAL) || 0;
+            const cairDP = parseFloat(pData.cairDP) || 0;
+            const cairPH = parseFloat(pData.cairPH) || 0;
+            const lemburHari = parseFloat(pData.lemburHari) || 0;
+            const lemburJam = parseFloat(pData.lemburJam) || 0;
+            const tglLembur = pData.tglLembur || '';
+            const alasanLembur = pData.alasanLembur || '';
+
+            const uangCuti = (cairAL + cairDP + cairPH) * gajiPerHari;
+            const uangLembur = (lemburHari * gajiPerHari) + (lemburJam * ratePerJam);
+            const totalRow = mode === 'cuti' ? uangCuti : uangLembur;
+            
+            grandTotalPencairan += totalRow;
+
+            const sisaAL = emp.sisaAL || 0;
+            const sisaDP = emp.sisaDP || 0;
+            const sisaPH = emp.sisaPH || 0;
+
+            let gphColHtml = '';
+            if (mode === 'cuti') {
+                gphColHtml = `<td style="text-align:right; border: 1px solid #e2e8f0;">${formatRupiah(gajiPerHari)}</td>`;
+            } else {
+                gphColHtml = `<td style="text-align:right; border: 1px solid #e2e8f0;">${formatRupiah(ratePerJam)}/jam</td>`;
+            }
+
+            const tr = document.createElement('tr');
+            tr.dataset.empid = empPencKey;
+            tr.dataset.empname = emp.name;
+            tr.dataset.empjabatan = emp.jabatan;
+            tr.innerHTML = `
+                <td style="text-align:center; border: 1px solid #e2e8f0;">${idx + 1}</td>
+                <td style="text-align:left; font-weight:600; border: 1px solid #e2e8f0;">${emp.name}<br><span style="font-size:10px; color:#6b7280; font-weight:normal;">${emp.jabatan}</span></td>
+                ${gphColHtml}
+                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'cuti' ? 'display:none;' : ''}">
+                    <div style="font-size:9px; color:#6b7280; margin-bottom:2px;">Sisa: ${sisaAL}</div>
+                    <input type="number" class="penc-al form-input" value="${cairAL || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
+                </td>
+                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'cuti' ? 'display:none;' : ''}">
+                    <div style="font-size:9px; color:#6b7280; margin-bottom:2px;">Sisa: ${sisaDP}</div>
+                    <input type="number" class="penc-dp form-input" value="${cairDP || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
+                </td>
+                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'cuti' ? 'display:none;' : ''}">
+                    <div style="font-size:9px; color:#6b7280; margin-bottom:2px;">Sisa: ${sisaPH}</div>
+                    <input type="number" class="penc-ph form-input" value="${cairPH || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
+                </td>
+                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'lembur' ? 'display:none;' : ''}">
+                    <input type="number" class="penc-lembur-hari form-input" value="${lemburHari || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" placeholder="-" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
+                </td>
+                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'lembur' ? 'display:none;' : ''}">
+                    <input type="number" class="penc-lembur-jam form-input" value="${lemburJam || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" placeholder="-" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
+                </td>
+                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'lembur' ? 'display:none;' : ''}">
+                    <input type="text" class="penc-tgl-lembur form-input" value="${tglLembur}" style="width:100%; padding:4px; text-align:center; font-size:12px;" placeholder="Tgl...">
+                </td>
+                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'lembur' ? 'display:none;' : ''}">
+                    <input type="text" class="penc-alasan-lembur form-input" value="${alasanLembur}" style="width:100%; padding:4px; text-align:left; font-size:12px;" placeholder="Alasan...">
+                </td>
+                <td style="text-align:right; font-weight:bold; color:#059669; border: 1px solid #e2e8f0;" class="penc-total-cell" data-total="${totalRow}">${formatRupiah(totalRow)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('pencairan_grand_total').innerText = formatRupiah(grandTotalPencairan);
+    };
+
+    window.calcPencairanRow = function(inputEl, gph, gpj) {
+        const mode = window.pencairanMode || 'cuti';
+        const tr = inputEl.closest('tr');
+        const al = parseFloat(tr.querySelector('.penc-al').value) || 0;
+        const dp = parseFloat(tr.querySelector('.penc-dp').value) || 0;
+        const ph = parseFloat(tr.querySelector('.penc-ph').value) || 0;
+        const lh = parseFloat(tr.querySelector('.penc-lembur-hari').value) || 0;
+        const lj = parseFloat(tr.querySelector('.penc-lembur-jam').value) || 0;
+
+        const uangCuti = (al + dp + ph) * gph;
+        const uangLembur = (lh * gph) + (lj * gpj);
+        
+        const total = mode === 'cuti' ? uangCuti : uangLembur;
+        const totalCell = tr.querySelector('.penc-total-cell');
+        totalCell.dataset.total = total;
+        totalCell.innerText = formatRupiah(total);
+
+        let grandTotal = 0;
+        document.querySelectorAll('.penc-total-cell').forEach(cell => {
+            grandTotal += parseFloat(cell.dataset.total) || 0;
+        });
+        document.getElementById('pencairan_grand_total').innerText = formatRupiah(grandTotal);
+    };
+
+    window.savePencairanData = function() {
+        const tglAwal = document.getElementById("absensi_tgl_awal").value;
+        const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
+        if (!tglAwal || !tglAkhir) { alert("Pilih tanggal terlebih dahulu."); return; }
+
+        const tbody = document.getElementById('pencairan_tbody');
+        const rows = tbody.querySelectorAll('tr');
+        
+        const dataObj = {};
+        rows.forEach(tr => {
+            const empId = tr.dataset.empid;
+            const cairAL = parseFloat(tr.querySelector('.penc-al').value) || 0;
+            const cairDP = parseFloat(tr.querySelector('.penc-dp').value) || 0;
+            const cairPH = parseFloat(tr.querySelector('.penc-ph').value) || 0;
+            const lemburHari = parseFloat(tr.querySelector('.penc-lembur-hari').value) || 0;
+            const lemburJam = parseFloat(tr.querySelector('.penc-lembur-jam').value) || 0;
+            const tglLembur = tr.querySelector('.penc-tgl-lembur') ? tr.querySelector('.penc-tgl-lembur').value : '';
+            const alasanLembur = tr.querySelector('.penc-alasan-lembur') ? tr.querySelector('.penc-alasan-lembur').value : '';
+            
+            if (cairAL > 0 || cairDP > 0 || cairPH > 0 || lemburHari > 0 || lemburJam > 0 || tglLembur || alasanLembur) {
+                dataObj[empId] = { cairAL, cairDP, cairPH, lemburHari, lemburJam, tglLembur, alasanLembur };
+            }
+        });
+
+        const keyPencairan = getRbmStorageKey('RBM_PENCAIRAN_' + tglAwal + '_' + tglAkhir);
+
+        if (window.RBMStorage && window.RBMStorage._useFirebase && window.RBMStorage._db) {
+            window.RBMStorage._db.ref('rbm_pro/pencairan/' + keyPencairan.slice(14)).set(dataObj).then(function() {
+                window._rbmParsedCache[keyPencairan] = { data: dataObj };
+                try { localStorage.setItem(keyPencairan, JSON.stringify(dataObj)); } catch(e){}
+                if (typeof AppPopup !== 'undefined') AppPopup.success("Data Pencairan tersimpan ke server.", "Sukses");
+                else alert("✅ Data Pencairan tersimpan.");
+            }).catch(function(err) {
+                alert("Gagal menyimpan pencairan: " + err.message);
+            });
+        } else {
+            RBMStorage.setItem(keyPencairan, JSON.stringify(dataObj));
+            window._rbmParsedCache[keyPencairan] = { data: dataObj };
+            if (typeof AppPopup !== 'undefined') AppPopup.success("Data Pencairan tersimpan.", "Sukses");
+            else alert("✅ Data Pencairan tersimpan lokal.");
+        }
+    };
+
+    window.submitPencairanPengajuan = async function() {
+        const tglAwal = document.getElementById("absensi_tgl_awal").value;
+        const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
+        if (!tglAwal || !tglAkhir) return alert('Pilih periode tanggal terlebih dahulu.');
+        const monthKey = tglAkhir.slice(0, 7);
+        const mode = window.pencairanMode || 'cuti';
+        const modeText = mode === 'cuti' ? 'Cuti' : 'Lembur';
+
+        if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.init || !FirebaseStorage.init()) {
+            return alert('Pengajuan hanya tersedia di mode Online (Firebase).');
+        }
+
+        openRekeningPencairanModal(async (rekInfo) => {
+            try {
+                const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+
+                let totalGrand = 0;
+                const items = [];
+                
+                document.querySelectorAll("#pencairan_tbody tr").forEach(tr => {
+                    const empId = tr.dataset.empid;
+                    const empName = tr.dataset.empname;
+                    const empJabatan = tr.dataset.empjabatan;
+                    
+                    const cairAL = parseFloat(tr.querySelector('.penc-al').value) || 0;
+                    const cairDP = parseFloat(tr.querySelector('.penc-dp').value) || 0;
+                    const cairPH = parseFloat(tr.querySelector('.penc-ph').value) || 0;
+                    const lemburHari = parseFloat(tr.querySelector('.penc-lembur-hari').value) || 0;
+                    const lemburJam = parseFloat(tr.querySelector('.penc-lembur-jam').value) || 0;
+                    const tglLembur = tr.querySelector('.penc-tgl-lembur') ? tr.querySelector('.penc-tgl-lembur').value : '';
+                    const alasanLembur = tr.querySelector('.penc-alasan-lembur') ? tr.querySelector('.penc-alasan-lembur').value : '';
+                    
+                    const nominal = parseFloat(tr.querySelector('.penc-total-cell').dataset.total) || 0;
+                    
+                    if (nominal > 0) {
+                        totalGrand += nominal;
+                        let rincianArr = [];
+                        if (mode === 'cuti') {
+                            if (cairAL > 0) rincianArr.push(cairAL + ' AL');
+                            if (cairDP > 0) rincianArr.push(cairDP + ' DP');
+                            if (cairPH > 0) rincianArr.push(cairPH + ' PH');
+                        } else {
+                            if (lemburHari > 0) rincianArr.push(lemburHari + ' hr Lembur');
+                            if (lemburJam > 0) rincianArr.push(lemburJam + ' jam Lembur');
+                            if (tglLembur) rincianArr.push(`Tgl: ${tglLembur}`);
+                            if (alasanLembur) rincianArr.push(`Alasan: ${alasanLembur}`);
+                        }
+                        
+                        items.push({ 
+                            empId: empId, 
+                            nama: empName, 
+                            jabatan: empJabatan, 
+                            grandTotal: nominal, 
+                            metodeBayar: 'TF', 
+                            keterangan: `Pencairan ${modeText}: ` + rincianArr.join(', '),
+                            tglLembur: mode === 'lembur' ? tglLembur : '',
+                            alasanLembur: mode === 'lembur' ? alasanLembur : '',
+                            cairAL, cairDP, cairPH, lemburHari, lemburJam
+                        });
+                    }
+                });
+
+                if (totalGrand === 0) {
+                    if(!confirm(`Total pencairan ${modeText} adalah Rp 0. Lanjutkan pengajuan?`)) return;
+                }
+
+                let u = {}; try { u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch(e){}
+                const requester = (u && (u.username || u.nama)) ? (u.username || u.nama) : 'unknown';
+                const note = `Pengajuan PENCAIRAN ${modeText.toUpperCase()} periode ${tglAwal} s/d ${tglAkhir}`;
+
+                await FirebaseStorage.saveGajiPengajuan({ 
+                    outletId, monthKey, periodStart: tglAwal, periodEnd: tglAkhir, requester, totalGrand, note,
+                    bank: rekInfo.bank, rekening: rekInfo.rekening, atasnama: rekInfo.atasnama 
+                }, items);
+                if (typeof showCustomAlert !== 'undefined') showCustomAlert('Pengajuan Pencairan berhasil dikirim ke Owner.', 'Sukses', 'success');
+                else alert('Pengajuan Pencairan berhasil dikirim ke Owner.');
+                
+                try {
+                    if (window.location.protocol !== 'file:' && window.self !== window.top) {
+                        window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+                    }
+                } catch(e) {}
+            } catch (e) {
+                console.error(e);
+                if (typeof showCustomAlert !== 'undefined') showCustomAlert('Gagal mengajukan: ' + (e.message || e), 'Error', 'error');
+                else alert('Gagal mengajukan: ' + (e.message || e));
+            }
+        });
+    };
+
+    window.exportPencairanExcel = function() {
+        const tglAwal = document.getElementById("absensi_tgl_awal").value;
+        const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
+        if (!tglAwal || !tglAkhir) { alert("Pilih tanggal terlebih dahulu."); return; }
+
+        const mode = window.pencairanMode || 'cuti';
+        const modeText = mode === 'cuti' ? 'CUTI' : 'LEMBUR';
+        const rows = document.querySelectorAll("#pencairan_tbody tr");
+        const total = document.getElementById("pencairan_grand_total").innerText;
+
+        let xml = '<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
+        xml += '<Styles><Style ss:ID="sHeader"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#ea580c" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center"/></Style><Style ss:ID="sData"><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style></Styles>';
+        xml += '<Worksheet ss:Name="Pencairan"><Table>';
+        if (mode === 'cuti') {
+            xml += '<Column ss:Width="30"/><Column ss:Width="150"/><Column ss:Width="100"/><Column ss:Width="60"/><Column ss:Width="60"/><Column ss:Width="60"/><Column ss:Width="120"/>';
+        } else {
+            xml += '<Column ss:Width="30"/><Column ss:Width="150"/><Column ss:Width="100"/><Column ss:Width="60"/><Column ss:Width="60"/><Column ss:Width="100"/><Column ss:Width="150"/><Column ss:Width="120"/>';
+        }
+        
+        xml += `<Row><Cell ss:MergeAcross="${mode === 'cuti' ? 6 : 7}" ss:StyleID="sHeader"><Data ss:Type="String">LAPORAN PENCAIRAN ${modeText} (${tglAwal} s/d ${tglAkhir})</Data></Cell></Row>`;
+        if (mode === 'cuti') {
+            xml += '<Row><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">No</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Nama Karyawan</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Gaji/Hari</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeAcross="2"><Data ss:Type="String">Pencairan Cuti</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Total Pencairan</Data></Cell></Row>';
+            xml += '<Row><Cell ss:Index="4" ss:StyleID="sHeader"><Data ss:Type="String">AL</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">DP</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">PH</Data></Cell></Row>';
+        } else {
+            xml += '<Row><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">No</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Nama Karyawan</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Rate/Jam</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeAcross="1"><Data ss:Type="String">Lembur</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Tanggal Lembur</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Alasan Lembur</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Total Pencairan</Data></Cell></Row>';
+            xml += '<Row><Cell ss:Index="4" ss:StyleID="sHeader"><Data ss:Type="String">Hari</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">Jam</Data></Cell></Row>';
+        }
+
+        rows.forEach((tr, i) => {
+            const name = tr.dataset.empname;
+            const gph = tr.cells[2].innerText;
+            const al = tr.querySelector('.penc-al').value;
+            const dp = tr.querySelector('.penc-dp').value;
+            const ph = tr.querySelector('.penc-ph').value;
+            const lh = tr.querySelector('.penc-lembur-hari').value;
+            const lj = tr.querySelector('.penc-lembur-jam').value;
+            const tglLembur = tr.querySelector('.penc-tgl-lembur') ? tr.querySelector('.penc-tgl-lembur').value : '';
+            const alasanLembur = tr.querySelector('.penc-alasan-lembur') ? tr.querySelector('.penc-alasan-lembur').value : '';
+            const rowTotal = tr.querySelector('.penc-total-cell').innerText;
+            
+            if (mode === 'cuti') {
+                xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="Number">${i+1}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${name}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${gph}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${al || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${dp || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${ph || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${rowTotal}</Data></Cell></Row>`;
+            } else {
+                xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="Number">${i+1}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${name}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${gph}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${lh || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${lj || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${tglLembur}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${alasanLembur}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${rowTotal}</Data></Cell></Row>`;
+            }
+        });
+
+        xml += `<Row><Cell ss:MergeAcross="${mode === 'cuti' ? 5 : 6}" ss:StyleID="sData"><Data ss:Type="String">TOTAL</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${total}</Data></Cell></Row>`;
+        xml += '</Table></Worksheet></Workbook>';
+
+        const blob = new Blob([xml], {type: 'application/vnd.ms-excel'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `Pencairan_${tglAwal}_${tglAkhir}.xls`;
+        a.click();
+    };
+
+    window.exportPencairanPDF = function() {
+        const tglAwal = document.getElementById("absensi_tgl_awal").value;
+        const tglAkhir = document.getElementById("absensi_tgl_akhir").value;
+        if (!tglAwal || !tglAkhir) { alert("Pilih tanggal terlebih dahulu."); return; }
+
+        const mode = window.pencairanMode || 'cuti';
+        const modeText = mode === 'cuti' ? 'Cuti' : 'Lembur';
+        const rows = document.querySelectorAll("#pencairan_tbody tr");
+        const total = document.getElementById("pencairan_grand_total").innerText;
+
+        let html = `<html><head><title>Pencairan Cuti & Lembur</title><style>body{font-family:sans-serif; font-size:12px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ccc;padding:6px;} th{background:#ea580c;color:white;}</style></head><body>`;
+        html += `<h2 style="text-align:center;">Laporan Pencairan ${modeText}</h2><p style="text-align:center;">Periode: ${tglAwal} s/d ${tglAkhir}</p>`;
+        
+        if (mode === 'cuti') {
+            html += `<table><thead><tr><th rowspan="2">No</th><th rowspan="2">Nama Karyawan</th><th rowspan="2">Gaji/Hari</th><th colspan="3">Pencairan Cuti</th><th rowspan="2">Total</th></tr><tr><th>AL</th><th>DP</th><th>PH</th></tr></thead><tbody>`;
+        } else {
+            html += `<table><thead><tr><th rowspan="2">No</th><th rowspan="2">Nama Karyawan</th><th rowspan="2">Rate/Jam</th><th colspan="2">Lembur</th><th rowspan="2">Tanggal Lembur</th><th rowspan="2">Alasan Lembur</th><th rowspan="2">Total</th></tr><tr><th>Hari</th><th>Jam</th></tr></thead><tbody>`;
+        }
+        
+        rows.forEach((tr, i) => {
+            const name = tr.dataset.empname;
+            const gph = tr.cells[2].innerText;
+            const al = tr.querySelector('.penc-al').value;
+            const dp = tr.querySelector('.penc-dp').value;
+            const ph = tr.querySelector('.penc-ph').value;
+            const lh = tr.querySelector('.penc-lembur-hari').value;
+            const lj = tr.querySelector('.penc-lembur-jam').value;
+            const tglLembur = tr.querySelector('.penc-tgl-lembur') ? tr.querySelector('.penc-tgl-lembur').value : '';
+            const alasanLembur = tr.querySelector('.penc-alasan-lembur') ? tr.querySelector('.penc-alasan-lembur').value : '';
+            const rowTotal = tr.querySelector('.penc-total-cell').innerText;
+            
+            if (mode === 'cuti') {
+                html += `<tr><td style="text-align:center;">${i+1}</td><td>${name}</td><td style="text-align:right;">${gph}</td><td style="text-align:center;">${al || 0}</td><td style="text-align:center;">${dp || 0}</td><td style="text-align:center;">${ph || 0}</td><td style="text-align:right; font-weight:bold;">${rowTotal}</td></tr>`;
+            } else {
+                html += `<tr><td style="text-align:center;">${i+1}</td><td>${name}</td><td style="text-align:right;">${gph}</td><td style="text-align:center;">${lh || 0}</td><td style="text-align:center;">${lj || 0}</td><td style="text-align:center;">${tglLembur}</td><td style="text-align:left;">${alasanLembur}</td><td style="text-align:right; font-weight:bold;">${rowTotal}</td></tr>`;
+            }
+        });
+
+        html += `<tr><td colspan="${mode === 'cuti' ? 6 : 7}" style="text-align:right;font-weight:bold;">TOTAL KESELURUHAN</td><td style="text-align:right;font-weight:bold; color:#c2410c;">${total}</td></tr>`;
+        html += `</tbody></table></body></html>`;
+
+        const win = window.open('', '', 'height=600,width=800');
+        win.document.write(html);
+        win.document.close();
+        win.focus();
+        setTimeout(() => { win.print(); win.close(); }, 500);
+    };
 })();
 
 // [OPTIMASI] Jalankan Kamera & GPS segera setelah halaman siap (tanpa menunggu DB)

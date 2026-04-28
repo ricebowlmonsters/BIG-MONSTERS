@@ -270,7 +270,15 @@
               const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : (d._outlet ? (names[d._outlet] || d._outlet.toUpperCase()) : 'Semua Outlet');
               const submittedBy = d.requester ? d.requester : (d.userName ? `${d.userName} (${d.userRole})` : 'Anonim');
               const isBonus = (d.note || '').toLowerCase().includes('bonus');
-              const title = isTf ? `TF: ${d.suplier || 'Suplier'} - ${d.keterangan || ''}` : (isGaji ? (isBonus ? `Pengajuan Bonus (${d.periodStart || ''} s/d ${d.periodEnd || ''})` : `Pengajuan Gaji (${d.periodStart || ''} s/d ${d.periodEnd || ''})`) : `Petty Cash`);
+              const isCuti = (d.note || '').toLowerCase().includes('cuti');
+              const isLembur = (d.note || '').toLowerCase().includes('lembur');
+              
+              let gajiTitle = `Pengajuan Gaji (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
+              if (isBonus) gajiTitle = `Pengajuan Bonus (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
+              if (isCuti) gajiTitle = `Pencairan Cuti (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
+              if (isLembur) gajiTitle = `Pencairan Lembur (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
+              
+              const title = isTf ? `TF: ${d.suplier || 'Suplier'} - ${d.keterangan || ''}` : (isGaji ? gajiTitle : `Petty Cash`);
               const total = isTf ? (d.total || d.nominal || 0) : (isGaji ? (d.totalGrand || 0) : (d.nominal || 0));
               const dateObj = d.createdAt ? new Date(d.createdAt) : null;
               const timeStr = dateObj ? dateObj.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}) : '';
@@ -390,7 +398,15 @@
               const isTf = sub.type === 'tf';
               const isGaji = sub.type === 'gaji';
               const isBonus = (d.note || '').toLowerCase().includes('bonus');
-              const title = isTf ? `TF: ${d.suplier || 'Suplier'}` : (isGaji ? (isBonus ? `Pengajuan Bonus` : `Pengajuan Gaji`) : `Petty Cash`);
+              const isCuti = (d.note || '').toLowerCase().includes('cuti');
+              const isLembur = (d.note || '').toLowerCase().includes('lembur');
+              
+              let gajiTitle = `Pengajuan Gaji`;
+              if (isBonus) gajiTitle = `Pengajuan Bonus`;
+              if (isCuti) gajiTitle = `Pencairan Cuti`;
+              if (isLembur) gajiTitle = `Pencairan Lembur`;
+              
+              const title = isTf ? `TF: ${d.suplier || 'Suplier'}` : (isGaji ? gajiTitle : `Petty Cash`);
               const total = isTf ? (d.total || d.nominal || 0) : (isGaji ? (d.totalGrand || 0) : (d.nominal || 0));
               const dateObj = d.createdAt ? new Date(d.createdAt) : null;
               const timeStr = dateObj ? dateObj.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}) : '';
@@ -509,7 +525,15 @@ function openOwnerPengajuanModal(id) {
   const timeStr = dateObj ? dateObj.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}) : '';
   const dateStr = dateObj ? dateObj.toLocaleDateString('id-ID') + ' ' + timeStr : (d.tanggal || d.tanggalPengajuan || d.periodStart || '-');
   const isBonusData = (d.note || '').toLowerCase().includes('bonus');
-  title.innerHTML = (isTf ? 'Rincian Pengajuan Transfer' : (isGaji ? (isBonusData ? 'Rincian Pengajuan Bonus' : 'Rincian Pengajuan Gaji') : 'Rincian Pengajuan Petty Cash')) + 
+  const isCutiData = (d.note || '').toLowerCase().includes('cuti');
+  const isLemburData = (d.note || '').toLowerCase().includes('lembur');
+  
+  let gajiTitleModal = 'Rincian Pengajuan Gaji';
+  if (isBonusData) gajiTitleModal = 'Rincian Pengajuan Bonus';
+  if (isCutiData) gajiTitleModal = 'Rincian Pencairan Cuti';
+  if (isLemburData) gajiTitleModal = 'Rincian Pencairan Lembur';
+
+  title.innerHTML = (isTf ? 'Rincian Pengajuan Transfer' : (isGaji ? gajiTitleModal : 'Rincian Pengajuan Petty Cash')) + 
     `<div style="font-size:13px; color:#6b7280; font-weight:normal; margin-top:4px;">📍 Outlet: <strong>${outletName}</strong> | 👤 <strong>${submittedBy}</strong></div>`;
   
   let html = '<table style="width:100%; border-collapse:collapse; margin-bottom:15px; font-size:13px;">';
@@ -527,9 +551,13 @@ function openOwnerPengajuanModal(id) {
       </table>
       `;
   } else if (isGaji) {
+      let trTotalTeks = 'Total Gaji';
+      if (isBonusData) trTotalTeks = 'Total Bonus';
+      if (isCutiData) trTotalTeks = 'Total Cuti';
+      if (isLemburData) trTotalTeks = 'Total Lembur';
       html += `
         <tr><td style="padding:8px; border-bottom:1px solid #eee; width:120px;"><strong>Periode</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.periodStart || '-'} s/d ${d.periodEnd || '-'}</td></tr>
-        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Total ${isBonusData ? 'Bonus' : 'Gaji'}</strong></td><td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; color:#1e40af;">Rp ${parseInt(d.totalGrand||0).toLocaleString('id-ID')}</td></tr>
+        <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>${trTotalTeks}</strong></td><td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; color:#1e40af;">Rp ${parseInt(d.totalGrand||0).toLocaleString('id-ID')}</td></tr>
         <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Catatan</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.note || '-'}</td></tr>
         <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Bank Tujuan</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.bank || '-'}</td></tr>
         <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>No. Rekening</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.rekening || '-'}</td></tr>
@@ -661,8 +689,22 @@ function openOwnerPengajuanModal(id) {
   
   if (isGaji) {
       btnLaporan.style.display = 'inline-block';
-      btnLaporan.textContent = isBonusData ? '📊 Laporan Lengkap (Bonus)' : '📊 Laporan Lengkap (Gaji)';
-      btnLaporan.onclick = () => isBonusData ? viewBonusDetail(sub.id) : viewPengajuanDetail(sub.id);
+      let textLaporan = '📊 Laporan Lengkap (Gaji)';
+      let onClickLaporan = () => viewPengajuanDetail(sub.id);
+      
+      if (isBonusData) {
+          textLaporan = '📊 Laporan Lengkap (Bonus)';
+          onClickLaporan = () => viewBonusDetail(sub.id);
+      } else if (isCutiData) {
+          textLaporan = '📊 Laporan Lengkap (Cuti)';
+          onClickLaporan = () => viewCutiLemburDetail(sub.id, 'cuti');
+      } else if (isLemburData) {
+          textLaporan = '📊 Laporan Lengkap (Lembur)';
+          onClickLaporan = () => viewCutiLemburDetail(sub.id, 'lembur');
+      }
+
+      btnLaporan.textContent = textLaporan;
+      btnLaporan.onclick = onClickLaporan;
   } else {
       btnLaporan.style.display = 'none';
   }
@@ -918,48 +960,73 @@ window.viewPengajuanDetail = function(id) {
         // --- 4. REKAP GAJI ---
         var totalGrand = 0;
         var rowsGaji = '';
-        employees.forEach((emp, idx) => {
+        (d.items || []).forEach((emp, idx) => {
             // empKeyAbsensi: key historis untuk lookup `RBM_ABSENSI_DATA` (tanpa prefix).
-            const empKeyAbsensi = emp && emp.id != null ? emp.id : idx;
+            const snapEmp = (employees || []).find(e => e.name === emp.nama);
+            const empKeyAbsensi = snapEmp ? (snapEmp.id != null ? snapEmp.id : (employees || []).indexOf(snapEmp)) : emp.empId;
+
             // empKeyGaji: key rekap yang disimpan ke `RBM_GAJI_...` (pakai prefix id_/name_/idx_).
             const empKeyGaji = (emp && emp.id != null && emp.id !== '') ? ('id_' + String(emp.id))
                 : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(idx)));
 
-            let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
-            dates.forEach(d => {
-                const key = `${d.toISOString().split('T')[0]}_${empKeyAbsensi}`;
-                const status = absensiData[key] || '';
-                let countKey = status === 'O' ? 'OFF' : status;
-                if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
-            });
+            let counts = emp.counts || { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
+            if (!emp.counts) { // Fallback for old data
+                dates.forEach(d => {
+                    const key = `${d.toISOString().split('T')[0]}_${empKeyAbsensi}`;
+                    const status = absensiData[key] || '';
+                    let countKey = status === 'O' ? 'OFF' : status;
+                    if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
+                });
+            }
 
             const pData = gajiData[empKeyGaji] || gajiData[empKeyAbsensi] || gajiData[idx] || {};
-            const bank = emp.bank || '-';
-            const noRek = emp.noRek || '-';
-            const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
-            const hkAktual = counts.H;
-            const gajiPokok = parseInt(emp.gajiPokok) || 0;
-            const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+            const bank = (snapEmp ? snapEmp.bank : '') || '-';
+            const noRek = (snapEmp ? snapEmp.noRek : '') || '-';
+            const hkTarget = emp.hkTarget !== undefined ? emp.hkTarget : (pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26);
+            const hkAktual = emp.hkAktual !== undefined ? emp.hkAktual : counts.H;
+            const gajiPokok = emp.gajiPokok !== undefined ? emp.gajiPokok : (snapEmp ? parseInt(snapEmp.gajiPokok) || 0 : 0);
+            const potHari = emp.potHari !== undefined ? emp.potHari : (pData.potHari !== undefined ? parseFloat(pData.potHari) : 0);
             const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
-            const totalMenitTelatGps = getLatenessForEmp(empKeyAbsensi, emp.name);
-            const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-            let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : (pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : calcGpsJam);
-            const hutang = parseInt(pData.hutang) || 0;
-            let defaultTunjangan = 0;
-            if (emp.jabatan === 'Manager Regional') defaultTunjangan = 500000;
-            else if (emp.jabatan === 'Manager Outlet') defaultTunjangan = 350000;
-            else if (emp.jabatan === 'Supervisor') defaultTunjangan = 250000;
-            const tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : defaultTunjangan;
-            const metodeBayar = pData.metodeBayar || 'TF';
-            const gajiPerHari = Math.round(gajiPokok / 30);
-            const potTerlambatPerJam = Math.round(gajiPokok / 240);
-            const uangMakan = hkAktual * 10000;
-            const totalPotKehadiran = Math.round(potHari * gajiPerHari);
-            const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
-            const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
+            
+            let jamTerlambat, totalPotTerlambat, grandTotal;
+            let gajiPerHari, potTerlambatPerJam, uangMakan, totalPotKehadiran, hutang, tunjangan;
+
+            if (emp.jamTerlambat !== undefined) {
+                // New payload format: Use pre-calculated values
+                jamTerlambat = emp.jamTerlambat;
+                totalPotTerlambat = emp.potonganTerlambat;
+                grandTotal = emp.grandTotal;
+                gajiPerHari = emp.gajiPerHari;
+                potTerlambatPerJam = emp.potTerlambatPerJam;
+                uangMakan = emp.uangMakan;
+                totalPotKehadiran = emp.potonganKehadiran;
+                hutang = emp.hutang;
+                tunjangan = emp.tunjangan;
+            } else {
+                // Old payload format: Recalculate (fallback)
+                const totalMenitTelatGps = getLatenessForEmp(empKeyAbsensi, emp.nama);
+                const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+                jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : (pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : calcGpsJam);
+                
+                let defaultTunjangan = 0;
+                if (snapEmp && snapEmp.jabatan === 'Manager Regional') defaultTunjangan = 500000;
+                else if (snapEmp && snapEmp.jabatan === 'Manager Outlet') defaultTunjangan = 350000;
+                else if (snapEmp && snapEmp.jabatan === 'Supervisor') defaultTunjangan = 250000;
+                tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : defaultTunjangan;
+                
+                gajiPerHari = Math.round(gajiPokok / 30);
+                potTerlambatPerJam = Math.round(gajiPokok / 240);
+                uangMakan = hkAktual * 10000;
+                totalPotKehadiran = Math.round(potHari * gajiPerHari);
+                totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
+                hutang = parseInt(pData.hutang) || 0;
+                grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
+            }
+
             totalGrand += grandTotal;
+            const metodeBayar = emp.metodeBayar || pData.metodeBayar || 'TF';
             rowsGaji += `<tr>
-                <td>${idx+1}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td>
+                <td>${idx+1}</td><td class="text-left">${emp.nama}</td><td class="text-left">${emp.jabatan}</td>
                 <td>${bank}</td><td>${noRek}</td><td>${hkTarget}</td><td>${hkAktual}</td>
                 <td>${counts.A || '-'}</td><td>${counts.I || '-'}</td><td>${counts.S || '-'}</td><td>${counts.OFF || '-'}</td><td>${counts.DP || '-'}</td><td>${counts.PH || '-'}</td><td>${counts.AL || '-'}</td><td>${dates.length}</td>
                 <td class="text-right">${formatMoney(gajiPokok)}</td><td class="text-right">${formatMoney(gajiPerHari)}</td>
@@ -1407,6 +1474,210 @@ window.viewBonusDetail = function(id) {
     viewWindow.focus();
 };
 
+window.viewCutiLemburDetail = function(id, mode) {
+    const sub = window._pengajuanDataMap[id];
+    if (!sub) return alert('Data tidak ditemukan.');
+    const d = sub.data;
+
+    const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+    const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : (d._outlet ? (names[d._outlet] || d._outlet.toUpperCase()) : 'Semua Outlet');
+    const makerName = d.requester || d.userName || '-';
+    const makerRole = d.userRole ? d.userRole.charAt(0).toUpperCase() + d.userRole.slice(1) : 'Manager';
+    const optionsDate = { day: 'numeric', month: 'long', year: 'numeric' };
+    const dateObj = d.createdAt ? new Date(d.createdAt) : new Date();
+    const signDateStr = `Sidoarjo, ${dateObj.toLocaleDateString('id-ID', optionsDate)}`;
+
+    const formatMoney = (n) => {
+        if (isNaN(n) || n === null) return 'Rp 0';
+        return 'Rp ' + parseInt(n).toLocaleString('id-ID');
+    };
+
+    var styleBlock = '<style>body{font-family:sans-serif;font-size:12px;padding:20px;background:#f3f4f6;} .page{background:white;padding:20px;margin-bottom:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);overflow-x:auto;} h2,h3{text-align:center;margin:5px 0;color:#1e40af;} table{width:100%;border-collapse:collapse;margin-top:15px;white-space:nowrap;} th,td{border:1px solid #cbd5e1;padding:8px;text-align:center;} th{background-color:#1e40af;color:#fff;} .text-left{text-align:left;} .text-right{text-align:right;} tr:nth-child(even){background-color:#f8fafc;} tr:hover{background-color:#e2e8f0;} @media print { @page { size: landscape; margin: 10mm; } body { padding:0; background:white; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .page { box-shadow:none; margin:0; padding:0; overflow:visible; width:100%; max-width:100%; display:block; } table { width:100%; max-width:100%; } button { display:none !important; } }</style>';
+
+    const modeTitle = mode === 'cuti' ? 'Pencairan Cuti' : 'Pencairan Lembur';
+
+    var headerHtml = '<div style="text-align: center; margin-bottom: 25px; font-family: &quot;Times New Roman&quot;, Times, serif; border-bottom: 3px double #1e293b; padding-bottom: 15px;">' +
+        '<h1 style="margin: 0; font-size: 22px; text-transform: uppercase; color:#1e293b;">LAPORAN ' + modeTitle.toUpperCase() + '</h1>' +
+        '<h2 style="margin: 5px 0 0; font-size: 16px; color:#475569;">CABANG ' + outletName.toUpperCase() + '</h2>';
+        
+    if (d.bank || d.rekening) {
+        headerHtml += '<div style="display:inline-block; margin-top:10px; padding:6px 15px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:sans-serif; font-size:13px; color:#1e40af;">' +
+            '<strong>Rekening Pencairan:</strong> ' + (d.bank || '-') + ' - ' + (d.rekening || '-') + ' (a.n ' + (d.atasnama || '-') + ')' +
+            '</div>';
+    }
+    headerHtml += '</div>';
+
+    var isApproved = d.statusOwner === 'approved';
+    var approverHtml = isApproved 
+        ? '<div style="color:#059669; font-weight:bold; font-size:11px; margin: 10px auto 10px; border: 2px solid #059669; padding: 4px; border-radius: 4px; display: inline-block; transform: rotate(-5deg);">DISETUJUI DIGITAL</div>' 
+        : '<br><br><br>';
+    var approverName = isApproved ? (d.approvedOwnerBy || 'Puji Shohibul Burhan') : 'Puji Shohibul Burhan';
+    approverName = approverName.replace(' (Auto-ACC)', '').replace('(Auto-ACC)', '');
+    var approverRole = 'Manager Regional';
+
+    var htmlTandaTangan = `
+        <div style="margin-top: 50px; display: flex; justify-content: space-between; font-family: Arial, sans-serif; font-size: 14px; page-break-inside: avoid; padding: 0 50px;">
+            <div style="text-align: center; width: 250px;">
+                <p style="margin-bottom: 50px; color:#333;">${signDateStr}</p>
+                <p style="margin-bottom: 5px; color:#333;">Dibuat / Penanggung Jawab:</p>
+                <br><br><br>
+                <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px; color:#000;">${makerName}</p>
+                <p style="margin: 0; color:#333;">${makerRole}</p>
+            </div>
+            <div style="text-align: center; width: 250px;">
+                <p style="margin-bottom: 50px;">&nbsp;</p>
+                <p style="margin-bottom: 5px; color:#333;">Disetujui / Mengetahui:</p>
+                ${approverHtml}
+                <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px; color:#000;">${approverName}</p>
+                <p style="margin: 0; color:#333;">${approverRole}</p>
+            </div>
+        </div>
+    `;
+
+    let noteHtml = `<div style="margin-bottom: 20px; font-size: 14px; line-height: 1.6; background: #eef2ff; padding: 15px; border-left: 4px solid #4f46e5; border-radius: 4px;">${d.note || '-'}</div>`;
+
+    let rowsData = '';
+    let totalNominal = 0;
+    if (d.items && d.items.length > 0) {
+        d.items.forEach((emp, idx) => {
+            totalNominal += parseInt(emp.grandTotal) || 0;
+            
+            if (mode === 'cuti') {
+                rowsData += `<tr>
+                    <td>${idx + 1}</td>
+                    <td class="text-left">${emp.nama || '-'}</td>
+                    <td class="text-left">${emp.jabatan || '-'}</td>
+                    <td>${emp.cairAL || 0}</td>
+                    <td>${emp.cairDP || 0}</td>
+                    <td>${emp.cairPH || 0}</td>
+                    <td>${emp.metodeBayar || 'TF'}</td>
+                    <td class="text-right" style="font-weight:bold; color:#059669;">${formatMoney(emp.grandTotal)}</td>
+                </tr>`;
+            } else {
+                rowsData += `<tr>
+                    <td>${idx + 1}</td>
+                    <td class="text-left">${emp.nama || '-'}</td>
+                    <td class="text-left">${emp.jabatan || '-'}</td>
+                    <td>${emp.lemburHari || 0}</td>
+                    <td>${emp.lemburJam || 0}</td>
+                    <td>${emp.tglLembur || '-'}</td>
+                    <td class="text-left">${emp.alasanLembur || '-'}</td>
+                    <td>${emp.metodeBayar || 'TF'}</td>
+                    <td class="text-right" style="font-weight:bold; color:#059669;">${formatMoney(emp.grandTotal)}</td>
+                </tr>`;
+            }
+        });
+    } else {
+        rowsData = `<tr><td colspan="${mode === 'cuti' ? 8 : 9}">Tidak ada data karyawan</td></tr>`;
+    }
+
+    let tableHeaders = '';
+    if (mode === 'cuti') {
+        tableHeaders = `
+            <tr>
+                <th rowspan="2">No</th>
+                <th rowspan="2">Nama Karyawan</th>
+                <th rowspan="2">Jabatan</th>
+                <th colspan="3">Pencairan Cuti (Hari)</th>
+                <th rowspan="2">Metode Bayar</th>
+                <th rowspan="2">Total Nominal</th>
+            </tr>
+            <tr>
+                <th>AL</th>
+                <th>DP</th>
+                <th>PH</th>
+            </tr>
+        `;
+    } else {
+        tableHeaders = `
+            <tr>
+                <th rowspan="2">No</th>
+                <th rowspan="2">Nama Karyawan</th>
+                <th rowspan="2">Jabatan</th>
+                <th colspan="2">Lembur</th>
+                <th rowspan="2">Tanggal Lembur</th>
+                <th rowspan="2">Alasan Lembur</th>
+                <th rowspan="2">Metode Bayar</th>
+                <th rowspan="2">Total Nominal</th>
+            </tr>
+            <tr>
+                <th>Hari</th>
+                <th>Jam</th>
+            </tr>
+        `;
+    }
+
+    var htmlTable = `<table>
+        <thead>${tableHeaders}</thead>
+        <tbody>${rowsData}</tbody>
+        <tfoot>
+            <tr>
+                <td colspan="${mode === 'cuti' ? 7 : 8}" class="text-right" style="font-weight:bold; padding: 10px;">TOTAL PENGAJUAN ${modeTitle.toUpperCase()}</td>
+                <td class="text-right" style="font-weight:bold; color:#1e40af; font-size: 14px;">${formatMoney(totalNominal)}</td>
+            </tr>
+        </tfoot>
+    </table>`;
+
+        var scriptBlockExt = '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></scr' + 'ipt>' +
+            '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></scr' + 'ipt>' +
+            '<script>' +
+            'async function saveToJpg() {' +
+            '  var btnDiv = document.getElementById("action-buttons");' +
+            '  var origDisplay = btnDiv ? btnDiv.style.display : "";' +
+            '  if(btnDiv) btnDiv.style.display = "none";' +
+            '  window.scrollTo(0, 0);' +
+            '  var ths = document.querySelectorAll("th");' +
+            '  for(var k=0; k<ths.length; k++) { ths[k].style.position = "static"; }' +
+            '  var pages = document.querySelectorAll(".page");' +
+            '  try {' +
+            '    if (pages.length > 1) {' +
+            '      var zip = new JSZip();' +
+            '      for (var i = 0; i < pages.length; i++) {' +
+            '        var canvas = await html2canvas(pages[i], { scale: 1.5, backgroundColor: "#ffffff" });' +
+            '        var imgData = canvas.toDataURL("image/jpeg", 0.9).split(",")[1];' +
+            '        zip.file("Laporan_Halaman_" + (i+1) + ".jpg", imgData, {base64: true});' +
+            '      }' +
+            '      var content = await zip.generateAsync({type:"blob"});' +
+            '      var a = document.createElement("a");' +
+            '      a.href = URL.createObjectURL(content);' +
+            '      a.download = "Laporan_Pengajuan_' + modeTitle + '.zip";' +
+            '      document.body.appendChild(a);' +
+            '      a.click();' +
+            '      document.body.removeChild(a);' +
+            '    } else {' +
+            '      var target = pages.length ? pages[0] : document.body;' +
+            '      var canvas = await html2canvas(target, { scale: 1.5, backgroundColor: "#ffffff" });' +
+            '      var a = document.createElement("a");' +
+            '      a.href = canvas.toDataURL("image/jpeg", 0.9);' +
+            '      a.download = "Laporan_Pengajuan_' + modeTitle + '.jpg";' +
+            '      document.body.appendChild(a);' +
+            '      a.click();' +
+            '      document.body.removeChild(a);' +
+            '    }' +
+            '  } catch(err) {' +
+            '    alert("Gagal menyimpan JPG: " + err);' +
+            '  } finally {' +
+            '    if(btnDiv) btnDiv.style.display = origDisplay;' +
+            '    for(var m=0; m<ths.length; m++) { ths[m].style.position = ""; }' +
+            '  }' +
+            '}' +
+            '</scr' + 'ipt>';
+
+        var finalHtml = '<html><head><title>Laporan Pengajuan ' + modeTitle + '</title>' + styleBlock + scriptBlockExt + '</head><body>' +
+            '<div class="page">' + headerHtml + noteHtml + htmlTable + htmlTandaTangan + '</div>' +
+            '<div id="action-buttons" style="text-align:center; margin:30px 0;">' +
+            '<button onclick="window.print()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#10b981; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Print / PDF</button>' +
+            '<button onclick="saveToJpg()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#0dcaf0; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Save JPG</button>' +
+            '<button onclick="window.close()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#1e40af; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1);">Tutup Halaman</button>' +
+            '</div>' +
+            '</body></html>';
+
+    var viewWindow = window.open('', '_blank');
+    viewWindow.document.write(finalHtml);
+    viewWindow.document.close();
+    viewWindow.focus();
+};
+
 window.printSlipSatuanOwner = function(subId, empIdx) {
     const sub = window._pengajuanDataMap[subId];
     if (!sub) return alert('Data tidak ditemukan.');
@@ -1415,12 +1686,19 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
     if (!emp) return alert('Karyawan tidak ditemukan.');
 
     const isBonus = (d.note || '').toLowerCase().includes('bonus');
+    const isCuti = (d.note || '').toLowerCase().includes('cuti');
+    const isLembur = (d.note || '').toLowerCase().includes('lembur');
+    
     const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
     const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : (d._outlet ? (names[d._outlet] || d._outlet.toUpperCase()) : 'Semua Outlet');
     
     const formatMoney = (n) => 'Rp ' + parseInt(n||0).toLocaleString('id-ID');
     
-    const periodText = isBonus ? 'BONUS' : 'GAJI';
+    let periodText = 'GAJI';
+    if (isBonus) periodText = 'BONUS';
+    if (isCuti) periodText = 'PENCAIRAN CUTI';
+    if (isLembur) periodText = 'PENCAIRAN LEMBUR';
+    
     const periodStart = d.periodStart || '-';
     const periodEnd = d.periodEnd || '-';
     const dateObj = d.createdAt ? new Date(d.createdAt) : new Date();
@@ -1486,7 +1764,19 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
         let gajiPokok = 0; let potHari = 0; let jamTerlambat = 0; let hutang = 0; let tunjangan = 0;
         let totalPotKehadiran = 0; let totalPotTerlambat = 0; let uangMakan = 0; let totalPendapatan = 0;
 
-        if (snap.employees && snap.gajiData && snap.absensiData) {
+        // [MODIFIED] Use pre-calculated values from `emp` if available
+        if (emp.jamTerlambat !== undefined) {
+            gajiPokok = emp.gajiPokok;
+            potHari = emp.potHari;
+            jamTerlambat = emp.jamTerlambat;
+            hutang = emp.hutang;
+            tunjangan = emp.tunjangan;
+            totalPotKehadiran = emp.potonganKehadiran;
+            totalPotTerlambat = emp.potonganTerlambat;
+            uangMakan = emp.uangMakan;
+            totalPendapatan = gajiPokok + tunjangan + uangMakan;
+        } else if (snap.employees && snap.gajiData && snap.absensiData) {
+            // Fallback to old calculation
             let snapEmp = snap.employees.find(e => e.name === emp.nama || e.id == emp.empId);
             // empKeyAbsensi: key historis untuk lookup RBM_ABSENSI_DATA (tanpa prefix).
             let empKeyAbsensi = snapEmp ? (snapEmp.id != null ? snapEmp.id : snap.employees.indexOf(snapEmp)) : emp.empId;
@@ -1501,19 +1791,19 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 gajiPokok = parseInt(snapEmp.gajiPokok) || 0;
                 const pData = (empKeyGaji && snap.gajiData && snap.gajiData[empKeyGaji]) ? snap.gajiData[empKeyGaji]
                     : (snap.gajiData && (snap.gajiData[empKeyAbsensi] || snap.gajiData[snap.employees.indexOf(snapEmp)])) || {};
-                potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+                potHari = emp.potHari !== undefined ? emp.potHari : (pData.potHari !== undefined ? parseFloat(pData.potHari) : 0);
                 
                 const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
                 const totalMenitTelatGps = getLatenessForEmp(empKeyAbsensi, snapEmp.name);
                 const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
                 jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : (pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : calcGpsJam);
-                hutang = parseInt(pData.hutang) || 0;
+                hutang = emp.hutang !== undefined ? emp.hutang : (parseInt(pData.hutang) || 0);
                 
                 let defaultTunjangan = 0;
                 if (snapEmp.jabatan === 'Manager Regional') defaultTunjangan = 500000;
                 else if (snapEmp.jabatan === 'Manager Outlet') defaultTunjangan = 350000;
                 else if (snapEmp.jabatan === 'Supervisor') defaultTunjangan = 250000;
-                tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : defaultTunjangan;
+                tunjangan = emp.tunjangan !== undefined ? emp.tunjangan : (pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : defaultTunjangan);
 
                 let hkAktual = 0;
                 let curr = new Date(d.periodStart);
@@ -1547,12 +1837,52 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 <tr style="background: #f0f0f0; border-top: 2px solid black; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Grand Total Gaji</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #059669;">${formatMoney(emp.grandTotal)}</td><td></td></tr>
             </table>`;
     } else {
+        let cairAL = emp.cairAL !== undefined ? emp.cairAL : 0;
+        let cairDP = emp.cairDP !== undefined ? emp.cairDP : 0;
+        let cairPH = emp.cairPH !== undefined ? emp.cairPH : 0;
+        let lemburHari = emp.lemburHari !== undefined ? emp.lemburHari : 0;
+        let lemburJam = emp.lemburJam !== undefined ? emp.lemburJam : 0;
+        let tglLembur = emp.tglLembur || '-';
+        let alasanLembur = emp.alasanLembur || '-';
+
+        if (emp.cairAL === undefined && emp.keterangan) {
+            let text = emp.keterangan;
+            let mAL = text.match(/([\d\.]+)\s*AL/i); if (mAL) cairAL = parseFloat(mAL[1]);
+            let mDP = text.match(/([\d\.]+)\s*DP/i); if (mDP) cairDP = parseFloat(mDP[1]);
+            let mPH = text.match(/([\d\.]+)\s*PH/i); if (mPH) cairPH = parseFloat(mPH[1]);
+            let mLH = text.match(/([\d\.]+)\s*hr Lembur/i); if (mLH) lemburHari = parseFloat(mLH[1]);
+            let mLJ = text.match(/([\d\.]+)\s*jam Lembur/i); if (mLJ) lemburJam = parseFloat(mLJ[1]);
+            let mTgl = text.match(/Tgl:\s*([^,]+)/i); if (mTgl) tglLembur = mTgl[1].trim();
+            let mAlasan = text.match(/Alasan:\s*([^,]+)/i); if (mAlasan) alasanLembur = mAlasan[1].trim();
+        }
+
+        if (isCuti) {
+             detailsHtml = `<table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+                <tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Rincian Pencairan Cuti:</td></tr>
+                <tr><td style="padding-left: 15px;">Cuti Tahunan (AL)</td><td>:</td><td style="text-align: right;">${cairAL} Hari</td><td></td></tr>
+                <tr><td style="padding-left: 15px;">Day Off (DP)</td><td>:</td><td style="text-align: right;">${cairDP} Hari</td><td></td></tr>
+                <tr><td style="padding-left: 15px;">Public Holiday (PH)</td><td>:</td><td style="text-align: right;">${cairPH} Hari</td><td></td></tr>
+                <tr><td colspan="4" style="height: 20px;"></td></tr>
+                <tr style="background: #f0f0f0; border-top: 2px solid black; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Total Pencairan</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #059669;">${formatMoney(emp.grandTotal)}</td><td></td></tr>
+            </table>`;
+        } else if (isLembur) {
+             detailsHtml = `<table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+                <tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Rincian Pencairan Lembur:</td></tr>
+                <tr><td style="padding-left: 15px;">Lembur (Hari)</td><td>:</td><td style="text-align: right;">${lemburHari} Hari</td><td></td></tr>
+                <tr><td style="padding-left: 15px;">Lembur (Jam)</td><td>:</td><td style="text-align: right;">${lemburJam} Jam</td><td></td></tr>
+                <tr><td style="padding-left: 15px;">Tanggal Lembur</td><td>:</td><td style="text-align: right;">${tglLembur}</td><td></td></tr>
+                <tr><td style="padding-left: 15px;">Alasan Lembur</td><td>:</td><td style="text-align: right;">${alasanLembur}</td><td></td></tr>
+                <tr><td colspan="4" style="height: 20px;"></td></tr>
+                <tr style="background: #f0f0f0; border-top: 2px solid black; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Total Pencairan</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #059669;">${formatMoney(emp.grandTotal)}</td><td></td></tr>
+            </table>`;
+        } else {
         detailsHtml = `<table style="width: 100%; font-size: 14px; border-collapse: collapse;">
                 <tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Rincian Bonus:</td></tr>
                 <tr><td style="padding-left: 15px;">Keterangan</td><td>:</td><td style="text-align: right;">${emp.keterangan || 'Bonus'}</td><td></td></tr>
                 <tr><td colspan="4" style="height: 20px;"></td></tr>
                 <tr style="background: #f0f0f0; border-top: 2px solid black; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Total Bonus</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #059669;">${formatMoney(emp.grandTotal)}</td><td></td></tr>
             </table>`;
+        }
     }
 
     const htmlContent = `<html><head><title>Slip ${periodText}</title><style>body { font-family: 'Courier New', Courier, monospace; color: #000; padding: 20px; } .slip-container { max-width: 800px; margin: 0 auto; border: 1px solid #ccc; padding: 40px; } @media print { body { padding: 0; } .slip-container { border: none; padding: 0; } }</style></head><body>
@@ -1956,138 +2286,3 @@ window.confirm = function(msg) {
 </script>
 </body>
 </html>
-Pilih Outlet:
-
-Rice Bowl Monsters - Royal
-Absensi, Jadwal & Gaji
-Kelola jadwal, absensi, laporan, dan gaji karyawan
-
-Absensi
-Jadwal
-Laporan Absen
-Rekap Gaji
-Bonus
-Bonus (Burhan)
-Export:
-Excel
-PDF
-Tanggal Mulai
-
-26/03/2026
-Tanggal Selesai
-
-25/04/2026
-Periode ini dipakai untuk Absensi, Jadwal, Laporan Absen, Rekap Gaji & Bonus
-Simpan Perubahan
-Download Semua Slip (ZIP)
-Print Slip/Rekap PDF
-Save JPG
-Ajukan Laporan Lengkap (Owner)
-🔄 Riwayat (Refresh)
-Pengajuan Petty Cash (Ke Diri Sendiri)
-REKAP ABSENSI & RINCIAN GAJI
-Absensi Periode 26 Maret 2026 s/d 25 April 2026
-
-NO	NAMA	JABATAN	BANK	NO REK	HK
-TARGET	HK
-AKTUAL	ABSENSI	GAJI POKOK	GAJI/HARI	POTONGAN KEHADIRAN	KETERLAMBATAN	HUTANG	UANG MAKAN	TUNJANGAN	GRAND TOTAL	PEMBAYARAN	AKSI
-A	I	S	OFF	DP	PH	AL	JML	HARI	Rp	JAM	RATE/JAM	TOTAL
-1	Mita Cahya	Manager Outlet	
-MANDIRI 
-1420022626682
-26
-20	-	-	-	3	2	4	2	31	
-Rp 2.900.000
-Rp 96.667	
-0
-Rp 0	
-0
-Rp 12.083	Rp 0	
-Rp 0
-Rp 200.000	
-Rp 350.000
-Rp 3.450.000	
-TF
-Slip Email
-2	Avin Hiskia Vani	Crew	
-MANDIRI 
-1420023523003
-26
-25	-	-	-	4	-	2	-	31	
-Rp 2.400.000
-Rp 80.000	
-0
-Rp 0	
-5,9
-Rp 10.000	Rp 59.000	
-Rp 0
-Rp 250.000	
-Rp 0
-Rp 2.591.000	
-TF
-Slip Email
-3	Dhasa Ahmad Dhani	Crew	
-TF MITA 
-26
-25	-	-	-	4	-	-	2	31	
-Rp 2.400.000
-Rp 80.000	
-0
-Rp 0	
-1,4
-Rp 10.000	Rp 14.000	
-Rp 0
-Rp 250.000	
-Rp 0
-Rp 2.636.000	
-TF
-Slip Email
-4	Wahyu	Crew	
-TF MITA
-26
-14	-	-	-	2	-	-	-	31	
-Rp 2.000.000
-Rp 66.667	
-16
-Rp 1.066.672	
-0
-Rp 8.333	Rp 0	
-Rp 0
-Rp 140.000	
-Rp 0
-Rp 1.073.328	
-TF
-Slip Email
-TOTAL PENGELUARAN GAJI: Rp 9.750.328	
-Sidoarjo, 27 April 2026
-
-Di buat:
-
-
-
-
-Puji Shohibul Burhan (Developer)
-
-Owner
-
- 
-
-Di setujui:
-
-
-
-
-Puji Shohibul Burhan
-
-Manager Regional
-
- 
-
-Di setujui:
-
-
-
-
-Puji Shohibul Burhan
-
-Manager Regional

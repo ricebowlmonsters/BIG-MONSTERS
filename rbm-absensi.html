@@ -109,6 +109,7 @@
       <button id="tab-btn-jadwal" class="tab-btn" onclick="switchAbsensiTab('jadwal')">Jadwal</button>
       <button id="tab-btn-laporan" class="tab-btn" onclick="switchAbsensiTab('laporan')">Laporan Absen</button>
       <button id="tab-btn-gaji" class="tab-btn" onclick="switchAbsensiTab('gaji')">Rekap Gaji</button>
+      <button id="tab-btn-pencairan" class="tab-btn" onclick="switchAbsensiTab('pencairan')">Cuti & Lembur</button>
       <button id="tab-btn-bonus" class="tab-btn" onclick="switchAbsensiTab('bonus')">Bonus</button>
       <button id="tab-btn-bonus-dev" class="tab-btn" onclick="switchAbsensiTab('bonus-dev')" style="display:none; color: #8b5cf6; font-weight: bold;">Bonus (Burhan)</button>
       <div style="margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
@@ -387,6 +388,42 @@
                     <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px;">Puji Shohibul Burhan</p>
                     <p style="margin: 0;">Manager Regional</p>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PENCAIRAN CUTI & LEMBUR -->
+    <div id="tab-content-pencairan" style="display:none;">
+        <div class="filter-row" style="margin-bottom: 12px; gap: 10px; display: flex; flex-wrap: wrap;">
+          <button class="btn btn-primary" id="subtab-cuti" onclick="togglePencairanMode('cuti')" style="border-radius: 20px;">Pencairan Cuti</button>
+          <button class="btn btn-secondary" id="subtab-lembur" onclick="togglePencairanMode('lembur')" style="border-radius: 20px;">Pencairan Lembur</button>
+          <div style="flex-grow:1;"></div>
+          <button class="btn btn-primary" onclick="savePencairanData()" style="background-color: var(--primary); width: auto; margin: 0;">Simpan Perubahan</button>
+          <button class="btn btn-primary" onclick="submitPencairanPengajuan()" style="background-color: #8b5cf6; border: none; width: auto; margin: 0;">Ajukan Laporan (Owner)</button>
+          <button class="btn btn-primary" onclick="exportPencairanExcel()" style="background-color: #198754; border: none; width: auto; margin: 0;">Excel</button>
+          <button class="btn btn-primary" onclick="exportPencairanPDF()" style="background-color: #dc3545; border: none; width: auto; margin: 0;">PDF</button>
+        </div>
+
+        <div style="border: 1px solid #e2e8f0; border-radius: 8px; background: white; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow-x:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid #ea580c; padding-bottom: 10px; margin-bottom: 15px;">
+                <h3 style="margin:0; color: #ea580c; font-size: 16px;" id="pencairan_title">Pencairan Cuti</h3>
+            </div>
+            
+            <table class="data-table" id="pencairan_table" style="font-size: 12px; width: 100%;">
+                <thead id="pencairan_thead">
+                </thead>
+                <tbody id="pencairan_tbody">
+                </tbody>
+                <tfoot>
+                    <tr style="background: #fff7ed; font-weight: bold;">
+                        <td id="pencairan_grand_colspan" colspan="6" style="text-align: right; padding: 10px; border: 1px solid #e2e8f0; color: #9a3412;">TOTAL PENCAIRAN <span id="pencairan_lbl_total">CUTI</span>:</td>
+                        <td id="pencairan_grand_total" style="text-align: right; padding: 10px; color: #c2410c; font-size: 15px; border: 1px solid #e2e8f0;">Rp 0</td>
+                    </tr>
+                </tfoot>
+            </table>
+            <div style="margin-top: 10px; font-size: 11px; color: #64748b;">
+                * <b>Gaji/Hari</b> diambil otomatis dari (Gaji Pokok &divide; 30).<br>
+                * <b>Rate/Jam</b> diambil otomatis dari (Gaji Pokok &divide; 240).
             </div>
         </div>
     </div>
@@ -824,6 +861,8 @@ window.addEventListener('load', function() {
                     document.getElementById('tab-content-laporan').style.display = 'none';
                     document.getElementById('tab-content-gaji').style.display = 'none';
                     document.getElementById('tab-content-bonus').style.display = 'none';
+                    var pencTab = document.getElementById('tab-content-pencairan');
+                    if (pencTab) pencTab.style.display = 'none';
                     bonusDevTab.style.display = 'block';
                     
                     var bulanInput = document.getElementById('bonus_dev_bulan');
@@ -1026,9 +1065,11 @@ window.addEventListener('load', function() {
                 await firebase.database().ref('rbm_pro/gaji_pengajuan/semua/' + ym).push(payload);
 
                 alert('Pengajuan Bonus Global berhasil dikirim & di-ACC Otomatis (Cek di Riwayat Persetujuan).');
-                if (window.self !== window.top) {
-                    window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
-                }
+                try {
+                    if (window.location.protocol !== 'file:' && window.self !== window.top) {
+                        window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+                    }
+                } catch (e) {}
             } catch (e) {
                 alert('Gagal mengajukan: ' + (e.message || e));
             }
