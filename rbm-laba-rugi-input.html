@@ -37,10 +37,11 @@
         </div>
 
         <!-- [BARU] Tombol Pilihan Utama -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px;">
-            <button id="btn-show-stok" class="btn btn-primary" style="padding: 20px; font-size: 16px; background: #1e40af; border: none;">🛒 Input Pembelian Stok (HPP)</button>
-            <button id="btn-show-nonstok" class="btn btn-secondary" style="padding: 20px; font-size: 16px;">💸 Input Transaksi Lain (Non-Stok)</button>
-            <button id="btn-show-history" class="btn btn-secondary" style="padding: 20px; font-size: 16px;">🕒 Riwayat Transaksi</button>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+            <button id="btn-show-stok" class="btn btn-primary" style="padding: 20px; font-size: 16px; background: #1e40af; border: none;">🛒 Pembelian Stok (HPP)</button>
+            <button id="btn-show-nonstok" class="btn btn-secondary" style="padding: 20px; font-size: 16px;">💸 Transaksi (Non-Stok)</button>
+            <button id="btn-show-opname" class="btn btn-secondary" style="padding: 20px; font-size: 16px;">📦 Stok Opname</button>
+            <button id="btn-show-history" class="btn btn-secondary" style="padding: 20px; font-size: 16px;">🕒 Riwayat</button>
         </div>
 
         <!-- [BARU] Container untuk Form Stok -->
@@ -62,6 +63,17 @@
                     <!-- Form Non-Stok akan dirender oleh JS di sini -->
                 </div>
                 <button type="submit" class="btn btn-primary">Simpan Transaksi</button>
+            </form>
+        </div>
+
+        <!-- [BARU] Container untuk Form Opname -->
+        <div id="form-opname-container" class="form-container" style="display: none;">
+            <form id="form-transaksi-opname" onsubmit="event.preventDefault();">
+                <h3 style="margin-top:0; color:#1e40af;">Form Input Stok Opname</h3>
+                <div id="form-opname-fields">
+                    <!-- Form Opname akan dirender oleh JS di sini -->
+                </div>
+                <button type="submit" class="btn btn-primary" id="btn-save-opname">Simpan Stok Opname</button>
             </form>
         </div>
 

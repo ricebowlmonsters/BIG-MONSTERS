@@ -491,17 +491,21 @@ function initInputPage() {
     // Button listeners
     const btnShowStok = document.getElementById('btn-show-stok');
     const btnShowNonStok = document.getElementById('btn-show-nonstok');
+    const btnShowOpname = document.getElementById('btn-show-opname');
     const btnShowHistory = document.getElementById('btn-show-history');
     const formStokContainer = document.getElementById('form-stok-container');
     const formNonStokContainer = document.getElementById('form-nonstok-container');
+    const formOpnameContainer = document.getElementById('form-opname-container');
     const historyContainer = document.getElementById('history-container');
 
     function resetTabButtons() {
         if(btnShowStok) { btnShowStok.className = 'btn btn-secondary'; btnShowStok.style.background = ''; btnShowStok.style.color = ''; }
         if(btnShowNonStok) { btnShowNonStok.className = 'btn btn-secondary'; btnShowNonStok.style.background = ''; btnShowNonStok.style.color = ''; }
+        if(btnShowOpname) { btnShowOpname.className = 'btn btn-secondary'; btnShowOpname.style.background = ''; btnShowOpname.style.color = ''; }
         if(btnShowHistory) { btnShowHistory.className = 'btn btn-secondary'; btnShowHistory.style.background = ''; btnShowHistory.style.color = ''; }
         if(formStokContainer) formStokContainer.style.display = 'none';
         if(formNonStokContainer) formNonStokContainer.style.display = 'none';
+        if(formOpnameContainer) formOpnameContainer.style.display = 'none';
         if(historyContainer) historyContainer.style.display = 'none';
     }
 
@@ -524,6 +528,17 @@ function initInputPage() {
             btnShowNonStok.style.background = '#1e40af';
             btnShowNonStok.style.color = 'white';
             renderNonStokForm();
+        });
+    }
+
+    if (btnShowOpname) {
+        btnShowOpname.addEventListener('click', () => {
+            resetTabButtons();
+            formOpnameContainer.style.display = 'block';
+            btnShowOpname.className = 'btn btn-primary';
+            btnShowOpname.style.background = '#1e40af';
+            btnShowOpname.style.color = 'white';
+            renderOpnameForm();
         });
     }
 
@@ -553,6 +568,11 @@ function initInputPage() {
     const formNonStok = document.getElementById('form-transaksi-nonstok');
     if (formNonStok) {
         formNonStok.addEventListener('submit', (e) => handleTransactionSubmit(e, 'non-stok'));
+    }
+
+    const formOpname = document.getElementById('form-transaksi-opname');
+    if (formOpname) {
+        formOpname.addEventListener('submit', (e) => handleTransactionSubmit(e, 'opname'));
     }
 }
 
@@ -625,6 +645,7 @@ function renderStokForm() {
             <div class="form-section" style="margin-bottom: 0;">
                 <label for="stok-tx-description">Keterangan / Nama Supplier</label>
                 <input type="text" id="stok-tx-description" required placeholder="Contoh: Beli Daging di Pasar X" class="form-input">
+            <input type="text" id="stok-tx-description" placeholder="Contoh: Beli Daging di Pasar X (Opsional)" class="form-input">
             </div>
         </div>
     `;
@@ -662,6 +683,107 @@ function renderNonStokForm() {
     if (dateInput && !dateInput.value) {
         dateInput.value = new Date().toISOString().split('T')[0];
     }
+}
+
+window.renderOpnameForm = async function() {
+    const container = document.getElementById('form-opname-fields');
+    if (!container) return;
+
+    const today = new Date();
+    const defaultMonth = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
+
+    container.innerHTML = `
+        <div class="form-section">
+            <label for="opname-month">Pilih Bulan Opname</label>
+            <input type="month" id="opname-month" required class="form-input" value="${defaultMonth}" onchange="loadOpnameDataForInput()">
+        </div>
+        <div id="opname-table-container">
+            <p style="color:#6b7280; font-size:13px;">Memuat data opname...</p>
+        </div>
+    `;
+
+    loadOpnameDataForInput();
+};
+
+window.loadOpnameDataForInput = async function() {
+    const container = document.getElementById('opname-table-container');
+    const monthKey = document.getElementById('opname-month').value;
+    if (!monthKey || !container) return;
+
+    container.innerHTML = '<p style="color:#6b7280; font-size:13px;">Memuat data opname... ⏳</p>';
+
+    const outlet = getOutletLR();
+    let [y, m] = monthKey.split('-');
+    let prevM = parseInt(m) - 1;
+    let prevY = parseInt(y);
+    if (prevM === 0) { prevM = 12; prevY -= 1; }
+    const prevMonth = `${prevY}-${String(prevM).padStart(2, '0')}`;
+
+    const opnameSnap = await rbmDb.ref(`rbm_pro/laba_rugi_opname/${outlet}/${monthKey}`).once('value');
+    const opnameData = opnameSnap.val() || {};
+
+    const prevOpnameSnap = await rbmDb.ref(`rbm_pro/laba_rugi_opname/${outlet}/${prevMonth}`).once('value');
+    const prevOpnameData = prevOpnameSnap.val() || {};
+
+    let html = `
+        <div style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; background: white; margin-top: 15px;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                <thead style="background: #e2e8f0; border-bottom: 1px solid #cbd5e1;">
+                    <tr>
+                        <th style="padding: 8px; font-weight: 600; color: #1e40af;">Kategori</th>
+                        <th style="padding: 8px; font-weight: 600; color: #1e40af;">Barang Stok</th>
+                        <th style="padding: 8px; font-weight: 600; width: 70px; color: #1e40af; text-align: center;">Satuan</th>
+                        <th style="padding: 8px; font-weight: 600; width: 100px; color: #1e40af; text-align: center;">Stok Awal</th>
+                        <th style="padding: 8px; font-weight: 600; width: 100px; color: #1e40af; text-align: center;">Stok Akhir</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    let hasData = false;
+    Object.keys(keuanganMasterData.hpp).forEach(bahanId => {
+        hasData = true;
+        let hppItem = keuanganMasterData.hpp[bahanId];
+        
+        let awal = opnameData[bahanId]?.awal;
+        if (awal === undefined || awal === null) {
+            awal = prevOpnameData[bahanId]?.akhir || 0;
+        } else {
+            awal = parseFloat(awal) || 0;
+        }
+
+        let akhirStr = opnameData[bahanId]?.akhir;
+        let akhir = akhirStr !== undefined && akhirStr !== null ? parseFloat(akhirStr) : '';
+
+        let catName = hppItem.category_id && keuanganMasterData.hppCategories[hppItem.category_id] ? keuanganMasterData.hppCategories[hppItem.category_id].name : 'Lainnya';
+
+        html += `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 8px;">${catName}</td>
+                <td style="padding: 8px; font-weight: bold;">${hppItem.name}</td>
+                <td style="padding: 8px; text-align: center; color: #475569;">${hppItem.unit || '-'}</td>
+                <td style="padding: 4px; text-align: center;">
+                    <input type="number" step="any" class="opname-awal form-input" data-id="${bahanId}" value="${awal}" style="width: 100%; padding: 6px; text-align: center; font-size: 12px; border: 1px solid #cbd5e1;">
+                </td>
+                <td style="padding: 4px; text-align: center;">
+                    <input type="number" step="any" class="opname-akhir form-input" data-id="${bahanId}" value="${akhir}" style="width: 100%; padding: 6px; text-align: center; font-size: 12px; border: 1px solid #cbd5e1; background: #fffbeb;">
+                </td>
+            </tr>
+        `;
+    });
+
+    if (!hasData) {
+        html += '<tr><td colspan="5" class="table-empty" style="text-align: center; padding: 10px;">Belum ada master data barang HPP.</td></tr>';
+    }
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+        <p style="font-size: 12px; color: #64748b; margin-top: 8px;">* Stok Awal otomatis diisi dari Stok Akhir bulan lalu jika dibiarkan.</p>
+    `;
+
+    container.innerHTML = html;
 }
 
 window.addSettlementRow = function() {
@@ -742,6 +864,7 @@ window.renderNonStokSubFields = function() {
                 <div class="form-section" style="margin-bottom: 0;">
                     <label for="nonstok-tx-description-in">Keterangan / Catatan</label>
                     <input type="text" id="nonstok-tx-description-in" required placeholder="Contoh: Bunga bank BCA bulan ini" class="form-input">
+                <input type="text" id="nonstok-tx-description-in" placeholder="Contoh: Bunga bank BCA bulan ini (Opsional)" class="form-input">
                 </div>
             </div>
         `;
@@ -811,6 +934,7 @@ window.renderNonStokSubFields = function() {
                 <div class="form-section" style="margin-bottom: 0; margin-top: 15px;">
                     <label for="settle-tx-description">Keterangan / Catatan Global</label>
                     <input type="text" id="settle-tx-description" placeholder="Contoh: Pencairan ShopeeFood & QRIS 25 April" required class="form-input">
+                    <input type="text" id="settle-tx-description" placeholder="Contoh: Pencairan ShopeeFood & QRIS 25 April (Opsional)" class="form-input">
                 </div>
             </div>
         `;
@@ -896,6 +1020,7 @@ window.renderNonStokSubFields = function() {
                 <div class="form-section" style="margin-bottom: 0;">
                     <label for="nonstok-tx-description-pay">Keterangan / Nama Supplier</label>
                     <input type="text" id="nonstok-tx-description-pay" required placeholder="Contoh: Pelunasan nota daging tgl 12" class="form-input" style="border: 1px solid #fcd34d;">
+                    <input type="text" id="nonstok-tx-description-pay" placeholder="Contoh: Pelunasan nota daging tgl 12 (Opsional)" class="form-input" style="border: 1px solid #fcd34d;">
                 </div>
             </div>
         `;
@@ -1185,6 +1310,55 @@ window.updateExpGrandTotal = function() {
 function handleTransactionSubmit(e, formType) {
     e.preventDefault();
     
+    if (formType === 'opname') {
+        const monthKey = document.getElementById('opname-month').value;
+        if (!monthKey) {
+            alert('Bulan opname harus diisi!');
+            return;
+        }
+
+        const outlet = getOutletLR();
+        const updates = {};
+        
+        const awals = document.querySelectorAll('.opname-awal');
+        const akhirs = document.querySelectorAll('.opname-akhir');
+        
+        for (let i = 0; i < awals.length; i++) {
+            const bahanId = awals[i].getAttribute('data-id');
+            const awalVal = parseFloat(awals[i].value);
+            const akhirVal = parseFloat(akhirs[i].value);
+            
+            let dataToSave = null;
+            if (!isNaN(awalVal) || !isNaN(akhirVal)) {
+                dataToSave = {};
+                if (!isNaN(awalVal)) dataToSave.awal = awalVal;
+                if (!isNaN(akhirVal)) dataToSave.akhir = akhirVal;
+            }
+            updates[`rbm_pro/laba_rugi_opname/${outlet}/${monthKey}/${bahanId}`] = dataToSave;
+        }
+        
+        const btn = document.getElementById('btn-save-opname') || (e.submitter);
+        let origText = 'Simpan Stok Opname';
+        if (btn) {
+            origText = btn.textContent;
+            btn.textContent = 'Menyimpan... ⏳';
+            btn.disabled = true;
+        }
+
+        rbmDb.ref().update(updates).then(() => {
+            alert('Stok Opname berhasil disimpan!');
+            if (typeof window.loadOpnameDataForInput === 'function') window.loadOpnameDataForInput();
+        }).catch(err => {
+            alert('Gagal menyimpan Stok Opname: ' + err.message);
+        }).finally(() => {
+            if (btn) {
+                btn.textContent = origText;
+                btn.disabled = false;
+            }
+        });
+        return;
+    }
+
     let date, type, account, amount, description, name;
     let isHpp = false;
     let item_id = null;
@@ -2205,7 +2379,7 @@ async function generateReports() {
         let htmlStok = `
             <h4 style="margin: 20px 16px 10px; color: #1e40af; font-size: 15px;">📊 Laporan Stok Opname Bulanan</h4>
             <div style="padding: 0 16px 10px;">
-                <span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">Rumus: Pengeluaran = Stok Awal + Masuk (Beli) - Stok Akhir. Silakan isi Stok Akhir di akhir bulan.</span>
+                <span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">Rumus: Pengeluaran = Stok Awal + Masuk (Beli) - Stok Akhir.</span>
             </div>
             <div style="overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px; white-space: nowrap;">
@@ -2252,13 +2426,9 @@ async function generateReports() {
                     <td style="padding: 10px 16px;">${catName}</td>
                     <td style="padding: 10px 16px; font-weight: bold;">${hppItem.name}</td>
                     <td style="padding: 10px 16px; text-align: center; color: #475569;">${hppItem.unit || '-'}</td>
-                    <td style="padding: 6px 16px; text-align: center;">
-                        <input type="number" step="any" value="${awal}" onchange="updateOpnameLR('${bahanId}', 'awal', '${endMonth}', this)" style="width: 70px; padding: 4px; text-align: center; border: 1px solid #cbd5e1; border-radius: 4px;">
-                    </td>
+                    <td style="padding: 10px 16px; text-align: center; font-weight: bold;">${awal}</td>
                     <td style="padding: 10px 16px; text-align: right; color: #059669; font-weight: 500;" id="masuk_lr_${bahanId}">${masuk > 0 ? masuk : 0}</td>
-                    <td style="padding: 6px 16px; text-align: center;">
-                        <input type="number" step="any" value="${akhir}" onchange="updateOpnameLR('${bahanId}', 'akhir', '${endMonth}', this)" style="width: 70px; padding: 4px; text-align: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #fffbeb;">
-                    </td>
+                    <td style="padding: 10px 16px; text-align: center; font-weight: bold; color: #b45309;">${akhir !== '' ? akhir : '-'}</td>
                     <td style="padding: 10px 16px; text-align: right; font-weight: bold; color: #dc2626;" id="terpakai_lr_${bahanId}">${terpakai !== '' ? terpakai : '-'}</td>
                 </tr>
             `;
@@ -2348,37 +2518,6 @@ async function generateReports() {
         btnGenerate.disabled = false;
     }
 }
-
-// =================================================================
-// FUNGSI UPDATE STOK OPNAME
-// =================================================================
-window.updateOpnameLR = function(bahanId, field, monthKey, inputEl) {
-    const outlet = getOutletLR();
-    const valNum = parseFloat(inputEl.value);
-    
-    if (isNaN(valNum)) {
-        rbmDb.ref(`rbm_pro/laba_rugi_opname/${outlet}/${monthKey}/${bahanId}/${field}`).remove();
-    } else {
-        rbmDb.ref(`rbm_pro/laba_rugi_opname/${outlet}/${monthKey}/${bahanId}/${field}`).set(valNum);
-    }
-
-    const tr = inputEl.closest('tr');
-    if (tr) {
-        const inputs = tr.querySelectorAll('input[type="number"]');
-        const awal = parseFloat(inputs[0].value) || 0;
-        const masuk = parseFloat(tr.querySelector(`#masuk_lr_${bahanId}`).innerText) || 0;
-        const akhirStr = inputs[1].value;
-        const terpakaiCell = tr.querySelector(`#terpakai_lr_${bahanId}`);
-        
-        if (akhirStr !== '') {
-            const akhir = parseFloat(akhirStr) || 0;
-            const terpakai = Math.round((awal + masuk - akhir) * 100) / 100;
-            terpakaiCell.innerText = terpakai;
-        } else {
-            terpakaiCell.innerText = '-';
-        }
-    }
-};
 
 /**
  * CATATAN PENTING UNTUK PERFORMA (Firebase):
