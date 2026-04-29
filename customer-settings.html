@@ -374,7 +374,16 @@
                     <input type="text" id="outlet-atasnama" class="form-input" placeholder="Contoh: PT. RBM">
                 </div>
             </div>
-            
+            <div style="display: flex; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb;">
+                <div class="form-group" style="flex: 1;">
+                    <label style="font-size: 12px;" for="outlet-ppn">PPN Kasir (%)</label>
+                    <input type="number" id="outlet-ppn" class="form-input" placeholder="10" min="0">
+                </div>
+                <div class="form-group" style="flex: 2;">
+                    <label style="font-size: 12px;" for="outlet-footer">Pesan Penutup Struk (Footer)</label>
+                    <textarea id="outlet-footer" class="form-input" rows="2" placeholder="Terima Kasih\nSilakan Datang Kembali!"></textarea>
+                </div>
+            </div>
             <div style="display: flex; gap: 10px;">
                 <div class="form-group" style="flex: 1;">
                     <label style="font-size: 12px;" for="outlet-lat">Latitude (cth: -7.44698)</label>
@@ -681,6 +690,8 @@
       const outletBankInput = document.getElementById('outlet-bank');
       const outletRekeningInput = document.getElementById('outlet-rekening');
       const outletAtasnamaInput = document.getElementById('outlet-atasnama');
+      const outletPpnInput = document.getElementById('outlet-ppn');
+      const outletFooterInput = document.getElementById('outlet-footer');
 
       // [BARU] Element Toggle Ordering
       const custEnableAiChat = document.getElementById('cust-enable-ai-chat');
@@ -832,6 +843,8 @@
               outletBankInput.value = outlet.bank || '';
               outletRekeningInput.value = outlet.rekening || '';
               outletAtasnamaInput.value = outlet.atasnama || '';
+              outletPpnInput.value = outlet.ppn !== undefined ? outlet.ppn : 10;
+              outletFooterInput.value = outlet.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
           } else {
               outletIndexInput.value = '-1';
               outletIdInput.value = '';
@@ -854,6 +867,8 @@
               outletBankInput.value = '';
               outletRekeningInput.value = '';
               outletAtasnamaInput.value = '';
+              outletPpnInput.value = 10;
+              outletFooterInput.value = '';
           }
       }
 
@@ -920,7 +935,9 @@
               images: images,
               bank: outletBankInput.value.trim(),
               rekening: outletRekeningInput.value.trim(),
-              atasnama: outletAtasnamaInput.value.trim()
+              atasnama: outletAtasnamaInput.value.trim(),
+              ppn: parseFloat(outletPpnInput.value) || 0,
+              receiptFooter: outletFooterInput.value
           };
 
           if (!newOutlet.id || !newOutlet.name) { alert('ID dan Nama Outlet wajib diisi'); return; }
@@ -1090,6 +1107,7 @@
               } else {
                   currentOutlets = []; // Pastikan kosong jika tidak ada data di Firebase
               }
+              localStorage.setItem('rbm_outlets_data', JSON.stringify(currentOutlets));
               renderOutletList();
               // Sync lokasi + radius ke localStorage untuk Absensi GPS (RBM Pro)
               var rbmLocs = {};
@@ -1177,6 +1195,7 @@
               // [DIUBAH] Full Sync Outlet ke System (rbm_outlets)
               const systemOutlets = currentOutlets.map(o => o.id).filter(id => id);
               localStorage.setItem('rbm_outlets', JSON.stringify(systemOutlets));
+              localStorage.setItem('rbm_outlets_data', JSON.stringify(currentOutlets));
 
               // Sync lokasi + radius per outlet untuk Absensi GPS (RBM Pro)
               const rbmOutletLocations = {};

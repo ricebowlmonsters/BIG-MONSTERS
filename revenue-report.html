@@ -765,8 +765,9 @@
 
         statCount.textContent = String(orders.length);
 
-        const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
-        const ppnLabel = rbmSettings.ppn !== undefined ? rbmSettings.ppn : 10;
+        const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
+        const currentOutletData = outletsData.find(o => o.id === outlet) || {};
+        const ppnLabel = currentOutletData.ppn !== undefined ? currentOutletData.ppn : 10;
         const taxLabelEl = document.getElementById('stat-tax-label');
         if (taxLabelEl) taxLabelEl.textContent = `PPN (${ppnLabel}%)`;
         

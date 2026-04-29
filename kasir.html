@@ -997,10 +997,6 @@
             const categoryButtonsContainer = document.getElementById('category-buttons');
             const outletSelect = document.getElementById('outlet-select');
             
-            const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
-            const ppnLabel = rbmSettings.ppn !== undefined ? rbmSettings.ppn : 10;
-            if (document.getElementById('tax-label')) document.getElementById('tax-label').textContent = `Tax (${ppnLabel}%)`;
-            
             // --- State ---
             let RBM_MENU_DATA = []; // Data menu akan diisi dari API
             let cart = [];
@@ -1402,8 +1398,9 @@
                 }
 
                 const taxable = Math.max(0, subtotal - discountAmount);
-                const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
-                const ppnRate = rbmSettings.ppn !== undefined ? (parseFloat(rbmSettings.ppn) / 100) : 0.1;
+                const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
+                const currentOutletData = outletsData.find(o => o.id === currentOutletId) || {};
+                const ppnRate = currentOutletData.ppn !== undefined ? (parseFloat(currentOutletData.ppn) / 100) : 0.1;
                 const tax = taxable * ppnRate;
                 const total = taxable + tax;
 
@@ -1469,8 +1466,9 @@
                     if (discountAmount > subtotal) discountAmount = subtotal;
                 }
                 const taxable = Math.max(0, subtotal - discountAmount);
-                const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
-                const ppnRate = rbmSettings.ppn !== undefined ? (parseFloat(rbmSettings.ppn) / 100) : 0.1;
+                const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
+                const currentOutletData = outletsData.find(o => o.id === currentOutletId) || {};
+                const ppnRate = currentOutletData.ppn !== undefined ? (parseFloat(currentOutletData.ppn) / 100) : 0.1;
                 const tax = taxable * ppnRate;
                 const total = taxable + tax;
                 const cashReceived = parseFloat(document.getElementById('cash-input')?.value) || 0;
@@ -1597,8 +1595,9 @@
                         if (discountAmount > subtotal) discountAmount = subtotal;
                     }
                     const taxable = Math.max(0, subtotal - discountAmount);
-                    const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
-                    const ppnRate = rbmSettings.ppn !== undefined ? (parseFloat(rbmSettings.ppn) / 100) : 0.1;
+                    const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
+                    const currentOutletData = outletsData.find(o => o.id === currentOutletId) || {};
+                    const ppnRate = currentOutletData.ppn !== undefined ? (parseFloat(currentOutletData.ppn) / 100) : 0.1;
                     const tax = taxable * ppnRate;
                     const total = subtotal + tax;
                     const cashReceived = parseFloat(document.getElementById('cash-input')?.value) || 0;
@@ -1625,9 +1624,10 @@
 
                 // [BARU] Fungsi pembuat format Teks Polos untuk Print Bridge (Mesin Thermal Port 9100)
                 function buildReceiptText(order) {
-                    const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
-                    const ppnLabel = rbmSettings.ppn !== undefined ? rbmSettings.ppn : 10;
-                    const footerText = rbmSettings.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
+                    const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
+                    const currentOutletData = outletsData.find(o => o.id === currentOutletId) || {};
+                    const ppnLabel = currentOutletData.ppn !== undefined ? currentOutletData.ppn : 10;
+                    const footerText = currentOutletData.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
                     const store = (currentOutletId || 'RBM').toUpperCase();
                     let orderDate = order.date;
                     if (typeof orderDate === 'object') orderDate = Date.now(); // Perbaiki Invalid Date
@@ -1851,9 +1851,10 @@
             }
 
             function buildReceiptHtml(order) {
-                const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
-                const ppnLabel = rbmSettings.ppn !== undefined ? rbmSettings.ppn : 10;
-                const footerText = rbmSettings.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
+                const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
+                const currentOutletData = outletsData.find(o => o.id === currentOutletId) || {};
+                const ppnLabel = currentOutletData.ppn !== undefined ? currentOutletData.ppn : 10;
+                const footerText = currentOutletData.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
                 const footerHtml = footerText.replace(/\n/g, '<br>');
 
                 const store = (currentOutletId || 'RBM').toUpperCase();
@@ -2132,6 +2133,7 @@
                         
                         if (outletIds.length > 0) {
                             localStorage.setItem('rbm_outlets', JSON.stringify(outletIds));
+                            localStorage.setItem('rbm_outlets_data', JSON.stringify(outletsList));
                             initOutletSelection(); // Refresh dropdown
                         }
                     }
@@ -2180,6 +2182,7 @@
                         subscribeProducts(currentOutletId);
                         subscribePromos(currentOutletId);
                         loadPrefixFromFirebase(currentOutletId);
+                        updateTaxLabel();
                     });
                     outletSelect.setAttribute('data-listener-attached', 'true');
                 }
@@ -2188,6 +2191,15 @@
                 if (allOutlets.length === 1 || isRbmOfflineMode()) {
                     outletSelect.style.display = 'none';
                 }
+                updateTaxLabel();
+            }
+            
+            function updateTaxLabel() {
+                const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
+                const currentOutletData = outletsData.find(o => o.id === currentOutletId) || {};
+                const ppnLabel = currentOutletData.ppn !== undefined ? currentOutletData.ppn : 10;
+                if (document.getElementById('tax-label')) document.getElementById('tax-label').textContent = `Tax (${ppnLabel}%)`;
+                try { renderCart(); } catch(e) {}
             }
 
             // Jika ada input tunai, buat listener agar perubahan langsung memperbarui kembalian

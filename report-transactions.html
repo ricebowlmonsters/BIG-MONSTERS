@@ -223,8 +223,10 @@
         // [BARU] Update Judul Modal dengan ID Transaksi
         document.querySelector('#transaction-detail-modal .modal-title').textContent = `Detail Transaksi - ${order.id || ''}`;
 
-        const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
-        const ppnLabel = rbmSettings.ppn !== undefined ? rbmSettings.ppn : 10;
+        const outletVal = document.getElementById('outlet').value;
+        const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
+        const currentOutletData = outletsData.find(o => o.id === outletVal) || {};
+        const ppnLabel = currentOutletData.ppn !== undefined ? currentOutletData.ppn : 10;
 
         const content = document.getElementById('detail-content');
         const items = order.items ? (Array.isArray(order.items) ? order.items : Object.values(order.items)) : [];

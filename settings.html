@@ -241,20 +241,6 @@
 
       <section class="card">
         <h3 class="card-title">Pengaturan Umum</h3>
-        <div class="setting-item" style="align-items: flex-start; flex-direction: column; gap: 8px;">
-          <div style="width: 100%;">
-            <strong>PPN Kasir (%)</strong>
-            <p style="font-size: 14px; color: #6b7280; margin-top: 4px;">Atur persentase pajak PPN (Misal: 10, 11, atau 0 jika tanpa PPN).</p>
-            <input type="number" id="setting-ppn" class="form-input" placeholder="10" style="max-width: 150px; margin-top: 8px;">
-          </div>
-        </div>
-        <div class="setting-item" style="align-items: flex-start; flex-direction: column; gap: 8px;">
-          <div style="width: 100%;">
-            <strong>Pesan Penutup Struk (Footer)</strong>
-            <p style="font-size: 14px; color: #6b7280; margin-top: 4px;">Teks yang akan dicetak di bagian paling bawah struk kasir.</p>
-            <textarea id="setting-receipt-footer" class="form-input" rows="3" placeholder="Terima Kasih&#10;Silakan Datang Kembali!" style="margin-top: 8px;"></textarea>
-          </div>
-        </div>
         <div class="setting-item">
           <div>
             <strong>Cetak Struk Otomatis (Semua Pesanan)</strong>
@@ -425,9 +411,6 @@
         autoPrintAllToggle.checked = settings.autoPrintAll !== false; // Default true (cetak semua pesanan baru)
         autoPrintQrisToggle.checked = settings.autoPrintQris !== false; // Default true
         
-        if (document.getElementById('setting-ppn')) document.getElementById('setting-ppn').value = settings.ppn !== undefined ? settings.ppn : 10;
-        if (document.getElementById('setting-receipt-footer')) document.getElementById('setting-receipt-footer').value = settings.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
-
         // Sound & Voice Settings
         soundNotificationNewOrderToggle.checked = settings.soundNotificationNewOrder !== false; // Default true
         voiceNotificationNewOrderToggle.checked = settings.voiceNotificationNewOrder !== false; // Default true
@@ -448,12 +431,6 @@
         if (voiceNotificationNewOrderToggle) {
           settings.voiceNotificationNewOrder = voiceNotificationNewOrderToggle.checked;
         }
-        
-        const ppnInput = document.getElementById('setting-ppn');
-        const footerInput = document.getElementById('setting-receipt-footer');
-        if (ppnInput) settings.ppn = parseFloat(ppnInput.value) || 0;
-        if (footerInput) settings.receiptFooter = footerInput.value;
-
         localStorage.setItem(RBM_SETTINGS, JSON.stringify(settings));
 
         // [BARU] Simpan outlet yang aktif
@@ -1041,12 +1018,6 @@
       }
       if (voiceNotificationNewOrderToggle) {
         voiceNotificationNewOrderToggle.addEventListener('change', handleSettingChange);
-      }
-      if (document.getElementById('setting-ppn')) {
-        document.getElementById('setting-ppn').addEventListener('input', handleSettingChange);
-      }
-      if (document.getElementById('setting-receipt-footer')) {
-        document.getElementById('setting-receipt-footer').addEventListener('input', handleSettingChange);
       }
 
       addOutletBtn.addEventListener('click', async () => {

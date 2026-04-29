@@ -834,8 +834,9 @@
 
             // [BARU] Fungsi untuk membuat struk lengkap untuk kasir
             function buildCashierReceiptHtml(order) {
-                const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
-                const footerText = rbmSettings.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
+                const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
+                const currentOutletData = outletsData.find(o => o.id === currentOutletId) || {};
+                const footerText = currentOutletData.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
                 const footerHtml = footerText.replace(/\n/g, '<br>');
 
                 const store = (currentOutletId || '').toUpperCase();
