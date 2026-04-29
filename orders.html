@@ -817,7 +817,7 @@
                     <div style="font-size:12px;">${itemsHtml || '-'}</div>
                     <div style="border-top:2px dashed #000; margin:6px 0;"></div>
                     <div style="display:flex; justify-content:space-between; font-size:14px;"><strong>Total</strong><strong>Rp ${total}</strong></div>
-                    <div style="margin-top:8px; text-align:center; opacity:0.9;">Terima kasih</div>`;
+                    <div style="margin-top:8px; text-align:center; opacity:0.9; font-weight:bold;">${footerHtml}</div>`;
 
                 // Template thermal 80mm sederhana
                 return `
@@ -834,6 +834,10 @@
 
             // [BARU] Fungsi untuk membuat struk lengkap untuk kasir
             function buildCashierReceiptHtml(order) {
+                const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
+                const footerText = rbmSettings.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
+                const footerHtml = footerText.replace(/\n/g, '<br>');
+
                 const store = (currentOutletId || '').toUpperCase();
                 const time = new Date(order.date).toLocaleString('id-ID');
                 const method = order.payment?.method || 'N/A';
@@ -860,7 +864,7 @@
                     <div style="font-size:10px;">${itemsHtml || '-'}</div>
                     <div style="border-top:2px dashed #000; margin:6px 0;"></div>
                     <div style="display:flex; justify-content:space-between; font-size:12px;"><strong>Total</strong><strong>Rp ${total}</strong></div>
-                    <div style="margin-top:8px; text-align:center; opacity:0.9;">Terima kasih</div>
+                    <div style="margin-top:8px; text-align:center; opacity:0.9; font-weight:bold;">${footerHtml}</div>
                 </div>`;
             }
 

@@ -694,7 +694,7 @@
                                 </span>
                             </div>
                             <div class="summary-row">
-                                <span class="label">Tax (10%)</span>
+                            <span class="label" id="tax-label">Tax (10%)</span>
                                 <span class="value" id="tax-display">Rp 0</span>
                             </div>
                             <div class="grand-total-row">
@@ -996,6 +996,10 @@
             const currentCategoryEl = document.getElementById('current-category');
             const categoryButtonsContainer = document.getElementById('category-buttons');
             const outletSelect = document.getElementById('outlet-select');
+            
+            const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
+            const ppnLabel = rbmSettings.ppn !== undefined ? rbmSettings.ppn : 10;
+            if (document.getElementById('tax-label')) document.getElementById('tax-label').textContent = `Tax (${ppnLabel}%)`;
             
             // --- State ---
             let RBM_MENU_DATA = []; // Data menu akan diisi dari API
@@ -1398,7 +1402,9 @@
                 }
 
                 const taxable = Math.max(0, subtotal - discountAmount);
-                const tax = taxable * 0.1;
+                const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
+                const ppnRate = rbmSettings.ppn !== undefined ? (parseFloat(rbmSettings.ppn) / 100) : 0.1;
+                const tax = taxable * ppnRate;
                 const total = taxable + tax;
 
                 // Update displays
@@ -1463,7 +1469,9 @@
                     if (discountAmount > subtotal) discountAmount = subtotal;
                 }
                 const taxable = Math.max(0, subtotal - discountAmount);
-                const tax = taxable * 0.1;
+                const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
+                const ppnRate = rbmSettings.ppn !== undefined ? (parseFloat(rbmSettings.ppn) / 100) : 0.1;
+                const tax = taxable * ppnRate;
                 const total = taxable + tax;
                 const cashReceived = parseFloat(document.getElementById('cash-input')?.value) || 0;
 
@@ -1589,7 +1597,9 @@
                         if (discountAmount > subtotal) discountAmount = subtotal;
                     }
                     const taxable = Math.max(0, subtotal - discountAmount);
-                    const tax = taxable * 0.1;
+                    const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
+                    const ppnRate = rbmSettings.ppn !== undefined ? (parseFloat(rbmSettings.ppn) / 100) : 0.1;
+                    const tax = taxable * ppnRate;
                     const total = subtotal + tax;
                     const cashReceived = parseFloat(document.getElementById('cash-input')?.value) || 0;
                     
@@ -1615,6 +1625,9 @@
 
                 // [BARU] Fungsi pembuat format Teks Polos untuk Print Bridge (Mesin Thermal Port 9100)
                 function buildReceiptText(order) {
+                    const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
+                    const ppnLabel = rbmSettings.ppn !== undefined ? rbmSettings.ppn : 10;
+                    const footerText = rbmSettings.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
                     const store = (currentOutletId || 'RBM').toUpperCase();
                     let orderDate = order.date;
                     if (typeof orderDate === 'object') orderDate = Date.now(); // Perbaiki Invalid Date
@@ -1674,7 +1687,7 @@
                     if (order.payment?.discount > 0) {
                         text += `Diskon    : Rp -${discount.padStart(16, ' ')}\n`;
                     }
-                    text += `PPN (10%) : Rp ${tax.padStart(17, ' ')}\n`;
+                    text += `PPN (${ppnLabel}%) : Rp ${tax.padStart(17, ' ')}\n`;
                     text += `--------------------------------\n`;
                     text += `\x1B\x45\x01TOTAL     : Rp ${total.padStart(17, ' ')}\x1B\x45\x00\n`; // Cetak Total dengan Tebal (Bold)
                     
@@ -1688,8 +1701,11 @@
                     text += `\nTotal Item: ${totalQty}\n`;
                     text += `--------------------------------\n`;
                     text += '\x1B\x61\x01'; // Perintah: Rata Tengah (Center)
-                    text += `\x1B\x45\x01Terima Kasih\x1B\x45\x00\n`; // Teks Terima Kasih Cetak Tebal
-                    text += `Silakan Datang Kembali!\n\n\n\n\n`; // Feed kertas
+                    const footerLines = footerText.split('\n');
+                    footerLines.forEach(line => {
+                        text += `\x1B\x45\x01${line}\x1B\x45\x00\n`;
+                    });
+                    text += `\n\n\n\n\n`; // Feed kertas
                     return text;
                 }
 
@@ -1835,6 +1851,11 @@
             }
 
             function buildReceiptHtml(order) {
+                const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
+                const ppnLabel = rbmSettings.ppn !== undefined ? rbmSettings.ppn : 10;
+                const footerText = rbmSettings.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
+                const footerHtml = footerText.replace(/\n/g, '<br>');
+
                 const store = (currentOutletId || 'RBM').toUpperCase();
                 let orderDate = order.date;
                 if (typeof orderDate === 'object') orderDate = Date.now();
@@ -1927,7 +1948,7 @@
                 <div class="r-divider"></div>
                 <div class="r-row"><span>Subtotal</span><span class="r-bold">Rp ${subtotal}</span></div>
                 ${discountHtml}
-                <div class="r-row"><span>PPN (10%)</span><span class="r-bold">Rp ${tax}</span></div>
+                <div class="r-row"><span>PPN (${ppnLabel}%)</span><span class="r-bold">Rp ${tax}</span></div>
                 
                 <div class="r-total-row"><span>TOTAL</span><span>Rp ${total}</span></div>
                 
@@ -1936,8 +1957,7 @@
                 <div class="r-row" style="margin-top:8px;"><span>Total Item</span><span class="r-bold">${totalQty}</span></div>
                 <div class="r-divider"></div>
                 <div class="r-footer">
-                    <div class="r-thanks">Terima Kasih</div>
-                    <div class="r-welcome">Silakan Datang Kembali!</div>
+                    <div class="r-thanks">${footerHtml}</div>
                 </div>
             </div>`;
             };

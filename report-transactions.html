@@ -223,6 +223,9 @@
         // [BARU] Update Judul Modal dengan ID Transaksi
         document.querySelector('#transaction-detail-modal .modal-title').textContent = `Detail Transaksi - ${order.id || ''}`;
 
+        const rbmSettings = JSON.parse(localStorage.getItem('rbm_settings') || '{}');
+        const ppnLabel = rbmSettings.ppn !== undefined ? rbmSettings.ppn : 10;
+
         const content = document.getElementById('detail-content');
         const items = order.items ? (Array.isArray(order.items) ? order.items : Object.values(order.items)) : [];
         
@@ -311,7 +314,7 @@
             <div style="border-top:2px solid #e5e7eb; padding-top:12px; font-size:13px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Subtotal</span> <span>${formatRupiah(calcSubtotal)}</span></div>
                 ${discount > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#ef4444;"><span>Diskon</span> <span>-${formatRupiah(discount)}</span></div>` : ''}
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>PPN (10%)</span> <span>${formatRupiah(tax)}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>PPN (${ppnLabel}%)</span> <span>${formatRupiah(tax)}</span></div>
                 <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:16px; font-weight:700;"><span>Total</span> <span>${formatRupiah(total)}</span></div>
                 <div style="text-align:right; font-size:12px; color:#6b7280; margin-top:4px;">Metode Pembayaran: ${methodHtml}</div>
             </div>
