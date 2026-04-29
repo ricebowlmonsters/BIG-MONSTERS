@@ -17,7 +17,15 @@ const CustomUI = {
                 box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
                 transform: scale(0.9); transition: transform 0.2s;
                 font-family: 'Inter', sans-serif;
+                position: relative;
             }
+            .custom-ui-close-btn {
+                position: absolute; top: 12px; right: 16px;
+                background: transparent; border: none;
+                font-size: 24px; font-weight: bold; color: #9ca3af;
+                cursor: pointer; transition: color 0.2s; line-height: 1;
+            }
+            .custom-ui-close-btn:hover { color: #ef4444; }
             .custom-ui-overlay.show .custom-ui-modal { transform: scale(1); }
             .custom-ui-icon { font-size: 48px; margin-bottom: 16px; display: block; }
             .custom-ui-title { font-size: 20px; font-weight: 700; margin: 0 0 8px 0; color: #1f2937; }
@@ -42,6 +50,7 @@ const CustomUI = {
         div.className = 'custom-ui-overlay';
         div.innerHTML = `
             <div class="custom-ui-modal">
+                <button id="custom-ui-close" class="custom-ui-close-btn">&times;</button>
                 <div id="custom-ui-icon" class="custom-ui-icon"></div>
                 <h3 id="custom-ui-title" class="custom-ui-title"></h3>
                 <div id="custom-ui-message" class="custom-ui-message"></div>
@@ -62,9 +71,24 @@ const CustomUI = {
 
             iconEl.textContent = options.icon || 'ℹ️';
             titleEl.textContent = options.title || 'Informasi';
-            msgEl.innerHTML = (options.message || '').replace(/\n/g, '<br>');
+            
+            const msgStr = options.message || '';
+            // Jika pesan mengandung tag HTML, jangan ganti enter (\n) menjadi <br>
+            if (options.isHtml || /<[a-z][\s\S]*>/i.test(msgStr)) {
+                msgEl.innerHTML = msgStr;
+            } else {
+                msgEl.innerHTML = msgStr.replace(/\n/g, '<br>');
+            }
 
             actionsEl.innerHTML = '';
+
+            const closeBtn = document.getElementById('custom-ui-close');
+            if (closeBtn) {
+                closeBtn.onclick = () => {
+                    overlay.classList.remove('show');
+                    setTimeout(() => { overlay.style.display = 'none'; resolve(false); }, 200);
+                };
+            }
 
             if (options.type === 'confirm') {
                 const cancelBtn = document.createElement('button');

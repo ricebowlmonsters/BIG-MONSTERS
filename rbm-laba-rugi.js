@@ -651,6 +651,7 @@ function renderNonStokForm() {
                 <option value="">-- Pilih Jenis --</option>
                 <option value="revenue">Uang Masuk (Pendapatan Lain di Luar Kasir)</option>
                 <option value="expense">Uang Keluar (Biaya Operasional)</option>
+                <option value="pay_payable">Bayar Hutang / Pelunasan Tempo (Uang Keluar)</option>
                 <option value="pos_settlement">Pencairan Kasir (Uang Masuk POS, Potongan & Bunga)</option>
             </select>
         </div>
@@ -662,6 +663,60 @@ function renderNonStokForm() {
         dateInput.value = new Date().toISOString().split('T')[0];
     }
 }
+
+window.addSettlementRow = function() {
+    const tbody = document.getElementById('settlement-items-tbody');
+    if (!tbody) return;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td style="padding: 4px;"><input type="text" class="settle-desc form-input" required placeholder="Pencairan dari..." style="padding: 6px; font-size: 12px; border: 1px solid #93c5fd;"></td>
+        <td style="padding: 4px;"><input type="number" class="settle-gross form-input" required min="0" value="0" oninput="calcSettlementRow(this)" style="padding: 6px; font-size: 12px; border: 1px solid #93c5fd;"></td>
+        <td style="padding: 4px;"><input type="number" class="settle-admin form-input" required min="0" value="0" oninput="calcSettlementRow(this)" style="padding: 6px; font-size: 12px; border: 1px solid #93c5fd;"></td>
+        <td style="padding: 4px;"><input type="number" class="settle-net form-input" required readonly oninput="calcSettlementRow(this)" style="padding: 6px; font-size: 12px; background: #eef2ff; font-weight: bold; border: 1px solid #93c5fd; color: #1e40af;"></td>
+        <td style="padding: 4px; text-align: center;"><button type="button" class="btn-small-danger" onclick="removeSettlementRow(this)" style="padding: 4px 8px; background: #ef4444; border: none;">X</button></td>
+    `;
+    tbody.appendChild(tr);
+    if (typeof window.changeSettlementMode === 'function') window.changeSettlementMode(); // Apply current mode to new row
+    if (typeof window.updateSettlementGrandTotal === 'function') window.updateSettlementGrandTotal();
+};
+
+window.removeSettlementRow = function(btn) {
+    const tbody = document.getElementById('settlement-items-tbody');
+    if (tbody && tbody.children.length > 1) {
+        btn.closest('tr').remove();
+        if (typeof window.updateSettlementGrandTotal === 'function') window.updateSettlementGrandTotal();
+    } else {
+        alert("Minimal harus ada 1 baris rincian pencairan.");
+    }
+};
+
+window.calcSettlementRow = function(input) {
+    const tr = input.closest('tr');
+    const modeEl = document.querySelector('input[name="settle_calc_mode"]:checked');
+    if (!modeEl || !tr) return;
+    const mode = modeEl.value;
+    
+    const grossInput = tr.querySelector('.settle-gross');
+    const adminInput = tr.querySelector('.settle-admin');
+    const netInput = tr.querySelector('.settle-net');
+    
+    const gross = parseFloat(grossInput.value) || 0;
+    
+    if (mode === 'net') { // Hitung Uang Bersih
+        const admin = parseFloat(adminInput.value) || 0;
+        const net = gross - admin;
+        netInput.value = net > 0 ? net : 0;
+    } else { // Hitung Potongan Admin
+        let net = parseFloat(netInput.value) || 0;
+        if (net > gross) { // Uang bersih tidak bisa lebih besar dari kotor
+            net = gross;
+            netInput.value = net;
+        }
+        const admin = gross - net;
+        adminInput.value = admin > 0 ? admin : 0;
+    }
+    if (typeof window.updateSettlementGrandTotal === 'function') window.updateSettlementGrandTotal();
+};
 
 window.renderNonStokSubFields = function() {
     const type = document.getElementById('nonstok-tx-type').value;
@@ -694,34 +749,67 @@ window.renderNonStokSubFields = function() {
     } else if (type === 'pos_settlement') {
         subContainer.innerHTML = `
             <div class="form-section" style="margin-top: 15px; padding: 15px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;">
-                <h4 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #1e40af;">Detail Pencairan / Uang Masuk Bank</h4>
+                <h4 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #1e40af;">Detail Pencairan / Settlement</h4>
                 <div class="form-section">
-                    <label>Masuk ke Rekening / Kas</label>
+                    <label for="settle-tx-account">Masuk ke Rekening / Kas</label>
                     <select id="settle-tx-account" required class="form-input" style="background: white;"></select>
                 </div>
                 <div class="form-section">
-                    <label>Mode Kalkulasi Otomatis</label>
+                    <label>Mode Kalkulasi Otomatis (Berlaku untuk semua baris)</label>
                     <div style="display: flex; gap: 15px; margin-top: 5px; font-size: 13px;">
-                        <label style="cursor: pointer;"><input type="radio" name="settle_calc_mode" value="net" checked onchange="changeSettlementMode()"> Hitung Uang Bersih</label>
-                        <label style="cursor: pointer;"><input type="radio" name="settle_calc_mode" value="admin" onchange="changeSettlementMode()"> Hitung Potongan Admin</label>
+                        <label style="cursor: pointer;"><input type="radio" name="settle_calc_mode" value="net" checked onchange="changeSettlementMode()"> Hitung Uang Bersih (dari Potongan)</label>
+                        <label style="cursor: pointer;"><input type="radio" name="settle_calc_mode" value="admin" onchange="changeSettlementMode()"> Hitung Potongan Admin (dari Uang Bersih)</label>
                     </div>
                 </div>
+
+                <!-- TABEL RINCIAN PENCAIRAN -->
                 <div class="form-section">
-                    <label>Total Pencairan Kotor dari Kasir (Rp)</label>
-                    <input type="number" id="settle-tx-gross" required min="0" class="form-input" placeholder="Total kotor sebelum dipotong bank" oninput="calcSettlement()">
+                    <label style="margin-bottom: 8px; display: block;">Rincian Pencairan</label>
+                    <div style="border: 1px solid #bfdbfe; border-radius: 8px; overflow: hidden; background: white;">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                            <thead style="background: #dbeafe; border-bottom: 1px solid #bfdbfe;">
+                                <tr>
+                                    <th style="padding: 8px; font-weight: 600; color: #1e40af;">Keterangan (Contoh: GoFood, QRIS)</th>
+                                    <th style="padding: 8px; font-weight: 600; width: 130px; color: #1e40af;">Total Kotor (Rp)</th>
+                                    <th style="padding: 8px; font-weight: 600; width: 130px; color: #1e40af;">Potongan Admin (Rp)</th>
+                                    <th style="padding: 8px; font-weight: 600; width: 130px; color: #1e40af;">Uang Bersih (Rp)</th>
+                                    <th style="padding: 8px; width: 40px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="settlement-items-tbody">
+                                <tr>
+                                    <td style="padding: 4px;"><input type="text" class="settle-desc form-input" required placeholder="Pencairan dari..." style="padding: 6px; font-size: 12px; border: 1px solid #93c5fd;"></td>
+                                    <td style="padding: 4px;"><input type="number" class="settle-gross form-input" required min="0" value="0" oninput="calcSettlementRow(this)" style="padding: 6px; font-size: 12px; border: 1px solid #93c5fd;"></td>
+                                    <td style="padding: 4px;"><input type="number" class="settle-admin form-input" required min="0" value="0" oninput="calcSettlementRow(this)" style="padding: 6px; font-size: 12px; border: 1px solid #93c5fd;"></td>
+                                    <td style="padding: 4px;"><input type="number" class="settle-net form-input" required readonly oninput="calcSettlementRow(this)" style="padding: 6px; font-size: 12px; background: #eef2ff; font-weight: bold; border: 1px solid #93c5fd; color: #1e40af;"></td>
+                                    <td style="padding: 4px; text-align: center;"><button type="button" class="btn-small-danger" onclick="removeSettlementRow(this)" style="padding: 4px 8px; background: #ef4444; border: none;">X</button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="addSettlementRow()" style="margin-top: 8px; padding: 6px 12px; font-size: 12px; background: white; border: 1px solid #93c5fd; color: #1e40af;">+ Tambah Baris Pencairan</button>
                 </div>
-                <div class="form-section">
-                    <label>Potongan Admin Bank / EDC / Aplikasi (Rp)</label>
-                    <input type="number" id="settle-tx-admin" value="0" min="0" class="form-input" placeholder="Biaya admin yang terpotong" oninput="calcSettlement()">
-                    <small style="color: #64748b; font-size: 11px;">*Otomatis dicatat sebagai Biaya Operasional.</small>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px;">
+                    <div class="form-section" style="margin:0;">
+                        <label for="settle-tx-total-admin">Total Potongan Admin (Rp)</label>
+                        <input type="number" id="settle-tx-total-admin" required readonly class="form-input" style="background: #fef2f2; font-weight: bold; color: #991b1b; font-size: 16px; border: 1px solid #fecaca;">
+                    </div>
+                    <div class="form-section" style="margin:0;">
+                        <label for="settle-tx-amount">Total Uang Masuk Bersih (Rp)</label>
+                        <input type="number" id="settle-tx-amount" required readonly class="form-input" style="background: #e5e7eb; font-weight: bold; color: #111827; font-size: 16px; border: 1px solid #cbd5e1;">
+                    </div>
                 </div>
-                <div class="form-section">
-                    <label>Uang Masuk Bersih ke Rekening (Rp)</label>
-                    <input type="number" id="settle-tx-amount" required readonly class="form-input" style="background: #e5e7eb; font-weight: bold; color: #111827; font-size: 16px;" oninput="calcSettlement()">
-                    <small style="color: #64748b; font-size: 11px;">*Hanya akan menambah saldo mutasi rekening. Tidak membuat pendapatan Laba Rugi Anda ganda.</small>
+                <small style="color: #64748b; font-size: 11px; display: block; margin-top: 4px;">*Total uang masuk bersih akan menambah saldo mutasi rekening. Total potongan admin akan dicatat sebagai Biaya Operasional.</small>
+                
+                <div class="form-section" style="margin-top: 15px; margin-bottom: 0;">
+                    <label for="settle-tx-interest">Bunga Bank / Cashback (Rp) - <span style="color:#64748b; font-weight:normal;">Opsional</span></label>
+                    <input type="number" id="settle-tx-interest" min="0" value="0" class="form-input" style="border: 1px solid #bbf7d0; background: #f0fdf4; color: #166534; font-weight: bold;">
+                    <small style="color: #64748b; font-size: 11px; display: block; margin-top: 4px;">*Otomatis menambah saldo rekening dan masuk ke Pendapatan Laba Rugi.</small>
                 </div>
-                <div class="form-section" style="margin-bottom: 0;">
-                    <label>Keterangan / Catatan</label>
+
+                <div class="form-section" style="margin-bottom: 0; margin-top: 15px;">
+                    <label for="settle-tx-description">Keterangan / Catatan Global</label>
                     <input type="text" id="settle-tx-description" placeholder="Contoh: Pencairan ShopeeFood & QRIS 25 April" required class="form-input">
                 </div>
             </div>
@@ -782,66 +870,126 @@ window.renderNonStokSubFields = function() {
             </div>
         `;
         updateDropdowns('non-stok-expense');
+    } else if (type === 'pay_payable') {
+        subContainer.innerHTML = `
+            <div class="form-section" style="margin-top: 15px; padding: 15px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
+                <h4 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #b45309;">Detail Pelunasan Hutang</h4>
+                <div class="form-section">
+                    <label for="nonstok-tx-account-pay">Sumber Dana (Kredit: Kas/Bank)</label>
+                    <select id="nonstok-tx-account-pay" required class="form-input" style="background: white;"></select>
+                </div>
+                <div class="form-section">
+                    <label for="nonstok-tx-hutang-select">Pilih Hutang yang Dibayar</label>
+                    <select id="nonstok-tx-hutang-select" class="form-input" style="background: white; border: 1px solid #fcd34d;" onchange="
+                        if(this.value) {
+                            document.getElementById('nonstok-tx-description-pay').value = this.value;
+                            document.getElementById('nonstok-tx-amount-pay').value = this.options[this.selectedIndex].getAttribute('data-sisa') || '';
+                        }
+                    ">
+                        <option value="">-- Memuat Hutang... --</option>
+                    </select>
+                </div>
+                <div class="form-section">
+                    <label for="nonstok-tx-amount-pay">Nominal Pelunasan (Rp)</label>
+                    <input type="number" id="nonstok-tx-amount-pay" required min="1" class="form-input">
+                </div>
+                <div class="form-section" style="margin-bottom: 0;">
+                    <label for="nonstok-tx-description-pay">Keterangan / Nama Supplier</label>
+                    <input type="text" id="nonstok-tx-description-pay" required placeholder="Contoh: Pelunasan nota daging tgl 12" class="form-input" style="border: 1px solid #fcd34d;">
+                </div>
+            </div>
+        `;
+        updateDropdowns('non-stok-pay');
+        if (typeof window.loadOutstandingDebtsForSelect === 'function') window.loadOutstandingDebtsForSelect();
     } else {
         subContainer.innerHTML = '';
     }
 }
+
+window.loadOutstandingDebtsForSelect = async function() {
+    const select = document.getElementById('nonstok-tx-hutang-select');
+    if (!select) return;
+    const outlet = getOutletLR();
+    const snap = await rbmDb.ref(`rbm_pro/transactions/${outlet}`).once('value');
+    const txs = snap.val() || {};
+    
+    let hutangMap = {};
+    Object.values(txs).forEach(tx => {
+        const amount = parseFloat(tx.total_amount || 0);
+        if (tx.type === 'expense' && tx.journal_lines?.credit?.account_id === 'HUTANG') {
+            let desc = (tx.name || tx.description || 'Pembelian Tempo').trim();
+            hutangMap[desc] = (hutangMap[desc] || 0) + amount;
+        } else if (tx.type === 'pay_payable') {
+            let desc = (tx.description || tx.name || 'Pelunasan Hutang').trim();
+            hutangMap[desc] = (hutangMap[desc] || 0) - amount;
+        }
+    });
+    
+    select.innerHTML = '<option value="">-- Pilih Hutang yang Dibayar (Atau ketik manual di bawah) --</option>';
+    let hasHutang = false;
+    Object.keys(hutangMap).sort().forEach(desc => {
+        const sisa = hutangMap[desc];
+        if (sisa > 0) {
+            hasHutang = true;
+            select.innerHTML += `<option value="${desc}" data-sisa="${sisa}">${desc} (Sisa: Rp ${sisa.toLocaleString('id-ID')})</option>`;
+        }
+    });
+    if (!hasHutang) {
+        select.innerHTML = '<option value="">-- Tidak ada hutang tercatat --</option>';
+    }
+};
 
 // Fungsi untuk merubah mode kalkulasi Pencairan
 window.changeSettlementMode = function() {
     const modeEl = document.querySelector('input[name="settle_calc_mode"]:checked');
     if (!modeEl) return;
     const mode = modeEl.value;
-    const adminInput = document.getElementById('settle-tx-admin');
-    const netInput = document.getElementById('settle-tx-amount');
-    
-    if (mode === 'net') {
-        adminInput.readOnly = false;
-        adminInput.style.background = 'white';
-        adminInput.style.fontWeight = 'normal';
-        adminInput.style.color = 'inherit';
-        
-        netInput.readOnly = true;
-        netInput.style.background = '#e5e7eb';
-        netInput.style.fontWeight = 'bold';
-        netInput.style.color = '#111827';
-    } else {
-        netInput.readOnly = false;
-        netInput.style.background = 'white';
-        netInput.style.fontWeight = 'normal';
-        netInput.style.color = 'inherit';
-        
-        adminInput.readOnly = true;
-        adminInput.style.background = '#fef2f2';
-        adminInput.style.fontWeight = 'bold';
-        adminInput.style.color = '#991b1b';
-    }
-    calcSettlement();
+    const rows = document.querySelectorAll('#settlement-items-tbody tr');
+
+    rows.forEach(tr => {
+        const adminInput = tr.querySelector('.settle-admin');
+        const netInput = tr.querySelector('.settle-net');
+        if (!adminInput || !netInput) return;
+
+        if (mode === 'net') { // Hitung Uang Bersih, artinya admin bisa di-edit
+            adminInput.readOnly = false;
+            adminInput.style.background = 'white';
+            adminInput.style.fontWeight = 'normal';
+            adminInput.style.color = 'inherit';
+            
+            netInput.readOnly = true;
+            netInput.style.background = '#eef2ff';
+            netInput.style.fontWeight = 'bold';
+            netInput.style.color = '#1e40af';
+        } else { // Hitung Potongan Admin, artinya net bisa di-edit
+            netInput.readOnly = false;
+            netInput.style.background = 'white';
+            netInput.style.fontWeight = 'normal';
+            netInput.style.color = 'inherit';
+            
+            adminInput.readOnly = true;
+            adminInput.style.background = '#fef2f2';
+            adminInput.style.fontWeight = 'bold';
+            adminInput.style.color = '#991b1b';
+        }
+        if (typeof window.calcSettlementRow === 'function') window.calcSettlementRow(adminInput); // Recalculate this row
+    });
 };
 
 // Fungsi untuk menghitung otomatis pencairan
-window.calcSettlement = function() {
-    const modeEl = document.querySelector('input[name="settle_calc_mode"]:checked');
-    if (!modeEl) return;
-    const mode = modeEl.value;
+window.updateSettlementGrandTotal = function() {
+    const allNets = document.querySelectorAll('.settle-net');
+    const allAdmins = document.querySelectorAll('.settle-admin');
+    let grandNet = 0;
+    let grandAdmin = 0;
+    allNets.forEach(t => grandNet += (parseFloat(t.value) || 0));
+    allAdmins.forEach(t => grandAdmin += (parseFloat(t.value) || 0));
     
-    const grossInput = document.getElementById('settle-tx-gross');
-    const adminInput = document.getElementById('settle-tx-admin');
-    const netInput = document.getElementById('settle-tx-amount');
+    const grandNetInput = document.getElementById('settle-tx-amount');
+    const grandAdminInput = document.getElementById('settle-tx-total-admin');
     
-    if (!grossInput || !adminInput || !netInput) return;
-    
-    const gross = parseFloat(grossInput.value) || 0;
-    
-    if (mode === 'net') {
-        const admin = parseFloat(adminInput.value) || 0;
-        const net = gross - admin;
-        netInput.value = net > 0 ? net : 0;
-    } else {
-        const net = parseFloat(netInput.value) || 0;
-        const admin = gross - net;
-        adminInput.value = admin > 0 ? admin : 0;
-    }
+    if (grandNetInput) grandNetInput.value = grandNet;
+    if (grandAdminInput) grandAdminInput.value = grandAdmin;
 };
 
 function updateDropdowns(formType) {
@@ -869,6 +1017,8 @@ function updateDropdowns(formType) {
         populateSelect('nonstok-tx-category-out', keuanganMasterData.expenses, 'Pilih Kelompok Biaya Non Stok');
     } else if (formType === 'non-stok-settlement') {
         populateSelect('settle-tx-account', keuanganMasterData.accounts, 'Pilih Akun Kas/Bank');
+    } else if (formType === 'non-stok-pay') {
+        populateSelect('nonstok-tx-account-pay', keuanganMasterData.accounts, 'Pilih Akun Kas/Bank');
     }
 }
 
@@ -882,7 +1032,12 @@ function populateSelect(elementId, dataObj, placeholder) { // This function is n
         const extra = dataObj[key].number ? ` - ${dataObj[key].number}` : (dataObj[key].unit ? ` (${dataObj[key].unit})` : '');
         el.innerHTML += `<option value="${key}">${name}${extra}</option>`;
     });
-    if (currentVal && dataObj[currentVal]) el.value = currentVal;
+    
+    if (elementId === 'stok-tx-account' || elementId === 'nonstok-tx-account-out') {
+        el.innerHTML += `<option value="HUTANG" style="font-weight:bold; color:#b91c1c;">💳 Pembayaran Tempo / Hutang</option>`;
+    }
+    
+    if (currentVal && (dataObj[currentVal] || currentVal === 'HUTANG')) el.value = currentVal;
 }
 
 window.filterStokRowItems = function(selectElement) {
@@ -1070,38 +1225,40 @@ function handleTransactionSubmit(e, formType) {
         type = document.getElementById('nonstok-tx-type').value;
         if (type === 'pos_settlement') {
             account = document.getElementById('settle-tx-account').value;
-            let amountBersih = parseFloat(document.getElementById('settle-tx-amount').value) || 0;
+            const amountBersih = parseFloat(document.getElementById('settle-tx-amount').value) || 0; // Total Net Amount
+            const interestAmount = parseFloat(document.getElementById('settle-tx-interest').value) || 0;
+            amount = amountBersih + interestAmount; // Total masuk rekening (bersih + bunga)
             
-            let totalAdminFee = 0;
-            const descs = document.querySelectorAll('.settle-desc');
-            const grosses = document.querySelectorAll('.settle-gross');
-            const admins = document.querySelectorAll('.settle-admin');
-            const nets = document.querySelectorAll('.settle-net');
-            
-            let itemsText = [];
-            descs.forEach((el, idx) => {
-                const descVal = el.value.trim();
-                const grossVal = parseFloat(grosses[idx].value) || 0;
-                const adminVal = parseFloat(admins[idx].value) || 0;
-                const netVal = parseFloat(nets[idx].value) || 0;
+            const rows = document.querySelectorAll('#settlement-items-tbody tr');
+            rows.forEach(row => {
+                const descVal = row.querySelector('.settle-desc').value.trim();
+                const grossVal = parseFloat(row.querySelector('.settle-gross').value) || 0;
+                const adminVal = parseFloat(row.querySelector('.settle-admin').value) || 0;
+                const netVal = parseFloat(row.querySelector('.settle-net').value) || 0;
+                
                 if (descVal) {
-                    itemsText.push(`${descVal} (Bersih: Rp ${netVal})`);
-                    totalAdminFee += adminVal;
-                    detailItems.push({ name: descVal, qty: 1, unit: '-', price: netVal, admin: adminVal, gross: grossVal });
+                    detailItems.push({ name: descVal, qty: 1, unit: 'transaksi', price: netVal, admin: adminVal, gross: grossVal });
                 }
             });
             
+            const itemsText = detailItems.map(d => `${d.name} (Bersih: Rp ${d.price.toLocaleString('id-ID')})`);
+
             description = document.getElementById('settle-tx-description').value;
             if (description) {
                 name = description;
-                description = itemsText.join(', ');
+                description = itemsText.join('; ');
             } else {
                 name = "Pencairan Kasir / Settlement";
-                description = itemsText.join(', ');
+                description = itemsText.join('; ');
             }
             
             category = 'settlement';
-            amount = amountBersih;
+        } else if (type === 'pay_payable') {
+            account = document.getElementById('nonstok-tx-account-pay').value;
+            amount = parseFloat(document.getElementById('nonstok-tx-amount-pay').value);
+            description = document.getElementById('nonstok-tx-description-pay').value;
+            category = 'HUTANG';
+            name = "Pelunasan Hutang Usaha";
         } else if (type === 'revenue') {
             account = document.getElementById('nonstok-tx-account-in').value;
             amount = parseFloat(document.getElementById('nonstok-tx-amount-in').value);
@@ -1147,30 +1304,30 @@ function handleTransactionSubmit(e, formType) {
     };
 
     if (type === 'pos_settlement') {
-        let amountBersih = parseFloat(document.getElementById('settle-tx-amount').value) || 0;
-        
-        let totalAdminFee = 0;
-        if (detailItems && detailItems.length > 0) {
-            detailItems.forEach(d => totalAdminFee += (d.admin || 0));
-        } else {
-            totalAdminFee = parseFloat(document.getElementById('settle-tx-admin')?.value) || 0;
-        }
+        const amountBersih = parseFloat(document.getElementById('settle-tx-amount').value) || 0;
+        const totalAdminFee = parseFloat(document.getElementById('settle-tx-total-admin').value) || 0;
+        const totalInterest = parseFloat(document.getElementById('settle-tx-interest').value) || 0;
         
         journalPayload.admin_fee = totalAdminFee;
-        journalPayload.interest_fee = 0;
+        journalPayload.interest_fee = totalInterest;
         journalPayload.settlement_amount = amountBersih;
-        journalPayload.journal_lines['debit'] = { account_type: 'asset', account_id: account, amount: amount };
+        journalPayload.journal_lines['debit'] = { account_type: 'asset', account_id: account, amount: amountBersih + totalInterest };
     } else if (type === 'revenue') {
         journalPayload.journal_lines['debit'] = { account_type: 'asset', account_id: account, amount: amount };
         journalPayload.journal_lines['credit'] = { account_type: 'revenue', account_id: category, amount: amount };
+    } else if (type === 'pay_payable') {
+        journalPayload.journal_lines['debit'] = { account_type: 'liability', account_id: 'HUTANG', amount: amount };
+        journalPayload.journal_lines['credit'] = { account_type: 'asset', account_id: account, amount: amount };
     } else if (type === 'expense') {
+        const creditAccType = account === 'HUTANG' ? 'liability' : 'asset';
+        
         if (isHpp) {
             const mainItem = detailItems[0] || { id: null, qty: 0, price: 0 };
             journalPayload.journal_lines['debit'] = { account_type: 'inventory', account_id: mainItem.id, amount: amount, qty: mainItem.qty, unit_price: mainItem.price };
-            journalPayload.journal_lines['credit'] = { account_type: 'asset', account_id: account, amount: amount };
+            journalPayload.journal_lines['credit'] = { account_type: creditAccType, account_id: account, amount: amount };
         } else {
             journalPayload.journal_lines['debit'] = { account_type: 'expense', account_id: category, amount: amount };
-            journalPayload.journal_lines['credit'] = { account_type: 'asset', account_id: account, amount: amount };
+            journalPayload.journal_lines['credit'] = { account_type: creditAccType, account_id: account, amount: amount };
         }
     }
     journalPayload.is_hpp = isHpp;
@@ -1249,6 +1406,7 @@ window.loadTransactionHistory = function() {
             let color = '';
             if (tx.type === 'pos_settlement') { typeLabel = 'Pencairan Bank'; color = '#1d4ed8'; }
             else if (tx.type === 'revenue') { typeLabel = 'Pendapatan'; color = '#166534'; }
+            else if (tx.type === 'pay_payable') { typeLabel = 'Bayar Hutang'; color = '#b45309'; }
             else if (tx.type === 'expense' && tx.is_hpp) { typeLabel = 'Stok HPP'; color = '#92400e'; }
             else { typeLabel = 'Biaya'; color = '#991b1b'; }
 
@@ -1304,6 +1462,22 @@ function initReportPage() {
     const btnGenerate = document.getElementById('btn-generate-report');
     btnGenerate.addEventListener('click', generateReports);
 
+    // Menambahkan tombol Export otomatis di sebelah tombol Tampilkan Laporan
+    let exportGroup = document.getElementById('export-btn-group');
+    if (!exportGroup && btnGenerate && btnGenerate.parentNode) {
+        exportGroup = document.createElement('div');
+        exportGroup.id = 'export-btn-group';
+        exportGroup.style.display = 'inline-flex';
+        exportGroup.style.gap = '8px';
+        exportGroup.style.marginLeft = '15px';
+        exportGroup.innerHTML = `
+            <button type="button" class="btn btn-secondary" style="background:#10b981; color:white; border:none; padding:8px 12px; font-weight:bold;" onclick="exportLaporanKeuangan('excel')">💾 Excel</button>
+            <button type="button" class="btn btn-secondary" style="background:#dc2626; color:white; border:none; padding:8px 12px; font-weight:bold;" onclick="exportLaporanKeuangan('pdf')">📄 PDF</button>
+            <button type="button" class="btn btn-secondary" style="background:#f59e0b; color:white; border:none; padding:8px 12px; font-weight:bold;" onclick="exportLaporanKeuangan('jpg')">🖼️ JPG</button>
+        `;
+        btnGenerate.parentNode.insertBefore(exportGroup, btnGenerate.nextSibling);
+    }
+
     // Setel default tanggal dari awal bulan hingga hari ini
     const dateStart = document.getElementById('start-date');
     const dateEnd = document.getElementById('end-date');
@@ -1324,7 +1498,7 @@ function initReportPage() {
 
 // Fungsi Navigasi Tab Laporan
 window.switchReportTab = function(tabId) {
-    const tabs = ['lr', 'mutasi', 'stok'];
+    const tabs = ['lr', 'mutasi', 'stok', 'hutang'];
     tabs.forEach(t => {
         const card = document.getElementById('tab-content-' + t);
         const btn = document.getElementById('tab-btn-' + t);
@@ -1425,6 +1599,10 @@ async function generateReports() {
         const rincianBiaya = {};
         const rincianBiayaLain = {};
 
+        let totalHutang = 0;
+        let rincianHutang = [];
+        let summaryHutang = {};
+
         // Mengambil SELURUH transaksi hingga endDate untuk menghitung Saldo Awal Mutasi
         const txAllSnap = await rbmDb.ref(`rbm_pro/transactions/${outlet}`).orderByChild('date').endAt(endDate).once('value');
         const allTransactions = txAllSnap.val() || {};
@@ -1439,6 +1617,30 @@ async function generateReports() {
             const txDate = tx.date;
             const amount = parseFloat(tx.total_amount || 0);
             
+            // Hitung Saldo Hutang
+            let hutangDesc = (tx.name || tx.description || 'Pembelian Tempo').trim();
+            if (tx.type === 'pay_payable') {
+                hutangDesc = (tx.description || tx.name || 'Pelunasan Hutang').trim();
+            }
+
+            if (tx.type === 'expense' && tx.journal_lines?.credit?.account_id === 'HUTANG') {
+                if (txDate <= endDate) {
+                    totalHutang += amount;
+                    summaryHutang[hutangDesc] = (summaryHutang[hutangDesc] || 0) + amount;
+                    if (txDate >= startDate && txDate <= endDate) {
+                        rincianHutang.push({ date: txDate, desc: hutangDesc, amount: amount, type: 'tambah' });
+                    }
+                }
+            } else if (tx.type === 'pay_payable') {
+                if (txDate <= endDate) {
+                    totalHutang -= amount;
+                    summaryHutang[hutangDesc] = (summaryHutang[hutangDesc] || 0) - amount;
+                    if (txDate >= startDate && txDate <= endDate) {
+                        rincianHutang.push({ date: txDate, desc: hutangDesc, amount: amount, type: 'kurang' });
+                    }
+                }
+            }
+
             let accId = null;
             let isMasuk = false;
 
@@ -1446,6 +1648,7 @@ async function generateReports() {
             if (tx.type === 'revenue') { accId = tx.journal_lines?.debit?.account_id; isMasuk = true; } 
             else if (tx.type === 'expense') { accId = tx.journal_lines?.credit?.account_id; isMasuk = false; }
             else if (tx.type === 'pos_settlement') { accId = tx.journal_lines?.debit?.account_id; isMasuk = true; }
+            else if (tx.type === 'pay_payable') { accId = tx.journal_lines?.credit?.account_id; isMasuk = false; }
 
             // Pemisahan Transaksi berdasar Rentang Tanggal
             if (txDate < startDate) {
@@ -1460,31 +1663,59 @@ async function generateReports() {
                     let typeLabel = '';
                     if (tx.type === 'pos_settlement') typeLabel = 'Pencairan Kasir (Settlement)';
                     else if (tx.type === 'revenue') typeLabel = 'Pendapatan';
+                    else if (tx.type === 'pay_payable') typeLabel = 'Pelunasan Hutang';
                     else if (tx.type === 'expense' && tx.is_hpp) typeLabel = 'Pembelian HPP';
                     else typeLabel = 'Biaya / Pengeluaran';
 
-                    let detailsHtml = '';
                     if (tx.type === 'pos_settlement') {
-                        let rowsHtml = '';
                         if (tx.details && tx.details.length > 0) {
-                            rowsHtml = tx.details.map(d => `<div style="margin-bottom:2px;">- ${d.name}: Kotor Rp ${Math.round(d.gross || 0).toLocaleString('id-ID')} | Admin Rp ${Math.round(d.admin || 0).toLocaleString('id-ID')} | <strong>Bersih Rp ${Math.round(d.price || 0).toLocaleString('id-ID')}</strong></div>`).join('');
+                            tx.details.forEach(d => {
+                                const detailAmount = parseFloat(d.price) || 0; // Uang Bersih
+                                const detailAdmin = parseFloat(d.admin) || 0;
+                                const detailGross = parseFloat(d.gross) || 0;
+                                const detailsHtml = `<div style="font-size:11px; color:#475569;">Kotor: Rp ${Math.round(detailGross).toLocaleString('id-ID')} | Admin: Rp ${Math.round(detailAdmin).toLocaleString('id-ID')}</div>`;
+                                accountsLedger[accId].mutasi.push({ 
+                                    date: txDate, 
+                                    name: d.name || '-', 
+                                    description: tx.description || '', 
+                                    masuk: detailAmount, 
+                                    keluar: 0, 
+                                    typeLabel: typeLabel, 
+                                    detailsHtml: detailsHtml 
+                                });
+                            });
+                            if (parseFloat(tx.interest_fee) > 0) {
+                                accountsLedger[accId].mutasi.push({ 
+                                    date: txDate, 
+                                    name: 'Bunga Bank', 
+                                    description: tx.description || '', 
+                                    masuk: parseFloat(tx.interest_fee), 
+                                    keluar: 0, 
+                                    typeLabel: 'Bunga Bank / Cashback', 
+                                    detailsHtml: '' 
+                                });
+                            }
+                        } else {
+                            let interestHtml = tx.interest_fee ? `<br>Bunga Bank: <strong>Rp ${Math.round(tx.interest_fee).toLocaleString('id-ID')}</strong>` : '';
+                            let detailsHtml = `<div style="font-size:11px; color:#475569;"><div style="margin-top:4px; border-top:1px dashed #cbd5e1; padding-top:4px;">Total Bersih: <strong>Rp ${Math.round(tx.settlement_amount || 0).toLocaleString('id-ID')}</strong><br>Total Admin: <strong>Rp ${Math.round(tx.admin_fee || 0).toLocaleString('id-ID')}</strong>${interestHtml}</div></div>`;
+                            accountsLedger[accId].mutasi.push({ date: txDate, name: tx.name || '-', description: tx.description || '', masuk: amount, keluar: 0, typeLabel: typeLabel, detailsHtml: detailsHtml });
                         }
-                        let interestHtml = tx.interest_fee ? `<br>Bunga Bank: <strong>Rp ${Math.round(tx.interest_fee).toLocaleString('id-ID')}</strong>` : '';
-                        detailsHtml = `<div style="font-size:11px; color:#475569;">${rowsHtml}<div style="margin-top:4px; border-top:1px dashed #cbd5e1; padding-top:4px;">Total Bersih: <strong>Rp ${Math.round(tx.settlement_amount || 0).toLocaleString('id-ID')}</strong><br>Total Admin: <strong>Rp ${Math.round(tx.admin_fee || 0).toLocaleString('id-ID')}</strong>${interestHtml}</div></div>`;
-                    } else if (tx.details && tx.details.length > 0) {
-                        detailsHtml = tx.details.map(d => {
-                            const u = d.unit && d.unit !== '-' ? ` ${d.unit}` : '';
-                            const total = (d.qty || 0) * (d.price || 0);
-                            return `<div style="font-size:11px; color:#059669; margin-bottom:2px;">📦 ${d.name}: ${d.qty}${u} &times; Rp ${Math.round(d.price).toLocaleString('id-ID')} = <strong>Rp ${Math.round(total).toLocaleString('id-ID')}</strong></div>`;
-                        }).join('');
-                    } else if (tx.is_hpp && tx.journal_lines && tx.journal_lines.debit && tx.journal_lines.debit.qty) {
-                        const q = tx.journal_lines.debit.qty;
-                        const p = tx.journal_lines.debit.unit_price;
-                        const total = (q || 0) * (p || 0);
-                        detailsHtml = `<div style="font-size:11px; color:#059669; margin-bottom:2px;">📦 Qty: ${q} &times; Rp ${Math.round(p).toLocaleString('id-ID')} = <strong>Rp ${Math.round(total).toLocaleString('id-ID')}</strong></div>`;
+                    } else {
+                        let detailsHtml = '';
+                        if (tx.details && tx.details.length > 0) {
+                            detailsHtml = tx.details.map(d => {
+                                const u = d.unit && d.unit !== '-' ? ` ${d.unit}` : '';
+                                const total = (d.qty || 0) * (d.price || 0);
+                                return `<div style="font-size:11px; color:#059669; margin-bottom:2px;">📦 ${d.name}: ${d.qty}${u} &times; Rp ${Math.round(d.price).toLocaleString('id-ID')} = <strong>Rp ${Math.round(total).toLocaleString('id-ID')}</strong></div>`;
+                            }).join('');
+                        } else if (tx.is_hpp && tx.journal_lines && tx.journal_lines.debit && tx.journal_lines.debit.qty) {
+                            const q = tx.journal_lines.debit.qty;
+                            const p = tx.journal_lines.debit.unit_price;
+                            const total = (q || 0) * (p || 0);
+                            detailsHtml = `<div style="font-size:11px; color:#059669; margin-bottom:2px;">📦 Qty: ${q} &times; Rp ${Math.round(p).toLocaleString('id-ID')} = <strong>Rp ${Math.round(total).toLocaleString('id-ID')}</strong></div>`;
+                        }
+                        accountsLedger[accId].mutasi.push({ date: txDate, name: tx.name || '-', description: tx.description || '', masuk: isMasuk ? amount : 0, keluar: !isMasuk ? amount : 0, typeLabel: typeLabel, detailsHtml: detailsHtml });
                     }
-
-                    accountsLedger[accId].mutasi.push({ date: txDate, name: tx.name || '-', description: tx.description || '', masuk: isMasuk ? amount : 0, keluar: !isMasuk ? amount : 0, typeLabel: typeLabel, detailsHtml: detailsHtml });
                 }
                 
                 // 3. Akumulasi untuk Laba Rugi
@@ -1721,6 +1952,47 @@ async function generateReports() {
                         <td style="padding: 12px 16px; border-bottom: 2px solid #cbd5e1;">TOTAL BIAYA OPERASIONAL</td>
                         <td style="padding: 12px 16px; border-bottom: 2px solid #cbd5e1; text-align: right; color: #b91c1c;">-${formatRp(totalExpense)}</td>
                     </tr>
+        `;
+
+        if (Object.keys(rincianBiayaLain).length > 0) {
+            htmlLabaRugi += `
+                    <!-- BIAYA LAIN-LAIN -->
+                    <tr style="background: #fef2f2;"><td colspan="2" style="padding: 12px 16px; font-weight: bold; color: #991b1b; border-bottom: 1px solid #e2e8f0;">BIAYA LAIN-LAIN</td></tr>
+            `;
+
+            Object.keys(rincianBiayaLain).forEach(catId => {
+                const catName = keuanganMasterData.expenses[catId] ? keuanganMasterData.expenses[catId].name : 'Biaya Administrasi Bank';
+                const catData = rincianBiayaLain[catId];
+                const safeCatId = catId.replace(/[^a-zA-Z0-9_-]/g, '_');
+                
+                htmlLabaRugi += `
+                        <tr style="background: #fef2f2; cursor: pointer;" onclick="toggleBiayaDetail('${safeCatId}')" title="Klik untuk melihat rincian">
+                            <td style="padding: 8px 16px; border-bottom: 1px solid #e2e8f0; padding-left: 20px; font-weight: 600; color: #991b1b;">
+                                <span id="icon-biaya-${safeCatId}" style="display:inline-block; width:15px; font-size:12px; transition: transform 0.2s;">▶</span> 📁 ${catName}
+                            </td>
+                            <td style="padding: 8px 16px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600; color: #991b1b;">${formatRp(catData.total)}</td>
+                        </tr>
+                `;
+                
+                Object.keys(catData.items).forEach(itemName => {
+                    htmlLabaRugi += `
+                        <tr class="detail-biaya-${safeCatId}" style="display: none; background: #fafafa;">
+                            <td style="padding: 6px 16px; border-bottom: 1px solid #f1f5f9; padding-left: 40px; font-size: 13px; color: #475569;">- ${itemName}</td>
+                            <td style="padding: 6px 16px; border-bottom: 1px solid #f1f5f9; text-align: right; font-size: 13px; color: #475569;">${formatRp(catData.items[itemName])}</td>
+                        </tr>
+                    `;
+                });
+            });
+
+            htmlLabaRugi += `
+                    <tr style="font-weight: bold; background: #f1f5f9;">
+                        <td style="padding: 12px 16px; border-bottom: 2px solid #cbd5e1;">TOTAL BIAYA LAIN-LAIN</td>
+                        <td style="padding: 12px 16px; border-bottom: 2px solid #cbd5e1; text-align: right; color: #b91c1c;">-${formatRp(totalBiayaLain)}</td>
+                    </tr>
+            `;
+        }
+
+        htmlLabaRugi += `
 
                     <!-- LABA BERSIH -->
                     <tr style="font-weight: 800; font-size: 18px; background: ${labaBersih >= 0 ? '#dcfce7' : '#fee2e2'};">
@@ -1746,49 +2018,75 @@ async function generateReports() {
             const ledger = accountsLedger[accId];
             if (ledger.saldoAwal === 0 && ledger.mutasi.length === 0 && ledger.saldoAkhir === 0) return;
             
-            htmlLedger += `<h4 style="margin: 20px 16px 10px; color: #1e40af; font-size: 15px;">🏦 Akun: ${ledger.name}</h4>`;
             htmlLedger += `
-                <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px;">
-                    <thead>
-                        <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
-                            <th style="padding: 10px 16px; text-align: left;">Tanggal</th>
-                            <th style="padding: 10px 16px; text-align: left;">Keterangan</th>
-                            <th style="padding: 10px 16px; text-align: right;">Masuk (Debit)</th>
-                            <th style="padding: 10px 16px; text-align: right;">Keluar (Kredit)</th>
-                            <th style="padding: 10px 16px; text-align: right;">Saldo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td colspan="4" style="padding: 10px 16px; text-align: right; font-weight: bold; background: #f8fafc;">Saldo Awal</td><td style="padding: 10px 16px; text-align: right; font-weight: bold; background: #f8fafc;">${formatRp(ledger.saldoAwal)}</td></tr>
+            <div style="margin: 20px 16px 24px; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05); background: white;">
+                <div style="background: #f8fafc; padding: 15px 20px; border-bottom: 1px solid #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+                    <h4 style="margin: 0; color: #1e40af; font-size: 16px; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 20px;">🏦</span> Akun: ${ledger.name}
+                    </h4>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+                        <thead>
+                            <tr style="background: #e2e8f0; color: #334155; border-bottom: 2px solid #cbd5e1;">
+                                <th style="padding: 12px 16px; font-weight: 600; width: 100px;">Tanggal</th>
+                                <th style="padding: 12px 16px; font-weight: 600;">Keterangan Transaksi</th>
+                                <th style="padding: 12px 16px; font-weight: 600; text-align: right; width: 140px;">Masuk (Debit)</th>
+                                <th style="padding: 12px 16px; font-weight: 600; text-align: right; width: 140px;">Keluar (Kredit)</th>
+                                <th style="padding: 12px 16px; font-weight: 600; text-align: right; width: 150px;">Saldo Berjalan</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="4" style="padding: 12px 16px; text-align: right; font-weight: 600; color: #475569; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">Saldo Awal</td>
+                                <td style="padding: 12px 16px; text-align: right; font-weight: bold; color: #0f172a; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">${formatRp(ledger.saldoAwal)}</td>
+                            </tr>
             `;
             
             let runningSaldo = ledger.saldoAwal;
             ledger.mutasi.sort((a,b) => a.date.localeCompare(b.date)); // Sortir tanggal
-            ledger.mutasi.forEach(m => {
+            
+            let lastDate = '';
+
+            ledger.mutasi.forEach((m, idx) => {
                 runningSaldo = runningSaldo + m.masuk - m.keluar;
                 
                 const hasExtra = m.description || m.detailsHtml;
                 const descHtml = `
-                    <div style="font-weight:700; color: #1e293b; margin-bottom:4px; cursor:${hasExtra ? 'pointer' : 'default'};" ${hasExtra ? `onclick="const d = this.parentElement.querySelector('.mutasi-desc'); if(d) d.style.display = d.style.display === 'none' ? 'block' : 'none'"` : ''} title="${hasExtra ? 'Klik untuk melihat detail' : ''}">
-                        ${m.name} ${hasExtra ? '<span style="font-size:12px; margin-left:4px; cursor:pointer;">📝</span>' : ''}
+                    <div style="font-weight:600; color: #1e293b; margin-bottom:6px; cursor:${hasExtra ? 'pointer' : 'default'};" ${hasExtra ? `onclick="const d = this.parentElement.querySelector('.mutasi-desc'); if(d) d.style.display = d.style.display === 'none' ? 'block' : 'none'"` : ''} title="${hasExtra ? 'Klik untuk melihat rincian' : ''}">
+                        ${m.name} ${hasExtra ? '<span style="font-size:11px; margin-left:6px; padding:2px 6px; border-radius:4px; background:#eff6ff; color:#3b82f6; border:1px solid #bfdbfe;">Rincian ▾</span>' : ''}
                     </div>
-                    <span style="font-size:10px; background:#e2e8f0; color:#475569; padding:2px 6px; border-radius:4px; display:inline-block;">💳 ${m.typeLabel}</span>
+                    <span style="font-size:10px; background:#f1f5f9; color:#475569; padding:3px 8px; border-radius:12px; display:inline-block; border: 1px solid #e2e8f0;">💳 ${m.typeLabel}</span>
                     ${hasExtra ? `
-                    <div class="mutasi-desc" style="display:none; margin-top:8px; font-size:12px; color:#334155; background:#f8fafc; padding:8px 10px; border-radius:6px; border-left:3px solid #3b82f6;">
-                        ${m.detailsHtml ? `<div style="margin-bottom: ${m.description ? '6px' : '0'}; border-bottom: ${m.description ? '1px dashed #cbd5e1' : 'none'}; padding-bottom: ${m.description ? '6px' : '0'};">${m.detailsHtml}</div>` : ''}
+                    <div class="mutasi-desc" style="display:none; margin-top:10px; font-size:12px; color:#334155; background:#f8fafc; padding:10px 12px; border-radius:6px; border: 1px solid #e2e8f0;">
+                        ${m.detailsHtml ? `<div style="${m.description ? 'margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;' : ''}">${m.detailsHtml}</div>` : ''}
                         ${m.description ? `<div><strong>Catatan:</strong><br>${m.description}</div>` : ''}
                     </div>` : ''}
                 `;
-                htmlLedger += `<tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 14px 16px; vertical-align: top;">${m.date}</td>
+
+                const dateDisplay = (m.date === lastDate) ? '<span style="color:#cbd5e1; font-weight:bold;">"</span>' : `<span style="font-weight:600; color:#475569;">${m.date}</span>`;
+                lastDate = m.date;
+
+                const bgRow = (idx % 2 === 0) ? '#ffffff' : '#fafafa';
+
+                htmlLedger += `<tr style="background: ${bgRow}; border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='${bgRow}'">
+                    <td style="padding: 14px 16px; vertical-align: top;">${dateDisplay}</td>
                     <td style="padding: 14px 16px; vertical-align: top;">${descHtml}</td>
-                    <td style="padding: 14px 16px; text-align: right; color: #059669; vertical-align: top; font-weight: 500;">${m.masuk > 0 ? formatRp(m.masuk) : '-'}</td>
-                    <td style="padding: 14px 16px; text-align: right; color: #dc2626; vertical-align: top; font-weight: 500;">${m.keluar > 0 ? formatRp(m.keluar) : '-'}</td>
-                    <td style="padding: 14px 16px; text-align: right; font-weight: 700; vertical-align: top; color: #0f172a;">${formatRp(runningSaldo)}</td>
+                    <td style="padding: 14px 16px; text-align: right; color: #059669; vertical-align: top; font-weight: 600;">${m.masuk > 0 ? '+ ' + formatRp(m.masuk) : '-'}</td>
+                    <td style="padding: 14px 16px; text-align: right; color: #dc2626; vertical-align: top; font-weight: 600;">${m.keluar > 0 ? '- ' + formatRp(m.keluar) : '-'}</td>
+                    <td style="padding: 14px 16px; text-align: right; font-weight: 700; vertical-align: top; color: #0f172a; background: rgba(241, 245, 249, 0.4);">${formatRp(runningSaldo)}</td>
                 </tr>`;
             });
             
-            htmlLedger += `<tr><td colspan="4" style="padding: 12px 16px; text-align: right; font-weight: bold; background: #e0f2fe; border-top: 2px solid #bae6fd;">Saldo Akhir</td><td style="padding: 12px 16px; text-align: right; font-weight: bold; background: #e0f2fe; border-top: 2px solid #bae6fd; color: #0369a1;">${formatRp(ledger.saldoAkhir)}</td></tr></tbody></table>`;
+            htmlLedger += `
+                            <tr>
+                                <td colspan="4" style="padding: 14px 16px; text-align: right; font-weight: 600; background: #e0f2fe; color: #0369a1;">Saldo Akhir</td>
+                                <td style="padding: 14px 16px; text-align: right; font-weight: 800; background: #e0f2fe; color: #0369a1; font-size: 14px;">${formatRp(ledger.saldoAkhir)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>`;
         });
 
         if (!htmlLedger) htmlLedger = '<p style="color:#6b7280; font-size:13px; text-align:center;">Tidak ada mutasi Kas/Bank pada periode ini.</p>';
@@ -1902,6 +2200,73 @@ async function generateReports() {
         document.getElementById('report-stok-container').innerHTML = htmlStok;
         document.getElementById('report-stok-container').style.padding = '0';
 
+        // ==========================================
+        // --- 4. PROSES LAPORAN HUTANG ---
+        // ==========================================
+        let htmlHutang = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin: 20px 16px 10px;">
+                <h4 style="margin: 0; color: #b91c1c; font-size: 15px;">💳 Rincian Hutang Usaha (Tempo)</h4>
+                <span style="font-size:18px; font-weight:800; color:#b91c1c; background: #fef2f2; padding: 4px 12px; border-radius: 8px; border: 1px solid #fecaca;">Total Sisa: ${formatRp(totalHutang)}</span>
+            </div>
+        `;
+        
+        htmlHutang += `<div style="padding: 0 16px 20px;">`;
+        
+        htmlHutang += `<h5 style="margin: 0 0 8px; color: #475569; font-size: 13px;">Ringkasan Sisa Hutang per Supplier/Nota</h5>`;
+        htmlHutang += `<table style="width: 100%; border-collapse: collapse; font-size: 13px; background: white; margin-bottom: 20px; border: 1px solid #cbd5e1;">
+            <thead style="background: #f1f5f9;">
+                <tr>
+                    <th style="padding: 8px; text-align: left; border-bottom: 1px solid #cbd5e1;">Nama Supplier / Keterangan</th>
+                    <th style="padding: 8px; text-align: right; border-bottom: 1px solid #cbd5e1;">Sisa Hutang</th>
+                    <th style="padding: 8px; text-align: center; border-bottom: 1px solid #cbd5e1; width: 90px;">Aksi</th>
+                </tr>
+            </thead><tbody>`;
+        
+        let hasHutang = false;
+        Object.keys(summaryHutang).sort().forEach(desc => {
+            const sisa = summaryHutang[desc];
+            if (sisa > 0) { // Masih ada hutang
+                hasHutang = true;
+                const safeDesc = desc.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                htmlHutang += `<tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">${desc}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold; color: #b91c1c;">${formatRp(sisa)}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">
+                        <button type="button" class="btn btn-secondary" style="padding: 4px 12px; font-size: 11px; background: #10b981; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="bayarHutangLangsung('${safeDesc}', ${sisa})">Bayar</button>
+                    </td>
+                </tr>`;
+            } else if (sisa < 0) { // Lebih bayar
+                hasHutang = true;
+                htmlHutang += `<tr><td style="padding: 8px; border-bottom: 1px solid #e2e8f0; font-weight: 500;">${desc}</td><td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold; color: #059669;">${formatRp(sisa)} (Lebih)</td><td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">-</td></tr>`;
+            }
+        });
+        if (!hasHutang) htmlHutang += `<tr><td colspan="3" style="padding: 8px; text-align: center; color: #64748b;">Tidak ada hutang yang belum lunas.</td></tr>`;
+        htmlHutang += `</tbody></table>`;
+
+        htmlHutang += `<h5 style="margin: 0 0 8px; color: #475569; font-size: 13px;">Riwayat Mutasi Hutang (Periode Terpilih)</h5>`;
+        if (rincianHutang.length > 0) {
+            htmlHutang += `<table style="width: 100%; border-collapse: collapse; font-size: 13px; background: white; border: 1px solid #cbd5e1;">
+                <thead style="background: #f1f5f9;">
+                    <tr><th style="padding: 8px; text-align: left; border-bottom: 1px solid #cbd5e1;">Tanggal</th><th style="padding: 8px; text-align: left; border-bottom: 1px solid #cbd5e1;">Keterangan</th><th style="padding: 8px; text-align: right; border-bottom: 1px solid #cbd5e1;">Mutasi</th></tr>
+                </thead><tbody>`;
+            rincianHutang.sort((a,b) => a.date.localeCompare(b.date));
+            rincianHutang.forEach(rh => {
+                const color = rh.type === 'tambah' ? '#b91c1c' : '#059669';
+                const sign = rh.type === 'tambah' ? '+ Tambah Hutang' : '- Pelunasan';
+                htmlHutang += `<tr><td style="padding: 8px; border-bottom: 1px solid #e2e8f0; color: #64748b;">${rh.date}</td><td style="padding: 8px; border-bottom: 1px solid #e2e8f0; color: #334155; font-weight: 500;">${rh.desc}</td><td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold; color: ${color};">${sign} ${formatRp(rh.amount)}</td></tr>`;
+            });
+            htmlHutang += `</tbody></table>`;
+        } else {
+            htmlHutang += `<div style="font-size:12px; color:#64748b; padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; text-align: center;">Tidak ada pergerakan hutang pada periode ini.</div>`;
+        }
+        htmlHutang += `</div>`;
+        
+        const reportHutangContainer = document.getElementById('report-hutang-container');
+        if (reportHutangContainer) {
+            reportHutangContainer.innerHTML = htmlHutang;
+            reportHutangContainer.style.padding = '0';
+        }
+
     } catch (e) {
         console.error(e);
         alert("Gagal membuat laporan: " + e.message);
@@ -1942,6 +2307,256 @@ window.toggleHppDetail = function(catId) {
     }
     if (icon) {
         icon.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+    }
+};
+
+// =================================================================
+// FUNGSI BAYAR HUTANG LANGSUNG DARI LAPORAN
+// =================================================================
+window.bayarHutangLangsung = async function(desc, sisa) {
+    if (!keuanganMasterData || !keuanganMasterData.accounts || Object.keys(keuanganMasterData.accounts).length === 0) {
+        alert('Data Akun Kas/Bank belum dimuat. Silakan tunggu atau klik Tampilkan Laporan ulang.');
+        return;
+    }
+
+    const formatRp = (num) => 'Rp ' + Math.round(num).toLocaleString('id-ID');
+    let optionsHtml = Object.keys(keuanganMasterData.accounts).map(k => `<option value="${k}">${keuanganMasterData.accounts[k].name}</option>`).join('');
+
+    const today = new Date().toISOString().split('T')[0];
+
+    const msgHtml = `
+        <div style="text-align: left; font-size: 13px;">
+            <p style="margin-bottom: 15px; color: #475569; line-height: 1.4;">Lakukan pelunasan hutang untuk:<br><strong style="color: #1e293b; font-size: 14px;">${desc}</strong><br>Sisa tagihan: <strong style="color: #b91c1c; font-size: 14px;">${formatRp(sisa)}</strong></p>
+            <div class="form-section" style="margin-bottom: 12px; text-align: left;">
+                <label style="display: block; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Tanggal Pelunasan</label>
+                <input type="date" id="quick-pay-date" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;" value="${today}">
+            </div>
+            <div class="form-section" style="margin-bottom: 12px; text-align: left;">
+                <label style="display: block; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Sumber Dana (Kas/Bank)</label>
+                <select id="quick-pay-account" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; box-sizing: border-box;">
+                    ${optionsHtml}
+                </select>
+            </div>
+            <div class="form-section" style="margin-bottom: 12px; text-align: left;">
+                <label style="display: block; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Nominal Bayar (Rp)</label>
+                <input type="number" id="quick-pay-amount" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;" value="${sisa}" max="${sisa}">
+            </div>
+        </div>
+    `;
+
+    let isConfirmed = false;
+    if (typeof CustomUI !== 'undefined') {
+        isConfirmed = await CustomUI.show({ type: 'confirm', title: 'Pelunasan Hutang', message: msgHtml, isHtml: true, icon: '💸', confirmText: 'Bayar Sekarang', cancelText: 'Batal' });
+    } else {
+        isConfirmed = confirm(`Bayar hutang untuk ${desc} sejumlah ${formatRp(sisa)}?`);
+    }
+
+    if (isConfirmed) {
+        const payDate = document.getElementById('quick-pay-date') ? document.getElementById('quick-pay-date').value : today;
+        const payAccount = document.getElementById('quick-pay-account') ? document.getElementById('quick-pay-account').value : Object.keys(keuanganMasterData.accounts)[0];
+        const payAmount = document.getElementById('quick-pay-amount') ? parseFloat(document.getElementById('quick-pay-amount').value) : sisa;
+
+        if (!payAmount || payAmount <= 0) {
+            alert('Nominal pembayaran tidak valid.');
+            return;
+        }
+
+        const payload = {
+            date: payDate, type: 'pay_payable', name: "Pelunasan Hutang Usaha", description: desc, total_amount: payAmount, created_at: new Date().toISOString(), is_hpp: false,
+            journal_lines: { debit: { account_type: 'liability', account_id: 'HUTANG', amount: payAmount }, credit: { account_type: 'asset', account_id: payAccount, amount: payAmount } },
+            details: []
+        };
+
+        const outlet = getOutletLR();
+        try {
+            await rbmDb.ref(`rbm_pro/transactions/${outlet}`).push(payload);
+            if (typeof CustomUI !== 'undefined') CustomUI.success(`Pembayaran berhasil dicatat untuk ${desc}!`, 'Berhasil');
+            else alert(`Pembayaran berhasil dicatat untuk ${desc}!`);
+            
+            if (typeof generateReports === 'function') generateReports(); // Otomatis perbarui tabel laporan
+        } catch (err) {
+            alert('Gagal memproses pembayaran: ' + err.message);
+        }
+    }
+};
+
+// =================================================================
+// FUNGSI EXPORT LAPORAN (EXCEL, PDF, JPG)
+// =================================================================
+window.exportLaporanKeuangan = async function(format) {
+    // Deteksi tab mana yang sedang aktif
+    let activeTab = 'lr';
+    if (document.getElementById('tab-content-mutasi') && document.getElementById('tab-content-mutasi').style.display === 'block') activeTab = 'mutasi';
+    if (document.getElementById('tab-content-stok') && document.getElementById('tab-content-stok').style.display === 'block') activeTab = 'stok';
+    if (document.getElementById('tab-content-hutang') && document.getElementById('tab-content-hutang').style.display === 'block') activeTab = 'hutang';
+    
+    let containerId = '';
+    let title = '';
+    if (activeTab === 'lr') { containerId = 'report-laba-rugi-container'; title = 'Laporan Laba Rugi'; }
+    if (activeTab === 'mutasi') { containerId = 'report-kas-bank-container'; title = 'Buku Besar - Mutasi Kas Bank'; }
+    if (activeTab === 'stok') { containerId = 'report-stok-container'; title = 'Laporan Stok Opname'; }
+    if (activeTab === 'hutang') { containerId = 'report-hutang-container'; title = 'Laporan Hutang Usaha'; }
+    
+    const container = document.getElementById(containerId);
+    if (!container || !container.innerHTML.trim() || container.innerHTML.includes('Pilih rentang tanggal')) {
+        alert('Tidak ada data laporan. Silakan Tampilkan Laporan terlebih dahulu.');
+        return;
+    }
+
+    let withDetails = true;
+    if (activeTab === 'lr') {
+        if (typeof CustomUI !== 'undefined') {
+            withDetails = await CustomUI.show({
+                type: 'confirm',
+                title: 'Format Ekspor Laba Rugi',
+                message: 'Pilih format tampilan laporan yang ingin Anda ekspor:',
+                confirmText: 'Lengkap (Dengan Rincian)',
+                cancelText: 'Ringkasan Saja'
+            });
+        } else {
+            withDetails = confirm("Klik 'OK' untuk mengekspor laporan dengan RINCIAN lengkap.\nKlik 'Cancel' untuk mengekspor RINGKASAN saja.");
+        }
+    }
+
+    const startDate = document.getElementById('start-date') ? document.getElementById('start-date').value : '';
+    const endDate = document.getElementById('end-date') ? document.getElementById('end-date').value : '';
+    const periodStr = `${startDate}_sd_${endDate}`;
+    
+    if (activeTab === 'lr') {
+        const outletName = getOutletLR().toUpperCase();
+        title = `${title} - CABANG ${outletName}`;
+    }
+    
+    const fileName = `${title.replace(/[^a-zA-Z0-9]/g, '_')}_${periodStr}`;
+
+    // Clone container untuk memanipulasi (expand baris rincian yang disembunyikan/collapse)
+    const clone = container.cloneNode(true);
+    
+    if (activeTab === 'lr') {
+        clone.querySelectorAll('tr').forEach(tr => {
+            if (withDetails) {
+                if (tr.style.display === 'none') tr.style.display = ''; // Expand semua rincian
+            } else {
+                // Hapus rincian jika mode ringkasan
+                if (tr.className && typeof tr.className === 'string' && tr.className.includes('detail-')) {
+                    tr.parentNode.removeChild(tr);
+                }
+                // Hapus ikon panah dropdown
+                const icon = tr.querySelector('span[id^="icon-"]');
+                if (icon) icon.parentNode.removeChild(icon);
+            }
+        });
+    } else {
+        clone.querySelectorAll('tr').forEach(tr => {
+            if (tr.style.display === 'none') tr.style.display = ''; // Expand semua rincian
+        });
+    }
+    
+    let footerHtmlStr = '';
+    if (activeTab === 'lr') {
+        const u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+        const pembuat = u.nama || u.username || 'Penanggung Jawab';
+        footerHtmlStr = `
+            <table style="width: 100%; margin-top: 40px; border: none; text-align: center; font-family: sans-serif; font-size: 13px;">
+                <tr>
+                    <td style="width: 50%; border: none !important;">
+                        <p style="margin-bottom: 60px;">Dibuat / Penanggung Jawab:</p>
+                        <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px;">${pembuat}</p>
+                    </td>
+                    <td style="width: 50%; border: none !important;">
+                        <p style="margin-bottom: 60px;">Mengetahui / Disetujui:</p>
+                        <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px;">Puji Shohibul Burhan</p>
+                        <p style="margin: 0;">Manager Regional</p>
+                    </td>
+                </tr>
+            </table>
+        `;
+    }
+    
+    if (format === 'excel') {
+        let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head><meta charset="utf-8"><style>table{border-collapse:collapse;width:100%;}th,td{border:1px solid #cbd5e1;padding:8px;}th{background:#1e40af;color:#fff;}</style></head>
+        <body>
+            <h2 style="text-align:center;">${title}</h2>
+            <p style="text-align:center;">Periode: ${startDate} s/d ${endDate}</p>
+            ${clone.outerHTML}
+            ${footerHtmlStr}
+        </body></html>`;
+        
+        const blob = new Blob(['\ufeff', html], { type: 'application/vnd.ms-excel' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fileName + '.xls';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    } else if (format === 'jpg' || format === 'pdf') {
+        if (typeof html2canvas === 'undefined') { alert('Library html2canvas belum dimuat di halaman ini.'); return; }
+        if (format === 'pdf' && typeof window.jspdf === 'undefined') { alert('Library jsPDF belum dimuat di halaman ini.'); return; }
+
+        clone.style.width = '1000px';
+        clone.style.padding = '30px';
+        clone.style.background = '#fff';
+        clone.style.position = 'absolute';
+        clone.style.left = '-9999px';
+        clone.style.top = '0';
+        clone.style.color = '#0f172a';
+        
+        let headerHtml = document.createElement('div');
+        headerHtml.innerHTML = `<h2 style="text-align:center; margin-bottom:5px; color:#1e40af;">${title}</h2><p style="text-align:center; margin-top:0; color:#64748b; margin-bottom:20px;">Periode: ${startDate} s/d ${endDate}</p>`;
+        clone.insertBefore(headerHtml, clone.firstChild);
+        
+        if (footerHtmlStr) {
+            let footerDiv = document.createElement('div');
+            footerDiv.innerHTML = footerHtmlStr;
+            clone.appendChild(footerDiv);
+        }
+        
+        document.body.appendChild(clone);
+
+        html2canvas(clone, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+            document.body.removeChild(clone);
+            
+            if (format === 'jpg') {
+                const a = document.createElement('a');
+                a.href = canvas.toDataURL("image/jpeg", 0.9);
+                a.download = fileName + '.jpg';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } else if (format === 'pdf') {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('p', 'mm', 'a4');
+                const pageW = doc.internal.pageSize.getWidth();
+                const pageH = doc.internal.pageSize.getHeight();
+                const margin = 10;
+                const w = pageW - margin * 2;
+                const h = (canvas.height * w) / canvas.width;
+                
+                if (h <= pageH - margin * 2) {
+                    doc.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', margin, margin, w, h);
+                } else {
+                    let totalH = h;
+                    let drawn = 0;
+                    while (drawn < totalH) {
+                        let pageImgH = Math.min(pageH - margin * 2, totalH - drawn);
+                        let srcY = (drawn / totalH) * canvas.height;
+                        let srcH = (pageImgH / totalH) * canvas.height;
+                        let small = document.createElement('canvas');
+                        small.width = canvas.width;
+                        small.height = Math.ceil(srcH);
+                        small.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, small.width, small.height);
+                        doc.addImage(small.toDataURL('image/jpeg', 0.95), 'JPEG', margin, margin, w, pageImgH);
+                        drawn += pageImgH;
+                        if (drawn < totalH) doc.addPage();
+                    }
+                }
+                doc.save(fileName + '.pdf');
+            }
+        }).catch(err => {
+            document.body.removeChild(clone);
+            alert("Gagal mengekspor: " + err);
+        });
     }
 };
 

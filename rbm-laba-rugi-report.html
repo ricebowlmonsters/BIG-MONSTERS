@@ -54,6 +54,7 @@
                 <button class="tab-btn active" id="tab-btn-lr" onclick="switchReportTab('lr')">Laporan Laba Rugi</button>
                 <button class="tab-btn" id="tab-btn-mutasi" onclick="switchReportTab('mutasi')">Buku Besar (Mutasi)</button>
                 <button class="tab-btn" id="tab-btn-stok" onclick="switchReportTab('stok')">Laporan Stok Opname</button>
+                <button class="tab-btn" id="tab-btn-hutang" onclick="switchReportTab('hutang')">Laporan Hutang</button>
             </div>
 
             <div id="tab-content-lr" class="table-card" style="margin-bottom: 24px; display: block;">
@@ -85,6 +86,15 @@
                     <p style="color:#6b7280; font-size:13px; text-align:center; margin: 0;">Pilih rentang tanggal dan klik "Tampilkan Laporan".</p>
                 </div>
             </div>
+
+            <div id="tab-content-hutang" class="table-card" style="margin-bottom: 24px; display: none;">
+                <div style="background: #f8fafc; padding: 12px 16px; border-bottom: 1px solid #e2e8f0;">
+                    <h3 style="margin: 0; font-size: 16px; color: #1e40af;">Laporan Hutang Usaha</h3>
+                </div>
+                <div id="report-hutang-container" style="padding: 20px;">
+                    <p style="color:#6b7280; font-size:13px; text-align:center; margin: 0;">Pilih rentang tanggal dan klik "Tampilkan Laporan".</p>
+                </div>
+            </div>
         </div>
       </div>
     </main>
@@ -95,6 +105,8 @@
 <script src="custom-ui.js"></script>
 <script src="rbm-pro-storage.js"></script>
 <script src="firebase-storage.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="rbm-laba-rugi.js"></script>
 </body>
 </html>

@@ -2231,56 +2231,57 @@ function getPettyCashRecapForPengajuan(cb) {
     
     function processTransactions(list) {
         list.sort(function(a, b) {
-            var d1 = a.tanggal || a.date || '';
-            var d2 = b.tanggal || b.date || '';
-            return d1.localeCompare(d2);
+            var parseDate = function(s) {
+                if (!s) return 0;
+                if (s.indexOf('/') >= 0) {
+                    var p = s.split('/');
+                    if (p.length === 3) return new Date(p[2] + '-' + ('0'+p[1]).slice(-2) + '-' + ('0'+p[0]).slice(-2)).getTime();
+                }
+                var t = new Date(s).getTime();
+                return isNaN(t) ? 0 : t;
+            };
+            var t1 = parseDate(a.tanggal || a.date);
+            var t2 = parseDate(b.tanggal || b.date);
+            if (t1 !== t2) return t1 - t2;
+            return (a.createdAt || 0) - (b.createdAt || 0);
         });
+
+        var lastKreditIndex = -1;
+        for (var i = 0; i < list.length; i++) {
+            var r = list[i];
+            var k = parseFloat(r.kredit || r.masuk) || 0;
+            if (r.jenis === 'pemasukan') k = parseFloat(r.total || r.harga) || 0;
+            if (k > 0) lastKreditIndex = i;
+        }
+
         var lastKredit = 0;
         var lastKreditDate = '-';
         var totalDebitSince = 0;
         var detailsSince = [];
         var runningSaldo = 0;
         var saldoAtLastKredit = 0;
-        var unreimbursed = [];
+
         for (var i = 0; i < list.length; i++) {
             var r = list[i];
             var k = parseFloat(r.kredit || r.masuk) || 0;
             var d = parseFloat(r.debit || r.keluar) || parseFloat(r.total) || 0;
             if (r.jenis === 'pemasukan') k = parseFloat(r.total || r.harga) || 0;
             if (r.jenis === 'pengeluaran') d = parseFloat(r.total) || 0;
+
             runningSaldo = runningSaldo - d + k;
-            if (k > 0) {
+
+            if (i === lastKreditIndex) {
                 lastKredit = k;
                 lastKreditDate = r.tanggal || r.date || '-';
                 saldoAtLastKredit = runningSaldo;
-                
-                // Gunakan dana masuk untuk melunasi pengeluaran lama yang belum ter-reimburse
-                var remainingKredit = k;
-                while (unreimbursed.length > 0 && remainingKredit > 0) {
-                    if (remainingKredit >= unreimbursed[0]._remainingDebit) {
-                        remainingKredit -= unreimbursed[0]._remainingDebit;
-                        unreimbursed.shift(); // Lunas sepenuhnya
-                    } else {
-                        unreimbursed[0]._remainingDebit -= remainingKredit; // Lunas sebagian
-                        remainingKredit = 0;
-                    }
-                }
-            } else if (d > 0) {
-                // Tambahkan pengeluaran ke dalam antrean
-                var clonedR = Object.assign({}, r);
-                clonedR._remainingDebit = d;
-                unreimbursed.push(clonedR);
+            } else if (i > lastKreditIndex && d > 0) {
+                totalDebitSince += d;
+                var item = Object.assign({}, r);
+                item.debit = d;
+                item.keluar = d;
+                item.total = d;
+                detailsSince.push(item);
             }
-        }
-        
-        // Rekap semua pengeluaran dalam antrean yang tersisa (belum ter-reimburse)
-        for (var j = 0; j < unreimbursed.length; j++) {
-            totalDebitSince += unreimbursed[j]._remainingDebit;
-            var item = Object.assign({}, unreimbursed[j]);
-            item.debit = item._remainingDebit;
-            item.keluar = item._remainingDebit;
-            item.total = item._remainingDebit;
-            detailsSince.push(item);
         }
         var sisa = runningSaldo;
         var unreimbursedDates = detailsSince.map(function(d) { return d.tanggal || d.date; }).filter(Boolean).sort();
