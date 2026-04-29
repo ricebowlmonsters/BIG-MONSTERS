@@ -1410,16 +1410,69 @@ window.loadTransactionHistory = function() {
             else if (tx.type === 'expense' && tx.is_hpp) { typeLabel = 'Stok HPP'; color = '#92400e'; }
             else { typeLabel = 'Biaya'; color = '#991b1b'; }
 
+            let detailsHtml = '';
+            let hasExtra = false;
+
+            if (tx.type === 'pos_settlement') {
+                if (tx.details && tx.details.length > 0) {
+                    detailsHtml = tx.details.map(d => {
+                        const detailAdmin = parseFloat(d.admin) || 0;
+                        const detailGross = parseFloat(d.gross) || 0;
+                        return `<div style="font-size:11px; color:#475569; margin-bottom:2px;">• ${d.name}: Kotor Rp ${Math.round(detailGross).toLocaleString('id-ID')} | Admin Rp ${Math.round(detailAdmin).toLocaleString('id-ID')} | Bersih Rp ${Math.round(d.price).toLocaleString('id-ID')}</div>`;
+                    }).join('');
+                    if (parseFloat(tx.interest_fee) > 0) {
+                        detailsHtml += `<div style="font-size:11px; color:#166534; margin-top:2px;">• Bunga Bank/Cashback: Rp ${Math.round(tx.interest_fee).toLocaleString('id-ID')}</div>`;
+                    }
+                    hasExtra = true;
+                } else {
+                    let interestHtml = tx.interest_fee ? `<br>Bunga Bank: <strong>Rp ${Math.round(tx.interest_fee).toLocaleString('id-ID')}</strong>` : '';
+                    detailsHtml = `<div style="font-size:11px; color:#475569;">Total Bersih: <strong>Rp ${Math.round(tx.settlement_amount || 0).toLocaleString('id-ID')}</strong><br>Total Admin: <strong>Rp ${Math.round(tx.admin_fee || 0).toLocaleString('id-ID')}</strong>${interestHtml}</div>`;
+                    hasExtra = true;
+                }
+            } else {
+                if (tx.details && tx.details.length > 0) {
+                    detailsHtml = tx.details.map(d => {
+                        const u = d.unit && d.unit !== '-' && d.unit !== 'transaksi' ? ` ${d.unit}` : '';
+                        const total = (d.qty || 0) * (d.price || 0);
+                        return `<div style="font-size:11px; color:#059669; margin-bottom:2px;">📦 ${d.name}: ${d.qty}${u} &times; Rp ${Math.round(d.price).toLocaleString('id-ID')} = <strong>Rp ${Math.round(total).toLocaleString('id-ID')}</strong></div>`;
+                    }).join('');
+                    hasExtra = true;
+                } else if (tx.is_hpp && tx.journal_lines && tx.journal_lines.debit && tx.journal_lines.debit.qty) {
+                    const q = tx.journal_lines.debit.qty;
+                    const p = tx.journal_lines.debit.unit_price;
+                    const total = (q || 0) * (p || 0);
+                    detailsHtml = `<div style="font-size:11px; color:#059669; margin-bottom:2px;">📦 Qty: ${q} &times; Rp ${Math.round(p).toLocaleString('id-ID')} = <strong>Rp ${Math.round(total).toLocaleString('id-ID')}</strong></div>`;
+                    hasExtra = true;
+                }
+            }
+
+            let shortName = tx.name || '-';
+            if (shortName.length > 35) {
+                shortName = shortName.substring(0, 35) + '...';
+                hasExtra = true;
+            }
+
+            if (tx.description && tx.description !== tx.name) {
+                hasExtra = true;
+            }
+
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9;">${tx.date}</td>
-                <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9;">
-                <strong style="color: #1e293b;">${tx.name || '-'}</strong>
-                ${tx.description ? `<br><span style="font-size: 11px; color: #64748b;">${tx.description}</span>` : ''}
+                <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: top;">${tx.date}</td>
+                <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: top;">
+                    <div style="font-weight:600; color: #1e293b; margin-bottom:2px; cursor:${hasExtra ? 'pointer' : 'default'};" ${hasExtra ? `onclick="const d = this.parentElement.querySelector('.mutasi-desc'); if(d) d.style.display = d.style.display === 'none' ? 'block' : 'none'"` : ''} title="${hasExtra ? 'Klik untuk melihat rincian' : ''}">
+                        ${shortName} ${hasExtra ? '<button type="button" style="font-size:11px; margin-left:6px; padding:2px 8px; border-radius:4px; background:#eff6ff; color:#3b82f6; border:1px solid #bfdbfe; cursor:pointer;">Detail ▾</button>' : ''}
+                    </div>
+                    ${hasExtra ? `
+                    <div class="mutasi-desc" style="display:none; margin-top:8px; font-size:12px; color:#334155; background:#f8fafc; padding:10px 12px; border-radius:6px; border: 1px solid #e2e8f0;">
+                        ${(tx.name && tx.name.length > 35) ? `<div style="margin-bottom: 8px; font-weight: bold; color: #0f172a; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;">${tx.name}</div>` : ''}
+                        ${detailsHtml ? `<div style="${(tx.description && tx.description !== tx.name) ? 'margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;' : 'margin-bottom: 0;'}">${detailsHtml}</div>` : ''}
+                        ${(tx.description && tx.description !== tx.name) ? `<div><strong>Catatan:</strong><br>${tx.description}</div>` : ''}
+                    </div>` : ''}
                 </td>
-                <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; color: ${color}; font-weight: 500;">${typeLabel}</td>
-                <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; text-align: right; font-weight: bold; color: #1e293b;">Rp ${Math.round(tx.total_amount || 0).toLocaleString('id-ID')}</td>
-                <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; text-align: center; white-space: nowrap;">
+                <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; color: ${color}; font-weight: 500; vertical-align: top;">${typeLabel}</td>
+                <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; text-align: right; font-weight: bold; color: #1e293b; vertical-align: top;">Rp ${Math.round(tx.total_amount || 0).toLocaleString('id-ID')}</td>
+                <td style="padding: 10px 16px; border-bottom: 1px solid #f1f5f9; text-align: center; white-space: nowrap; vertical-align: top;">
                     <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px; margin-right: 4px;" onclick="alert('Demi menjaga keseimbangan Akuntansi & Stok, fitur Edit dilakukan dengan cara:\\n1. Hapus transaksi yang salah ini.\\n2. Input ulang transaksi yang benar di tab sebelumnya.')">Edit</button>
                     <button class="btn-small-danger" onclick="deleteTransaction('${tx.id}', ${tx.is_hpp})">Hapus</button>
                 </td>
@@ -1572,21 +1625,20 @@ async function generateReports() {
         Object.values(orders).forEach(o => {
             if (['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai'].includes(o.status)) {
                 let paymentTotal = parseFloat(o.payment?.total || 0);
+                let discountAmount = parseFloat(o.payment?.discount || 0);
+                
                 totalPosRevenue += paymentTotal;
                 deductedPpn += parseFloat(o.payment?.tax || 0);
-                totalPosDiscount += parseFloat(o.payment?.discount || 0);
+                totalPosDiscount += discountAmount;
                 
-                let sub = parseFloat(o.payment?.subtotal || 0);
-                if (!sub && o.payment) {
-                    sub = (parseFloat(o.payment.total) || 0) + (parseFloat(o.payment.discount) || 0) - (parseFloat(o.payment.tax) || 0);
-                }
-                totalPosSubtotal += sub;
+                // Hitung subtotal sebagai total + diskon (tanpa mengurangi PPN)
+                totalPosSubtotal += (paymentTotal + discountAmount);
             }
         });
 
         const ppnSnap = await rbmDb.ref(`rbm_pro/laba_rugi_settings/${outlet}/ppn_percent`).once('value');
         ppnPercent = parseFloat(ppnSnap.val()) || 0;
-        posNetRevenue = totalPosRevenue - deductedPpn;
+        posNetRevenue = totalPosRevenue; // PPN tidak lagi dikurangi
 
         // B. Ambil Transaksi Keuangan Manual (rbm_pro/transactions)
         let totalOtherRevenue = 0;
@@ -1598,6 +1650,9 @@ async function generateReports() {
         const rincianHpp = {}; // Format struktur baru: { catId: { total: 0, items: { itemId: amount } } }
         const rincianBiaya = {};
         const rincianBiayaLain = {};
+        
+        let totalManualSettlement = 0;
+        let totalManualAdmin = 0;
 
         let totalHutang = 0;
         let rincianHutang = [];
@@ -1723,6 +1778,9 @@ async function generateReports() {
                     let adminFee = parseFloat(tx.admin_fee || 0);
                     let interest = parseFloat(tx.interest_fee || 0);
                     
+                    totalManualSettlement += parseFloat(tx.settlement_amount || 0);
+                    totalManualAdmin += adminFee;
+                    
                     if (adminFee > 0) {
                         totalBiayaLain += adminFee;
                         let catAdmin = 'admin_bank_manual';
@@ -1823,8 +1881,28 @@ async function generateReports() {
             if (type === 'hpp' && keuanganMasterData.hpp[id]) return keuanganMasterData.hpp[id].name;
             return id;
         };
+        
+        const totalGrossSettlement = totalManualSettlement + totalManualAdmin;
+        const selisihPos = totalPosRevenue - totalGrossSettlement;
 
         let htmlLabaRugi = `
+            <div id="rekonsiliasi-box" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                <h4 style="margin: 0 0 10px 0; color: #0f172a; font-size: 14px;">⚖️ Rekonsiliasi Pendapatan POS vs Input Pencairan</h4>
+                <div style="display: flex; gap: 15px; font-size: 13px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 150px; background: white; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px;">
+                        <div style="color: #64748b; margin-bottom: 4px;">Total POS (Sistem)</div>
+                        <div style="font-weight: bold; color: #1e40af; font-size: 15px;">${formatRp(totalPosRevenue)}</div>
+                    </div>
+                    <div style="flex: 1; min-width: 150px; background: white; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px;">
+                        <div style="color: #64748b; margin-bottom: 4px;">Total Input Pencairan (Kotor)</div>
+                        <div style="font-weight: bold; color: #059669; font-size: 15px;">${formatRp(totalGrossSettlement)}</div>
+                    </div>
+                    <div style="flex: 1; min-width: 150px; background: ${selisihPos === 0 ? 'white' : '#fef2f2'}; border: 1px solid ${selisihPos === 0 ? '#e2e8f0' : '#fecaca'}; padding: 10px; border-radius: 6px;">
+                        <div style="color: #64748b; margin-bottom: 4px;">Selisih (Belum Cair / Beda)</div>
+                        <div style="font-weight: bold; color: ${selisihPos === 0 ? '#334155' : '#dc2626'}; font-size: 15px;">${formatRp(selisihPos)}</div>
+                    </div>
+                </div>
+            </div>
             <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                 <tbody>
                     <!-- PENDAPATAN -->
@@ -1844,17 +1922,7 @@ async function generateReports() {
             `;
         }
 
-        if (deductedPpn > 0) {
-            let ppnLabel = ppnPercent > 0 ? `PPN Keluaran (${ppnPercent}%)` : `PPN Keluaran (Sesuai Nota)`;
-            htmlLabaRugi += `
-                    <tr>
-                        <td style="padding: 10px 16px; border-bottom: 1px solid #e2e8f0; padding-left: 30px; color: #dc2626;">Dikurangi: ${ppnLabel}</td>
-                        <td style="padding: 10px 16px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #dc2626;">-${formatRp(deductedPpn)}</td>
-                    </tr>
-            `;
-        }
-        
-        if (totalPosDiscount > 0 || deductedPpn > 0) {
+        if (totalPosDiscount > 0) {
             htmlLabaRugi += `
                     <tr>
                         <td style="padding: 10px 16px; border-bottom: 1px solid #e2e8f0; padding-left: 30px; font-weight: 600;">Pendapatan Kasir (Netto)</td>
@@ -2045,36 +2113,43 @@ async function generateReports() {
             
             let runningSaldo = ledger.saldoAwal;
             ledger.mutasi.sort((a,b) => a.date.localeCompare(b.date)); // Sortir tanggal
-            
-            let lastDate = '';
 
             ledger.mutasi.forEach((m, idx) => {
                 runningSaldo = runningSaldo + m.masuk - m.keluar;
                 
-                const hasExtra = m.description || m.detailsHtml;
+                const hasExtra = m.description || m.detailsHtml || m.name.length > 35;
+                let shortName = m.name;
+                if (shortName.length > 35) {
+                    shortName = shortName.substring(0, 35) + '...';
+                }
+                
                 const descHtml = `
                     <div style="font-weight:600; color: #1e293b; margin-bottom:6px; cursor:${hasExtra ? 'pointer' : 'default'};" ${hasExtra ? `onclick="const d = this.parentElement.querySelector('.mutasi-desc'); if(d) d.style.display = d.style.display === 'none' ? 'block' : 'none'"` : ''} title="${hasExtra ? 'Klik untuk melihat rincian' : ''}">
-                        ${m.name} ${hasExtra ? '<span style="font-size:11px; margin-left:6px; padding:2px 6px; border-radius:4px; background:#eff6ff; color:#3b82f6; border:1px solid #bfdbfe;">Rincian ▾</span>' : ''}
+                        ${shortName} ${hasExtra ? '<button type="button" style="font-size:11px; margin-left:6px; padding:2px 8px; border-radius:4px; background:#eff6ff; color:#3b82f6; border:1px solid #bfdbfe; cursor:pointer;">Detail ▾</button>' : ''}
                     </div>
                     <span style="font-size:10px; background:#f1f5f9; color:#475569; padding:3px 8px; border-radius:12px; display:inline-block; border: 1px solid #e2e8f0;">💳 ${m.typeLabel}</span>
                     ${hasExtra ? `
                     <div class="mutasi-desc" style="display:none; margin-top:10px; font-size:12px; color:#334155; background:#f8fafc; padding:10px 12px; border-radius:6px; border: 1px solid #e2e8f0;">
-                        ${m.detailsHtml ? `<div style="${m.description ? 'margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;' : ''}">${m.detailsHtml}</div>` : ''}
+                        ${m.name.length > 35 ? `<div style="margin-bottom: 8px; font-weight: bold; color: #0f172a; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;">${m.name}</div>` : ''}
+                        ${m.detailsHtml ? `<div style="${m.description ? 'margin-bottom: 8px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;' : 'margin-bottom: 0;'}">${m.detailsHtml}</div>` : ''}
                         ${m.description ? `<div><strong>Catatan:</strong><br>${m.description}</div>` : ''}
                     </div>` : ''}
                 `;
 
-                const dateDisplay = (m.date === lastDate) ? '<span style="color:#cbd5e1; font-weight:bold;">"</span>' : `<span style="font-weight:600; color:#475569;">${m.date}</span>`;
-                lastDate = m.date;
+                const dateDisplay = `<span style="font-weight:600; color:#475569;">${m.date}</span>`;
 
                 const bgRow = (idx % 2 === 0) ? '#ffffff' : '#fafafa';
+
+                const masukHtml = m.masuk > 0 ? `<div style="font-size:10px; color:#94a3b8; margin-bottom:2px;">Rp</div><div>+ ${Math.round(m.masuk).toLocaleString('id-ID')}</div>` : '-';
+                const keluarHtml = m.keluar > 0 ? `<div style="font-size:10px; color:#94a3b8; margin-bottom:2px;">Rp</div><div>- ${Math.round(m.keluar).toLocaleString('id-ID')}</div>` : '-';
+                const saldoHtml = `<div style="font-size:10px; color:#94a3b8; margin-bottom:2px;">Rp</div><div>${Math.round(runningSaldo).toLocaleString('id-ID')}</div>`;
 
                 htmlLedger += `<tr style="background: ${bgRow}; border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='${bgRow}'">
                     <td style="padding: 14px 16px; vertical-align: top;">${dateDisplay}</td>
                     <td style="padding: 14px 16px; vertical-align: top;">${descHtml}</td>
-                    <td style="padding: 14px 16px; text-align: right; color: #059669; vertical-align: top; font-weight: 600;">${m.masuk > 0 ? '+ ' + formatRp(m.masuk) : '-'}</td>
-                    <td style="padding: 14px 16px; text-align: right; color: #dc2626; vertical-align: top; font-weight: 600;">${m.keluar > 0 ? '- ' + formatRp(m.keluar) : '-'}</td>
-                    <td style="padding: 14px 16px; text-align: right; font-weight: 700; vertical-align: top; color: #0f172a; background: rgba(241, 245, 249, 0.4);">${formatRp(runningSaldo)}</td>
+                    <td style="padding: 14px 16px; text-align: right; color: #059669; vertical-align: top; font-weight: 600;">${masukHtml}</td>
+                    <td style="padding: 14px 16px; text-align: right; color: #dc2626; vertical-align: top; font-weight: 600;">${keluarHtml}</td>
+                    <td style="padding: 14px 16px; text-align: right; font-weight: 700; vertical-align: top; color: #0f172a; background: rgba(241, 245, 249, 0.4);">${saldoHtml}</td>
                 </tr>`;
             });
             
@@ -2096,37 +2171,21 @@ async function generateReports() {
         // ==========================================
         // --- 3. PROSES LAPORAN STOK OPNAME ---
         // ==========================================
-        // A. Ambil Data Menu dan Resep (Bill of Materials)
-        const prodSnap = await rbmDb.ref(`products/${outlet}`).once('value');
-        const productsData = prodSnap.val() || {};
+        // A. Ambil Data Opname Bulan Ini dan Bulan Lalu
+        const endMonth = endDate.substring(0, 7); // YYYY-MM
+        let [y, m] = endMonth.split('-');
+        let prevM = parseInt(m) - 1;
+        let prevY = parseInt(y);
+        if (prevM === 0) { prevM = 12; prevY -= 1; }
+        const prevMonth = `${prevY}-${String(prevM).padStart(2, '0')}`;
 
-        // B. Kalkulasi Total Penjualan Item di Kasir (POS)
-        let productSales = {};
-        Object.values(orders).forEach(o => {
-            if (['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai'].includes(o.status)) {
-                let items = o.items || [];
-                if (!Array.isArray(items)) items = Object.values(items);
-                items.forEach(item => {
-                    let pid = item.id || item.productId;
-                    let qty = parseFloat(item.qty || item.quantity) || 1;
-                    if (pid) productSales[pid] = (productSales[pid] || 0) + qty;
-                });
-            }
-        });
+        const opnameSnap = await rbmDb.ref(`rbm_pro/laba_rugi_opname/${outlet}/${endMonth}`).once('value');
+        const opnameData = opnameSnap.val() || {};
 
-        // C. Hitung Total Penggunaan Bahan Baku (Keluar)
-        let bahanUsages = {};
-        Object.keys(productSales).forEach(pid => {
-            let qtySold = productSales[pid];
-            let prod = productsData[pid] || {};
-            let recipe = prod.recipe || {};
-            Object.keys(recipe).forEach(bahanId => {
-                let qtyBahan = parseFloat(recipe[bahanId]) || 0;
-                bahanUsages[bahanId] = (bahanUsages[bahanId] || 0) + (qtyBahan * qtySold);
-            });
-        });
+        const prevOpnameSnap = await rbmDb.ref(`rbm_pro/laba_rugi_opname/${outlet}/${prevMonth}`).once('value');
+        const prevOpnameData = prevOpnameSnap.val() || {};
 
-        // D. Hitung Total Pembelian Bahan Baku (Masuk)
+        // B. Hitung Total Pembelian Bahan Baku (Masuk)
         let bahanPurchases = {};
         Object.values(allTransactions).forEach(tx => {
             if (tx.date >= startDate && tx.date <= endDate && tx.type === 'expense' && tx.is_hpp) {
@@ -2142,21 +2201,23 @@ async function generateReports() {
             }
         });
 
-        // E. Susun Tampilan Laporan
+        // C. Susun Tampilan Laporan
         let htmlStok = `
-            <h4 style="margin: 20px 16px 10px; color: #1e40af; font-size: 15px;">📊 Pergerakan Stok Bahan Baku</h4>
+            <h4 style="margin: 20px 16px 10px; color: #1e40af; font-size: 15px;">📊 Laporan Stok Opname Bulanan</h4>
             <div style="padding: 0 16px 10px;">
-                <span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">Catatan: 'Keluar' dihitung otomatis berdasarkan Resep (BOM) menu yang terjual di aplikasi kasir.</span>
+                <span style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">Rumus: Pengeluaran = Stok Awal + Masuk (Beli) - Stok Akhir. Silakan isi Stok Akhir di akhir bulan.</span>
             </div>
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px;">
+            <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 10px; white-space: nowrap;">
                 <thead>
                     <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
                         <th style="padding: 10px 16px; text-align: left;">Kategori</th>
                         <th style="padding: 10px 16px; text-align: left;">Bahan Baku</th>
                         <th style="padding: 10px 16px; text-align: center;">Satuan</th>
+                        <th style="padding: 10px 16px; text-align: center;">Stok Awal</th>
                         <th style="padding: 10px 16px; text-align: right;">Masuk (Beli)</th>
-                        <th style="padding: 10px 16px; text-align: right;">Keluar (POS)</th>
-                        <th style="padding: 10px 16px; text-align: right;">Mutasi (Periode)</th>
+                        <th style="padding: 10px 16px; text-align: center;">Stok Akhir</th>
+                        <th style="padding: 10px 16px; text-align: right;">Pengeluaran</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -2166,36 +2227,48 @@ async function generateReports() {
         Object.keys(keuanganMasterData.hpp).forEach(bahanId => {
             let hppItem = keuanganMasterData.hpp[bahanId];
             let masuk = bahanPurchases[bahanId] || 0;
-            let keluar = bahanUsages[bahanId] || 0;
-            
-            // Pembulatan agar tidak ada pecahan mengganggu (misal: 0.33333333)
             masuk = Math.round(masuk * 100) / 100;
-            keluar = Math.round(keluar * 100) / 100;
 
-            if (masuk === 0 && keluar === 0) return;
+            let awal = opnameData[bahanId]?.awal;
+            if (awal === undefined || awal === null) {
+                awal = prevOpnameData[bahanId]?.akhir || 0;
+            } else {
+                awal = parseFloat(awal) || 0;
+            }
+
+            let akhirStr = opnameData[bahanId]?.akhir;
+            let akhir = akhirStr !== undefined && akhirStr !== null ? parseFloat(akhirStr) : '';
+            
+            let terpakai = '';
+            if (akhir !== '') {
+                terpakai = Math.round((awal + masuk - akhir) * 100) / 100;
+            }
 
             hasStokData = true;
-            let mutasi = Math.round((masuk - keluar) * 100) / 100;
             let catName = hppItem.category_id && keuanganMasterData.hppCategories[hppItem.category_id] ? keuanganMasterData.hppCategories[hppItem.category_id].name : 'Lainnya';
-            let colorMutasi = mutasi >= 0 ? '#166534' : '#dc2626';
 
             htmlStok += `
-                <tr style="border-bottom: 1px solid #e2e8f0;">
+                <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
                     <td style="padding: 10px 16px;">${catName}</td>
                     <td style="padding: 10px 16px; font-weight: bold;">${hppItem.name}</td>
                     <td style="padding: 10px 16px; text-align: center; color: #475569;">${hppItem.unit || '-'}</td>
-                    <td style="padding: 10px 16px; text-align: right; color: #059669; font-weight: 500;">${masuk > 0 ? masuk : '-'}</td>
-                    <td style="padding: 10px 16px; text-align: right; color: #dc2626; font-weight: 500;">${keluar > 0 ? keluar : '-'}</td>
-                    <td style="padding: 10px 16px; text-align: right; font-weight: bold; color: ${colorMutasi};">${mutasi > 0 ? '+' : ''}${mutasi}</td>
+                    <td style="padding: 6px 16px; text-align: center;">
+                        <input type="number" step="any" value="${awal}" onchange="updateOpnameLR('${bahanId}', 'awal', '${endMonth}', this)" style="width: 70px; padding: 4px; text-align: center; border: 1px solid #cbd5e1; border-radius: 4px;">
+                    </td>
+                    <td style="padding: 10px 16px; text-align: right; color: #059669; font-weight: 500;" id="masuk_lr_${bahanId}">${masuk > 0 ? masuk : 0}</td>
+                    <td style="padding: 6px 16px; text-align: center;">
+                        <input type="number" step="any" value="${akhir}" onchange="updateOpnameLR('${bahanId}', 'akhir', '${endMonth}', this)" style="width: 70px; padding: 4px; text-align: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #fffbeb;">
+                    </td>
+                    <td style="padding: 10px 16px; text-align: right; font-weight: bold; color: #dc2626;" id="terpakai_lr_${bahanId}">${terpakai !== '' ? terpakai : '-'}</td>
                 </tr>
             `;
         });
 
         if (!hasStokData) {
-            htmlStok += '<tr><td colspan="6" class="table-empty">Tidak ada pergerakan stok (pembelian atau penjualan resep) pada periode ini.</td></tr>';
+            htmlStok += '<tr><td colspan="7" class="table-empty" style="padding: 16px; text-align: center;">Belum ada master data bahan baku HPP.</td></tr>';
         }
 
-        htmlStok += '</tbody></table>';
+        htmlStok += '</tbody></table></div>';
 
         document.getElementById('report-stok-container').innerHTML = htmlStok;
         document.getElementById('report-stok-container').style.padding = '0';
@@ -2275,6 +2348,37 @@ async function generateReports() {
         btnGenerate.disabled = false;
     }
 }
+
+// =================================================================
+// FUNGSI UPDATE STOK OPNAME
+// =================================================================
+window.updateOpnameLR = function(bahanId, field, monthKey, inputEl) {
+    const outlet = getOutletLR();
+    const valNum = parseFloat(inputEl.value);
+    
+    if (isNaN(valNum)) {
+        rbmDb.ref(`rbm_pro/laba_rugi_opname/${outlet}/${monthKey}/${bahanId}/${field}`).remove();
+    } else {
+        rbmDb.ref(`rbm_pro/laba_rugi_opname/${outlet}/${monthKey}/${bahanId}/${field}`).set(valNum);
+    }
+
+    const tr = inputEl.closest('tr');
+    if (tr) {
+        const inputs = tr.querySelectorAll('input[type="number"]');
+        const awal = parseFloat(inputs[0].value) || 0;
+        const masuk = parseFloat(tr.querySelector(`#masuk_lr_${bahanId}`).innerText) || 0;
+        const akhirStr = inputs[1].value;
+        const terpakaiCell = tr.querySelector(`#terpakai_lr_${bahanId}`);
+        
+        if (akhirStr !== '') {
+            const akhir = parseFloat(akhirStr) || 0;
+            const terpakai = Math.round((awal + masuk - akhir) * 100) / 100;
+            terpakaiCell.innerText = terpakai;
+        } else {
+            terpakaiCell.innerText = '-';
+        }
+    }
+};
 
 /**
  * CATATAN PENTING UNTUK PERFORMA (Firebase):
@@ -2431,6 +2535,10 @@ window.exportLaporanKeuangan = async function(format) {
 
     // Clone container untuk memanipulasi (expand baris rincian yang disembunyikan/collapse)
     const clone = container.cloneNode(true);
+    
+    // Hapus kotak rekonsiliasi agar tidak ikut di-export ke laporan
+    const rekonBox = clone.querySelector('#rekonsiliasi-box');
+    if (rekonBox) rekonBox.parentNode.removeChild(rekonBox);
     
     if (activeTab === 'lr') {
         clone.querySelectorAll('tr').forEach(tr => {
