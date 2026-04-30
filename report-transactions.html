@@ -281,6 +281,16 @@
             </div>`;
         }
 
+        let hardDeleteHtml = '';
+        if (user.role === 'owner') {
+            hardDeleteHtml = `
+            <div style="margin-top:8px;">
+                <button onclick="hardDeleteTransaction('${order.id}')" class="btn" style="width:100%; background-color:#dc2626; color:white; padding:12px; border-radius:8px; border:none; cursor:pointer; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    <span>🗑️</span> Hapus Permanen (Owner)
+                </button>
+            </div>`;
+        }
+
         let refundInfoHtml = '';
         let printRefundButtonHtml = '';
         if (order.status === 'Refund') {
@@ -325,6 +335,7 @@
                     <span>🖨️</span> Cetak Ulang Struk
                 </button>
                 ${deleteButtonHtml}
+                ${hardDeleteHtml}
                 ${printRefundButtonHtml}
             </div>
         `;
@@ -538,6 +549,21 @@
       window.closeDeleteTransactionModal = function() {
           document.getElementById('delete-transaction-modal').classList.remove('show');
           currentDeleteOrderId = null;
+      };
+
+      // [BARU] Fungsi Hapus Permanen (Owner)
+      window.hardDeleteTransaction = async function(orderId) {
+          if (await CustomUI.confirm('Yakin ingin MENGHAPUS PERMANEN transaksi ini?\nData akan hilang dari laporan dan tidak dapat dikembalikan.', 'Hapus Permanen', true)) {
+              const outlet = outletSel.value;
+              try {
+                  await db.ref(`orders/${outlet}/${orderId}`).remove();
+                  CustomUI.success('Transaksi berhasil dihapus permanen.');
+                  document.getElementById('transaction-detail-modal').classList.remove('show');
+                  loadData();
+              } catch (e) {
+                  CustomUI.error('Gagal menghapus: ' + e.message);
+              }
+          }
       };
 
       // [BARU] Handler Konfirmasi Hapus
