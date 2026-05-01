@@ -1062,6 +1062,11 @@
         let snap;
         let startRange = lastClosed + 1;
         let endRange = now;
+        
+        const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
+        const currentOutletData = outletsData.find(o => o.id === outlet) || {};
+        const ppnLabel = currentOutletData.ppn !== undefined ? currentOutletData.ppn : 10;
+        
         if (applyFilters) {
           // Gabungkan tanggal + waktu dari input
           const tf = timeFrom && timeFrom.value ? timeFrom.value : '00:00';

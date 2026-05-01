@@ -1015,7 +1015,7 @@ window.viewPengajuanDetail = function(id) {
                 tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : defaultTunjangan;
                 
                 gajiPerHari = Math.round(gajiPokok / 30);
-                potTerlambatPerJam = Math.round(gajiPokok / 240);
+                potTerlambatPerJam = Math.round(gajiPokok / 173);
                 uangMakan = hkAktual * 10000;
                 totalPotKehadiran = Math.round(potHari * gajiPerHari);
                 totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
@@ -1558,7 +1558,6 @@ window.viewCutiLemburDetail = function(id, mode) {
                     <td>${idx + 1}</td>
                     <td class="text-left">${emp.nama || '-'}</td>
                     <td class="text-left">${emp.jabatan || '-'}</td>
-                    <td>${emp.lemburHari || 0}</td>
                     <td>${emp.lemburJam || 0}</td>
                     <td>${emp.tglLembur || '-'}</td>
                     <td class="text-left">${emp.alasanLembur || '-'}</td>
@@ -1600,10 +1599,6 @@ window.viewCutiLemburDetail = function(id, mode) {
                 <th rowspan="2">Metode Bayar</th>
                 <th rowspan="2">Total Nominal</th>
             </tr>
-            <tr>
-                <th>Hari</th>
-                <th>Jam</th>
-            </tr>
         `;
     }
 
@@ -1612,7 +1607,7 @@ window.viewCutiLemburDetail = function(id, mode) {
         <tbody>${rowsData}</tbody>
         <tfoot>
             <tr>
-                <td colspan="${mode === 'cuti' ? 7 : 8}" class="text-right" style="font-weight:bold; padding: 10px;">TOTAL PENGAJUAN ${modeTitle.toUpperCase()}</td>
+                <td colspan="${mode === 'cuti' ? 7 : 7}" class="text-right" style="font-weight:bold; padding: 10px;">TOTAL PENGAJUAN ${modeTitle.toUpperCase()}</td>
                 <td class="text-right" style="font-weight:bold; color:#1e40af; font-size: 14px;">${formatMoney(totalNominal)}</td>
             </tr>
         </tfoot>
@@ -1816,7 +1811,7 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 }
                 uangMakan = hkAktual * 10000;
                 const gajiPerHari = Math.round(gajiPokok / 30);
-                const potTerlambatPerJam = Math.round(gajiPokok / 240);
+                const potTerlambatPerJam = Math.round(gajiPokok / 173);
                 totalPotKehadiran = Math.round(potHari * gajiPerHari);
                 totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
                 totalPendapatan = gajiPokok + tunjangan + uangMakan;
@@ -1840,7 +1835,6 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
         let cairAL = emp.cairAL !== undefined ? emp.cairAL : 0;
         let cairDP = emp.cairDP !== undefined ? emp.cairDP : 0;
         let cairPH = emp.cairPH !== undefined ? emp.cairPH : 0;
-        let lemburHari = emp.lemburHari !== undefined ? emp.lemburHari : 0;
         let lemburJam = emp.lemburJam !== undefined ? emp.lemburJam : 0;
         let tglLembur = emp.tglLembur || '-';
         let alasanLembur = emp.alasanLembur || '-';
@@ -1850,7 +1844,6 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
             let mAL = text.match(/([\d\.]+)\s*AL/i); if (mAL) cairAL = parseFloat(mAL[1]);
             let mDP = text.match(/([\d\.]+)\s*DP/i); if (mDP) cairDP = parseFloat(mDP[1]);
             let mPH = text.match(/([\d\.]+)\s*PH/i); if (mPH) cairPH = parseFloat(mPH[1]);
-            let mLH = text.match(/([\d\.]+)\s*hr Lembur/i); if (mLH) lemburHari = parseFloat(mLH[1]);
             let mLJ = text.match(/([\d\.]+)\s*jam Lembur/i); if (mLJ) lemburJam = parseFloat(mLJ[1]);
             let mTgl = text.match(/Tgl:\s*([^,]+)/i); if (mTgl) tglLembur = mTgl[1].trim();
             let mAlasan = text.match(/Alasan:\s*([^,]+)/i); if (mAlasan) alasanLembur = mAlasan[1].trim();
@@ -1868,7 +1861,6 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
         } else if (isLembur) {
              detailsHtml = `<table style="width: 100%; font-size: 14px; border-collapse: collapse;">
                 <tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Rincian Pencairan Lembur:</td></tr>
-                <tr><td style="padding-left: 15px;">Lembur (Hari)</td><td>:</td><td style="text-align: right;">${lemburHari} Hari</td><td></td></tr>
                 <tr><td style="padding-left: 15px;">Lembur (Jam)</td><td>:</td><td style="text-align: right;">${lemburJam} Jam</td><td></td></tr>
                 <tr><td style="padding-left: 15px;">Tanggal Lembur</td><td>:</td><td style="text-align: right;">${tglLembur}</td><td></td></tr>
                 <tr><td style="padding-left: 15px;">Alasan Lembur</td><td>:</td><td style="text-align: right;">${alasanLembur}</td><td></td></tr>

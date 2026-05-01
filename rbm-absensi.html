@@ -423,7 +423,7 @@
             </table>
             <div style="margin-top: 10px; font-size: 11px; color: #64748b;">
                 * <b>Gaji/Hari</b> diambil otomatis dari (Gaji Pokok &divide; 30).<br>
-                * <b>Rate/Jam</b> diambil otomatis dari (Gaji Pokok &divide; 240).
+                * <b>Rate/Jam</b> diambil otomatis dari (Gaji Pokok &divide; 173).
             </div>
         </div>
     </div>
@@ -1091,7 +1091,7 @@ window.addEventListener('load', function() {
             if (tds.length === 3) xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="String">${tds[0].innerText}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${tds[1].innerText}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${tds[2].innerText}</Data></Cell></Row>`;
         });
         xml += `<Row><Cell ss:MergeAcross="1" ss:StyleID="sData"><Data ss:Type="String">GRAND TOTAL OMSET SEMUA OUTLET:</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${document.getElementById("bonus_dev_grand_total").innerText}</Data></Cell></Row>`;
-        xml += `<Row><Cell ss:MergeAcross="1" ss:StyleID="sData"><Data ss:Type="String">BONUS 0.2% (PUJI SHOHIBUL BURHAN):</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${document.getElementById("bonus_dev_hasil").innerText}</Data></Cell></Row>`;
+        xml += `<Row><Cell ss:MergeAcross="${mode === 'cuti' ? 5 : 5}" ss:StyleID="sData"><Data ss:Type="String">TOTAL</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${total}</Data></Cell></Row>`;
         xml += '</Table></Worksheet></Workbook>';
         const blob = new Blob([xml], {type: 'application/vnd.ms-excel'});
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Bonus_Global_${ym}.xls`; a.click();
