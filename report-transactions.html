@@ -496,8 +496,18 @@
           select.innerHTML = '';
           
           // Ambil metode dari localStorage (yang diset di settings.html) atau default
-          let methods = JSON.parse(localStorage.getItem('rbm_payment_methods') || '[]');
-          if (methods.length === 0) {
+          let methods = [];
+          const outlet = outletSel.value;
+          try {
+              const stored = JSON.parse(localStorage.getItem('rbm_payment_methods') || '{}');
+              if (Array.isArray(stored)) {
+                  methods = stored;
+              } else if (stored[outlet]) {
+                  methods = stored[outlet];
+              }
+          } catch (e) {}
+
+          if (!methods || methods.length === 0) {
               methods = [
                   { name: 'Cash', type: 'Cash' },
                   { name: 'QRIS', type: 'QRIS' },
