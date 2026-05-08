@@ -2747,81 +2747,56 @@ function exportPettyCashToExcel() {
   if (btn) { btn.textContent = 'Mengekspor... ⏳'; btn.disabled = true; }
 
   const doExport = (data) => {
-      let tableHtml = `<table border="1">
-          <thead>
-              <tr>
-                  <th style="background-color: #1e40af; color: #ffffff;">No</th>
-                  <th style="background-color: #1e40af; color: #ffffff;">Tanggal</th>
-                  <th style="background-color: #1e40af; color: #ffffff;">Nama / Keterangan</th>
-                  <th style="background-color: #1e40af; color: #ffffff;">Jml</th>
-                  <th style="background-color: #1e40af; color: #ffffff;">Satuan</th>
-                  <th style="background-color: #1e40af; color: #ffffff;">Harga</th>
-                  <th style="background-color: #1e40af; color: #ffffff;">Debit</th>
-                  <th style="background-color: #1e40af; color: #ffffff;">Kredit</th>
-                  <th style="background-color: #1e40af; color: #ffffff;">Saldo</th>
-              </tr>
-          </thead>
-          <tbody>`;
-      
-      if (!data || data.length === 0) {
-          tableHtml += `<tr><td colspan="9" style="text-align:center;">Tidak ada data</td></tr>`;
+      const exportViaXlsx = () => {
+          const wb = XLSX.utils.book_new();
+          
+          const wsData = [
+              ["Laporan Petty Cash"],
+              [`Periode: ${tglAwal} s/d ${tglAkhir}`],
+              [],
+              ["Total Debit", "Total Kredit", "Saldo Akhir"],
+              [debit, kredit, saldo],
+              [],
+              ["No", "Tanggal", "Nama / Keterangan", "Jml", "Satuan", "Harga", "Debit", "Kredit", "Saldo"]
+          ];
+
+          if (!data || data.length === 0) {
+              wsData.push(["Tidak ada data"]);
+          } else {
+              data.forEach(r => {
+                  wsData.push([
+                      r.no || '',
+                      r.tanggal || '',
+                      r.nama || '',
+                      r.jumlah || '',
+                      r.satuan || '',
+                      r.harga || 0,
+                      r.debit || 0,
+                      r.kredit || 0,
+                      r.saldo || 0
+                  ]);
+              });
+          }
+
+          const ws = XLSX.utils.aoa_to_sheet(wsData);
+          ws['!cols'] = [{wch:5}, {wch:12}, {wch:35}, {wch:8}, {wch:10}, {wch:15}, {wch:15}, {wch:15}, {wch:15}];
+          
+          XLSX.utils.book_append_sheet(wb, ws, "Petty Cash");
+          const xlsxFilename = filename.replace('.xls', '.xlsx');
+          XLSX.writeFile(wb, xlsxFilename);
+
+          if (btn) { btn.textContent = origText; btn.disabled = false; }
+      };
+
+      if (typeof XLSX !== 'undefined') {
+          exportViaXlsx();
       } else {
-          data.forEach(r => {
-              tableHtml += `<tr>
-                  <td>${r.no || ''}</td>
-                  <td>${r.tanggal || ''}</td>
-                  <td>${r.nama || ''}</td>
-                  <td class="num">${r.jumlah || ''}</td>
-                  <td>${r.satuan || ''}</td>
-                  <td class="num">${r.harga || 0}</td>
-                  <td class="num">${r.debit || 0}</td>
-                  <td class="num">${r.kredit || 0}</td>
-                  <td class="num">${r.saldo || 0}</td>
-              </tr>`;
-          });
+          const s = document.createElement('script');
+          s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+          s.onload = exportViaXlsx;
+          s.onerror = () => { alert('Gagal memuat library Excel.'); if (btn) { btn.textContent = origText; btn.disabled = false; } };
+          document.head.appendChild(s);
       }
-      tableHtml += `</tbody></table>`;
-
-      const html = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta charset="utf-8">
-        <style>
-          table { border-collapse: collapse; width: 100%; }
-          th, td { border: 1px solid #000000; padding: 5px; vertical-align: top; }
-          .num { mso-number-format:"\\#\\,\\#\\#0"; text-align: right; }
-        </style>
-      </head>
-      <body>
-        <h2 style="text-align:center; margin:0;">Laporan Petty Cash</h2>
-        <p style="text-align:center; margin:5px 0 20px; color:#666;">Periode: ${tglAwal} s/d ${tglAkhir}</p>
-        
-        <table style="width: 60%; margin: 0 auto 20px auto;">
-          <tr>
-            <th style="background:#f0f0f0; color:#333;">Total Debit</th>
-            <th style="background:#f0f0f0; color:#333;">Total Kredit</th>
-            <th style="background:#f0f0f0; color:#333;">Saldo Akhir</th>
-          </tr>
-          <tr>
-            <td style="text-align:center; font-weight:bold; color:#1e40af;">${debit}</td>
-            <td style="text-align:center; font-weight:bold; color:#1e40af;">${kredit}</td>
-            <td style="text-align:center; font-weight:bold; color:#1e40af;">${saldo}</td>
-          </tr>
-        </table>
-        ${tableHtml}
-      </body>
-      </html>`;
-
-      const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      
-      if (btn) { btn.textContent = origText; btn.disabled = false; }
   };
 
   if (window._pcUseServerPaging) {
