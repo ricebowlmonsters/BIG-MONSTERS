@@ -2729,59 +2729,137 @@ function showResultPengajuan(res) {
 }
 
 function exportPettyCashToExcel() {
-  const table = document.getElementById("pc_table");
-  if (!table) return;
-
   const monthFilter = document.getElementById("pc_bulan_filter");
   const monthVal = monthFilter ? monthFilter.value : '';
+  if (!monthVal) { alert("Pilih bulan terlebih dahulu."); return; }
+
   const [year, month] = monthVal.split('-');
   const tglAwal = `${year}-${month.padStart(2, '0')}-01`;
   const lastDay = new Date(year, parseInt(month, 10), 0).getDate();
   const tglAkhir = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
-  const debit = document.getElementById("pc_total_debit").textContent;
-  const kredit = document.getElementById("pc_total_kredit").textContent;
-  const saldo = document.getElementById("pc_saldo_akhir").textContent;
+  const debit = document.getElementById("pc_total_debit") ? document.getElementById("pc_total_debit").textContent : "Rp 0";
+  const kredit = document.getElementById("pc_total_kredit") ? document.getElementById("pc_total_kredit").textContent : "Rp 0";
+  const saldo = document.getElementById("pc_saldo_akhir") ? document.getElementById("pc_saldo_akhir").textContent : "Rp 0";
   const filename = `Laporan_Petty_Cash_${monthVal}.xls`;
 
-  const html = `
-    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-    <head>
-      <meta charset="utf-8">
-      <style>
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #000000; padding: 5px; vertical-align: top; }
-        th { background-color: #1e40af; color: #ffffff; }
-        .num { mso-number-format:"\#\,\#\#0"; text-align: right; }
-      </style>
-    </head>
-    <body>
-      <h2 style="text-align:center; margin:0;">Laporan Petty Cash</h2>
-      <p style="text-align:center; margin:5px 0 20px; color:#666;">Periode: ${tglAwal} s/d ${tglAkhir}</p>
-      
-      <table style="width: 60%; margin: 0 auto 20px auto;">
-        <tr>
-          <th style="background:#f0f0f0; color:#333;">Total Debit</th>
-          <th style="background:#f0f0f0; color:#333;">Total Kredit</th>
-          <th style="background:#f0f0f0; color:#333;">Saldo Akhir</th>
-        </tr>
-        <tr>
-          <td style="text-align:center; font-weight:bold; color:#1e40af;">${debit}</td>
-          <td style="text-align:center; font-weight:bold; color:#1e40af;">${kredit}</td>
-          <td style="text-align:center; font-weight:bold; color:#1e40af;">${saldo}</td>
-        </tr>
-      </table>
-      ${table.outerHTML}
-    </body>
-    </html>`;
+  const btn = document.querySelector('button[onclick="exportPettyCashToExcel()"]');
+  const origText = btn ? btn.textContent : 'Export Excel';
+  if (btn) { btn.textContent = 'Mengekspor... ⏳'; btn.disabled = true; }
 
-  const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  const doExport = (data) => {
+      let tableHtml = `<table border="1">
+          <thead>
+              <tr>
+                  <th style="background-color: #1e40af; color: #ffffff;">No</th>
+                  <th style="background-color: #1e40af; color: #ffffff;">Tanggal</th>
+                  <th style="background-color: #1e40af; color: #ffffff;">Nama / Keterangan</th>
+                  <th style="background-color: #1e40af; color: #ffffff;">Jml</th>
+                  <th style="background-color: #1e40af; color: #ffffff;">Satuan</th>
+                  <th style="background-color: #1e40af; color: #ffffff;">Harga</th>
+                  <th style="background-color: #1e40af; color: #ffffff;">Debit</th>
+                  <th style="background-color: #1e40af; color: #ffffff;">Kredit</th>
+                  <th style="background-color: #1e40af; color: #ffffff;">Saldo</th>
+              </tr>
+          </thead>
+          <tbody>`;
+      
+      if (!data || data.length === 0) {
+          tableHtml += `<tr><td colspan="9" style="text-align:center;">Tidak ada data</td></tr>`;
+      } else {
+          data.forEach(r => {
+              tableHtml += `<tr>
+                  <td>${r.no || ''}</td>
+                  <td>${r.tanggal || ''}</td>
+                  <td>${r.nama || ''}</td>
+                  <td class="num">${r.jumlah || ''}</td>
+                  <td>${r.satuan || ''}</td>
+                  <td class="num">${r.harga || 0}</td>
+                  <td class="num">${r.debit || 0}</td>
+                  <td class="num">${r.kredit || 0}</td>
+                  <td class="num">${r.saldo || 0}</td>
+              </tr>`;
+          });
+      }
+      tableHtml += `</tbody></table>`;
+
+      const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8">
+        <style>
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #000000; padding: 5px; vertical-align: top; }
+          .num { mso-number-format:"\\#\\,\\#\\#0"; text-align: right; }
+        </style>
+      </head>
+      <body>
+        <h2 style="text-align:center; margin:0;">Laporan Petty Cash</h2>
+        <p style="text-align:center; margin:5px 0 20px; color:#666;">Periode: ${tglAwal} s/d ${tglAkhir}</p>
+        
+        <table style="width: 60%; margin: 0 auto 20px auto;">
+          <tr>
+            <th style="background:#f0f0f0; color:#333;">Total Debit</th>
+            <th style="background:#f0f0f0; color:#333;">Total Kredit</th>
+            <th style="background:#f0f0f0; color:#333;">Saldo Akhir</th>
+          </tr>
+          <tr>
+            <td style="text-align:center; font-weight:bold; color:#1e40af;">${debit}</td>
+            <td style="text-align:center; font-weight:bold; color:#1e40af;">${kredit}</td>
+            <td style="text-align:center; font-weight:bold; color:#1e40af;">${saldo}</td>
+          </tr>
+        </table>
+        ${tableHtml}
+      </body>
+      </html>`;
+
+      const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      if (btn) { btn.textContent = origText; btn.disabled = false; }
+  };
+
+  if (window._pcUseServerPaging) {
+      const cfg = (typeof getRbmActiveConfig === 'function') ? getRbmActiveConfig() : null;
+      const apiUrl = (cfg && cfg.apiUrl) ? cfg.apiUrl : 'http://localhost:3001/db';
+      const baseUrl = apiUrl.replace(/\/db\/?$/, '');
+      const outlet = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+      const searchVal = document.getElementById("pc_search") ? (document.getElementById("pc_search").value || '') : '';
+      
+      const url = `${baseUrl}/api/petty-cash?outlet=${encodeURIComponent(outlet)}&from=${encodeURIComponent(tglAwal)}&to=${encodeURIComponent(tglAkhir)}&search=${encodeURIComponent(searchVal)}&page=1&limit=10000&order=desc`;
+
+      fetch(url).then(r => r.json()).then(result => {
+          doExport(result.data || []);
+      }).catch(err => {
+          alert("Gagal memuat data dari server: " + err.message);
+          if (btn) { btn.textContent = origText; btn.disabled = false; }
+      });
+  } else if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPettyCashPage) {
+      const outlet = getRbmOutlet();
+      const searchNow = (document.getElementById("pc_search") ? (document.getElementById("pc_search").value || '') : '');
+      
+      FirebaseStorage.getPettyCashPage({
+          outletId: outlet,
+          from: tglAwal,
+          to: tglAkhir,
+          search: searchNow,
+          limit: 10000,
+          cursor: null,
+          order: 'desc'
+      }).then(result => {
+          doExport(result.data || []);
+      }).catch(err => {
+          alert("Gagal memuat data dari firebase: " + err.message);
+          if (btn) { btn.textContent = origText; btn.disabled = false; }
+      });
+  } else {
+      doExport(window._lastPettyCashData || []);
+  }
 }
 
 function triggerImportPettyCashExcel() {
