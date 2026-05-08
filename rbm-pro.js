@@ -2763,9 +2763,9 @@ function exportPettyCashToExcel() {
           if (!data || data.length === 0) {
               wsData.push(["Tidak ada data"]);
           } else {
-              data.forEach(r => {
+              data.forEach((r, idx) => {
                   wsData.push([
-                      r.no || '',
+                      idx + 1,
                       r.tanggal || '',
                       r.nama || '',
                       r.jumlah || '',
@@ -2806,7 +2806,7 @@ function exportPettyCashToExcel() {
       const outlet = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
       const searchVal = document.getElementById("pc_search") ? (document.getElementById("pc_search").value || '') : '';
       
-      const url = `${baseUrl}/api/petty-cash?outlet=${encodeURIComponent(outlet)}&from=${encodeURIComponent(tglAwal)}&to=${encodeURIComponent(tglAkhir)}&search=${encodeURIComponent(searchVal)}&page=1&limit=10000&order=desc`;
+      const url = `${baseUrl}/api/petty-cash?outlet=${encodeURIComponent(outlet)}&from=${encodeURIComponent(tglAwal)}&to=${encodeURIComponent(tglAkhir)}&search=${encodeURIComponent(searchVal)}&page=1&limit=1000000&order=asc`;
 
       fetch(url).then(r => r.json()).then(result => {
           doExport(result.data || []);
@@ -2814,20 +2814,20 @@ function exportPettyCashToExcel() {
           alert("Gagal memuat data dari server: " + err.message);
           if (btn) { btn.textContent = origText; btn.disabled = false; }
       });
-  } else if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPettyCashPage) {
+  } else if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPettyCash) {
       const outlet = getRbmOutlet();
-      const searchNow = (document.getElementById("pc_search") ? (document.getElementById("pc_search").value || '') : '');
+      const searchNow = (document.getElementById("pc_search") ? (document.getElementById("pc_search").value || '') : '').toLowerCase();
       
-      FirebaseStorage.getPettyCashPage({
-          outletId: outlet,
-          from: tglAwal,
-          to: tglAkhir,
-          search: searchNow,
-          limit: 10000,
-          cursor: null,
-          order: 'desc'
-      }).then(result => {
-          doExport(result.data || []);
+      FirebaseStorage.getPettyCash(tglAwal, tglAkhir, outlet).then(result => {
+          let allData = [];
+          if (result && Array.isArray(result.data)) allData = result.data;
+          else if (Array.isArray(result)) allData = result;
+          
+          if (searchNow) {
+              allData = allData.filter(r => (r.nama || '').toLowerCase().includes(searchNow));
+          }
+          
+          doExport(allData);
       }).catch(err => {
           alert("Gagal memuat data dari firebase: " + err.message);
           if (btn) { btn.textContent = origText; btn.disabled = false; }
