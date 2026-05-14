@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dokumen & Hasil Meeting - RBM Pro</title>
+  <link rel="stylesheet" href="rbm-pro.css">
+</head>
+<body>
+<script>
+(function(){ 
+    try {
+        var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); 
+        // Hanya Manager, Owner, dan Developer yang boleh akses halaman ini
+        if (u.role === 'staff' || u.role === 'kasir') { 
+            window.location.replace('index.html'); 
+        } 
+    } catch(e) {
+        window.location.replace('index.html'); 
+    }
+})();
+</script>
+
+<header class="rbm-page-header">
+  <a href="index.html" class="rbm-back-btn">&#8249;</a>
+  <h1 class="rbm-page-title">Dokumen & Laporan Toko</h1>
+</header>
+
+<div class="rbm-content-wrap">
+  <section class="rbm-outlet-card" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+    <div style="flex: 1; min-width: 200px;">
+        <label for="rbm-outlet-select" class="rbm-outlet-label" style="margin:0;">Lingkup Data:</label>
+        <select id="rbm-outlet-select" class="rbm-outlet-select" style="margin:0;"></select>
+    </div>
+    <div style="flex: 0 0 auto; display: flex; gap: 8px;">
+        <button type="button" class="btn nav-button active" onclick="showView('lihat-dokumen-view')">Lihat Laporan</button>
+        <button type="button" class="btn nav-button" onclick="showView('input-dokumen-view')">Input Laporan</button>
+    </div>
+  </section>
+
+  <div class="app-layout">
+    <main class="app-main" style="margin-left:0;">
+        
+      <!-- VIEW LIHAT -->
+      <div id="lihat-dokumen-view" class="view-container" style="display:block;">
+        <div class="page-header">
+          <h2>Arsip Dokumen & Laporan</h2>
+          <p>Daftar Peraturan Perusahaan, Masalah Toko, dan Ide Peningkatan Pelanggan.</p>
+        </div>
+        
+        <div class="form-container" style="padding: 0; background: transparent; border: none; box-shadow: none;">
+          <div class="filter-row" style="margin-bottom: 12px; gap: 10px;">
+            <button class="btn btn-secondary" onclick="loadDokumen()">🔄 Refresh Data</button>
+          </div>
+          <div class="table-card">
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width: 50px; text-align: center;">No</th>
+                    <th style="width: 180px;">Kategori</th>
+                    <th>Judul / Topik</th>
+                    <th>Isi / Deskripsi</th>
+                    <th style="width: 130px;">Tanggal</th>
+                    <th style="width: 120px;">Oleh</th>
+                    <th style="width: 150px; text-align: center;">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="dokumen_tbody">
+                  <tr><td colspan="7" class="table-empty" style="text-align: center;">Memuat data...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW INPUT -->
+      <div id="input-dokumen-view" class="view-container" style="display:none;">
+        <div class="page-header">
+          <h2 id="form-title">Input Dokumen Baru</h2>
+          <p>Masukkan Peraturan, Masalah Toko, atau Ide Peningkatan Pelanggan.</p>
+        </div>
+        <div class="form-container">
+          <input type="hidden" id="dok_id">
+          <div class="form-section">
+            <label>Kategori Laporan</label>
+            <select id="dok_kategori" class="form-input" onchange="toggleTtdSection()">
+              <option value="Peraturan Perusahaan">Peraturan Perusahaan & SOP</option>
+              <option value="Masalah Toko">Masalah / Kendala Toko</option>
+              <option value="Ide Peningkatan">Ide Peningkatan Pelanggan</option>
+            </select>
+          </div>
+          <div class="form-section">
+            <label>Judul / Topik</label>
+            <input type="text" id="dok_judul" class="form-input" placeholder="Contoh: Aturan Keterlambatan, Keluhan AC Rusak, Ide Promo">
+          </div>
+          
+          <div class="form-section" id="section-konten-bebas" style="display: none;">
+            <label>Detail / Isi</label>
+            <textarea id="dok_konten" class="form-input" rows="8" placeholder="Tuliskan isi peraturan, detail masalah, atau penjelasan ide di sini..."></textarea>
+          </div>
+
+          <div class="form-section" id="section-aturan" style="display: none;">
+            <label id="lbl-daftar-aturan">Daftar Peraturan & Sanksi</label>
+            <div id="aturan-list"></div>
+            <button type="button" id="btn-tambah-aturan" class="btn btn-secondary" onclick="tambahAturanRow()" style="margin-top:8px; font-size:12px; border-style: dashed;">+ Tambah Baris Peraturan</button>
+
+            <div style="margin-top: 20px;">
+                <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Penegasan</label>
+                <textarea id="dok_penegasan" class="form-input" rows="3" placeholder="Contoh: Demikian peraturan ini dibuat untuk dipatuhi bersama..."></textarea>
+            </div>
+            <div style="margin-top: 15px;">
+                <label style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Ketentuan Tambahan</label>
+                <textarea id="dok_ketentuan" class="form-input" rows="3" placeholder="Contoh: Hal-hal yang belum diatur akan ditetapkan di kemudian hari..."></textarea>
+            </div>
+          </div>
+
+          <div class="form-section" id="section-tanda-tangan">
+            <label>Pihak Penandatangan (Untuk Cetak PDF)</label>
+            <div style="background: #f8fafc; padding: 16px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <div id="ttd-list">
+                    <!-- Dynamic signatory rows will be injected here -->
+                </div>
+                <button type="button" class="btn btn-secondary" onclick="tambahTtdRow()" style="margin-top:8px; font-size:12px; border-style: dashed;">+ Tambah Penandatangan</button>
+            </div>
+          </div>
+          <div class="form-section">
+            <label>File Lampiran (Opsional)</label>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <input type="file" id="dok_file" class="form-input" accept=".pdf,image/*" style="flex:1;">
+                <input type="hidden" id="dok_base64">
+                <input type="hidden" id="dok_filename">
+                <input type="hidden" id="dok_mimetype">
+                <button type="button" id="btn-clear-file" class="btn btn-secondary" style="display:none;" onclick="clearFile()">Hapus File</button>
+            </div>
+            <p style="font-size:11px; color:#64748b; margin-top:4px;">Upload foto bukti masalah atau file referensi (Maks 4MB).</p>
+            <div id="file_preview_link" style="margin-top:5px; font-size:12px;"></div>
+          </div>
+          <div style="display:flex; gap:10px;">
+              <button id="btn-batal-dok" class="btn btn-secondary" onclick="resetForm()" style="display:none; flex:1;">Batal Edit</button>
+              <button id="btn-submit-dok" class="btn btn-primary" onclick="simpanDokumen()" style="flex:2;">Simpan Data</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Modal Ukuran Kertas PDF -->
+<div id="paperSizeModal" class="modal-overlay" style="display:none; align-items:center; justify-content:center; z-index: 10000;" onclick="closePaperSizeModal()">
+  <div class="modal-content" style="background:white; padding:20px; width:300px; max-width:90%; border-radius:8px; text-align:center;" onclick="event.stopPropagation()">
+    <h3 style="margin-top:0;">Pilih Ukuran Kertas</h3>
+    <select id="paperSizeSelect" class="form-input" style="margin-bottom:15px; width:100%; padding:8px;">
+      <option value="A4">A4 (Standar)</option>
+      <option value="A3">A3</option>
+      <option value="A3Plus">A3 Plus (13 x 19 in)</option>
+      <option value="F4">F4 / Folio (8.5 x 13 in)</option>
+      <option value="Letter">Letter</option>
+      <option value="Legal">Legal</option>
+    </select>
+    <div style="display:flex; gap:10px; justify-content:center;">
+      <button class="btn btn-secondary" onclick="closePaperSizeModal()" style="flex:1;">Batal</button>
+      <button class="btn btn-primary" onclick="proceedCetakPdf()" style="flex:1;">Lanjut Cetak</button>
+    </div>
+  </div>
+</div>
+
+<span class="watermark">RBM Pro 2.3</span>
+
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+<script src="rbm-pro-storage.js"></script>
+<script src="rbm-pro.js"></script>
+
+<script>
+window.RBM_PAGE = 'dokumen-view';
+
+// Inisialisasi Firebase jika belum
+if (!firebase.apps.length) {
+    const firebaseConfig = {
+        apiKey: "AIzaSyDWQG53tP2zKILTwPSJQpiVzFNyvYLxLqw",
+        authDomain: "ricebowlmonst.firebaseapp.com",
+        databaseURL: "https://ricebowlmonst-default-rtdb.firebaseio.com",
+        projectId: "ricebowlmonst",
+        storageBucket: "ricebowlmonst.firebasestorage.app",
+        messagingSenderId: "723669558962",
+        appId: "1:723669558962:web:c17a1a4683a86cc5a88bab"
+    };
+    firebase.initializeApp(firebaseConfig);
+}
+const db = firebase.database();
+
+window.addEventListener('load', function() {
+    // Setup Dropdown Outlet
+    const u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+    const outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+    const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+    const sel = document.getElementById('rbm-outlet-select');
+    
+    if (sel) {
+        sel.innerHTML = '<option value="global" style="font-weight:bold; color:#1e40af;">🌐 Semua Outlet (Global)</option>';
+        outlets.forEach(id => {
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = names[id] || (id.charAt(0).toUpperCase() + id.slice(1));
+            sel.appendChild(opt);
+        });
+
+        if (u.role === 'manager' && u.outlet) {
+            Array.from(sel.options).forEach(opt => {
+                if (opt.value !== 'global' && opt.value !== u.outlet) opt.disabled = true;
+            });
+            sel.value = u.outlet;
+        } else {
+            var last = localStorage.getItem('rbm_last_selected_outlet');
+            if (last && (outlets.includes(last) || last === 'global')) {
+                sel.value = last;
+            } else {
+                sel.value = 'global';
+            }
+        }
+
+        sel.addEventListener('change', function() {
+            localStorage.setItem('rbm_last_selected_outlet', sel.value);
+            loadDokumen();
+        });
+    }
+    
+    loadDokumen();
+
+    // Setup konversi file to Base64
+    document.getElementById('dok_file').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        // Batas maksimal 4MB agar tidak gagal disimpan ke Firebase RTDB
+        if (file.size > 4 * 1024 * 1024) {
+            alert('File terlalu besar! Maksimal ukuran file adalah 4 MB.');
+            this.value = '';
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            document.getElementById('dok_base64').value = evt.target.result;
+            document.getElementById('dok_filename').value = file.name;
+            document.getElementById('dok_mimetype').value = file.type;
+            document.getElementById('btn-clear-file').style.display = 'inline-block';
+            document.getElementById('file_preview_link').innerHTML = `File terpilih: <strong>${file.name}</strong>`;
+        };
+        reader.readAsDataURL(file);
+    });
+    
+    toggleTtdSection(); // Inisialisasi tampilan form
+    const ttdList = document.getElementById('ttd-list');
+    if(ttdList && ttdList.children.length === 0) {
+        tambahTtdRow('Dibuat Oleh,', 'Puji Shohibul Burhan', 'Manager Regional');
+        tambahTtdRow('Menyetujui,', '', 'Manager Outlet');
+    }
+});
+
+window.toggleTtdSection = function() {
+    const cat = document.getElementById('dok_kategori').value;
+    const ttdSec = document.getElementById('section-tanda-tangan');
+    const freeTextSec = document.getElementById('section-konten-bebas');
+    const aturanSec = document.getElementById('section-aturan');
+
+    if(ttdSec) ttdSec.style.display = 'block';
+    if(freeTextSec) freeTextSec.style.display = 'none';
+    if(aturanSec) {
+        aturanSec.style.display = 'block';
+        let lbl = document.getElementById('lbl-daftar-aturan');
+        let btnAdd = document.getElementById('btn-tambah-aturan');
+        
+        let label1 = 'Isi Peraturan', label2 = 'Sanksi Pelanggaran';
+        let placeholder1 = 'Deskripsi Peraturan...', placeholder2 = 'Sanksi (SP/Denda/dll)...';
+        
+        if (cat === 'Masalah Toko') {
+            if(lbl) lbl.textContent = 'Daftar Masalah & Tindakan';
+            if(btnAdd) btnAdd.textContent = '+ Tambah Baris Masalah';
+            label1 = 'Deskripsi Masalah'; label2 = 'Tindakan / Solusi';
+            placeholder1 = 'Deskripsi masalah...'; placeholder2 = 'Solusi yang diambil...';
+        } else if (cat === 'Ide Peningkatan') {
+            if(lbl) lbl.textContent = 'Daftar Ide & Rencana';
+            if(btnAdd) btnAdd.textContent = '+ Tambah Baris Ide';
+            label1 = 'Deskripsi Ide'; label2 = 'Rencana Eksekusi';
+            placeholder1 = 'Ide peningkatan...'; placeholder2 = 'Cara / Rencana eksekusi...';
+        } else {
+            if(lbl) lbl.textContent = 'Daftar Peraturan & Sanksi';
+            if(btnAdd) btnAdd.textContent = '+ Tambah Baris Peraturan';
+        }
+
+        document.querySelectorAll('.aturan-row').forEach(row => {
+            let l1 = row.querySelector('.lbl-col-1');
+            let l2 = row.querySelector('.lbl-col-2');
+            let i1 = row.querySelector('.inp-aturan');
+            let i2 = row.querySelector('.inp-sanksi');
+            if (l1) l1.textContent = label1;
+            if (l2) l2.textContent = label2;
+            if (i1) i1.placeholder = placeholder1;
+            if (i2) i2.placeholder = placeholder2;
+        });
+
+        if (document.getElementById('aturan-list').children.length === 0) {
+            tambahAturanRow();
+        }
+    }
+};
+
+window.tambahAturanRow = function(aturan = '', sanksi = '') {
+    const list = document.getElementById('aturan-list');
+    const row = document.createElement('div');
+    row.className = 'aturan-row';
+    row.style.cssText = 'display:flex; gap:10px; margin-bottom:10px; align-items:flex-start; background: #fff; padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px;';
+    
+    const cat = document.getElementById('dok_kategori').value;
+    let label1 = 'Isi Peraturan', label2 = 'Sanksi Pelanggaran';
+    let placeholder1 = 'Deskripsi Peraturan...', placeholder2 = 'Sanksi (SP/Denda/dll)...';
+    if (cat === 'Masalah Toko') { label1 = 'Deskripsi Masalah'; label2 = 'Tindakan / Solusi'; placeholder1 = 'Deskripsi masalah...'; placeholder2 = 'Solusi yang diambil...'; }
+    else if (cat === 'Ide Peningkatan') { label1 = 'Deskripsi Ide'; label2 = 'Rencana Eksekusi'; placeholder1 = 'Ide peningkatan...'; placeholder2 = 'Cara / Rencana eksekusi...'; }
+
+    row.innerHTML = `
+        <div style="flex:0 0 30px; text-align:center; font-weight:bold; color:#64748b; padding-top:8px;" class="row-num">${list.children.length + 1}.</div>
+        <div style="flex:2;">
+            <label style="font-size: 11px; color: #64748b; margin-bottom: 4px;" class="lbl-col-1">${label1}</label>
+            <textarea class="form-input inp-aturan" rows="3" placeholder="${placeholder1}">${aturan}</textarea>
+        </div>
+        <div style="flex:1.5;">
+            <label style="font-size: 11px; color: #64748b; margin-bottom: 4px;" class="lbl-col-2">${label2}</label>
+            <textarea class="form-input inp-sanksi" rows="3" placeholder="${placeholder2}">${sanksi}</textarea>
+        </div>
+        <div style="flex:0 0 auto; padding-top: 22px;">
+            <button type="button" class="btn-small-danger" onclick="hapusAturanRow(this)" style="padding:6px 10px;" title="Hapus Baris">X</button>
+        </div>
+    `;
+    list.appendChild(row);
+};
+
+window.hapusAturanRow = function(btn) {
+    btn.closest('.aturan-row').remove();
+    const rows = document.querySelectorAll('.aturan-row');
+    rows.forEach((r, i) => { r.querySelector('.row-num').textContent = (i + 1) + '.'; });
+};
+
+window.tambahTtdRow = function(ket = '', nama = '', jabatan = '') {
+    const list = document.getElementById('ttd-list');
+    const row = document.createElement('div');
+    row.className = 'ttd-row';
+    row.style.cssText = 'display:flex; gap:10px; margin-bottom:10px; align-items:flex-end;';
+    
+    row.innerHTML = `
+        <div style="flex:1;"><label style="font-size: 11px; margin-bottom: 4px;">Tindakan</label><input type="text" class="form-input inp-ttd-ket" placeholder="Cth: Dibuat Oleh" value="${ket}" style="font-size: 12px;"></div>
+        <div style="flex:1;"><label style="font-size: 11px; margin-bottom: 4px;">Nama Terang</label><input type="text" class="form-input inp-ttd-nama" placeholder="Nama Lengkap" value="${nama}" style="font-size: 12px;"></div>
+        <div style="flex:1;"><label style="font-size: 11px; margin-bottom: 4px;">Jabatan</label><input type="text" class="form-input inp-ttd-jabatan" placeholder="Cth: Manager Regional" value="${jabatan}" style="font-size: 12px;"></div>
+        <button type="button" class="btn-small-danger" onclick="hapusTtdRow(this)" style="padding:8px 12px; margin-bottom:1px;" title="Hapus Penandatangan">X</button>
+    `;
+    list.appendChild(row);
+};
+
+window.hapusTtdRow = function(btn) {
+    btn.closest('.ttd-row').remove();
+};
+
+window.clearFile = function() {
+    document.getElementById('dok_file').value = '';
+    document.getElementById('dok_base64').value = '';
+    document.getElementById('dok_filename').value = '';
+    document.getElementById('dok_mimetype').value = '';
+    document.getElementById('btn-clear-file').style.display = 'none';
+    document.getElementById('file_preview_link').innerHTML = '';
+};
+
+window.resetForm = function() {
+    document.getElementById('dok_id').value = '';
+    document.getElementById('dok_judul').value = '';
+    document.getElementById('dok_konten').value = '';
+    document.getElementById('dok_kategori').value = 'Peraturan Perusahaan';
+    
+    document.getElementById('aturan-list').innerHTML = '';
+    const ttdList = document.getElementById('ttd-list');
+    if(ttdList) {
+        ttdList.innerHTML = '';
+        tambahTtdRow('Dibuat Oleh,', 'Puji Shohibul Burhan', 'Manager Regional');
+        tambahTtdRow('Menyetujui,', '', 'Manager Outlet');
+    }
+    
+    if(document.getElementById('dok_penegasan')) document.getElementById('dok_penegasan').value = '';
+    if(document.getElementById('dok_ketentuan')) document.getElementById('dok_ketentuan').value = '';
+
+    clearFile();
+    document.getElementById('btn-submit-dok').textContent = 'Simpan Data';
+    document.getElementById('btn-batal-dok').style.display = 'none';
+    document.getElementById('form-title').textContent = 'Input Dokumen Baru';
+    toggleTtdSection();
+};
+
+window.simpanDokumen = function() {
+    const outlet = document.getElementById('rbm-outlet-select').value;
+    const id = document.getElementById('dok_id').value;
+    const kategori = document.getElementById('dok_kategori').value;
+    const judul = document.getElementById('dok_judul').value.trim();
+    let konten = '';
+    let aturanList = [];
+    
+    const rows = document.querySelectorAll('.aturan-row');
+    rows.forEach(r => {
+        const a = r.querySelector('.inp-aturan').value.trim();
+        const s = r.querySelector('.inp-sanksi').value.trim();
+        if (a || s) aturanList.push({ aturan: a, sanksi: s });
+    });
+    if (kategori === 'Masalah Toko') {
+        konten = aturanList.map((a, i) => `${i+1}. ${a.aturan}\n   Solusi: ${a.sanksi}`).join('\n\n');
+    } else if (kategori === 'Ide Peningkatan') {
+        konten = aturanList.map((a, i) => `${i+1}. ${a.aturan}\n   Rencana: ${a.sanksi}`).join('\n\n');
+    } else {
+        konten = aturanList.map((a, i) => `${i+1}. ${a.aturan}\n   Sanksi: ${a.sanksi}`).join('\n\n');
+    }
+
+    const base64 = document.getElementById('dok_base64').value;
+    const filename = document.getElementById('dok_filename').value;
+    const mimetype = document.getElementById('dok_mimetype').value;
+    
+    const ttdRows = document.querySelectorAll('#ttd-list .ttd-row');
+    const ttd = [];
+    ttdRows.forEach(row => {
+        const ketInp = row.querySelector('.inp-ttd-ket');
+        const ket = ketInp ? ketInp.value.trim() : '';
+        const jabatan = row.querySelector('.inp-ttd-jabatan').value.trim();
+        const nama = row.querySelector('.inp-ttd-nama').value.trim();
+        if (ket || jabatan || nama) ttd.push({ ket, jabatan, nama });
+    });
+
+    if (!judul || !konten) {
+        alert('Judul dan Isi Detail wajib diisi!');
+        return;
+    }
+    
+    const penegasan = document.getElementById('dok_penegasan') ? document.getElementById('dok_penegasan').value.trim() : '';
+    const ketentuan = document.getElementById('dok_ketentuan') ? document.getElementById('dok_ketentuan').value.trim() : '';
+
+    const u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+    const uploader = u.nama || u.username || 'Admin';
+
+    const btn = document.getElementById('btn-submit-dok');
+    btn.disabled = true;
+    btn.textContent = 'Menyimpan... ⏳';
+
+    const payload = { 
+        kategori, judul, konten, aturanList, ttd, penegasan, ketentuan, fileData: base64, fileName: filename, mimeType: mimetype, uploader, timestamp: firebase.database.ServerValue.TIMESTAMP 
+    };
+
+    const refPath = `rbm_pro/dokumen_perusahaan/${outlet}`;
+    
+    let dbPromise;
+    if (id) {
+        payload.timestamp = window.dokumenDataCache[id].timestamp || payload.timestamp; 
+        dbPromise = db.ref(`${refPath}/${id}`).update(payload);
+    } else {
+        dbPromise = db.ref(refPath).push(payload);
+    }
+
+    dbPromise.then(() => {
+        alert('Data berhasil disimpan!');
+        resetForm();
+        showView('lihat-dokumen-view');
+    }).catch(err => {
+        alert('Gagal menyimpan: ' + err.message);
+    }).finally(() => {
+        btn.disabled = false;
+        btn.textContent = id ? 'Update Data' : 'Simpan Data';
+    });
+};
+
+window.dokumenDataCache = {};
+
+function loadDokumen() {
+    const outlet = document.getElementById('rbm-outlet-select').value;
+    const tbody = document.getElementById('dokumen_tbody');
+    tbody.innerHTML = '<tr><td colspan="7" class="table-loading" style="text-align:center;">Memuat data... ⏳</td></tr>';
+
+    db.ref(`rbm_pro/dokumen_perusahaan/${outlet}`).once('value').then(snap => {
+        const data = snap.val();
+        tbody.innerHTML = '';
+        window.dokumenDataCache = data || {};
+
+        if (!data) {
+            tbody.innerHTML = '<tr><td colspan="7" class="table-empty" style="text-align:center; color:#64748b;">Belum ada data di lingkup ini.</td></tr>';
+            return;
+        }
+
+        const u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+        const isOwner = u.role === 'owner' || (u.username || '').toLowerCase() === 'burhan';
+
+        const keys = Object.keys(data).sort((a, b) => (data[b].timestamp || 0) - (data[a].timestamp || 0));
+
+        keys.forEach((key, index) => {
+            const doc = data[key];
+            const dateStr = doc.timestamp ? new Date(doc.timestamp).toLocaleString('id-ID', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '-';
+            
+            let kategoriStyle = 'background: #f1f5f9; color: #475569;';
+            if (doc.kategori === 'Peraturan Perusahaan') kategoriStyle = 'background: #fee2e2; color: #b91c1c; font-weight: bold;';
+            else if (doc.kategori === 'Masalah Toko') kategoriStyle = 'background: #fef3c7; color: #b45309; font-weight: bold;';
+            else if (doc.kategori === 'Ide Peningkatan') kategoriStyle = 'background: #dcfce7; color: #15803d; font-weight: bold;';
+
+            let briefContent = doc.konten || '';
+            if (briefContent.length > 80) briefContent = briefContent.substring(0, 80) + '...';
+
+            const tr = document.createElement('tr');
+            
+            let actionHtml = '';
+            
+            if (isOwner || doc.uploader === (u.nama || u.username)) {
+                actionHtml += `<button class="btn btn-secondary" style="padding: 6px 8px; font-size: 11px; width: 100%; box-sizing: border-box; justify-content: center;" onclick="editDokumen('${key}')">📝 Edit</button>`;
+            }
+            
+            actionHtml += `<button class="btn btn-primary" style="padding: 6px 8px; font-size: 11px; width: 100%; background: #dc3545; border-color: #dc3545; box-sizing: border-box; justify-content: center;" onclick="cetakPdfPeraturan('${key}')">📄 Cetak PDF</button>`;
+            
+            if (doc.fileData) {
+                actionHtml += `<a href="${doc.fileData}" download="${doc.fileName || 'Lampiran'}" class="btn btn-secondary" style="padding: 6px 8px; font-size: 11px; width: 100%; background: #3b82f6; color: white; border: none; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;">📎 Lampiran</a>`;
+            }
+
+            if (isOwner) {
+                actionHtml += `<button class="btn-small-danger" style="width: 100%; padding: 6px 8px; font-size: 11px; box-sizing: border-box; justify-content: center;" onclick="hapusDokumen('${key}')">🗑️ Hapus</button>`;
+            }
+
+            tr.innerHTML = `
+                <td style="text-align: center;">${index + 1}</td>
+                <td><span style="padding: 4px 8px; border-radius: 4px; font-size: 11px; ${kategoriStyle}; display: inline-block; text-align: center;">${doc.kategori}</span></td>
+                <td style="font-weight: 600; color: #1e293b;">${doc.judul}</td>
+                <td style="font-size: 12px; color: #475569; white-space: pre-wrap;">${briefContent}</td>
+                <td style="font-size: 12px; color: #64748b;">${dateStr}</td>
+                <td style="font-size: 12px;">${doc.uploader || '-'}</td>
+                <td style="vertical-align: top;">
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                        ${actionHtml || '-'}
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }).catch(err => {
+        tbody.innerHTML = `<tr><td colspan="7" class="table-empty" style="text-align:center; color:red;">Gagal memuat: ${err.message}</td></tr>`;
+    });
+}
+
+window.editDokumen = function(key) {
+    const doc = window.dokumenDataCache[key];
+    if (!doc) return;
+
+    document.getElementById('dok_id').value = key;
+    document.getElementById('dok_kategori').value = doc.kategori;
+    document.getElementById('dok_judul').value = doc.judul;
+    document.getElementById('dok_konten').value = doc.konten || '';
+    if(document.getElementById('dok_penegasan')) document.getElementById('dok_penegasan').value = doc.penegasan || '';
+    if(document.getElementById('dok_ketentuan')) document.getElementById('dok_ketentuan').value = doc.ketentuan || '';
+    
+    document.getElementById('aturan-list').innerHTML = '';
+    if (doc.aturanList && doc.aturanList.length > 0) {
+        doc.aturanList.forEach(a => tambahAturanRow(a.aturan, a.sanksi));
+    } else {
+        tambahAturanRow(doc.konten || '', '');
+    }
+    
+    const ttdList = document.getElementById('ttd-list');
+    if(ttdList) ttdList.innerHTML = '';
+    if (doc.ttd && Array.isArray(doc.ttd) && doc.ttd.length > 0) {
+        doc.ttd.forEach(t => tambahTtdRow(t.ket || 'Mengetahui,', t.nama, t.jabatan));
+    } else {
+        tambahTtdRow('Dibuat Oleh,', 'Puji Shohibul Burhan', 'Manager Regional');
+        tambahTtdRow('Menyetujui,', '', 'Manager Outlet');
+    }
+    
+    if (doc.fileData) {
+        document.getElementById('dok_base64').value = doc.fileData;
+        document.getElementById('dok_filename').value = doc.fileName || '';
+        document.getElementById('dok_mimetype').value = doc.mimeType || '';
+        document.getElementById('btn-clear-file').style.display = 'inline-block';
+        document.getElementById('file_preview_link').innerHTML = `File saat ini: <strong>${doc.fileName || 'Lampiran'}</strong>`;
+    } else {
+        clearFile();
+    }
+
+    document.getElementById('form-title').textContent = 'Edit Dokumen';
+    document.getElementById('btn-submit-dok').textContent = 'Update Data';
+    document.getElementById('btn-batal-dok').style.display = 'block';
+
+    toggleTtdSection();
+    showView('input-dokumen-view');
+};
+
+window.hapusDokumen = function(key) {
+    if (confirm('Yakin ingin menghapus data ini secara permanen?')) {
+        const outlet = document.getElementById('rbm-outlet-select').value;
+        db.ref(`rbm_pro/dokumen_perusahaan/${outlet}/${key}`).remove().then(() => {
+            loadDokumen();
+        });
+    }
+};
+
+window.currentCetakKey = null;
+
+window.cetakPdfPeraturan = function(key) {
+    window.currentCetakKey = key;
+    document.getElementById('paperSizeModal').style.display = 'flex';
+};
+
+window.closePaperSizeModal = function() {
+    document.getElementById('paperSizeModal').style.display = 'none';
+    window.currentCetakKey = null;
+};
+
+window.proceedCetakPdf = async function() {
+    const key = window.currentCetakKey;
+    if (!key) return;
+    
+    const paperSizeRaw = document.getElementById('paperSizeSelect').value;
+    let paperCss = paperSizeRaw;
+    if (paperSizeRaw === 'F4') paperCss = '8.5in 13in';
+    else if (paperSizeRaw === 'A3Plus') paperCss = '13in 19in';
+    
+    closePaperSizeModal();
+
+    const doc = window.dokumenDataCache[key];
+    if (!doc) return;
+    
+    let logoUrl = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // transparent pixel
+    try {
+        const settingsSnap = await db.ref('customer_app_settings').once('value');
+        const settings = settingsSnap.val() || {};
+        if (settings.logo) logoUrl = settings.logo;
+    } catch(e) {
+        console.warn("Could not fetch logo for PDF", e);
+    }
+    
+    const outletSel = document.getElementById('rbm-outlet-select');
+    const outletName = outletSel.options[outletSel.selectedIndex].text;
+    
+    const printWindow = window.open('', '', 'height=700,width=800');
+    if (!printWindow) {
+        alert('Tolong izinkan popup untuk mencetak PDF.');
+        return;
+    }
+    
+    const dateStr = doc.timestamp ? new Date(doc.timestamp).toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'}) : '';
+    
+    let contentHtml = '';
+    if (doc.aturanList && doc.aturanList.length > 0) {
+        let col1 = 'Peraturan & Tata Tertib';
+        let col2 = 'Sanksi Pelanggaran';
+        if (doc.kategori === 'Masalah Toko') { col1 = 'Deskripsi Masalah'; col2 = 'Tindakan / Solusi'; }
+        else if (doc.kategori === 'Ide Peningkatan') { col1 = 'Deskripsi Ide'; col2 = 'Rencana Eksekusi'; }
+        
+        contentHtml = `<table class="aturan-table"><thead><tr><th style="width:5%;">No</th><th style="width:65%;">${col1}</th><th style="width:30%;">${col2}</th></tr></thead><tbody>`;
+        doc.aturanList.forEach((a, i) => {
+            contentHtml += `<tr><td style="text-align:center; font-weight:bold;">${i+1}</td><td>${a.aturan.replace(/\\n/g,'<br>')}</td><td>${a.sanksi.replace(/\\n/g,'<br>')}</td></tr>`;
+        });
+        contentHtml += '</tbody></table>';
+    } else {
+        contentHtml = `<div class="content">${doc.konten}</div>`;
+    }
+
+    if (doc.penegasan) {
+        contentHtml += `<div style="margin-top: 20px; font-size: 11pt; text-align: justify; white-space: pre-wrap;"><strong>Penegasan:</strong><br>${doc.penegasan}</div>`;
+    }
+    if (doc.ketentuan) {
+        contentHtml += `<div style="margin-top: 15px; font-size: 11pt; text-align: justify; white-space: pre-wrap;"><strong>Ketentuan Tambahan:</strong><br>${doc.ketentuan}</div>`;
+    }
+
+    let ttdHtml = '';
+    if (doc.ttd && Array.isArray(doc.ttd) && doc.ttd.length > 0) {
+        const validTtd = doc.ttd.filter(t => t.ket || t.jabatan || t.nama);
+        if (validTtd.length > 0) {
+            const first = validTtd[0];
+            const rest = validTtd.slice(1);
+            
+            ttdHtml = `
+            <table style="width: 100%; margin-top: 20px; border: none; text-align: center;">
+                <tr>
+                    <td style="border: none;"></td>
+                    <td style="width: 250px; border: none; padding: 0 0 30px 0; vertical-align: top; text-align: center;">
+                    <p style="margin: 0; font-size: 11pt; color: #333;">${first.ket || 'Dibuat Oleh,'}</p>
+                    <br><br><br><br>
+                    <p style="margin: 0; font-size: 12pt; font-weight: bold; border-bottom: 1px solid #000; display: inline-block; min-width: 150px; padding-bottom: 2px;">${first.nama || '(.....................)'}</p>
+                    <p style="margin: 2px 0 0 0; font-size: 11pt; color: #333;">${first.jabatan || ''}</p>
+                    </td>
+                </tr>
+            </table>`;
+            
+            if (rest.length > 0) {
+                ttdHtml += `<table style="width: 100%; border: none; text-align: center;"><tr>`;
+                const width = 100 / rest.length;
+                rest.forEach(t => {
+                    ttdHtml += `
+                    <td style="width: ${width}%; border: none; padding: 0 10px; vertical-align: top; text-align: center;">
+                        <p style="margin: 0; font-size: 11pt; color: #333;">${t.ket || 'Menyetujui,'}</p>
+                        <br><br><br><br>
+                        <p style="margin: 0; font-size: 12pt; font-weight: bold; border-bottom: 1px solid #000; display: inline-block; min-width: 150px; padding-bottom: 2px;">${t.nama || '(.....................)'}</p>
+                        <p style="margin: 2px 0 0 0; font-size: 11pt; color: #333;">${t.jabatan || ''}</p>
+                    </td>`;
+                });
+                ttdHtml += `</tr></table>`;
+            }
+        }
+    }
+
+    if (!ttdHtml) {
+        ttdHtml = `<div class="footer"><p>Ditetapkan tanggal: ${dateStr}</p><br><br><br><p><strong>${doc.uploader || 'Manajemen'}</strong></p></div>`;
+    } else {
+        ttdHtml = `<div style="text-align:right; font-size: 11pt; margin-top: 30px;">Ditetapkan tanggal: ${dateStr}</div>` + ttdHtml;
+    }
+
+    const html = `
+    <html>
+    <head>
+        <title>${doc.judul}</title>
+        <style>
+            body { font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.6; padding: 40px; color: #000; }
+            .kop { text-align: center; border-bottom: 3px double #000; padding-bottom: 20px; margin-bottom: 30px; }
+            .kop h1 { margin: 0 0 5px 0; font-size: 20pt; text-transform: uppercase; letter-spacing: 1px; }
+            .kop p { margin: 0; font-size: 12pt; }
+            .doc-title { text-align: center; text-transform: uppercase; text-decoration: underline; font-size: 14pt; font-weight: bold; margin-bottom: 30px; }
+            .content { white-space: pre-wrap; text-align: justify; }
+            .footer { margin-top: 50px; text-align: right; }
+            
+            .aturan-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11pt; }
+            .aturan-table th, .aturan-table td { border: 1px solid #000; padding: 10px; text-align: left; vertical-align: top; }
+            .aturan-table th { background-color: #f3f4f6; text-align: center; font-weight: bold; }
+            @media print {
+                @page { size: ${paperCss} portrait; margin: 15mm; }
+                body { padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="kop">
+            <h1>RICE BOWL MONSTERS</h1>
+            <p>Outlet: ${outletName}</p>
+        </div>
+        <div class="doc-title">${doc.judul}</div>
+        ${contentHtml}
+        ${ttdHtml}
+    </body>
+    </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+    }, 500);
+};
+</script>
+</body>
+</html>
