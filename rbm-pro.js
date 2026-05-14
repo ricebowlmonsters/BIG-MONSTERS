@@ -2344,17 +2344,28 @@ function createPengajuanForm() {
     for (let i = 0; i < 5; i++) {
       const rowDiv = document.createElement('div');
       rowDiv.className = 'row-group';
-      rowDiv.style.alignItems = 'flex-start';
+      rowDiv.style.cssText = 'background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 16px; display: block;';
       rowDiv.innerHTML = `
-        <div style="flex:1 1 200px;;"><label>Nama Suplier</label><input type="text" class="pengajuan_tf_suplier" placeholder="Nama Suplier" onblur="isiOtomatisDataBank(this)"></div>
-        <div style="flex:1;"><label>Tgl. Nota</label><input type="date" class="pengajuan_tf_tgl_nota" value="${new Date().toISOString().split("T")[0]}"></div>
-        <div style="flex:1;"><label>Tgl. J/T</label><input type="date" class="pengajuan_tf_tgl_jt"></div>
-        <div style="flex:1 1 200px;;"><label>Nominal</label><input type="number" class="pengajuan_tf_nominal" placeholder="Nominal (Rp)" oninput="samakanTotal(this)"></div>
-        <div style="flex:1 1 200px;;"><label>Total</label><input type="number" class="pengajuan_tf_total" placeholder="Total (Rp)"></div>
-        <div style="flex:1 1 200px;;"><label>Bank Acc</label><input type="text" class="pengajuan_tf_bank_acc" placeholder="Bank & No. Rekening"></div>
-        <div style="flex:1 1 200px;;"><label>A/N</label><input type="text" class="pengajuan_tf_atas_nama" placeholder="Atas Nama"></div>
-        <div style="flex:1 1 200px;;"><label>Keterangan</label><select class="pengajuan_tf_keterangan keterangan-select" onchange="applyKeteranganColor(this)"><option value="">-- Keterangan --</option><option value="Barang Sudah datang">Barang Sudah datang</option><option value="Barang Belum Datang">Barang Belum Datang</option><option value="DP">DP</option><option value="Pelunasan DP">Pelunasan DP</option><option value="Pelunasan di Awal">Pelunasan di Awal</option></select></div>
-        <div style="flex:1 1 200px;;"><label>Foto TTD</label><input type="file" class="pengajuan_tf_foto_ttd" accept="image/*"></div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Nama Suplier</label><input type="text" class="pengajuan_tf_suplier form-input" placeholder="Nama Suplier" onblur="isiOtomatisDataBank(this)" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Tgl. Nota</label><input type="date" class="pengajuan_tf_tgl_nota form-input" value="${new Date().toISOString().split("T")[0]}" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Tgl. Jatuh Tempo</label><input type="date" class="pengajuan_tf_tgl_jt form-input" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Nominal (Rp)</label><input type="number" class="pengajuan_tf_nominal form-input" placeholder="0" oninput="samakanTotal(this)" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Total Bayar (Rp)</label><input type="number" class="pengajuan_tf_total form-input" placeholder="0" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Bank &amp; No. Rekening</label><input type="text" class="pengajuan_tf_bank_acc form-input" placeholder="Contoh: BCA 12345" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Atas Nama (A/N)</label><input type="text" class="pengajuan_tf_atas_nama form-input" placeholder="Nama Pemilik Rekening" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Keterangan</label>
+                <select class="pengajuan_tf_keterangan form-input keterangan-select" onchange="applyKeteranganColor(this)" style="width:100%; padding:8px; box-sizing:border-box;">
+                    <option value="">-- Keterangan --</option>
+                    <option value="Barang Sudah datang">Barang Sudah datang</option>
+                    <option value="Barang Belum Datang">Barang Belum Datang</option>
+                    <option value="DP">DP</option>
+                    <option value="Pelunasan DP">Pelunasan DP</option>
+                    <option value="Pelunasan di Awal">Pelunasan di Awal</option>
+                </select>
+            </div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Upload Foto TTD (Opsional)</label><input type="file" class="pengajuan_tf_foto_ttd form-input" accept="image/*" style="width:100%; padding:6px; font-size:12px; box-sizing:border-box;"></div>
+        </div>
       `;
       container.appendChild(rowDiv);
     }
@@ -2449,9 +2460,9 @@ function createPengajuanForm() {
     for (let i = 0; i < 5; i++) {
         const rowDiv = document.createElement('div');
         rowDiv.className = 'row-group';
-        rowDiv.style.alignItems = 'flex-start';
+        rowDiv.style.cssText = 'background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 16px; display: block;';
         rowDiv.innerHTML = `
-            <div style="flex:1.5;"><label>Foto Bukti TF</label><input type="file" class="sudah_tf_foto_bukti" accept="image/*"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Upload Foto Bukti Transfer</label><input type="file" class="sudah_tf_foto_bukti form-input" accept="image/*" style="width:100%; padding:6px; font-size:12px; box-sizing:border-box;"></div>
         `;
         container.appendChild(rowDiv);
     }
@@ -2459,33 +2470,152 @@ function createPengajuanForm() {
 }
 
 function isiOtomatisDataBank(inputElement) {
-  const nama = inputElement.value.trim();
+  const nama = inputElement.value.trim().toLowerCase();
   const parent = inputElement.closest('.row-group');
-  const bankField = parent.querySelector('.pengajuan_tf_bank_acc');
-  const anField = parent.querySelector('.pengajuan_tf_atas_nama');
+  let bankField = parent.querySelector('.pengajuan_tf_bank_acc');
+  let anField = parent.querySelector('.pengajuan_tf_atas_nama');
 
   if (!nama) {
-    bankField.value = "";
-    anField.value = "";
+    if(bankField) bankField.value = "";
+    if(anField) anField.value = "";
     return;
   }
 
-  if (!isGoogleScript()) {
-    bankField.value = "";
-    anField.value = "";
-    return;
+  if (typeof firebase !== 'undefined' && firebase.database) {
+      firebase.database().ref('rbm_pro/bank').once('value').then(snap => {
+          const data = snap.val() || {};
+          let found = false;
+          Object.values(data).forEach(item => {
+              if (item.namaSuplier && item.namaSuplier.toLowerCase() === nama) {
+                  if(bankField) bankField.value = (item.bank ? item.bank + " " : "") + (item.noRekening || "");
+                  if(anField) anField.value = item.namaPemilik || "";
+                  found = true;
+              }
+          });
+          if (!found && isGoogleScript()) {
+              google.script.run.withSuccessHandler(res => {
+                  if (res) {
+                      if(bankField) bankField.value = (res.bank ? res.bank + " " : "") + (res.noRekening || "");
+                      if(anField) anField.value = res.namaPemilik || "";
+                  }
+              }).getDataBankBySuplier(inputElement.value.trim());
+          }
+      });
+  } else if (isGoogleScript()) {
+      google.script.run.withSuccessHandler(res => {
+          if (res) {
+              if(bankField) bankField.value = (res.bank ? res.bank + " " : "") + (res.noRekening || "");
+              if(anField) anField.value = res.namaPemilik || "";
+          }
+      }).getDataBankBySuplier(inputElement.value.trim());
   }
-
-  google.script.run.withSuccessHandler(data => {
-    if (data) {
-      bankField.value = data.noRekening || "";
-      anField.value = data.namaPemilik || "";
-    } else {
-      bankField.value = "";
-      anField.value = "";
-    }
-  }).getDataBankBySuplier(nama);
 }
+
+window.suplierDataCache = {};
+window.loadSuplierData = function() {
+    if (typeof firebase !== 'undefined' && firebase.database) {
+        firebase.database().ref('rbm_pro/bank').once('value').then(snap => {
+            window.suplierDataCache = snap.val() || {};
+            if (typeof renderSuplierTable === 'function') renderSuplierTable();
+            if (document.getElementById('jenis_pengajuan') && document.getElementById('jenis_pengajuan').value === 'pengajuan-tf') {
+                createPengajuanForm();
+            }
+        });
+    }
+};
+
+window.openSuplierSettingsModal = function() {
+    const modal = document.getElementById('suplierSettingsModal');
+    if (modal) modal.style.display = 'flex';
+    if (document.getElementById('set_sup_id')) document.getElementById('set_sup_id').value = '';
+    if (document.getElementById('set_sup_nama')) document.getElementById('set_sup_nama').value = '';
+    if (document.getElementById('set_sup_bank')) document.getElementById('set_sup_bank').value = '';
+    if (document.getElementById('set_sup_rek')) document.getElementById('set_sup_rek').value = '';
+    if (document.getElementById('set_sup_an')) document.getElementById('set_sup_an').value = '';
+    loadSuplierData();
+};
+
+window.closeSuplierSettingsModal = function() {
+    const modal = document.getElementById('suplierSettingsModal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.renderSuplierTable = function() {
+    const tbody = document.getElementById('suplier_tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    const keys = Object.keys(window.suplierDataCache);
+    if (keys.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 10px;">Belum ada data suplier.</td></tr>';
+        return;
+    }
+    keys.forEach(k => {
+        const item = window.suplierDataCache[k];
+        tbody.innerHTML += `
+            <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${item.namaSuplier || k}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${item.bank || ''}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${item.noRekening || ''}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${item.namaPemilik || ''}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">
+                    <button type="button" class="btn btn-secondary" style="padding: 2px 6px; font-size: 11px;" onclick="editSuplier('${k}')">Edit</button>
+                    <button type="button" class="btn btn-small-danger" style="padding: 2px 6px; font-size: 11px; margin-left: 4px;" onclick="deleteSuplier('${k}')">Hapus</button>
+                </td>
+            </tr>
+        `;
+    });
+};
+
+window.saveSuplier = function() {
+    const id = document.getElementById('set_sup_id').value || 'SUP_' + Date.now();
+    const nama = document.getElementById('set_sup_nama').value.trim();
+    const bank = document.getElementById('set_sup_bank').value.trim();
+    const rek = document.getElementById('set_sup_rek').value.trim();
+    const an = document.getElementById('set_sup_an').value.trim();
+    
+    if (!nama) { alert("Nama suplier harus diisi."); return; }
+    
+    if (typeof firebase !== 'undefined' && firebase.database) {
+        firebase.database().ref('rbm_pro/bank/' + id).set({
+            namaSuplier: nama,
+            bank: bank,
+            noRekening: rek,
+            namaPemilik: an
+        }).then(() => {
+            loadSuplierData();
+            document.getElementById('set_sup_id').value = '';
+            document.getElementById('set_sup_nama').value = '';
+            document.getElementById('set_sup_bank').value = '';
+            document.getElementById('set_sup_rek').value = '';
+            document.getElementById('set_sup_an').value = '';
+        });
+    }
+};
+
+window.editSuplier = function(k) {
+    const item = window.suplierDataCache[k];
+    if (item) {
+        document.getElementById('set_sup_id').value = k;
+        document.getElementById('set_sup_nama').value = item.namaSuplier || k;
+        document.getElementById('set_sup_bank').value = item.bank || '';
+        document.getElementById('set_sup_rek').value = item.noRekening || '';
+        document.getElementById('set_sup_an').value = item.namaPemilik || '';
+    }
+};
+
+window.deleteSuplier = function(k) {
+    if (confirm("Hapus data suplier ini?")) {
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            firebase.database().ref('rbm_pro/bank/' + k).remove().then(() => {
+                loadSuplierData();
+            });
+        }
+    }
+};
+
+window.addEventListener('load', () => {
+    if (typeof window.loadSuplierData === 'function') window.loadSuplierData();
+});
 
 function samakanTotal(input) {
   const container = input.closest('div').parentElement; 
@@ -5000,6 +5130,7 @@ function syncAbsensiPeriodAndRefresh() {
     // [FIX KRUSIAL] Tarik data Gaji & Bonus dari Firebase (Di luar blok agar SELALU tereksekusi meskipun modul lawas absen)
     var gajiKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
     var bonusKey = getRbmStorageKey('RBM_BONUS_' + tglAwal + '_' + tglAkhir);
+    var pencairanKey = getRbmStorageKey('RBM_PENCAIRAN_' + tglAwal + '_' + tglAkhir);
     if (window.RBMStorage && window.RBMStorage._db) {
         window.RBMStorage._db.ref('rbm_pro/gaji/' + gajiKey.slice(9)).once('value').then(function(snap) {
             var v = snap.val();
@@ -5017,6 +5148,15 @@ function syncAbsensiPeriodAndRefresh() {
                 window._rbmParsedCache[bonusKey] = { data: cloudObj };
                 try { localStorage.setItem(bonusKey, JSON.stringify(cloudObj)); } catch(e) {}
                 if (activeAbsensiMode === 'bonus' && typeof renderBonusTab === 'function') renderBonusTab();
+            }
+        }).catch(function(){});
+        window.RBMStorage._db.ref('rbm_pro/pencairan/' + pencairanKey.slice(14)).once('value').then(function(snap) {
+            var v = snap.val();
+            if (v) {
+                var cloudObj = (v && typeof v === 'object') ? v : {};
+                window._rbmParsedCache[pencairanKey] = { data: cloudObj };
+                try { localStorage.setItem(pencairanKey, JSON.stringify(cloudObj)); } catch(e) {}
+                if (activeAbsensiMode === 'pencairan' && typeof renderPencairanTab === 'function') renderPencairanTab();
             }
         }).catch(function(){});
     }
@@ -5824,7 +5964,7 @@ function renderRekapGaji() {
 
         // 3. Rumus Perhitungan
         const gajiPerHari = Math.round(gajiPokok / 30); // Rumus: GP / 30
-        const potTerlambatPerJam = Math.round(gajiPokok / 240); // Rumus: GP / 240
+        const potTerlambatPerJam = Math.round(gajiPokok / 173); // Rumus: GP / 173
         const uangMakan = counts.H * 10000; // Rumus: HK Aktual * 10.000
         
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
@@ -6145,7 +6285,7 @@ async function submitGajiPengajuan() {
                 });
 
                 const gajiPerHari = Math.round(gajiPokok / 30);
-                const potTerlambatPerJam = Math.round(gajiPokok / 240);
+                const potTerlambatPerJam = Math.round(gajiPokok / 173);
                 const uangMakan = jumlahH * 10000;
 
                 const totalPotKehadiran = Math.round(potHari * gajiPerHari);
@@ -6485,7 +6625,7 @@ function generateAndShowSlip(idx) {
     else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
 
     const gajiPerHari = Math.round(gajiPokok / 30);
-    const potTerlambatPerJam = Math.round(gajiPokok / 240);
+    const potTerlambatPerJam = Math.round(gajiPokok / 173);
     const uangMakan = counts.H * 10000;
     
     const totalPotKehadiran = Math.round(potHari * gajiPerHari);
@@ -6564,7 +6704,7 @@ function sendSlipEmail(idx) {
     else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
     else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
     const gajiPerHari = Math.round(gajiPokok / 30);
-    const potTerlambatPerJam = Math.round(gajiPokok / 240);
+    const potTerlambatPerJam = Math.round(gajiPokok / 173);
     const uangMakan = counts.H * 10000;
     const totalPotKehadiran = Math.round(potHari * gajiPerHari);
     const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
@@ -6870,7 +7010,7 @@ function exportCompleteAbsensiExcel() {
         const metodeBayar = pData.metodeBayar || 'TF';
 
         const gajiPerHari = Math.round(gajiPokok / 30);
-        const potTerlambatPerJam = Math.round(gajiPokok / 240);
+        const potTerlambatPerJam = Math.round(gajiPokok / 173);
         const uangMakan = counts.H * 10000;
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
@@ -7064,7 +7204,7 @@ function exportCompleteAbsensiPDF() {
         else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
         const metodeBayar = pData.metodeBayar || 'TF';
         const gajiPerHari = Math.round(gajiPokok / 30);
-        const potTerlambatPerJam = Math.round(gajiPokok / 240);
+        const potTerlambatPerJam = Math.round(gajiPokok / 173);
         const uangMakan = hkAktual * 10000;
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
@@ -11985,18 +12125,21 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                         <th rowspan="2" style="text-align: center; border: 1px solid #e2e8f0; width:40px;">No</th>
                         <th rowspan="2" style="text-align: left; border: 1px solid #e2e8f0;">Nama Karyawan</th>
                         <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Rate/Jam</th>
-                        <th colspan="2" style="text-align: center; border: 1px solid #e2e8f0;">Lembur</th>
-                        <th rowspan="2" style="text-align: center; border: 1px solid #e2e8f0; width:100px;">Tanggal Lembur</th>
-                        <th rowspan="2" style="text-align: center; border: 1px solid #e2e8f0; width:150px;">Alasan Lembur</th>
+                        <th style="text-align: center; border: 1px solid #e2e8f0; padding:0;">
+                            <table style="width:100%; border-collapse:collapse;">
+                                <tr>
+                                    <th style="width:70px; border:none; border-right:1px solid #e2e8f0; font-size:11px;">Jam</th>
+                                    <th style="width:130px; border:none; border-right:1px solid #e2e8f0; font-size:11px;">Tgl Lembur</th>
+                                    <th style="border:none; border-right:1px solid #e2e8f0; font-size:11px;">Alasan Lembur</th>
+                                    <th style="width:40px; border:none; font-size:11px;">Aksi</th>
+                                </tr>
+                            </table>
+                        </th>
                         <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Total Pencairan Lembur</th>
-                    </tr>
-                    <tr>
-                        <th style="text-align: center; border: 1px solid #e2e8f0; width:70px;">Hari</th>
-                        <th style="text-align: center; border: 1px solid #e2e8f0; width:70px;">Jam</th>
                     </tr>
                 `;
                 const colSpanEl = document.getElementById('pencairan_grand_colspan');
-                if(colSpanEl) colSpanEl.colSpan = 7;
+                if(colSpanEl) colSpanEl.colSpan = 4;
             }
         }
 
@@ -12020,21 +12163,30 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             }
 
             const gajiPerHari = Math.round(gajiPokok / 30);
-            const ratePerJam = Math.round(gajiPokok / 240);
+            const ratePerJam = Math.round(gajiPokok / 173);
             const empPencKey = emp.id != null ? String(emp.id) : String(idx);
             const pData = savedData[empPencKey] || {};
             
             const cairAL = parseFloat(pData.cairAL) || 0;
             const cairDP = parseFloat(pData.cairDP) || 0;
             const cairPH = parseFloat(pData.cairPH) || 0;
-            const lemburHari = parseFloat(pData.lemburHari) || 0;
-            const lemburJam = parseFloat(pData.lemburJam) || 0;
-            const tglLembur = pData.tglLembur || '';
-            const alasanLembur = pData.alasanLembur || '';
+            
+            let lemburDetails = pData.lemburDetails || [];
+            if (lemburDetails.length === 0) {
+                if (pData.lemburHari || pData.lemburJam || pData.tglLembur || pData.alasanLembur) {
+                    lemburDetails.push({ hari: pData.lemburHari || 0, jam: pData.lemburJam || 0, tgl: pData.tglLembur || '', alasan: pData.alasanLembur || '' });
+                } else {
+                    lemburDetails.push({ hari: '', jam: '', tgl: '', alasan: '' });
+                }
+            }
+
+            let totalRowLembur = 0;
+            lemburDetails.forEach(det => {
+                totalRowLembur += ((parseFloat(det.hari) || 0) * gajiPerHari) + ((parseFloat(det.jam) || 0) * ratePerJam);
+            });
 
             const uangCuti = (cairAL + cairDP + cairPH) * gajiPerHari;
-            const uangLembur = (lemburHari * gajiPerHari) + (lemburJam * ratePerJam);
-            const totalRow = mode === 'cuti' ? uangCuti : uangLembur;
+            const totalRow = mode === 'cuti' ? uangCuti : totalRowLembur;
             
             grandTotalPencairan += totalRow;
 
@@ -12053,10 +12205,14 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             tr.dataset.empid = empPencKey;
             tr.dataset.empname = emp.name;
             tr.dataset.empjabatan = emp.jabatan;
-            tr.innerHTML = `
-                <td style="text-align:center; border: 1px solid #e2e8f0;">${idx + 1}</td>
-                <td style="text-align:left; font-weight:600; border: 1px solid #e2e8f0;">${emp.name}<br><span style="font-size:10px; color:#6b7280; font-weight:normal;">${emp.jabatan}</span></td>
-                ${gphColHtml}
+            tr.dataset.gph = gajiPerHari;
+            tr.dataset.gpj = ratePerJam;
+            
+            if (mode === 'cuti') {
+                tr.innerHTML = `
+                    <td style="text-align:center; border: 1px solid #e2e8f0;">${idx + 1}</td>
+                    <td style="text-align:left; font-weight:600; border: 1px solid #e2e8f0;">${emp.name}<br><span style="font-size:10px; color:#6b7280; font-weight:normal;">${emp.jabatan}</span></td>
+                    ${gphColHtml}
                 <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'cuti' ? 'display:none;' : ''}">
                     <div style="font-size:9px; color:#6b7280; margin-bottom:2px;">Sisa: ${sisaAL}</div>
                     <input type="number" class="penc-al form-input" value="${cairAL || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
@@ -12069,39 +12225,112 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                     <div style="font-size:9px; color:#6b7280; margin-bottom:2px;">Sisa: ${sisaPH}</div>
                     <input type="number" class="penc-ph form-input" value="${cairPH || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
                 </td>
-                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'lembur' ? 'display:none;' : ''}">
-                    <input type="number" class="penc-lembur-hari form-input" value="${lemburHari || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" placeholder="-" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
-                </td>
-                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'lembur' ? 'display:none;' : ''}">
-                    <input type="number" class="penc-lembur-jam form-input" value="${lemburJam || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" placeholder="-" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
-                </td>
-                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'lembur' ? 'display:none;' : ''}">
-                    <input type="text" class="penc-tgl-lembur form-input" value="${tglLembur}" style="width:100%; padding:4px; text-align:center; font-size:12px;" placeholder="Tgl...">
-                </td>
-                <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'lembur' ? 'display:none;' : ''}">
-                    <input type="text" class="penc-alasan-lembur form-input" value="${alasanLembur}" style="width:100%; padding:4px; text-align:left; font-size:12px;" placeholder="Alasan...">
-                </td>
-                <td style="text-align:right; font-weight:bold; color:#059669; border: 1px solid #e2e8f0;" class="penc-total-cell" data-total="${totalRow}">${formatRupiah(totalRow)}</td>
-            `;
+                    <td style="text-align:right; font-weight:bold; color:#059669; border: 1px solid #e2e8f0;" class="penc-total-cell" data-total="${uangCuti}">${formatRupiah(uangCuti)}</td>
+                `;
+            } else {
+                let detailRowsHtml = lemburDetails.map(det => `
+                    <tr class="lembur-subrow">
+                        <td style="width:70px; border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+                            <input type="number" class="penc-lembur-jam form-input" value="${det.jam !== 0 && det.jam !== '' ? det.jam : ''}" min="0" style="width:100%; padding:4px; text-align:center; font-size:12px;" placeholder="-" oninput="calcPencairanLemburTotal(this)">
+                        </td>
+                        <td style="width:130px; border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+                            <input type="date" class="penc-tgl-lembur form-input" value="${det.tgl || ''}" style="width:100%; padding:4px; font-size:12px; text-align:center;">
+                        </td>
+                        <td style="border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+                            <input type="text" class="penc-alasan-lembur form-input" value="${det.alasan || ''}" style="width:100%; padding:4px; font-size:12px;" placeholder="Cth: Backup Shift">
+                        </td>
+                        <td style="width:40px; border:none; border-bottom:1px solid #e2e8f0; padding:4px; text-align:center;">
+                            <button type="button" class="btn-small-danger" onclick="removePencairanLemburRow(this)" style="padding:2px 6px;">x</button>
+                        </td>
+                    </tr>
+                `).join('');
+
+                tr.innerHTML = `
+                    <td style="text-align:center; border: 1px solid #e2e8f0;">${idx + 1}</td>
+                    <td style="text-align:left; font-weight:600; border: 1px solid #e2e8f0; vertical-align:top; padding-top:10px;">${emp.name}<br><span style="font-size:10px; color:#6b7280; font-weight:normal;">${emp.jabatan}</span></td>
+                    <td style="text-align:right; border: 1px solid #e2e8f0; vertical-align:top; padding-top:10px; color:#64748b; font-size:11px;">${formatRupiah(ratePerJam)}/jam</td>
+                    <td style="padding:0; border: 1px solid #e2e8f0;">
+                        <table style="width:100%; border-collapse:collapse;">
+                            <tbody class="lembur-details-tbody">
+                                ${detailRowsHtml}
+                            </tbody>
+                        </table>
+                        <button type="button" class="btn btn-secondary" onclick="addPencairanLemburRow(this)" style="margin:4px; padding:4px 8px; font-size:10px;">+ Tambah Lembur</button>
+                    </td>
+                    <td style="text-align:right; font-weight:bold; color:#059669; border: 1px solid #e2e8f0; vertical-align:top; padding-top:10px;" class="penc-total-cell" data-total="${totalRowLembur}">${formatRupiah(totalRowLembur)}</td>
+                `;
+            }
             tbody.appendChild(tr);
         });
 
         document.getElementById('pencairan_grand_total').innerText = formatRupiah(grandTotalPencairan);
     };
 
+    window.addPencairanLemburRow = function(btn) {
+        const tbody = btn.previousElementSibling.querySelector('.lembur-details-tbody');
+        const tr = document.createElement('tr');
+        tr.className = 'lembur-subrow';
+        tr.innerHTML = `
+            <td style="width:70px; border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+                <input type="number" class="penc-lembur-jam form-input" value="" min="0" style="width:100%; padding:4px; text-align:center; font-size:12px;" placeholder="-" oninput="calcPencairanLemburTotal(this)">
+            </td>
+            <td style="width:130px; border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+                <input type="date" class="penc-tgl-lembur form-input" value="" style="width:100%; padding:4px; font-size:12px; text-align:center;">
+            </td>
+            <td style="border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+                <input type="text" class="penc-alasan-lembur form-input" value="" style="width:100%; padding:4px; font-size:12px;" placeholder="Cth: Backup Shift">
+            </td>
+            <td style="width:40px; border:none; border-bottom:1px solid #e2e8f0; padding:4px; text-align:center;">
+                <button type="button" class="btn-small-danger" onclick="removePencairanLemburRow(this)" style="padding:2px 6px;">x</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    };
+
+    window.removePencairanLemburRow = function(btn) {
+        const tr = btn.closest('.lembur-subrow');
+        const mainTr = btn.closest('tr[data-empid]');
+        tr.remove();
+        if (mainTr) calcPencairanLemburTotal(mainTr);
+    };
+
+    window.calcPencairanLemburTotal = function(el) {
+        const mainTr = el.closest('tr[data-empid]') || el;
+        const gph = parseFloat(mainTr.dataset.gph) || 0;
+        const gpj = parseFloat(mainTr.dataset.gpj) || 0;
+
+        let totalRow = 0;
+        mainTr.querySelectorAll('.lembur-subrow').forEach(subTr => {
+            const elHari = subTr.querySelector('.penc-lembur-hari');
+            const lh = elHari ? (parseFloat(elHari.value) || 0) : 0;
+            const lj = parseFloat(subTr.querySelector('.penc-lembur-jam').value) || 0;
+            totalRow += (lh * gph) + (lj * gpj);
+        });
+
+        const totalCell = mainTr.querySelector('.penc-total-cell');
+        totalCell.dataset.total = totalRow;
+        totalCell.innerText = formatRupiah(totalRow);
+
+        let grandTotal = 0;
+        document.querySelectorAll('.penc-total-cell').forEach(cell => {
+            grandTotal += parseFloat(cell.dataset.total) || 0;
+        });
+        const gtEl = document.getElementById('pencairan_grand_total');
+        if (gtEl) gtEl.innerText = formatRupiah(grandTotal);
+    };
+
     window.calcPencairanRow = function(inputEl, gph, gpj) {
         const mode = window.pencairanMode || 'cuti';
+        if (mode === 'lembur') return;
+
         const tr = inputEl.closest('tr');
         const al = parseFloat(tr.querySelector('.penc-al').value) || 0;
         const dp = parseFloat(tr.querySelector('.penc-dp').value) || 0;
         const ph = parseFloat(tr.querySelector('.penc-ph').value) || 0;
-        const lh = parseFloat(tr.querySelector('.penc-lembur-hari').value) || 0;
-        const lj = parseFloat(tr.querySelector('.penc-lembur-jam').value) || 0;
 
         const uangCuti = (al + dp + ph) * gph;
-        const uangLembur = (lh * gph) + (lj * gpj);
         
-        const total = mode === 'cuti' ? uangCuti : uangLembur;
+        const total = uangCuti;
         const totalCell = tr.querySelector('.penc-total-cell');
         totalCell.dataset.total = total;
         totalCell.innerText = formatRupiah(total);
@@ -12119,25 +12348,44 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
         if (!tglAwal || !tglAkhir) { alert("Pilih tanggal terlebih dahulu."); return; }
 
         const tbody = document.getElementById('pencairan_tbody');
-        const rows = tbody.querySelectorAll('tr');
+        const rows = tbody.querySelectorAll('tr[data-empid]');
+        const mode = window.pencairanMode || 'cuti';
         
-        const dataObj = {};
+        const keyPencairan = getRbmStorageKey('RBM_PENCAIRAN_' + tglAwal + '_' + tglAkhir);
+        const dataObj = getCachedParsedStorage(keyPencairan, {});
+
         rows.forEach(tr => {
             const empId = tr.dataset.empid;
-            const cairAL = parseFloat(tr.querySelector('.penc-al').value) || 0;
-            const cairDP = parseFloat(tr.querySelector('.penc-dp').value) || 0;
-            const cairPH = parseFloat(tr.querySelector('.penc-ph').value) || 0;
-            const lemburHari = parseFloat(tr.querySelector('.penc-lembur-hari').value) || 0;
-            const lemburJam = parseFloat(tr.querySelector('.penc-lembur-jam').value) || 0;
-            const tglLembur = tr.querySelector('.penc-tgl-lembur') ? tr.querySelector('.penc-tgl-lembur').value : '';
-            const alasanLembur = tr.querySelector('.penc-alasan-lembur') ? tr.querySelector('.penc-alasan-lembur').value : '';
+            if (!dataObj[empId]) dataObj[empId] = {};
             
-            if (cairAL > 0 || cairDP > 0 || cairPH > 0 || lemburHari > 0 || lemburJam > 0 || tglLembur || alasanLembur) {
-                dataObj[empId] = { cairAL, cairDP, cairPH, lemburHari, lemburJam, tglLembur, alasanLembur };
+            if (mode === 'cuti') {
+                dataObj[empId].cairAL = parseFloat(tr.querySelector('.penc-al').value) || 0;
+                dataObj[empId].cairDP = parseFloat(tr.querySelector('.penc-dp').value) || 0;
+                dataObj[empId].cairPH = parseFloat(tr.querySelector('.penc-ph').value) || 0;
+            } else {
+                const lemburDetails = [];
+                tr.querySelectorAll('.lembur-subrow').forEach(subTr => {
+                    const elHari = subTr.querySelector('.penc-lembur-hari');
+                    const hari = elHari ? (parseFloat(elHari.value) || 0) : 0;
+                    const jam = parseFloat(subTr.querySelector('.penc-lembur-jam').value) || 0;
+                    const tgl = subTr.querySelector('.penc-tgl-lembur').value.trim();
+                    const alasan = subTr.querySelector('.penc-alasan-lembur').value.trim();
+                    if (hari > 0 || jam > 0 || tgl || alasan) {
+                        lemburDetails.push({ hari, jam, tgl, alasan });
+                    }
+                });
+                
+                dataObj[empId].lemburDetails = lemburDetails;
+                if (lemburDetails.length > 0) {
+                    dataObj[empId].lemburHari = lemburDetails[0].hari;
+                    dataObj[empId].lemburJam = lemburDetails[0].jam;
+                    dataObj[empId].tglLembur = lemburDetails[0].tgl;
+                    dataObj[empId].alasanLembur = lemburDetails[0].alasan;
+                } else {
+                    dataObj[empId].lemburHari = 0; dataObj[empId].lemburJam = 0; dataObj[empId].tglLembur = ''; dataObj[empId].alasanLembur = '';
+                }
             }
         });
-
-        const keyPencairan = getRbmStorageKey('RBM_PENCAIRAN_' + tglAwal + '_' + tglAkhir);
 
         if (window.RBMStorage && window.RBMStorage._useFirebase && window.RBMStorage._db) {
             window.RBMStorage._db.ref('rbm_pro/pencairan/' + keyPencairan.slice(14)).set(dataObj).then(function() {
@@ -12175,46 +12423,61 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                 let totalGrand = 0;
                 const items = [];
                 
-                document.querySelectorAll("#pencairan_tbody tr").forEach(tr => {
+                document.querySelectorAll("#pencairan_tbody tr[data-empid]").forEach(tr => {
                     const empId = tr.dataset.empid;
                     const empName = tr.dataset.empname;
                     const empJabatan = tr.dataset.empjabatan;
-                    
-                    const cairAL = parseFloat(tr.querySelector('.penc-al').value) || 0;
-                    const cairDP = parseFloat(tr.querySelector('.penc-dp').value) || 0;
-                    const cairPH = parseFloat(tr.querySelector('.penc-ph').value) || 0;
-                    const lemburHari = parseFloat(tr.querySelector('.penc-lembur-hari').value) || 0;
-                    const lemburJam = parseFloat(tr.querySelector('.penc-lembur-jam').value) || 0;
-                    const tglLembur = tr.querySelector('.penc-tgl-lembur') ? tr.querySelector('.penc-tgl-lembur').value : '';
-                    const alasanLembur = tr.querySelector('.penc-alasan-lembur') ? tr.querySelector('.penc-alasan-lembur').value : '';
                     
                     const nominal = parseFloat(tr.querySelector('.penc-total-cell').dataset.total) || 0;
                     
                     if (nominal > 0) {
                         totalGrand += nominal;
                         let rincianArr = [];
+                        let tglLemburStr = '';
+                        let alasanLemburStr = '';
+                        let totalHariLembur = 0;
+                        let totalJamLembur = 0;
+                        
                         if (mode === 'cuti') {
+                            const cairAL = parseFloat(tr.querySelector('.penc-al').value) || 0;
+                            const cairDP = parseFloat(tr.querySelector('.penc-dp').value) || 0;
+                            const cairPH = parseFloat(tr.querySelector('.penc-ph').value) || 0;
                             if (cairAL > 0) rincianArr.push(cairAL + ' AL');
                             if (cairDP > 0) rincianArr.push(cairDP + ' DP');
                             if (cairPH > 0) rincianArr.push(cairPH + ' PH');
+                            
+                            items.push({ 
+                                empId: empId, nama: empName, jabatan: empJabatan, grandTotal: nominal, metodeBayar: 'TF', 
+                                keterangan: `Pencairan Cuti: ` + rincianArr.join(', '),
+                                cairAL, cairDP, cairPH
+                            });
                         } else {
-                            if (lemburHari > 0) rincianArr.push(lemburHari + ' hr Lembur');
-                            if (lemburJam > 0) rincianArr.push(lemburJam + ' jam Lembur');
-                            if (tglLembur) rincianArr.push(`Tgl: ${tglLembur}`);
-                            if (alasanLembur) rincianArr.push(`Alasan: ${alasanLembur}`);
+                            let detailedItems = [];
+                            tr.querySelectorAll('.lembur-subrow').forEach(sub => {
+                                const elHari = sub.querySelector('.penc-lembur-hari');
+                                const h = elHari ? (parseFloat(elHari.value) || 0) : 0;
+                                const j = parseFloat(sub.querySelector('.penc-lembur-jam').value) || 0;
+                                const t = sub.querySelector('.penc-tgl-lembur').value.trim();
+                                const a = sub.querySelector('.penc-alasan-lembur').value.trim();
+                                totalHariLembur += h;
+                                totalJamLembur += j;
+                                if (h > 0 || j > 0) {
+                                    let dt = [];
+                                    if (h > 0) dt.push(h + 'h');
+                                    if (j > 0) dt.push(j + 'j');
+                                    rincianArr.push(`[${t || '-'}] ${dt.join('+')}: ${a}`);
+                                    tglLemburStr += (tglLemburStr ? ', ' : '') + t;
+                                    alasanLemburStr += (alasanLemburStr ? ' | ' : '') + a;
+                                    detailedItems.push({ hari: h, jam: j, tgl: t, alasan: a });
+                                }
+                            });
+                            
+                            items.push({ 
+                                empId: empId, nama: empName, jabatan: empJabatan, grandTotal: nominal, metodeBayar: 'TF', 
+                                keterangan: `Pencairan Lembur: ` + rincianArr.join(' | '),
+                                tglLembur: tglLemburStr, alasanLembur: alasanLemburStr, lemburHari: totalHariLembur, lemburJam: totalJamLembur, lemburDetails: detailedItems
+                            });
                         }
-                        
-                        items.push({ 
-                            empId: empId, 
-                            nama: empName, 
-                            jabatan: empJabatan, 
-                            grandTotal: nominal, 
-                            metodeBayar: 'TF', 
-                            keterangan: `Pencairan ${modeText}: ` + rincianArr.join(', '),
-                            tglLembur: mode === 'lembur' ? tglLembur : '',
-                            alasanLembur: mode === 'lembur' ? alasanLembur : '',
-                            cairAL, cairDP, cairPH, lemburHari, lemburJam
-                        });
                     }
                 });
 
@@ -12233,6 +12496,35 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                 if (typeof showCustomAlert !== 'undefined') showCustomAlert('Pengajuan Pencairan berhasil dikirim ke Owner.', 'Sukses', 'success');
                 else alert('Pengajuan Pencairan berhasil dikirim ke Owner.');
                 
+                if (mode === 'lembur') {
+                    const keyPencairan = getRbmStorageKey('RBM_PENCAIRAN_' + tglAwal + '_' + tglAkhir);
+                    const dataObj = getCachedParsedStorage(keyPencairan, {});
+                    let hasChanges = false;
+                    Object.keys(dataObj).forEach(empId => {
+                        if ((dataObj[empId].lemburDetails && dataObj[empId].lemburDetails.length > 0) || dataObj[empId].lemburHari || dataObj[empId].lemburJam || dataObj[empId].tglLembur || dataObj[empId].alasanLembur) {
+                            dataObj[empId].lemburDetails = [];
+                            dataObj[empId].lemburHari = 0;
+                            dataObj[empId].lemburJam = 0;
+                            dataObj[empId].tglLembur = '';
+                            dataObj[empId].alasanLembur = '';
+                            hasChanges = true;
+                        }
+                    });
+                    if (hasChanges) {
+                        if (window.RBMStorage && window.RBMStorage._useFirebase && window.RBMStorage._db) {
+                            window.RBMStorage._db.ref('rbm_pro/pencairan/' + keyPencairan.slice(14)).set(dataObj).then(function() {
+                                window._rbmParsedCache[keyPencairan] = { data: dataObj };
+                                try { localStorage.setItem(keyPencairan, JSON.stringify(dataObj)); } catch(e){}
+                                if (typeof renderPencairanTab === 'function') renderPencairanTab();
+                            }).catch(function(){});
+                        } else {
+                            RBMStorage.setItem(keyPencairan, JSON.stringify(dataObj));
+                            window._rbmParsedCache[keyPencairan] = { data: dataObj };
+                            if (typeof renderPencairanTab === 'function') renderPencairanTab();
+                        }
+                    }
+                }
+
                 try {
                     if (window.location.protocol !== 'file:' && window.self !== window.top) {
                         window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
@@ -12253,7 +12545,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
 
         const mode = window.pencairanMode || 'cuti';
         const modeText = mode === 'cuti' ? 'CUTI' : 'LEMBUR';
-        const rows = document.querySelectorAll("#pencairan_tbody tr");
+        const rows = document.querySelectorAll("#pencairan_tbody tr[data-empid]");
         const total = document.getElementById("pencairan_grand_total").innerText;
 
         let xml = '<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
@@ -12262,7 +12554,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
         if (mode === 'cuti') {
             xml += '<Column ss:Width="30"/><Column ss:Width="150"/><Column ss:Width="100"/><Column ss:Width="60"/><Column ss:Width="60"/><Column ss:Width="60"/><Column ss:Width="120"/>';
         } else {
-            xml += '<Column ss:Width="30"/><Column ss:Width="150"/><Column ss:Width="100"/><Column ss:Width="60"/><Column ss:Width="60"/><Column ss:Width="100"/><Column ss:Width="150"/><Column ss:Width="120"/>';
+            xml += '<Column ss:Width="30"/><Column ss:Width="150"/><Column ss:Width="100"/><Column ss:Width="80"/><Column ss:Width="120"/><Column ss:Width="150"/><Column ss:Width="120"/>';
         }
         
         xml += `<Row><Cell ss:MergeAcross="${mode === 'cuti' ? 6 : 7}" ss:StyleID="sHeader"><Data ss:Type="String">LAPORAN PENCAIRAN ${modeText} (${tglAwal} s/d ${tglAkhir})</Data></Cell></Row>`;
@@ -12270,30 +12562,34 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             xml += '<Row><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">No</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Nama Karyawan</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Gaji/Hari</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeAcross="2"><Data ss:Type="String">Pencairan Cuti</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Total Pencairan</Data></Cell></Row>';
             xml += '<Row><Cell ss:Index="4" ss:StyleID="sHeader"><Data ss:Type="String">AL</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">DP</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">PH</Data></Cell></Row>';
         } else {
-            xml += '<Row><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">No</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Nama Karyawan</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Rate/Jam</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeAcross="1"><Data ss:Type="String">Lembur</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Tanggal Lembur</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Alasan Lembur</Data></Cell><Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">Total Pencairan</Data></Cell></Row>';
-            xml += '<Row><Cell ss:Index="4" ss:StyleID="sHeader"><Data ss:Type="String">Hari</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">Jam</Data></Cell></Row>';
+            xml += '<Row><Cell ss:StyleID="sHeader"><Data ss:Type="String">No</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">Nama Karyawan</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">Rate/Jam</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">Lembur (Jam)</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">Tanggal Lembur</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">Alasan Lembur</Data></Cell><Cell ss:StyleID="sHeader"><Data ss:Type="String">Total Pencairan</Data></Cell></Row>';
         }
 
         rows.forEach((tr, i) => {
             const name = tr.dataset.empname;
-            const gph = tr.cells[2].innerText;
-            const al = tr.querySelector('.penc-al').value;
-            const dp = tr.querySelector('.penc-dp').value;
-            const ph = tr.querySelector('.penc-ph').value;
-            const lh = tr.querySelector('.penc-lembur-hari').value;
-            const lj = tr.querySelector('.penc-lembur-jam').value;
-            const tglLembur = tr.querySelector('.penc-tgl-lembur') ? tr.querySelector('.penc-tgl-lembur').value : '';
-            const alasanLembur = tr.querySelector('.penc-alasan-lembur') ? tr.querySelector('.penc-alasan-lembur').value : '';
             const rowTotal = tr.querySelector('.penc-total-cell').innerText;
             
             if (mode === 'cuti') {
+                const gph = tr.cells[2].innerText;
+                const al = tr.querySelector('.penc-al').value;
+                const dp = tr.querySelector('.penc-dp').value;
+                const ph = tr.querySelector('.penc-ph').value;
                 xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="Number">${i+1}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${name}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${gph}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${al || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${dp || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${ph || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${rowTotal}</Data></Cell></Row>`;
             } else {
-                xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="Number">${i+1}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${name}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${gph}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${lh || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${lj || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${tglLembur}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${alasanLembur}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${rowTotal}</Data></Cell></Row>`;
+                const gpj = tr.cells[2].innerText;
+                let lh = 0; let lj = 0; let tglLembur = ''; let alasanLembur = '';
+                tr.querySelectorAll('.lembur-subrow').forEach(sub => {
+                    lj += parseFloat(sub.querySelector('.penc-lembur-jam').value) || 0;
+                    const t = sub.querySelector('.penc-tgl-lembur').value.trim();
+                    const a = sub.querySelector('.penc-alasan-lembur').value.trim();
+                    if(t) tglLembur += (tglLembur ? ', ' : '') + t;
+                    if(a) alasanLembur += (alasanLembur ? ' | ' : '') + a;
+                });
+                xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="Number">${i+1}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${name}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${gpj}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${lj || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${tglLembur}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${alasanLembur}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${rowTotal}</Data></Cell></Row>`;
             }
         });
 
-        xml += `<Row><Cell ss:MergeAcross="${mode === 'cuti' ? 5 : 6}" ss:StyleID="sData"><Data ss:Type="String">TOTAL</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${total}</Data></Cell></Row>`;
+        xml += `<Row><Cell ss:MergeAcross="${mode === 'cuti' ? 5 : 5}" ss:StyleID="sData"><Data ss:Type="String">TOTAL</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${total}</Data></Cell></Row>`;
         xml += '</Table></Worksheet></Workbook>';
 
         const blob = new Blob([xml], {type: 'application/vnd.ms-excel'});
@@ -12310,7 +12606,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
 
         const mode = window.pencairanMode || 'cuti';
         const modeText = mode === 'cuti' ? 'Cuti' : 'Lembur';
-        const rows = document.querySelectorAll("#pencairan_tbody tr");
+        const rows = document.querySelectorAll("#pencairan_tbody tr[data-empid]");
         const total = document.getElementById("pencairan_grand_total").innerText;
 
         let html = `<html><head><title>Pencairan Cuti & Lembur</title><style>body{font-family:sans-serif; font-size:12px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ccc;padding:6px;} th{background:#ea580c;color:white;}</style></head><body>`;
@@ -12319,29 +12615,34 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
         if (mode === 'cuti') {
             html += `<table><thead><tr><th rowspan="2">No</th><th rowspan="2">Nama Karyawan</th><th rowspan="2">Gaji/Hari</th><th colspan="3">Pencairan Cuti</th><th rowspan="2">Total</th></tr><tr><th>AL</th><th>DP</th><th>PH</th></tr></thead><tbody>`;
         } else {
-            html += `<table><thead><tr><th rowspan="2">No</th><th rowspan="2">Nama Karyawan</th><th rowspan="2">Rate/Jam</th><th colspan="2">Lembur</th><th rowspan="2">Tanggal Lembur</th><th rowspan="2">Alasan Lembur</th><th rowspan="2">Total</th></tr><tr><th>Hari</th><th>Jam</th></tr></thead><tbody>`;
+            html += `<table><thead><tr><th>No</th><th>Nama Karyawan</th><th>Rate/Jam</th><th>Lembur (Jam)</th><th>Tanggal Lembur</th><th>Alasan Lembur</th><th>Total</th></tr></thead><tbody>`;
         }
         
         rows.forEach((tr, i) => {
             const name = tr.dataset.empname;
-            const gph = tr.cells[2].innerText;
-            const al = tr.querySelector('.penc-al').value;
-            const dp = tr.querySelector('.penc-dp').value;
-            const ph = tr.querySelector('.penc-ph').value;
-            const lh = tr.querySelector('.penc-lembur-hari').value;
-            const lj = tr.querySelector('.penc-lembur-jam').value;
-            const tglLembur = tr.querySelector('.penc-tgl-lembur') ? tr.querySelector('.penc-tgl-lembur').value : '';
-            const alasanLembur = tr.querySelector('.penc-alasan-lembur') ? tr.querySelector('.penc-alasan-lembur').value : '';
             const rowTotal = tr.querySelector('.penc-total-cell').innerText;
             
             if (mode === 'cuti') {
+                const gph = tr.cells[2].innerText;
+                const al = tr.querySelector('.penc-al').value;
+                const dp = tr.querySelector('.penc-dp').value;
+                const ph = tr.querySelector('.penc-ph').value;
                 html += `<tr><td style="text-align:center;">${i+1}</td><td>${name}</td><td style="text-align:right;">${gph}</td><td style="text-align:center;">${al || 0}</td><td style="text-align:center;">${dp || 0}</td><td style="text-align:center;">${ph || 0}</td><td style="text-align:right; font-weight:bold;">${rowTotal}</td></tr>`;
             } else {
-                html += `<tr><td style="text-align:center;">${i+1}</td><td>${name}</td><td style="text-align:right;">${gph}</td><td style="text-align:center;">${lh || 0}</td><td style="text-align:center;">${lj || 0}</td><td style="text-align:center;">${tglLembur}</td><td style="text-align:left;">${alasanLembur}</td><td style="text-align:right; font-weight:bold;">${rowTotal}</td></tr>`;
+                const gpj = tr.cells[2].innerText;
+                let lj = 0; let tglLembur = ''; let alasanLembur = '';
+                tr.querySelectorAll('.lembur-subrow').forEach(sub => {
+                    lj += parseFloat(sub.querySelector('.penc-lembur-jam').value) || 0;
+                    const t = sub.querySelector('.penc-tgl-lembur').value.trim();
+                    const a = sub.querySelector('.penc-alasan-lembur').value.trim();
+                    if(t) tglLembur += (tglLembur ? '<br>' : '') + t;
+                    if(a) alasanLembur += (alasanLembur ? '<br>' : '') + a;
+                });
+                html += `<tr><td style="text-align:center;">${i+1}</td><td>${name}</td><td style="text-align:right;">${gpj}</td><td style="text-align:center;">${lj || 0}</td><td style="text-align:center;">${tglLembur}</td><td style="text-align:left;">${alasanLembur}</td><td style="text-align:right; font-weight:bold;">${rowTotal}</td></tr>`;
             }
         });
 
-        html += `<tr><td colspan="${mode === 'cuti' ? 6 : 7}" style="text-align:right;font-weight:bold;">TOTAL KESELURUHAN</td><td style="text-align:right;font-weight:bold; color:#c2410c;">${total}</td></tr>`;
+        html += `<tr><td colspan="${mode === 'cuti' ? 6 : 6}" style="text-align:right;font-weight:bold;">TOTAL KESELURUHAN</td><td style="text-align:right;font-weight:bold; color:#c2410c;">${total}</td></tr>`;
         html += `</tbody></table></body></html>`;
 
         const win = window.open('', '', 'height=600,width=800');

@@ -587,6 +587,10 @@ function updateDropdownsAll() {
         const type = document.getElementById('nonstok-tx-type') ? document.getElementById('nonstok-tx-type').value : '';
         if (type === 'revenue') updateDropdowns('non-stok-revenue');
         else if (type === 'expense') updateDropdowns('non-stok-expense');
+        else if (type === 'transfer') updateDropdowns('non-stok-transfer');
+        else if (type === 'equity') updateDropdowns('non-stok-equity');
+        else if (type === 'pay_payable') updateDropdowns('non-stok-pay');
+        else if (type === 'pos_settlement') updateDropdowns('non-stok-settlement');
     }
 }
 
@@ -645,7 +649,6 @@ function renderStokForm() {
             <div class="form-section" style="margin-bottom: 0;">
                 <label for="stok-tx-description">Keterangan / Nama Supplier</label>
                 <input type="text" id="stok-tx-description" required placeholder="Contoh: Beli Daging di Pasar X" class="form-input">
-            <input type="text" id="stok-tx-description" placeholder="Contoh: Beli Daging di Pasar X (Opsional)" class="form-input">
             </div>
         </div>
     `;
@@ -671,6 +674,8 @@ function renderNonStokForm() {
             <select id="nonstok-tx-type" required class="form-input" style="background: white;" onchange="renderNonStokSubFields()">
                 <option value="">-- Pilih Jenis --</option>
                 <option value="revenue">Uang Masuk (Pendapatan Lain di Luar Kasir)</option>
+                <option value="transfer">Pindah Uang (Transfer Antar Kas/Bank)</option>
+                <option value="equity">Setor Modal / Saldo Awal (Tidak Masuk Laba Rugi)</option>
                 <option value="expense">Uang Keluar (Biaya Operasional)</option>
                 <option value="pay_payable">Bayar Hutang / Pelunasan Tempo (Uang Keluar)</option>
                 <option value="pos_settlement">Pencairan Kasir (Uang Masuk POS, Potongan & Bunga)</option>
@@ -864,7 +869,6 @@ window.renderNonStokSubFields = function() {
                 <div class="form-section" style="margin-bottom: 0;">
                     <label for="nonstok-tx-description-in">Keterangan / Catatan</label>
                     <input type="text" id="nonstok-tx-description-in" required placeholder="Contoh: Bunga bank BCA bulan ini" class="form-input">
-                <input type="text" id="nonstok-tx-description-in" placeholder="Contoh: Bunga bank BCA bulan ini (Opsional)" class="form-input">
                 </div>
             </div>
         `;
@@ -934,7 +938,6 @@ window.renderNonStokSubFields = function() {
                 <div class="form-section" style="margin-bottom: 0; margin-top: 15px;">
                     <label for="settle-tx-description">Keterangan / Catatan Global</label>
                     <input type="text" id="settle-tx-description" placeholder="Contoh: Pencairan ShopeeFood & QRIS 25 April" required class="form-input">
-                    <input type="text" id="settle-tx-description" placeholder="Contoh: Pencairan ShopeeFood & QRIS 25 April (Opsional)" class="form-input">
                 </div>
             </div>
         `;
@@ -994,6 +997,48 @@ window.renderNonStokSubFields = function() {
             </div>
         `;
         updateDropdowns('non-stok-expense');
+    } else if (type === 'transfer') {
+        subContainer.innerHTML = `
+            <div class="form-section" style="margin-top: 15px; padding: 15px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px;">
+                <h4 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #0369a1;">Detail Pindah Uang</h4>
+                <div class="form-section">
+                    <label for="nonstok-tx-account-from">Dari Akun (Sumber Dana)</label>
+                    <select id="nonstok-tx-account-from" required class="form-input" style="background: white;"></select>
+                </div>
+                <div class="form-section">
+                    <label for="nonstok-tx-account-to">Ke Akun (Tujuan Dana)</label>
+                    <select id="nonstok-tx-account-to" required class="form-input" style="background: white;"></select>
+                </div>
+                <div class="form-section">
+                    <label for="nonstok-tx-amount-transfer">Nominal (Rp)</label>
+                    <input type="number" id="nonstok-tx-amount-transfer" required min="1" class="form-input">
+                </div>
+                <div class="form-section" style="margin-bottom: 0;">
+                    <label for="nonstok-tx-description-transfer">Keterangan / Catatan</label>
+                    <input type="text" id="nonstok-tx-description-transfer" required placeholder="Contoh: Pindah kas ke BCA" class="form-input">
+                </div>
+            </div>
+        `;
+        updateDropdowns('non-stok-transfer');
+    } else if (type === 'equity') {
+        subContainer.innerHTML = `
+            <div class="form-section" style="margin-top: 15px; padding: 15px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;">
+                <h4 style="margin-top: 0; margin-bottom: 12px; font-size: 14px; color: #166534;">Detail Setor Modal / Saldo Awal</h4>
+                <div class="form-section">
+                    <label for="nonstok-tx-account-equity">Masuk ke Akun (Debit: Kas/Bank)</label>
+                    <select id="nonstok-tx-account-equity" required class="form-input" style="background: white;"></select>
+                </div>
+                <div class="form-section">
+                    <label for="nonstok-tx-amount-equity">Nominal (Rp)</label>
+                    <input type="number" id="nonstok-tx-amount-equity" required min="1" class="form-input">
+                </div>
+                <div class="form-section" style="margin-bottom: 0;">
+                    <label for="nonstok-tx-description-equity">Keterangan / Catatan</label>
+                    <input type="text" id="nonstok-tx-description-equity" required placeholder="Contoh: Saldo awal Bank BCA" class="form-input">
+                </div>
+            </div>
+        `;
+        updateDropdowns('non-stok-equity');
     } else if (type === 'pay_payable') {
         subContainer.innerHTML = `
             <div class="form-section" style="margin-top: 15px; padding: 15px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
@@ -1020,7 +1065,6 @@ window.renderNonStokSubFields = function() {
                 <div class="form-section" style="margin-bottom: 0;">
                     <label for="nonstok-tx-description-pay">Keterangan / Nama Supplier</label>
                     <input type="text" id="nonstok-tx-description-pay" required placeholder="Contoh: Pelunasan nota daging tgl 12" class="form-input" style="border: 1px solid #fcd34d;">
-                    <input type="text" id="nonstok-tx-description-pay" placeholder="Contoh: Pelunasan nota daging tgl 12 (Opsional)" class="form-input" style="border: 1px solid #fcd34d;">
                 </div>
             </div>
         `;
@@ -1142,6 +1186,11 @@ function updateDropdowns(formType) {
         populateSelect('nonstok-tx-category-out', keuanganMasterData.expenses, 'Pilih Kelompok Biaya Non Stok');
     } else if (formType === 'non-stok-settlement') {
         populateSelect('settle-tx-account', keuanganMasterData.accounts, 'Pilih Akun Kas/Bank');
+    } else if (formType === 'non-stok-transfer') {
+        populateSelect('nonstok-tx-account-from', keuanganMasterData.accounts, 'Pilih Akun Sumber');
+        populateSelect('nonstok-tx-account-to', keuanganMasterData.accounts, 'Pilih Akun Tujuan');
+    } else if (formType === 'non-stok-equity') {
+        populateSelect('nonstok-tx-account-equity', keuanganMasterData.accounts, 'Pilih Akun Kas/Bank');
     } else if (formType === 'non-stok-pay') {
         populateSelect('nonstok-tx-account-pay', keuanganMasterData.accounts, 'Pilih Akun Kas/Bank');
     }
@@ -1427,6 +1476,25 @@ function handleTransactionSubmit(e, formType) {
             }
             
             category = 'settlement';
+        } else if (type === 'transfer') {
+            account = document.getElementById('nonstok-tx-account-from').value; // Source account for credit
+            const destinationAccount = document.getElementById('nonstok-tx-account-to').value;
+            if (account === destinationAccount) {
+                alert('Akun sumber dan tujuan tidak boleh sama!');
+                const btn = e.submitter || (e.target && e.target.querySelector ? e.target.querySelector('button[type="submit"], button') : null);
+                if (btn) { btn.textContent = 'Simpan Transaksi'; btn.disabled = false; }
+                return; // Stop submission
+            }
+            amount = parseFloat(document.getElementById('nonstok-tx-amount-transfer').value);
+            description = document.getElementById('nonstok-tx-description-transfer').value;
+            name = `Transfer dari ${keuanganMasterData.accounts[account]?.name || account} ke ${keuanganMasterData.accounts[destinationAccount]?.name || destinationAccount}`;
+            category = destinationAccount; // We'll use category to store the destination account ID
+        } else if (type === 'equity') {
+            account = document.getElementById('nonstok-tx-account-equity').value;
+            amount = parseFloat(document.getElementById('nonstok-tx-amount-equity').value);
+            description = document.getElementById('nonstok-tx-description-equity').value;
+            category = 'MODAL';
+            name = "Setor Modal / Saldo Awal";
         } else if (type === 'pay_payable') {
             account = document.getElementById('nonstok-tx-account-pay').value;
             amount = parseFloat(document.getElementById('nonstok-tx-amount-pay').value);
@@ -1440,7 +1508,7 @@ function handleTransactionSubmit(e, formType) {
             category = document.getElementById('nonstok-tx-category-in').value;
             const catSelect = document.getElementById('nonstok-tx-category-in');
             name = catSelect.options[catSelect.selectedIndex] ? catSelect.options[catSelect.selectedIndex].text : 'Pendapatan Lain';
-        } else { // expense
+        } else if (type === 'expense') {
             account = document.getElementById('nonstok-tx-account-out').value;
             amount = parseFloat(document.getElementById('nonstok-tx-amount-out').value);
             description = document.getElementById('nonstok-tx-description-out').value;
@@ -1486,6 +1554,12 @@ function handleTransactionSubmit(e, formType) {
         journalPayload.interest_fee = totalInterest;
         journalPayload.settlement_amount = amountBersih;
         journalPayload.journal_lines['debit'] = { account_type: 'asset', account_id: account, amount: amountBersih + totalInterest };
+    } else if (type === 'transfer') {
+        journalPayload.journal_lines['debit'] = { account_type: 'asset', account_id: category, amount: amount }; // category holds destination account
+        journalPayload.journal_lines['credit'] = { account_type: 'asset', account_id: account, amount: amount }; // account holds source account
+    } else if (type === 'equity') {
+        journalPayload.journal_lines['debit'] = { account_type: 'asset', account_id: account, amount: amount };
+        journalPayload.journal_lines['credit'] = { account_type: 'equity', account_id: 'MODAL', amount: amount };
     } else if (type === 'revenue') {
         journalPayload.journal_lines['debit'] = { account_type: 'asset', account_id: account, amount: amount };
         journalPayload.journal_lines['credit'] = { account_type: 'revenue', account_id: category, amount: amount };
@@ -1579,6 +1653,8 @@ window.loadTransactionHistory = function() {
             let typeLabel = '';
             let color = '';
             if (tx.type === 'pos_settlement') { typeLabel = 'Pencairan Bank'; color = '#1d4ed8'; }
+            else if (tx.type === 'transfer') { typeLabel = 'Transfer Bank'; color = '#0369a1'; }
+            else if (tx.type === 'equity') { typeLabel = 'Setor Modal'; color = '#166534'; }
             else if (tx.type === 'revenue') { typeLabel = 'Pendapatan'; color = '#166534'; }
             else if (tx.type === 'pay_payable') { typeLabel = 'Bayar Hutang'; color = '#b45309'; }
             else if (tx.type === 'expense' && tx.is_hpp) { typeLabel = 'Stok HPP'; color = '#92400e'; }
@@ -1790,6 +1866,7 @@ async function generateReports() {
         let deductedPpn = 0;
         let posNetRevenue = 0;
         let ppnPercent = 0;
+        let totalPosNonCash = 0;
         
         const startTs = new Date(startDate + 'T00:00:00').getTime();
         const endTs = new Date(endDate + 'T23:59:59').getTime();
@@ -1807,6 +1884,12 @@ async function generateReports() {
                 
                 // Hitung subtotal sebagai total + diskon (tanpa mengurangi PPN)
                 totalPosSubtotal += (paymentTotal + discountAmount);
+
+                // Pisahkan nilai Non-Tunai untuk keperluan Rekonsiliasi Pencairan
+                let method = (o.payment?.method || '').toUpperCase();
+                if (method !== 'TUNAI' && method !== 'CASH') {
+                    totalPosNonCash += paymentTotal;
+                }
             }
         });
 
@@ -1846,6 +1929,30 @@ async function generateReports() {
             const txDate = tx.date;
             const amount = parseFloat(tx.total_amount || 0);
             
+            // Handle transfer separately as it affects two accounts
+            if (tx.type === 'transfer') {
+                const debitAcc = tx.journal_lines?.debit?.account_id;
+                const creditAcc = tx.journal_lines?.credit?.account_id;
+
+                if (txDate < startDate) { // Saldo Awal
+                    if (debitAcc && accountsLedger[debitAcc]) accountsLedger[debitAcc].saldoAwal += amount;
+                    if (creditAcc && accountsLedger[creditAcc]) accountsLedger[creditAcc].saldoAwal -= amount;
+                } else if (txDate >= startDate && txDate <= endDate) { // Mutasi
+                    if (debitAcc && accountsLedger[debitAcc]) {
+                        accountsLedger[debitAcc].mutasi.push({ date: txDate, name: tx.name, description: tx.description, masuk: amount, keluar: 0, typeLabel: 'Transfer Masuk', detailsHtml: '' });
+                    }
+                    if (creditAcc && accountsLedger[creditAcc]) {
+                        accountsLedger[creditAcc].mutasi.push({ date: txDate, name: tx.name, description: tx.description, masuk: 0, keluar: amount, typeLabel: 'Transfer Keluar', detailsHtml: '' });
+                    }
+                }
+                
+                // Saldo Akhir (akumulasi dari awal)
+                if (txDate <= endDate) {
+                    if (debitAcc && accountsLedger[debitAcc]) accountsLedger[debitAcc].saldoAkhir += amount;
+                    if (creditAcc && accountsLedger[creditAcc]) accountsLedger[creditAcc].saldoAkhir -= amount;
+                }
+                return; // equivalent to continue in forEach
+            }
             // Hitung Saldo Hutang
             let hutangDesc = (tx.name || tx.description || 'Pembelian Tempo').trim();
             if (tx.type === 'pay_payable') {
@@ -1877,6 +1984,8 @@ async function generateReports() {
             if (tx.type === 'revenue') { accId = tx.journal_lines?.debit?.account_id; isMasuk = true; } 
             else if (tx.type === 'expense') { accId = tx.journal_lines?.credit?.account_id; isMasuk = false; }
             else if (tx.type === 'pos_settlement') { accId = tx.journal_lines?.debit?.account_id; isMasuk = true; }
+            else if (tx.type === 'transfer') { /* Already handled above */ }
+            else if (tx.type === 'equity') { accId = tx.journal_lines?.debit?.account_id; isMasuk = true; }
             else if (tx.type === 'pay_payable') { accId = tx.journal_lines?.credit?.account_id; isMasuk = false; }
 
             // Pemisahan Transaksi berdasar Rentang Tanggal
@@ -1893,6 +2002,7 @@ async function generateReports() {
                     if (tx.type === 'pos_settlement') typeLabel = 'Pencairan Kasir (Settlement)';
                     else if (tx.type === 'revenue') typeLabel = 'Pendapatan';
                     else if (tx.type === 'pay_payable') typeLabel = 'Pelunasan Hutang';
+                    else if (tx.type === 'equity') typeLabel = 'Setor Modal / Saldo Awal';
                     else if (tx.type === 'expense' && tx.is_hpp) typeLabel = 'Pembelian HPP';
                     else typeLabel = 'Biaya / Pengeluaran';
 
@@ -2057,15 +2167,15 @@ async function generateReports() {
         };
         
         const totalGrossSettlement = totalManualSettlement + totalManualAdmin;
-        const selisihPos = totalPosRevenue - totalGrossSettlement;
+        const selisihPos = totalPosNonCash - totalGrossSettlement;
 
         let htmlLabaRugi = `
             <div id="rekonsiliasi-box" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
                 <h4 style="margin: 0 0 10px 0; color: #0f172a; font-size: 14px;">⚖️ Rekonsiliasi Pendapatan POS vs Input Pencairan</h4>
                 <div style="display: flex; gap: 15px; font-size: 13px; flex-wrap: wrap;">
                     <div style="flex: 1; min-width: 150px; background: white; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px;">
-                        <div style="color: #64748b; margin-bottom: 4px;">Total POS (Sistem)</div>
-                        <div style="font-weight: bold; color: #1e40af; font-size: 15px;">${formatRp(totalPosRevenue)}</div>
+                        <div style="color: #64748b; margin-bottom: 4px;">Total POS (Non-Tunai)</div>
+                        <div style="font-weight: bold; color: #1e40af; font-size: 15px;">${formatRp(totalPosNonCash)}</div>
                     </div>
                     <div style="flex: 1; min-width: 150px; background: white; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px;">
                         <div style="color: #64748b; margin-bottom: 4px;">Total Input Pencairan (Kotor)</div>

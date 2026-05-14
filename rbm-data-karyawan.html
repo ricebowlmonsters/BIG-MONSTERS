@@ -48,6 +48,7 @@
   <label for="rbm-outlet-select" class="rbm-outlet-label">Pilih Outlet:</label>
   <select id="rbm-outlet-select" class="rbm-outlet-select"></select>
   <button type="button" class="btn btn-secondary" onclick="loadKaryawanData()" style="margin-left: 8px; padding: 6px 12px; font-size: 12px;">🔄 Refresh</button>
+  <button type="button" class="btn btn-primary" onclick="exportDataKaryawanPDF()" style="margin-left: 8px; padding: 6px 12px; font-size: 12px; background-color: #dc3545; border-color: #dc3545;">📄 Export PDF</button>
 </section>
 <script>
 (function(){
@@ -99,11 +100,12 @@
               <th>Masa Kontrak</th>
               <th>Lama Bekerja (Join Date)</th>
               <th>Surat Peringatan (SP)</th>
+              <th>Catatan</th>
               <th>Aksi</th>
             </tr>
           </thead>
           <tbody id="hr_tbody">
-            <tr><td colspan="7" class="table-empty">Memuat data...</td></tr>
+            <tr><td colspan="8" class="table-empty">Memuat data...</td></tr>
           </tbody>
         </table>
       </div>
@@ -484,7 +486,7 @@ async function loadKaryawanData() {
     if (!outlet) return;
 
     const tbody = document.getElementById('hr_tbody');
-    tbody.innerHTML = '<tr><td colspan="7" class="table-loading" style="text-align:center;">Memuat data karyawan...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="table-loading" style="text-align:center;">Memuat data karyawan...</td></tr>';
 
     try {
         // Ambil Data Karyawan dari Absensi
@@ -504,7 +506,7 @@ async function loadKaryawanData() {
         await loadSpSettings();
 
         if (currentEmployees.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="table-empty" style="text-align:center;">Belum ada data karyawan. Tambahkan di menu Absensi.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="table-empty" style="text-align:center;">Belum ada data karyawan. Tambahkan di menu Absensi.</td></tr>';
             return;
         }
 
@@ -580,6 +582,8 @@ async function loadKaryawanData() {
                     selesaiStyle = 'color: #d97706; font-weight: bold;'; // Orange jika < 30 hari
                 }
             }
+            
+            const notesText = hr.notes ? hr.notes : '-';
 
             html += `<tr>
                 <td style="text-align:center;">${index + 1}</td>
@@ -597,6 +601,9 @@ async function loadKaryawanData() {
                 <td>
                     ${spBadge}
                 </td>
+                <td>
+                    <div style="font-size:11px; color:#475569; white-space:pre-wrap; max-height: 80px; overflow-y: auto;">${notesText}</div>
+                </td>
                 <td style="text-align: center;">
                     <button class="btn btn-secondary" style="font-size:11px; padding: 6px 12px; background: #eef2ff; color: #4C2A85; border: 1px solid #c7d2fe;" onclick="openHrModal('${empId}', '${emp.name}', '${emp.jabatan || ''}')">📝 Kelola Data</button>
                 </td>
@@ -607,7 +614,7 @@ async function loadKaryawanData() {
         
     } catch (e) {
         console.error("Gagal load HR data", e);
-        tbody.innerHTML = `<tr><td colspan="7" class="table-empty" style="text-align:center; color:red;">Gagal memuat data: ${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="table-empty" style="text-align:center; color:red;">Gagal memuat data: ${e.message}</td></tr>`;
     }
 }
 
@@ -783,6 +790,109 @@ async function simpanHrData() {
         alert("Gagal menyimpan data: " + e.message);
     }
 }
+
+window.exportDataKaryawanPDF = function() {
+    const outletSel = document.getElementById('rbm-outlet-select');
+    const outletName = outletSel && outletSel.options[outletSel.selectedIndex] ? outletSel.options[outletSel.selectedIndex].text : 'Semua Outlet';
+    
+    const printWindow = window.open('', '', 'height=600,width=900');
+    if (!printWindow) {
+        alert('Tolong izinkan popup untuk mencetak PDF.');
+        return;
+    }
+    
+    let tableHtml = `
+    <html>
+    <head>
+        <title>Data Karyawan HR - \${outletName}</title>
+        <style>
+            body { font-family: Arial, sans-serif; font-size: 11px; padding: 20px; color: #333; }
+            h2 { text-align: center; margin-bottom: 5px; color: #1e40af; }
+            p.info { text-align: center; color: #64748b; margin-top: 0; margin-bottom: 20px; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; vertical-align: top; }
+            th { background-color: #1e40af; color: white; -webkit-print-color-adjust: exact; }
+            .sp-badge { font-weight: bold; color: #b91c1c; }
+            @media print {
+                @page { size: landscape; margin: 10mm; }
+                body { -webkit-print-color-adjust: exact; }
+            }
+        </style>
+    </head>
+    <body>
+        <h2>DATA HR & REKAM JEJAK KARYAWAN</h2>
+        <p class="info">Outlet: <strong>${outletName}</strong> | Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')}</p>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:30px; text-align:center;">No</th>
+                    <th style="width:120px;">Nama Karyawan</th>
+                    <th style="width:80px;">Jabatan</th>
+                    <th style="width:120px;">Masa Kontrak</th>
+                    <th style="width:100px;">Join Date</th>
+                    <th style="width:180px;">Surat Peringatan (SP)</th>
+                    <th>Catatan (Notes)</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    if (currentEmployees.length === 0) {
+        tableHtml += '<tr><td colspan="7" style="text-align:center;">Tidak ada data karyawan.</td></tr>';
+    } else {
+        currentEmployees.forEach((emp, index) => {
+            if (!emp || !emp.name) return;
+            const empId = (emp.id != null) ? emp.id : emp.name.replace(/[^a-zA-Z0-9]/g, '_');
+            const hr = currentHrData[empId] || {};
+            
+            const mulaiStr = hr.kontrakMulai ? new Date(hr.kontrakMulai).toLocaleDateString('id-ID') : '-';
+            const selesaiStr = hr.kontrakSelesai ? new Date(hr.kontrakSelesai).toLocaleDateString('id-ID') : '-';
+            
+            const joinDateStr = emp.joinDate ? new Date(emp.joinDate).toLocaleDateString('id-ID') : '-';
+            const lamaBekerja = emp.joinDate ? hitungLamaKerjaDetail(emp.joinDate) : '-';
+            
+            const spList = hr.sp || [];
+            let spHtml = '-';
+            if (spList.length > 0) {
+                const sortedSp = [...spList].sort((a,b) => new Date(b.tanggal) - new Date(a.tanggal));
+                spHtml = sortedSp.map(sp => {
+                    const tgl = sp.tanggal ? new Date(sp.tanggal).toLocaleDateString('id-ID') : '-';
+                    const tk = sp.tingkat && sp.tingkat !== 'Lainnya' ? sp.tingkat : 'SP';
+                    return `<div class="sp-badge">[${tk}] ${tgl}</div><div style="font-size:10px; margin-bottom:4px; padding-bottom:4px; border-bottom:1px dashed #e2e8f0;">${sp.keterangan}</div>`;
+                }).join('');
+            }
+            
+            const notes = hr.notes || '-';
+            
+            tableHtml += `
+                <tr>
+                    <td style="text-align:center;">${index + 1}</td>
+                    <td><strong style="color:#1e40af; font-size:12px;">${emp.name}</strong></td>
+                    <td>${emp.jabatan || '-'}</td>
+                    <td>Mulai: ${mulaiStr}<br>Selesai: <strong>${selesaiStr}</strong></td>
+                    <td>${joinDateStr}<br><span style="color:#15803d; font-weight:bold;">${lamaBekerja}</span></td>
+                    <td>${spHtml}</td>
+                    <td style="white-space:pre-wrap;">${notes}</td>
+                </tr>
+            `;
+        });
+    }
+    
+    tableHtml += `
+            </tbody>
+        </table>
+    </body>
+    </html>
+    `;
+    
+    printWindow.document.write(tableHtml);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+    }, 500);
+};
 
 // Initialize
 window.addEventListener('load', function() {

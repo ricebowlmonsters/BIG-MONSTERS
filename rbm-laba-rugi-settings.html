@@ -4,18 +4,9 @@
   <meta charset="UTF-8">
   <script>
   (function(){
-    try {
-      var isFile = location.protocol === 'file:';
-      var inIframe = false;
-      if (!isFile) inIframe = window.self !== window.top;
-      var b = document.createElement('base');
-      b.target = (isFile || inIframe) ? '_self' : '_top';
-      document.head.appendChild(b);
-    } catch(e) {
-      var b = document.createElement('base');
-      b.target = '_self';
-      document.head.appendChild(b);
-    }
+    var b = document.createElement('base');
+    b.target = (location.protocol === 'file:') ? '_self' : '_top';
+    document.head.appendChild(b);
   })();
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -169,7 +160,7 @@
   <div class="modal-content" style="background:white; padding:24px; max-width:420px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.15); position:relative;" onclick="event.stopPropagation()">
     <span class="modal-close" onclick="closeAccountModal()" style="color:#333; top:10px; right:14px; cursor:pointer; position:absolute; font-size: 24px;">&times;</span>
     <h3 id="account-modal-title" style="margin:0 0 20px; font-size:18px;">Tambah Akun Baru</h3>
-    <form id="account-form" onsubmit="event.preventDefault();">
+    <form id="account-form" onsubmit="return false;">
         <input type="hidden" id="account-id">
         <div class="form-section">
             <label for="account-name">Nama Akun</label>
@@ -192,7 +183,7 @@
   <div class="modal-content" style="background:white; padding:24px; max-width:420px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.15); position:relative;" onclick="event.stopPropagation()">
     <span class="modal-close" onclick="closeKategoriHppModal()" style="color:#333; top:10px; right:14px; cursor:pointer; position:absolute; font-size: 24px;">&times;</span>
     <h3 id="kategori-hpp-modal-title" style="margin:0 0 20px; font-size:18px;">Tambah Kategori HPP</h3>
-    <form id="kategori-hpp-form" onsubmit="event.preventDefault();">
+    <form id="kategori-hpp-form" onsubmit="return false;">
         <input type="hidden" id="kategori-hpp-id">
         <div class="form-section">
             <label for="kategori-hpp-name">Nama Kategori</label>
@@ -211,7 +202,7 @@
   <div class="modal-content" style="background:white; padding:24px; max-width:420px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.15); position:relative;" onclick="event.stopPropagation()">
     <span class="modal-close" onclick="closeHppModal()" style="color:#333; top:10px; right:14px; cursor:pointer; position:absolute; font-size: 24px;">&times;</span>
     <h3 id="hpp-modal-title" style="margin:0 0 20px; font-size:18px;">Tambah Barang HPP</h3>
-    <form id="hpp-form" onsubmit="event.preventDefault();">
+    <form id="hpp-form" onsubmit="return false;">
         <input type="hidden" id="hpp-id">
         <div class="form-section">
             <label for="hpp-category">Kategori HPP</label>
@@ -242,7 +233,7 @@
   <div class="modal-content" style="background:white; padding:24px; max-width:420px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.15); position:relative;" onclick="event.stopPropagation()">
     <span class="modal-close" onclick="closeBiayaModal()" style="color:#333; top:10px; right:14px; cursor:pointer; position:absolute; font-size: 24px;">&times;</span>
     <h3 id="biaya-modal-title" style="margin:0 0 20px; font-size:18px;">Tambah Jenis Biaya</h3>
-    <form id="biaya-form" onsubmit="event.preventDefault();">
+    <form id="biaya-form" onsubmit="return false;">
         <input type="hidden" id="biaya-id">
         <div class="form-section">
             <label for="biaya-name">Nama Kategori Pengeluaran</label>
@@ -261,7 +252,7 @@
   <div class="modal-content" style="background:white; padding:24px; max-width:420px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.15); position:relative;" onclick="event.stopPropagation()">
     <span class="modal-close" onclick="closePendapatanModal()" style="color:#333; top:10px; right:14px; cursor:pointer; position:absolute; font-size: 24px;">&times;</span>
     <h3 id="pendapatan-modal-title" style="margin:0 0 20px; font-size:18px;">Tambah Jenis Pendapatan</h3>
-    <form id="pendapatan-form" onsubmit="event.preventDefault();">
+    <form id="pendapatan-form" onsubmit="return false;">
         <input type="hidden" id="pendapatan-id">
         <div class="form-section">
             <label for="pendapatan-name">Nama Pendapatan Lainnya</label>

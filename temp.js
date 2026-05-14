@@ -1042,21 +1042,45 @@ function createPengajuanForm() {
   `;
 
   if (jenisPengajuan === 'pengajuan-tf') {
-    container.innerHTML += `<h3>Detail Pengajuan Transfer</h3>`;
+    container.innerHTML += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <h3 style="margin:0;">Detail Pengajuan Transfer</h3>
+        <button type="button" class="btn btn-secondary" onclick="openSuplierSettingsModal()" style="padding: 4px 8px; font-size: 18px; background: none; border: none; cursor: pointer;" title="Pengaturan Suplier">⚙️</button>
+    </div>`;
+    
+    let datalistHtml = `<datalist id="suplier-list">`;
+    if (window.suplierDataCache) {
+        Object.values(window.suplierDataCache).forEach(item => {
+            if (item.namaSuplier) datalistHtml += `<option value="${item.namaSuplier}"></option>`;
+        });
+    }
+    datalistHtml += `</datalist>`;
+    container.innerHTML += datalistHtml;
+
     for (let i = 0; i < 5; i++) {
       const rowDiv = document.createElement('div');
       rowDiv.className = 'row-group';
-      rowDiv.style.alignItems = 'flex-start';
+      rowDiv.style.cssText = 'background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 16px; display: block;';
       rowDiv.innerHTML = `
-        <div style="flex:1 1 200px;;"><label>Nama Suplier</label><input type="text" class="pengajuan_tf_suplier" placeholder="Nama Suplier" onblur="isiOtomatisDataBank(this)"></div>
-        <div style="flex:1;"><label>Tgl. Nota</label><input type="date" class="pengajuan_tf_tgl_nota" value="${new Date().toISOString().split("T")[0]}"></div>
-        <div style="flex:1;"><label>Tgl. J/T</label><input type="date" class="pengajuan_tf_tgl_jt"></div>
-        <div style="flex:1 1 200px;;"><label>Nominal</label><input type="number" class="pengajuan_tf_nominal" placeholder="Nominal (Rp)" oninput="samakanTotal(this)"></div>
-        <div style="flex:1 1 200px;;"><label>Total</label><input type="number" class="pengajuan_tf_total" placeholder="Total (Rp)"></div>
-        <div style="flex:1 1 200px;;"><label>Bank Acc</label><input type="text" class="pengajuan_tf_bank_acc" placeholder="Bank & No. Rekening"></div>
-        <div style="flex:1 1 200px;;"><label>A/N</label><input type="text" class="pengajuan_tf_atas_nama" placeholder="Atas Nama"></div>
-        <div style="flex:1 1 200px;;"><label>Keterangan</label><select class="pengajuan_tf_keterangan keterangan-select" onchange="applyKeteranganColor(this)"><option value="">-- Keterangan --</option><option value="Barang Sudah datang">Barang Sudah datang</option><option value="Barang Belum Datang">Barang Belum Datang</option><option value="DP">DP</option><option value="Pelunasan DP">Pelunasan DP</option><option value="Pelunasan di Awal">Pelunasan di Awal</option></select></div>
-        <div style="flex:1 1 200px;;"><label>Foto TTD</label><input type="file" class="pengajuan_tf_foto_ttd" accept="image/*"></div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Nama Suplier</label><input type="text" class="pengajuan_tf_suplier form-input" placeholder="Nama Suplier" list="suplier-list" onblur="isiOtomatisDataBank(this)" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Tgl. Nota</label><input type="date" class="pengajuan_tf_tgl_nota form-input" value="${new Date().toISOString().split("T")[0]}" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Tgl. Jatuh Tempo</label><input type="date" class="pengajuan_tf_tgl_jt form-input" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Nominal (Rp)</label><input type="number" class="pengajuan_tf_nominal form-input" placeholder="0" oninput="samakanTotal(this)" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Total Bayar (Rp)</label><input type="number" class="pengajuan_tf_total form-input" placeholder="0" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Bank &amp; No. Rekening</label><input type="text" class="pengajuan_tf_bank_acc form-input" placeholder="Contoh: BCA 12345" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Atas Nama (A/N)</label><input type="text" class="pengajuan_tf_atas_nama form-input" placeholder="Nama Pemilik Rekening" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Keterangan</label>
+                <select class="pengajuan_tf_keterangan form-input keterangan-select" onchange="applyKeteranganColor(this)" style="width:100%; padding:8px; box-sizing:border-box;">
+                    <option value="">-- Keterangan --</option>
+                    <option value="Barang Sudah datang">Barang Sudah datang</option>
+                    <option value="Barang Belum Datang">Barang Belum Datang</option>
+                    <option value="DP">DP</option>
+                    <option value="Pelunasan DP">Pelunasan DP</option>
+                    <option value="Pelunasan di Awal">Pelunasan di Awal</option>
+                </select>
+            </div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Upload Foto TTD (Opsional)</label><input type="file" class="pengajuan_tf_foto_ttd form-input" accept="image/*" style="width:100%; padding:6px; font-size:12px; box-sizing:border-box;"></div>
+        </div>
       `;
       container.appendChild(rowDiv);
     }
@@ -1077,9 +1101,9 @@ function createPengajuanForm() {
     for (let i = 0; i < 5; i++) {
         const rowDiv = document.createElement('div');
         rowDiv.className = 'row-group';
-        rowDiv.style.alignItems = 'flex-start';
+        rowDiv.style.cssText = 'background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 16px; display: block;';
         rowDiv.innerHTML = `
-            <div style="flex:1.5;"><label>Foto Bukti TF</label><input type="file" class="sudah_tf_foto_bukti" accept="image/*"></div>
+            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Upload Foto Bukti Transfer</label><input type="file" class="sudah_tf_foto_bukti form-input" accept="image/*" style="width:100%; padding:6px; font-size:12px; box-sizing:border-box;"></div>
         `;
         container.appendChild(rowDiv);
     }
@@ -1087,33 +1111,152 @@ function createPengajuanForm() {
 }
 
 function isiOtomatisDataBank(inputElement) {
-  const nama = inputElement.value.trim();
+  const nama = inputElement.value.trim().toLowerCase();
   const parent = inputElement.closest('.row-group');
-  const bankField = parent.querySelector('.pengajuan_tf_bank_acc');
-  const anField = parent.querySelector('.pengajuan_tf_atas_nama');
+  let bankField = parent.querySelector('.pengajuan_tf_bank_acc');
+  let anField = parent.querySelector('.pengajuan_tf_atas_nama');
 
   if (!nama) {
-    bankField.value = "";
-    anField.value = "";
+    if(bankField) bankField.value = "";
+    if(anField) anField.value = "";
     return;
   }
 
-  if (!isGoogleScript()) {
-    bankField.value = "";
-    anField.value = "";
-    return;
+  if (typeof firebase !== 'undefined' && firebase.database) {
+      firebase.database().ref('rbm_pro/bank').once('value').then(snap => {
+          const data = snap.val() || {};
+          let found = false;
+          Object.values(data).forEach(item => {
+              if (item.namaSuplier && item.namaSuplier.toLowerCase() === nama) {
+                  if(bankField) bankField.value = (item.bank ? item.bank + " " : "") + (item.noRekening || "");
+                  if(anField) anField.value = item.namaPemilik || "";
+                  found = true;
+              }
+          });
+          if (!found && isGoogleScript()) {
+              google.script.run.withSuccessHandler(res => {
+                  if (res) {
+                      if(bankField) bankField.value = (res.bank ? res.bank + " " : "") + (res.noRekening || "");
+                      if(anField) anField.value = res.namaPemilik || "";
+                  }
+              }).getDataBankBySuplier(inputElement.value.trim());
+          }
+      });
+  } else if (isGoogleScript()) {
+      google.script.run.withSuccessHandler(res => {
+          if (res) {
+              if(bankField) bankField.value = (res.bank ? res.bank + " " : "") + (res.noRekening || "");
+              if(anField) anField.value = res.namaPemilik || "";
+          }
+      }).getDataBankBySuplier(inputElement.value.trim());
   }
-
-  google.script.run.withSuccessHandler(data => {
-    if (data) {
-      bankField.value = data.noRekening || "";
-      anField.value = data.namaPemilik || "";
-    } else {
-      bankField.value = "";
-      anField.value = "";
-    }
-  }).getDataBankBySuplier(nama);
 }
+
+window.suplierDataCache = {};
+window.loadSuplierData = function() {
+    if (typeof firebase !== 'undefined' && firebase.database) {
+        firebase.database().ref('rbm_pro/bank').once('value').then(snap => {
+            window.suplierDataCache = snap.val() || {};
+            if (typeof renderSuplierTable === 'function') renderSuplierTable();
+            if (document.getElementById('jenis_pengajuan') && document.getElementById('jenis_pengajuan').value === 'pengajuan-tf') {
+                createPengajuanForm();
+            }
+        });
+    }
+};
+
+window.openSuplierSettingsModal = function() {
+    const modal = document.getElementById('suplierSettingsModal');
+    if (modal) modal.style.display = 'flex';
+    if (document.getElementById('set_sup_id')) document.getElementById('set_sup_id').value = '';
+    if (document.getElementById('set_sup_nama')) document.getElementById('set_sup_nama').value = '';
+    if (document.getElementById('set_sup_bank')) document.getElementById('set_sup_bank').value = '';
+    if (document.getElementById('set_sup_rek')) document.getElementById('set_sup_rek').value = '';
+    if (document.getElementById('set_sup_an')) document.getElementById('set_sup_an').value = '';
+    loadSuplierData();
+};
+
+window.closeSuplierSettingsModal = function() {
+    const modal = document.getElementById('suplierSettingsModal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.renderSuplierTable = function() {
+    const tbody = document.getElementById('suplier_tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    const keys = Object.keys(window.suplierDataCache);
+    if (keys.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 10px;">Belum ada data suplier.</td></tr>';
+        return;
+    }
+    keys.forEach(k => {
+        const item = window.suplierDataCache[k];
+        tbody.innerHTML += `
+            <tr>
+                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${item.namaSuplier || k}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${item.bank || ''}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${item.noRekening || ''}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${item.namaPemilik || ''}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">
+                    <button type="button" class="btn btn-secondary" style="padding: 2px 6px; font-size: 11px;" onclick="editSuplier('${k}')">Edit</button>
+                    <button type="button" class="btn btn-small-danger" style="padding: 2px 6px; font-size: 11px; margin-left: 4px;" onclick="deleteSuplier('${k}')">Hapus</button>
+                </td>
+            </tr>
+        `;
+    });
+};
+
+window.saveSuplier = function() {
+    const id = document.getElementById('set_sup_id').value || 'SUP_' + Date.now();
+    const nama = document.getElementById('set_sup_nama').value.trim();
+    const bank = document.getElementById('set_sup_bank').value.trim();
+    const rek = document.getElementById('set_sup_rek').value.trim();
+    const an = document.getElementById('set_sup_an').value.trim();
+    
+    if (!nama) { alert("Nama suplier harus diisi."); return; }
+    
+    if (typeof firebase !== 'undefined' && firebase.database) {
+        firebase.database().ref('rbm_pro/bank/' + id).set({
+            namaSuplier: nama,
+            bank: bank,
+            noRekening: rek,
+            namaPemilik: an
+        }).then(() => {
+            loadSuplierData();
+            document.getElementById('set_sup_id').value = '';
+            document.getElementById('set_sup_nama').value = '';
+            document.getElementById('set_sup_bank').value = '';
+            document.getElementById('set_sup_rek').value = '';
+            document.getElementById('set_sup_an').value = '';
+        });
+    }
+};
+
+window.editSuplier = function(k) {
+    const item = window.suplierDataCache[k];
+    if (item) {
+        document.getElementById('set_sup_id').value = k;
+        document.getElementById('set_sup_nama').value = item.namaSuplier || k;
+        document.getElementById('set_sup_bank').value = item.bank || '';
+        document.getElementById('set_sup_rek').value = item.noRekening || '';
+        document.getElementById('set_sup_an').value = item.namaPemilik || '';
+    }
+};
+
+window.deleteSuplier = function(k) {
+    if (confirm("Hapus data suplier ini?")) {
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            firebase.database().ref('rbm_pro/bank/' + k).remove().then(() => {
+                loadSuplierData();
+            });
+        }
+    }
+};
+
+window.addEventListener('load', () => {
+    if (typeof window.loadSuplierData === 'function') window.loadSuplierData();
+});
 
 function samakanTotal(input) {
   const container = input.closest('div').parentElement; 

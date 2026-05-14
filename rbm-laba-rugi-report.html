@@ -4,18 +4,9 @@
   <meta charset="UTF-8">
   <script>
   (function(){
-    try {
-      var isFile = location.protocol === 'file:';
-      var inIframe = false;
-      if (!isFile) inIframe = window.self !== window.top;
-      var b = document.createElement('base');
-      b.target = (isFile || inIframe) ? '_self' : '_top';
-      document.head.appendChild(b);
-    } catch(e) {
-      var b = document.createElement('base');
-      b.target = '_self';
-      document.head.appendChild(b);
-    }
+    var b = document.createElement('base');
+    b.target = (location.protocol === 'file:') ? '_self' : '_top';
+    document.head.appendChild(b);
   })();
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
