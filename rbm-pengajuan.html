@@ -988,8 +988,8 @@ window.viewPengajuanDetail = function(id) {
             const potHari = emp.potHari !== undefined ? emp.potHari : (pData.potHari !== undefined ? parseFloat(pData.potHari) : 0);
             const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
             
-            let jamTerlambat, totalPotTerlambat, grandTotal;
-            let gajiPerHari, potTerlambatPerJam, uangMakan, totalPotKehadiran, hutang, tunjangan;
+            let jamTerlambat, totalPotTerlambat, grandTotal, unroundedTotal;
+            let gajiPerHari, potTerlambatPerJam, uangMakan, totalPotKehadiran, hutang, tunjangan, lemburMinggu, pembulatan;
 
             if (emp.jamTerlambat !== undefined) {
                 // New payload format: Use pre-calculated values
@@ -1002,10 +1002,13 @@ window.viewPengajuanDetail = function(id) {
                 totalPotKehadiran = emp.potonganKehadiran;
                 hutang = emp.hutang;
                 tunjangan = emp.tunjangan;
+                lemburMinggu = emp.lemburMinggu || 0;
+                pembulatan = emp.grandTotal;
+                unroundedTotal = emp.totalAsli || emp.grandTotal;
             } else {
                 // Old payload format: Recalculate (fallback)
                 const totalMenitTelatGps = getLatenessForEmp(empKeyAbsensi, emp.nama);
-                const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+                const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
                 jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : (pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : calcGpsJam);
                 
                 let defaultTunjangan = 0;
@@ -1014,16 +1017,21 @@ window.viewPengajuanDetail = function(id) {
                 else if (snapEmp && snapEmp.jabatan === 'Supervisor') defaultTunjangan = 250000;
                 tunjangan = pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : defaultTunjangan;
                 
+                lemburMinggu = pData.lemburMinggu !== undefined ? parseInt(pData.lemburMinggu) : 0;
+                
                 gajiPerHari = Math.round(gajiPokok / 30);
                 potTerlambatPerJam = Math.round(gajiPokok / 173);
                 uangMakan = hkAktual * 10000;
                 totalPotKehadiran = Math.round(potHari * gajiPerHari);
                 totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
                 hutang = parseInt(pData.hutang) || 0;
-                grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
+                unroundedTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan + lemburMinggu;
+                pembulatan = Math.round(unroundedTotal / 1000) * 1000;
+                grandTotal = pembulatan;
             }
 
             totalGrand += grandTotal;
+            const jamTerlambatStr = String(jamTerlambat).replace('.', ',');
             const metodeBayar = emp.metodeBayar || pData.metodeBayar || 'TF';
             rowsGaji += `<tr>
                 <td>${idx+1}</td><td class="text-left">${emp.nama}</td><td class="text-left">${emp.jabatan}</td>
@@ -1031,9 +1039,11 @@ window.viewPengajuanDetail = function(id) {
                 <td>${counts.A || '-'}</td><td>${counts.I || '-'}</td><td>${counts.S || '-'}</td><td>${counts.OFF || '-'}</td><td>${counts.DP || '-'}</td><td>${counts.PH || '-'}</td><td>${counts.AL || '-'}</td><td>${dates.length}</td>
                 <td class="text-right">${formatMoney(gajiPokok)}</td><td class="text-right">${formatMoney(gajiPerHari)}</td>
                 <td>${potHari}</td><td class="text-right">${formatMoney(totalPotKehadiran)}</td>
-                <td>${jamTerlambat}</td><td class="text-right">${formatMoney(potTerlambatPerJam)}</td><td class="text-right">${formatMoney(totalPotTerlambat)}</td>
+                <td>${jamTerlambatStr}</td><td class="text-right">${formatMoney(potTerlambatPerJam)}</td><td class="text-right">${formatMoney(totalPotTerlambat)}</td>
                 <td class="text-right">${formatMoney(hutang)}</td><td class="text-right">${formatMoney(uangMakan)}</td><td class="text-right">${formatMoney(tunjangan)}</td>
-                <td class="text-right" style="font-weight:bold; color:#16a34a;">${formatMoney(grandTotal)}</td><td>${metodeBayar}</td>
+                <td class="text-right" style="font-weight:bold;">${formatMoney(unroundedTotal)}</td>
+                <td class="text-right" style="color:#16a34a; font-weight:bold;">${formatMoney(grandTotal)}</td>
+                <td>${metodeBayar}</td>
             </tr>`;
         });
         var htmlGaji = `<div class="page">${headerHtml}<h2>REKAPITULASI GAJI KARYAWAN</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
@@ -1043,10 +1053,10 @@ window.viewPengajuanDetail = function(id) {
             <th rowspan="2">Gaji Pokok</th><th rowspan="2">Gaji/Hari</th>
             <th colspan="2">Potongan Kehadiran</th><th colspan="3">Keterlambatan</th>
             <th rowspan="2">Hutang</th><th rowspan="2">Makan</th><th rowspan="2">Tunjangan</th>
-            <th rowspan="2">Grand Total</th><th rowspan="2">Pembayaran</th>
+            <th rowspan="2">Grand Total</th><th rowspan="2">Pembulatan</th><th rowspan="2">Pembayaran</th>
         </tr><tr>
             <th>A</th><th>I</th><th>S</th><th>OFF</th><th>DP</th><th>PH</th><th>AL</th><th>JML</th>
-            <th>Hari</th><th>Rp</th><th>Jam</th><th>Rate</th><th>Total</th>
+            <th>Hari</th><th>Rp</th><th>Jam</th><th>Rate/Jam</th><th>Total</th>
         </tr></thead><tbody>${rowsGaji}</tbody></table>`;
         htmlGaji += `<div style="text-align:right; font-size:18px; font-weight:bold; margin-top:15px; padding:15px; background:#e2e8f0; border-radius:6px; color:#1e40af;">TOTAL PENGELUARAN GAJI: ${formatMoney(totalGrand)}</div>${htmlTandaTangan}</div>`;
 
@@ -1765,6 +1775,7 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
     if (!isBonus) {
         let gajiPokok = 0; let potHari = 0; let jamTerlambat = 0; let hutang = 0; let tunjangan = 0;
         let totalPotKehadiran = 0; let totalPotTerlambat = 0; let uangMakan = 0; let totalPendapatan = 0;
+        let lemburMinggu = 0; let pembulatan = 0; let unroundedTotal = 0; let receivedTotal = 0;
 
         // [MODIFIED] Use pre-calculated values from `emp` if available
         if (emp.jamTerlambat !== undefined) {
@@ -1776,7 +1787,11 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
             totalPotKehadiran = emp.potonganKehadiran;
             totalPotTerlambat = emp.potonganTerlambat;
             uangMakan = emp.uangMakan;
-            totalPendapatan = gajiPokok + tunjangan + uangMakan;
+            lemburMinggu = emp.lemburMinggu || 0;
+            pembulatan = emp.grandTotal;
+            totalPendapatan = gajiPokok + tunjangan + uangMakan + lemburMinggu;
+            unroundedTotal = emp.totalAsli || emp.grandTotal;
+            receivedTotal = emp.grandTotal;
         } else if (snap.employees && snap.gajiData && snap.absensiData) {
             // Fallback to old calculation
             let snapEmp = snap.employees.find(e => e.name === emp.nama || e.id == emp.empId);
@@ -1797,7 +1812,7 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 
                 const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
                 const totalMenitTelatGps = getLatenessForEmp(empKeyAbsensi, snapEmp.name);
-                const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+                const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
                 jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : (pData.jamTerlambat !== undefined ? parseFloat(pData.jamTerlambat) : calcGpsJam);
                 hutang = emp.hutang !== undefined ? emp.hutang : (parseInt(pData.hutang) || 0);
                 
@@ -1806,6 +1821,7 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 else if (snapEmp.jabatan === 'Manager Outlet') defaultTunjangan = 350000;
                 else if (snapEmp.jabatan === 'Supervisor') defaultTunjangan = 250000;
                 tunjangan = emp.tunjangan !== undefined ? emp.tunjangan : (pData.tunjangan !== undefined ? parseInt(pData.tunjangan) : defaultTunjangan);
+                lemburMinggu = emp.lemburMinggu !== undefined ? emp.lemburMinggu : (pData.lemburMinggu !== undefined ? parseInt(pData.lemburMinggu) : 0);
 
                 let hkAktual = 0;
                 let curr = new Date(d.periodStart);
@@ -1821,13 +1837,18 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 const potTerlambatPerJam = Math.round(gajiPokok / 173);
                 totalPotKehadiran = Math.round(potHari * gajiPerHari);
                 totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
-                totalPendapatan = gajiPokok + tunjangan + uangMakan;
+                totalPendapatan = gajiPokok + tunjangan + uangMakan + lemburMinggu;
+                unroundedTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
+                receivedTotal = Math.round(unroundedTotal / 1000) * 1000;
+                pembulatan = receivedTotal;
             }
         }
+        
         detailsHtml = `<table style="width: 100%; font-size: 14px; border-collapse: collapse;">
                 <tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pendapatan (+):</td></tr>
                 <tr><td style="padding-left: 15px;">Gaji Pokok</td><td>:</td><td style="text-align: right;">${formatMoney(gajiPokok)}</td><td></td></tr>
                 <tr><td style="padding-left: 15px;">Tunjangan</td><td>:</td><td style="text-align: right;">${formatMoney(tunjangan)}</td><td></td></tr>
+                <tr><td style="padding-left: 15px;">Lembur Minggu</td><td>:</td><td style="text-align: right;">${lemburMinggu ? formatMoney(lemburMinggu) : 'Rp -'}</td><td></td></tr>
                 <tr style="border-bottom: 1px solid black;"><td style="padding-left: 15px; padding-bottom: 8px;">Uang Makan</td><td style="padding-bottom: 8px;">:</td><td style="text-align: right; padding-bottom: 8px;">${formatMoney(uangMakan)}</td><td style="text-align: right; font-weight: bold; padding-bottom: 8px;">+</td></tr>
                 <tr><td style="font-weight: bold; padding-top: 8px;">Total</td><td style="font-weight: bold; padding-top: 8px;">:</td><td style="text-align: right; font-weight: bold; padding-top: 8px;">${formatMoney(totalPendapatan)}</td><td></td></tr>
                 <tr><td colspan="4" style="height: 20px;"></td></tr>
@@ -1836,7 +1857,8 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 <tr><td style="padding-left: 15px;">Potongan Terlambat</td><td>:</td><td style="text-align: right;">${formatMoney(totalPotTerlambat)}</td><td></td></tr>
                 <tr><td style="padding-left: 15px;">Hutang Karyawan</td><td>:</td><td style="text-align: right;">${formatMoney(hutang)}</td><td></td></tr>
                 <tr><td colspan="4" style="height: 20px;"></td></tr>
-                <tr style="background: #f0f0f0; border-top: 2px solid black; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Grand Total Gaji</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #059669;">${formatMoney(emp.grandTotal)}</td><td></td></tr>
+                <tr style="background: #f0f0f0; border-top: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Grand Total</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px;">${formatMoney(unroundedTotal)}</td><td></td></tr>
+                <tr style="background: #eef2ff; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px; color: #059669;">Pembulatan (Diterima)</td><td style="font-weight: bold; padding: 10px; color: #059669;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #059669;">${formatMoney(receivedTotal)}</td><td></td></tr>
             </table>`;
     } else {
         let cairAL = emp.cairAL !== undefined ? emp.cairAL : 0;
