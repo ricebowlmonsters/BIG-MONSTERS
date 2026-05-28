@@ -5696,7 +5696,7 @@ function renderRekapAbsensiReport() {
             const pData = gajiPeriodData[empKey] || {};
             const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
             const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-            const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
             let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
             row += `<td style="border:1px solid black; padding:4px; text-align:center;">${potHari || '-'}</td>`;
@@ -5909,6 +5909,7 @@ function renderRekapGaji() {
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">UANG MAKAN</th>
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">TUNJANGAN</th>
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">GRAND TOTAL</th>
+            <th rowspan="2" style="border:1px solid #ccc; padding:4px;">PEMBULATAN</th>
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">PEMBAYARAN</th>
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">AKSI</th>
         </tr>
@@ -5943,7 +5944,7 @@ function renderRekapGaji() {
         const pData = gajiPeriodData[empKey] || {};
         const detailTelatGaji = typeof getDetailTelatGaji === 'function' ? getDetailTelatGaji(emp.id || idx, emp.name, tglAwal, tglAkhir) : { totalMenit: 0, detailLines: [] };
         const totalMenitTelatGps = detailTelatGaji.totalMenit;
-        const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
         const detailTelatEsc = JSON.stringify({ lines: detailTelatGaji.detailLines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
         let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
         
@@ -5971,7 +5972,8 @@ function renderRekapGaji() {
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
         
         const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
-        totalGrand += grandTotal;
+        const pembulatan = Math.round(grandTotal / 1000) * 1000;
+        totalGrand += pembulatan;
 
         // Hitung lebar awal berdasarkan isi data
         const wBank = Math.max(60, (bank.length * 8) + 15);
@@ -6024,6 +6026,7 @@ function renderRekapGaji() {
             <td style="text-align:right; background:#f8fafc; color:#334155;">${formatRupiah(tunjangan)}</td>
             
             <td style="text-align:right; font-weight:bold; background:#e0f2fe;">${formatRupiah(grandTotal)}</td>
+            <td style="text-align:right; font-weight:bold; background:#dbeafe; color:#1e40af;">${formatRupiah(pembulatan)}</td>
             <td>
                 <select data-field="metodeBayar" style="width:50px; font-size:10px; padding:0;">
                     <option value="TF" ${metodeBayar==='TF'?'selected':''}>TF</option>
@@ -6038,7 +6041,7 @@ function renderRekapGaji() {
     });
 
     tbody.innerHTML = html;
-    tfoot.innerHTML = `<tr><td colspan="28" style="text-align:right; font-weight:bold; padding:10px;">TOTAL PENGELUARAN GAJI: ${formatRupiah(totalGrand)}</td><td></td></tr>`;
+    tfoot.innerHTML = `<tr><td colspan="26" style="text-align:right; font-weight:bold; padding:10px;">TOTAL PENGELUARAN GAJI:</td><td style="text-align:right; font-weight:bold; padding:10px; color:#1e40af;">${formatRupiah(totalGrand)}</td><td colspan="2"></td></tr>`;
 }
 
 async function saveRekapGajiData() {
@@ -6264,7 +6267,7 @@ async function submitGajiPengajuan() {
                 const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
                 const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
                 const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-                const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
                 let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
                 const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
                 let tunjangan = 0;
@@ -6292,12 +6295,14 @@ async function submitGajiPengajuan() {
                 const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
 
                 const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
+                const pembulatan = Math.round(grandTotal / 1000) * 1000;
 
                 items.push({
                     empId: empKey,
                     nama: emp.name || '',
                     jabatan: emp.jabatan || '',
-                    grandTotal: grandTotal,
+                    grandTotal: pembulatan,
+                    totalAsli: grandTotal,
                     metodeBayar: metodeBayar,
                     // [BARU] Kirim semua komponen kalkulasi agar tidak perlu hitung ulang di sisi Owner
                     jamTerlambat: jamTerlambat,
@@ -6314,7 +6319,7 @@ async function submitGajiPengajuan() {
                     hkTarget: hkTarget,
                     counts: counts
                 });
-                totalGrand += Number(grandTotal) || 0;
+                totalGrand += Number(pembulatan) || 0;
             });
 
             const u = _getCurrentUser();
@@ -6615,7 +6620,7 @@ function generateAndShowSlip(idx) {
     const gajiPokok = parseInt(emp.gajiPokok) || 0;
     const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
     const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-    const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+    const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
     let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
     const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
@@ -6633,6 +6638,7 @@ function generateAndShowSlip(idx) {
     
     const totalPendapatan = gajiPokok + tunjangan + uangMakan; // Lembur is not implemented yet
     const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
+    const pembulatan = Math.round(grandTotal / 1000) * 1000;
     // --- End of calculation logic ---
 
     // Populate the slip
@@ -6652,6 +6658,8 @@ function generateAndShowSlip(idx) {
     document.getElementById('slip_pot_terlambat').innerText = formatRupiah(totalPotTerlambat);
     document.getElementById('slip_hutang').innerText = formatRupiah(hutang);
     document.getElementById('slip_grand_total').innerText = formatRupiah(grandTotal);
+    const elPembulatan = document.getElementById('slip_pembulatan');
+    if (elPembulatan) elPembulatan.innerText = formatRupiah(pembulatan);
 
     showView('slip-gaji-view');
 }
@@ -6695,7 +6703,7 @@ function sendSlipEmail(idx) {
     const gajiPokok = parseInt(emp.gajiPokok) || 0;
     const potHari = parseFloat(pData.potHari) || 0;
     const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-    const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+    const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
     let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
     const hutang = parseInt(pData.hutang) || 0;
@@ -6710,6 +6718,7 @@ function sendSlipEmail(idx) {
     const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
     const totalPendapatan = gajiPokok + tunjangan + uangMakan;
     const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
+    const pembulatan = Math.round(grandTotal / 1000) * 1000;
 
     const htmlBody = `
         <div style="font-family: Courier New, monospace; padding: 20px; border: 1px solid #ccc; max-width: 600px;">
@@ -6727,6 +6736,7 @@ function sendSlipEmail(idx) {
                 <tr><td>Terlambat</td><td>:</td><td style="text-align:right;">${formatRupiah(totalPotTerlambat)}</td></tr>
                 <tr><td>Hutang</td><td>:</td><td style="text-align:right;">${formatRupiah(hutang)}</td></tr>
                 <tr><td colspan="3" style="border-top:2px solid black; padding-top:10px; font-weight:bold;">GRAND TOTAL: ${formatRupiah(grandTotal)}</td></tr>
+                <tr><td colspan="3" style="padding-bottom:10px; font-weight:bold; color:#1e40af;">PEMBULATAN: ${formatRupiah(pembulatan)}</td></tr>
             </table>
         </div>`;
 
@@ -6941,7 +6951,7 @@ function exportCompleteAbsensiExcel() {
         const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
         const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
         const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-        const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
         let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
         xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${potHari}</Data></Cell>\n`;
@@ -6953,7 +6963,7 @@ function exportCompleteAbsensiExcel() {
 
     // --- SHEET 4: REKAP GAJI ---
     xml += `<Worksheet ss:Name="Rekap Gaji">\n<Table>\n`;
-    const gajiHeaders = ['NO', 'NAMA', 'JABATAN', 'BANK', 'NO REK', 'HK TARGET', 'HK AKTUAL', 'A', 'I', 'S', 'OFF', 'DP', 'PH', 'AL', 'JML', 'GAJI POKOK', 'GAJI/HARI', 'HARI', 'Rp', 'JAM', 'RATE/JAM', 'TOTAL', 'HUTANG', 'UANG MAKAN', 'TUNJANGAN', 'GRAND TOTAL', 'PEMBAYARAN'];
+    const gajiHeaders = ['NO', 'NAMA', 'JABATAN', 'BANK', 'NO REK', 'HK TARGET', 'HK AKTUAL', 'A', 'I', 'S', 'OFF', 'DP', 'PH', 'AL', 'JML', 'GAJI POKOK', 'GAJI/HARI', 'HARI', 'Rp', 'JAM', 'RATE/JAM', 'TOTAL', 'HUTANG', 'UANG MAKAN', 'TUNJANGAN', 'GRAND TOTAL', 'PEMBULATAN', 'PEMBAYARAN'];
     gajiHeaders.forEach(h => xml += `<Column ss:Width="${h.length > 5 ? '100' : '60'}"/>\n`);
 
     xml += `<Row ss:Height="25"><Cell ss:StyleID="sTitle" ss:MergeAcross="${gajiHeaders.length - 1}"><Data ss:Type="String">REKAPITULASI GAJI KARYAWAN</Data></Cell></Row>\n`;
@@ -6977,6 +6987,7 @@ function exportCompleteAbsensiExcel() {
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">UANG MAKAN</Data></Cell>\n';
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">TUNJANGAN</Data></Cell>\n';
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">GRAND TOTAL</Data></Cell>\n';
+    xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">PEMBULATAN</Data></Cell>\n';
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">PEMBAYARAN</Data></Cell>\n';
     xml += '</Row>\n';
     xml += '<Row ss:Height="20">\n';
@@ -7015,7 +7026,8 @@ function exportCompleteAbsensiExcel() {
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
         const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
-        totalGrand += grandTotal;
+        const pembulatan = Math.round(grandTotal / 1000) * 1000;
+        totalGrand += pembulatan;
 
         xml += '<Row>\n';
         xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${idx + 1}</Data></Cell>\n`;
@@ -7043,6 +7055,7 @@ function exportCompleteAbsensiExcel() {
         xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${uangMakan}</Data></Cell>\n`;
         xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${tunjangan}</Data></Cell>\n`;
         xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${grandTotal}</Data></Cell>\n`;
+        xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${pembulatan}</Data></Cell>\n`;
         xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="String">${esc(metodeBayar)}</Data></Cell>\n`;
         xml += '</Row>\n';
     });
@@ -7166,7 +7179,7 @@ function exportCompleteAbsensiPDF() {
         const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
         const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
         const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-        const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
         let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
         htmlLaporanAbsen += `<td>${counts.H}</td><td>${totalSisaCuti}</td><td>${counts.A}</td><td>${counts.I}</td><td>${counts.S}</td><td>${counts.OFF}</td><td>${counts.DP}</td><td>${counts.PH}</td><td>${counts.AL}</td><td>${dates.length}</td><td>${potHari || '-'}</td><td>${jamTerlambat || '-'}</td></tr>`;
@@ -7194,7 +7207,7 @@ function exportCompleteAbsensiPDF() {
         const gajiPokok = parseInt(emp.gajiPokok) || 0;
         const potHari = parseFloat(pData.potHari) || 0;
         const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-        const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+        const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
         let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
         const hutang = parseInt(pData.hutang) || 0;
@@ -7209,7 +7222,8 @@ function exportCompleteAbsensiPDF() {
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
         const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
-        totalGrand += grandTotal;
+        const pembulatan = Math.round(grandTotal / 1000) * 1000;
+        totalGrand += pembulatan;
         rowsGaji += `<tr>
             <td>${idx+1}</td><td class="text-left">${emp.name}</td><td class="text-left">${emp.jabatan}</td>
             <td>${bank}</td><td>${noRek}</td><td>${hkTarget}</td><td>${hkAktual}</td>
@@ -7218,9 +7232,14 @@ function exportCompleteAbsensiPDF() {
             <td>${potHari}</td><td class="text-right">${formatMoney(totalPotKehadiran)}</td>
             <td>${jamTerlambat}</td><td class="text-right">${formatMoney(potTerlambatPerJam)}</td><td class="text-right">${formatMoney(totalPotTerlambat)}</td>
             <td class="text-right">${formatMoney(hutang)}</td><td class="text-right">${formatMoney(uangMakan)}</td><td class="text-right">${formatMoney(tunjangan)}</td>
-            <td class="text-right" style="font-weight:bold;">${formatMoney(grandTotal)}</td><td>${metodeBayar}</td>
+            <td class="text-right" style="font-weight:bold;">${formatMoney(grandTotal)}</td><td class="text-right" style="font-weight:bold; color:#1e40af;">${formatMoney(pembulatan)}</td><td>${metodeBayar}</td>
         </tr>`;
     });
+    rowsGaji += `<tr style="background:#eef2ff;">
+        <td colspan="26" class="text-right" style="font-weight:bold; padding:8px;">TOTAL PENGELUARAN GAJI</td>
+        <td class="text-right" style="font-weight:bold; color:#1e40af; padding:8px;">${formatMoney(totalGrand)}</td>
+        <td></td>
+    </tr>`;
     var htmlGaji = styleBlock + `<h2>REKAPITULASI GAJI KARYAWAN</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
         <th rowspan="2">No</th><th rowspan="2">Nama</th><th rowspan="2">Jabatan</th>
         <th rowspan="2">Bank</th><th rowspan="2">No Rek</th><th rowspan="2">HK<br>Target</th><th rowspan="2">HK<br>Aktual</th>
@@ -7228,12 +7247,11 @@ function exportCompleteAbsensiPDF() {
         <th rowspan="2">Gaji Pokok</th><th rowspan="2">Gaji/Hari</th>
         <th colspan="2">Potongan</th><th colspan="3">Terlambat</th>
         <th rowspan="2">Hutang</th><th rowspan="2">Makan</th><th rowspan="2">Tunjangan</th>
-        <th rowspan="2">Grand Total</th><th rowspan="2">Pembayaran</th>
+        <th rowspan="2">Grand Total</th><th rowspan="2">Pembulatan</th><th rowspan="2">Pembayaran</th>
     </tr><tr>
         <th>A</th><th>I</th><th>S</th><th>OFF</th><th>DP</th><th>PH</th><th>AL</th><th>JML</th>
         <th>Hari</th><th>Rp</th><th>Jam</th><th>Rate</th><th>Total</th>
     </tr></thead><tbody>${rowsGaji}</tbody></table>`;
-    htmlGaji += `<p style="text-align:right;font-weight:bold;margin-top:8px;">TOTAL: ${formatMoney(totalGrand)}</p>`;
 
     if (typeof window.jspdf !== 'undefined' && typeof html2canvas !== 'undefined') {
         var pageW, pageH, margin, usableW, usableH, pxToMm;
@@ -7535,7 +7553,7 @@ async function downloadAllSlipsAsZip(event) {
             const gajiPokok = parseInt(emp.gajiPokok) || 0;
             const potHari = parseFloat(pData.potHari) || 0;
             const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || i, emp.name, tglAwal, tglAkhir) : 0;
-            const calcGpsJam = totalMenitTelatGps > 0 ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+            const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
         let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
             const hutang = parseInt(pData.hutang) || 0;
@@ -7551,6 +7569,7 @@ async function downloadAllSlipsAsZip(event) {
             const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
             const totalPendapatan = gajiPokok + tunjangan + uangMakan;
             const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
+            const pembulatan = Math.round(grandTotal / 1000) * 1000;
 
             // Render HTML Template
             wrapper.innerHTML = `
@@ -7561,7 +7580,7 @@ async function downloadAllSlipsAsZip(event) {
                         <p style="margin: 5px 0 0; font-size: 14px;">BULAN ${periodeText}</p>
                     </div>
                     <table style="width: 100%; margin-bottom: 20px; font-size: 14px; border-collapse: collapse;"><tr><td style="width: 120px; padding: 2px 0;">Nama</td><td style="width: 10px;">:</td><td style="font-weight: bold;">${emp.name}</td></tr><tr><td style="padding: 2px 0;">Jabatan</td><td>:</td><td>${emp.jabatan}</td></tr><tr><td style="padding: 2px 0;">Bagian</td><td>:</td><td>Rice Bowl Monsters</td></tr></table>
-                    <table style="width: 100%; font-size: 14px; border-collapse: collapse;"><tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pendapatan (+):</td></tr><tr><td style="padding-left: 15px;">Gaji Pokok</td><td>:</td><td style="text-align: right;">${formatRupiah(gajiPokok)}</td><td></td></tr><tr><td style="padding-left: 15px;">Tunjangan</td><td>:</td><td style="text-align: right;">${formatRupiah(tunjangan)}</td><td></td></tr><tr><td style="padding-left: 15px;">Lembur Minggu</td><td>:</td><td style="text-align: right;">Rp -</td><td></td></tr><tr style="border-bottom: 1px solid black;"><td style="padding-left: 15px; padding-bottom: 8px;">Uang Makan</td><td style="padding-bottom: 8px;">:</td><td style="text-align: right; padding-bottom: 8px;">${formatRupiah(uangMakan)}</td><td style="text-align: right; font-weight: bold; padding-bottom: 8px;">+</td></tr><tr><td style="font-weight: bold; padding-top: 8px;">Total</td><td style="font-weight: bold; padding-top: 8px;">:</td><td style="text-align: right; font-weight: bold; padding-top: 8px;">${formatRupiah(totalPendapatan)}</td><td></td></tr><tr><td colspan="4" style="height: 20px;"></td></tr><tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pengurangan (-):</td></tr><tr><td style="padding-left: 15px;">Potongan Absensi</td><td>:</td><td style="text-align: right;">${formatRupiah(totalPotKehadiran)}</td><td></td></tr><tr><td style="padding-left: 15px;">Potongan Terlambat</td><td>:</td><td style="text-align: right;">${formatRupiah(totalPotTerlambat)}</td><td></td></tr><tr><td style="padding-left: 15px;">Hutang Karyawan</td><td>:</td><td style="text-align: right;">${formatRupiah(hutang)}</td><td></td></tr><tr><td colspan="4" style="height: 20px;"></td></tr><tr style="background: #f0f0f0; border-top: 2px solid black; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Grand Total Gaji</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px;">${formatRupiah(grandTotal)}</td><td></td></tr></table>
+                    <table style="width: 100%; font-size: 14px; border-collapse: collapse;"><tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pendapatan (+):</td></tr><tr><td style="padding-left: 15px;">Gaji Pokok</td><td>:</td><td style="text-align: right;">${formatRupiah(gajiPokok)}</td><td></td></tr><tr><td style="padding-left: 15px;">Tunjangan</td><td>:</td><td style="text-align: right;">${formatRupiah(tunjangan)}</td><td></td></tr><tr><td style="padding-left: 15px;">Lembur Minggu</td><td>:</td><td style="text-align: right;">Rp -</td><td></td></tr><tr style="border-bottom: 1px solid black;"><td style="padding-left: 15px; padding-bottom: 8px;">Uang Makan</td><td style="padding-bottom: 8px;">:</td><td style="text-align: right; padding-bottom: 8px;">${formatRupiah(uangMakan)}</td><td style="text-align: right; font-weight: bold; padding-bottom: 8px;">+</td></tr><tr><td style="font-weight: bold; padding-top: 8px;">Total</td><td style="font-weight: bold; padding-top: 8px;">:</td><td style="text-align: right; font-weight: bold; padding-top: 8px;">${formatRupiah(totalPendapatan)}</td><td></td></tr><tr><td colspan="4" style="height: 20px;"></td></tr><tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pengurangan (-):</td></tr><tr><td style="padding-left: 15px;">Potongan Absensi</td><td>:</td><td style="text-align: right;">${formatRupiah(totalPotKehadiran)}</td><td></td></tr><tr><td style="padding-left: 15px;">Potongan Terlambat</td><td>:</td><td style="text-align: right;">${formatRupiah(totalPotTerlambat)}</td><td></td></tr><tr><td style="padding-left: 15px;">Hutang Karyawan</td><td>:</td><td style="text-align: right;">${formatRupiah(hutang)}</td><td></td></tr><tr><td colspan="4" style="height: 20px;"></td></tr><tr style="background: #f0f0f0; border-top: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Grand Total Gaji</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px;">${formatRupiah(grandTotal)}</td><td></td></tr><tr style="background: #eef2ff; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px; color: #1e40af;">Pembulatan</td><td style="font-weight: bold; padding: 10px; color: #1e40af;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #1e40af;">${formatRupiah(pembulatan)}</td><td></td></tr></table>
                     <div style="margin-top: 50px; width: 200px; font-size: 14px;"><p style="margin-bottom: 70px;">Dibuat Oleh:</p><p style="font-weight: bold; text-decoration: underline; margin: 0;">Admin</p></div>
                 </div>`;
 
@@ -11168,8 +11187,14 @@ function getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMa
     }
     const totalMenit = menitTelatMasuk + menitPulangCepat;
     const menitPerJam = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : MENIT_TELAT_PER_JAM_GAJI;
-    const jamUntukGaji = menitPerJam > 0 ? totalMenit / menitPerJam : 0;
-    if (totalMenit > 0) lines.push('Total durasi telat: ' + totalMenit + ' menit (= ' + jamUntukGaji.toFixed(1) + ' jam untuk Rekap Gaji)');
+    const jamUntukGaji = (menitPerJam > 0 && totalMenit >= menitPerJam) ? totalMenit / menitPerJam : 0;
+    if (totalMenit > 0) {
+        if (totalMenit < menitPerJam) {
+            lines.push('Total durasi telat: ' + totalMenit + ' menit (Diabaikan, kurang dari ' + menitPerJam + ' menit)');
+        } else {
+            lines.push('Total durasi telat: ' + totalMenit + ' menit (= ' + jamUntukGaji.toFixed(1) + ' jam untuk Rekap Gaji)');
+        }
+    }
     return { totalMenit, lines, jamUntukGaji, menitTelatMasuk, menitPulangCepat };
 }
 

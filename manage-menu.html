@@ -118,7 +118,10 @@
       <section class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
             <h3 class="card-title" style="margin:0;">Daftar Menu</h3>
-            <button id="btn-add-menu" class="btn btn-primary" style="width:auto;">+ Tambah Menu</button>
+            <div style="display: flex; gap: 8px;">
+                <button id="btn-copy-menu" class="btn btn-secondary" style="width:auto;">Salin Menu</button>
+                <button id="btn-add-menu" class="btn btn-primary" style="width:auto;">+ Tambah Menu</button>
+            </div>
         </div>
         
         <div id="loading-indicator" class="text-center" style="padding:20px;">Memuat menu...</div>
@@ -208,6 +211,32 @@
     </div>
   </div>
 
+  <!-- Modal Salin Menu -->
+  <div id="copy-menu-modal" class="modal-overlay">
+    <div class="modal">
+      <h3 class="modal-title">Salin Menu Antar Outlet</h3>
+      <div class="form-group">
+          <label class="form-label" for="copy-source-outlet">Salin DARI Outlet:</label>
+          <select id="copy-source-outlet" class="form-input"></select>
+      </div>
+      <div class="form-group">
+          <label class="form-label" for="copy-target-outlet-text">Target Outlet (Saat Ini):</label>
+          <input type="text" id="copy-target-outlet-text" class="form-input" disabled>
+      </div>
+      <div class="form-group">
+          <label class="form-label" for="copy-method">Metode Salin:</label>
+          <select id="copy-method" class="form-input">
+              <option value="replace">Timpa (Hapus & ganti dengan yang baru)</option>
+              <option value="append">Tambahkan (Gabung tanpa menghapus)</option>
+          </select>
+      </div>
+      <div class="modal-actions">
+          <button type="button" id="btn-cancel-copy" class="btn btn-secondary">Batal</button>
+          <button type="button" id="btn-confirm-copy" class="btn btn-primary">Salin Sekarang</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
   <script src="custom-ui.js"></script>
@@ -238,6 +267,15 @@
     const btnActiveFalse = document.getElementById('btn-active-false');
     const inpActive = document.getElementById('inp-active');
     const outletSelector = document.getElementById('outlet-selector');
+
+    // [BARU] UI Elements untuk fitur Copy Menu
+    const btnCopyMenu = document.getElementById('btn-copy-menu');
+    const copyMenuModal = document.getElementById('copy-menu-modal');
+    const btnCancelCopy = document.getElementById('btn-cancel-copy');
+    const btnConfirmCopy = document.getElementById('btn-confirm-copy');
+    const copySourceOutlet = document.getElementById('copy-source-outlet');
+    const copyTargetOutletText = document.getElementById('copy-target-outlet-text');
+    const copyMethod = document.getElementById('copy-method');
 
     // [BARU] Inisialisasi Outlet dan Role
     function initOutletSelection() {
@@ -739,6 +777,110 @@
     modal.addEventListener('click', (e) => {
         if(e.target === modal) closeModal();
     });
+
+    // [BARU] Logika untuk Copy Menu Antar Outlet
+    if (btnCopyMenu) {
+        btnCopyMenu.addEventListener('click', () => {
+            const targetId = outletSelector.value;
+            if (!targetId) return CustomUI.alert('Pilih outlet target terlebih dahulu.');
+
+            const outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+            const targetName = outletNames[targetId] || (targetId.charAt(0).toUpperCase() + targetId.slice(1));
+            
+            // Isi daftar pilihan outlet asal (semua outlet kecuali yang sedang dipilih saat ini)
+            let outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+            copySourceOutlet.innerHTML = '<option value="">-- Pilih Outlet Sumber --</option>';
+            outlets.forEach(outlet => {
+                const id = String(outlet.id || outlet);
+                if (id && id !== targetId) {
+                    const opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = outletNames[id] || (id.charAt(0).toUpperCase() + id.slice(1));
+                    copySourceOutlet.appendChild(opt);
+                }
+            });
+
+            copyTargetOutletText.value = targetName;
+            copyMenuModal.classList.add('show');
+        });
+    }
+
+    if (btnCancelCopy) {
+        btnCancelCopy.addEventListener('click', () => {
+            copyMenuModal.classList.remove('show');
+        });
+    }
+
+    if (btnConfirmCopy) {
+        btnConfirmCopy.addEventListener('click', async () => {
+            const sourceId = copySourceOutlet.value;
+            const targetId = outletSelector.value;
+            const method = copyMethod.value;
+
+            if (!sourceId) return CustomUI.alert('Silakan pilih outlet sumber.');
+            if (sourceId === targetId) return CustomUI.alert('Outlet sumber dan target tidak boleh sama.');
+
+            if (!await CustomUI.confirm('Yakin ingin menyalin menu ke outlet ini? Proses ini akan mengambil data dari server dan menerapkannya.', 'Konfirmasi Salin', true)) return;
+
+            btnConfirmCopy.disabled = true;
+            btnConfirmCopy.textContent = 'Menyalin...';
+
+            try {
+                const sourceProductsSnap = await db.ref(`products/${sourceId}`).once('value');
+                const sourceCategoriesSnap = await db.ref(`categories/${sourceId}`).once('value');
+                
+                const sourceProducts = sourceProductsSnap.val();
+                const sourceCategories = sourceCategoriesSnap.val();
+
+                if (!sourceProducts) {
+                    throw new Error('Outlet sumber tidak memiliki data menu.');
+                }
+
+                if (method === 'replace') {
+                    // Timpa penuh (Replace)
+                    await db.ref(`products/${targetId}`).set(sourceProducts);
+                    if (sourceCategories) {
+                        await db.ref(`categories/${targetId}`).set(sourceCategories);
+                    }
+                } else if (method === 'append') {
+                    // Gabung (Append)
+                    const updates = {};
+                    Object.keys(sourceProducts).forEach(key => {
+                        // Buat ID baru agar tidak menimpa jika ada ID yang kebetulan sama (menghindari duplikasi acak)
+                        const newKey = db.ref(`products/${targetId}`).push().key;
+                        updates[newKey] = sourceProducts[key];
+                    });
+                    await db.ref(`products/${targetId}`).update(updates);
+
+                    // Gabung Kategori
+                    if (sourceCategories) {
+                        const targetCatSnap = await db.ref(`categories/${targetId}`).once('value');
+                        let targetCats = targetCatSnap.val();
+                        let currentCats = [];
+                        if (targetCats) {
+                            currentCats = Array.isArray(targetCats) ? targetCats : Object.values(targetCats);
+                        }
+                        
+                        const sourceCatsArr = Array.isArray(sourceCategories) ? sourceCategories : Object.values(sourceCategories);
+                        sourceCatsArr.forEach(sc => {
+                            if (!currentCats.find(tc => tc.value === sc.value)) {
+                                currentCats.push(sc);
+                            }
+                        });
+                        await db.ref(`categories/${targetId}`).set(currentCats);
+                    }
+                }
+
+                CustomUI.success('Berhasil menyalin menu dan kategori!');
+                copyMenuModal.classList.remove('show');
+            } catch (e) {
+                CustomUI.error('Gagal menyalin: ' + e.message);
+            } finally {
+                btnConfirmCopy.disabled = false;
+                btnConfirmCopy.textContent = 'Salin Sekarang';
+            }
+        });
+    }
 
     // Inisialisasi Kategori saat halaman dimuat
     // loadCategoriesAndRender(); // Digantikan oleh listener Firebase
