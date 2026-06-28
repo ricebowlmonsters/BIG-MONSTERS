@@ -360,30 +360,6 @@
                 <p style="font-size: 10px; color: #6b7280; margin-top: 2px;">Dari Google Maps: Bagikan -> Sematkan Peta -> Salin HTML</p>
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb;">
-                <div class="form-group" style="flex: 1;">
-                    <label style="font-size: 12px;" for="outlet-bank">Bank Pencairan (Gaji/PC)</label>
-                    <input type="text" id="outlet-bank" class="form-input" placeholder="Contoh: BCA">
-                </div>
-                <div class="form-group" style="flex: 1;">
-                    <label style="font-size: 12px;" for="outlet-rekening">No. Rekening</label>
-                    <input type="text" id="outlet-rekening" class="form-input" placeholder="Contoh: 1234567890">
-                </div>
-                <div class="form-group" style="flex: 1.5;">
-                    <label style="font-size: 12px;" for="outlet-atasnama">Atas Nama Pencairan</label>
-                    <input type="text" id="outlet-atasnama" class="form-input" placeholder="Contoh: PT. RBM">
-                </div>
-            </div>
-            <div style="display: flex; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb;">
-                <div class="form-group" style="flex: 1;">
-                    <label style="font-size: 12px;" for="outlet-ppn">PPN Kasir (%)</label>
-                    <input type="number" id="outlet-ppn" class="form-input" placeholder="10" min="0">
-                </div>
-                <div class="form-group" style="flex: 2;">
-                    <label style="font-size: 12px;" for="outlet-footer">Pesan Penutup Struk (Footer)</label>
-                    <textarea id="outlet-footer" class="form-input" rows="2" placeholder="Terima Kasih\nSilakan Datang Kembali!"></textarea>
-                </div>
-            </div>
             <div style="display: flex; gap: 10px;">
                 <div class="form-group" style="flex: 1;">
                     <label style="font-size: 12px;" for="outlet-lat">Latitude (cth: -7.44698)</label>
@@ -422,12 +398,12 @@
             
             <div class="form-group" style="background: #fff; padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin-top: 10px;">
                 <label style="font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 0;">
-                    <input type="checkbox" id="outlet-reservation-enabled" checked style="width: 16px; height: 16px;">
-                    Aktifkan Fitur Reservasi
+                    <input type="checkbox" id="outlet-is-active" checked style="width: 16px; height: 16px;">
+                    Tampilkan Outlet ke Pelanggan
                 </label>
-                <p style="font-size: 10px; color: #6b7280; margin: 4px 0 0 24px;">Jika dimatikan, tombol reservasi akan disembunyikan di aplikasi customer.</p>
+                <p style="font-size: 10px; color: #6b7280; margin: 4px 0 0 24px;">Jika dimatikan, outlet ini tidak akan muncul di daftar lokasi pelanggan.</p>
             </div>
-            
+
             <div style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Gambar Outlet (Max 3)</div>
             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
                 <input type="file" id="outlet-img1-file" class="form-input" accept="image/*" style="font-size: 11px;">
@@ -472,22 +448,22 @@
 
           <div class="setting-item" style="padding: 0; border: none; margin-bottom: 12px;">
             <div>
-              <strong>Aktifkan Fitur Reservasi</strong>
-              <p style="font-size: 12px; color: #6b7280;">Tampilkan tombol reservasi di aplikasi pelanggan.</p>
+              <strong>Aktifkan Game</strong>
+              <p style="font-size: 12px; color: #6b7280;">Tampilkan tombol game di aplikasi pelanggan.</p>
             </div>
             <label class="toggle-switch">
-              <input type="checkbox" id="cust-enable-reservation">
+              <input type="checkbox" id="cust-enable-game">
               <span class="slider"></span>
             </label>
           </div>
 
           <div class="setting-item" style="padding: 0; border: none; margin-bottom: 12px;">
             <div>
-              <strong>Aktifkan Game</strong>
-              <p style="font-size: 12px; color: #6b7280;">Tampilkan tombol game di aplikasi pelanggan.</p>
+              <strong>Aktifkan Fitur Reservasi</strong>
+              <p style="font-size: 12px; color: #6b7280;">Tampilkan tombol reservasi di aplikasi pelanggan.</p>
             </div>
             <label class="toggle-switch">
-              <input type="checkbox" id="cust-enable-game">
+              <input type="checkbox" id="cust-enable-reservation">
               <span class="slider"></span>
             </label>
           </div>
@@ -687,11 +663,6 @@
       const outletImg3File = document.getElementById('outlet-img3-file');
       const outletImg3Base64 = document.getElementById('outlet-img3-base64');
       const outletImg3Preview = document.getElementById('outlet-img3-preview');
-      const outletBankInput = document.getElementById('outlet-bank');
-      const outletRekeningInput = document.getElementById('outlet-rekening');
-      const outletAtasnamaInput = document.getElementById('outlet-atasnama');
-      const outletPpnInput = document.getElementById('outlet-ppn');
-      const outletFooterInput = document.getElementById('outlet-footer');
 
       // [BARU] Element Toggle Ordering
       const custEnableAiChat = document.getElementById('cust-enable-ai-chat');
@@ -754,45 +725,59 @@
       function renderOutletList() {
           outletListContainer.innerHTML = '';
           currentOutlets.forEach((outlet, index) => {
-              const div = document.createElement('div');
-              
-              // Ordering toggle logic
+              const div = document.createElement('div');              
+              const isActive = outlet.is_active !== false;
               const isOrdering = outlet.ordering_enabled !== false;
-              const toggleLabel = isOrdering ? '✅ Pesan: ON' : '🚫 Pesan: OFF';
-              const toggleStyle = isOrdering ? 'border: 1px solid #10b981; color: #059669; background: #ecfdf5;' : 'border: 1px solid #ef4444; color: #b91c1c; background: #fef2f2;';
-              
-              // [BARU] Reservation toggle logic
               const isReservation = outlet.reservation_enabled !== false;
+              
+              const visibilityToggleLabel = isActive ? '👁️ Terlihat' : '🚫 Tersembunyi';
+              const visibilityToggleStyle = isActive ? 'border: 1px solid #10b981; color: #059669; background: #ecfdf5;' : 'border: 1px solid #ef4444; color: #b91c1c; background: #fef2f2;';
+
+              const orderingToggleLabel = isOrdering ? '✅ Pesan: ON' : '🚫 Pesan: OFF';
+              const orderingToggleStyle = isOrdering ? 'border: 1px solid #10b981; color: #059669; background: #ecfdf5;' : 'border: 1px solid #ef4444; color: #b91c1c; background: #fef2f2;';
+
               const reservationToggleLabel = isReservation ? '📅 Reservasi: ON' : '🚫 Reservasi: OFF';
               const reservationToggleStyle = isReservation ? 'border: 1px solid #10b981; color: #059669; background: #ecfdf5;' : 'border: 1px solid #ef4444; color: #b91c1c; background: #fef2f2;';
-
-              div.style.cssText = 'background: #f9fafb; padding: 10px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;';
+              
+              div.style.cssText = `background: #f9fafb; padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #e5e7eb; opacity: ${isActive ? '1' : '0.6'};`;
               div.innerHTML = `
-                  <div>
-                      <div style="font-weight: 600; font-size: 14px;">${outlet.name}</div>
-                      <div style="font-size: 12px; color: #6b7280;">ID: ${outlet.id}</div>
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                      <div>
+                          <div style="font-weight: 600; font-size: 14px;">${outlet.name}</div>
+                          <div style="font-size: 12px; color: #6b7280;">ID: ${outlet.id}</div>
+                      </div>
+                      <div style="display: flex; gap: 8px;">
+                          <button class="btn-edit-outlet" data-index="${index}" style="cursor: pointer; border: 1px solid #d1d5db; background: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Edit</button>
+                          <button class="btn-delete-outlet" data-index="${index}" style="cursor: pointer; border: 1px solid #fecaca; background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Hapus</button>
+                      </div>
                   </div>
-                  <div style="display: flex; gap: 8px;">
-                      <button class="btn-toggle-ordering" data-index="${index}" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 12px; ${toggleStyle}">${toggleLabel}</button>
-                      <button class="btn-toggle-reservation" data-index="${index}" style="cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 12px; ${reservationToggleStyle}">${reservationToggleLabel}</button>
-                      <button class="btn-edit-outlet" data-index="${index}" style="cursor: pointer; border: 1px solid #d1d5db; background: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Edit</button>
-                      <button class="btn-delete-outlet" data-index="${index}" style="cursor: pointer; border: 1px solid #fecaca; background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Hapus</button>
+                  <div style="display: flex; gap: 10px; border-top: 1px solid #e5e7eb; padding-top: 10px; margin-top: 10px;">
+                      <button class="btn-toggle-visibility" data-index="${index}" style="flex:1; cursor: pointer; padding: 6px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; ${visibilityToggleStyle}">${visibilityToggleLabel}</button>
+                      <button class="btn-toggle-ordering" data-index="${index}" style="flex:1; cursor: pointer; padding: 6px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; ${orderingToggleStyle}">${orderingToggleLabel}</button>
+                      <button class="btn-toggle-reservation" data-index="${index}" style="flex:1; cursor: pointer; padding: 6px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; ${reservationToggleStyle}">${reservationToggleLabel}</button>
                   </div>
               `;
               outletListContainer.appendChild(div);
+          });
+
+          document.querySelectorAll('.btn-toggle-visibility').forEach(btn => {
+              btn.addEventListener('click', () => {
+                  const idx = parseInt(btn.dataset.index);
+                  const outlet = currentOutlets[idx];
+                  outlet.is_active = outlet.is_active === false ? true : false;
+                  renderOutletList();
+              });
           });
 
           document.querySelectorAll('.btn-toggle-ordering').forEach(btn => {
               btn.addEventListener('click', () => {
                   const idx = parseInt(btn.dataset.index);
                   const outlet = currentOutlets[idx];
-                  // Toggle status
                   outlet.ordering_enabled = outlet.ordering_enabled === false ? true : false;
                   renderOutletList();
               });
           });
 
-          // [BARU] Add listener for reservation toggle
           document.querySelectorAll('.btn-toggle-reservation').forEach(btn => {
               btn.addEventListener('click', () => {
                   const idx = parseInt(btn.dataset.index);
@@ -834,17 +819,12 @@
               outletLink2Input.value = outlet.links?.['2'] || outlet.links?.shopeefood || '';
               outletLink3Input.value = outlet.links?.['3'] || outlet.links?.grabfood || '';
               outletOrderingEnabledInput.checked = outlet.ordering_enabled !== false; // Default true
-              document.getElementById('outlet-reservation-enabled').checked = outlet.reservation_enabled !== false;
+              document.getElementById('outlet-is-active').checked = outlet.is_active !== false; // Default true
               outletIdInput.dataset.auto = 'false'; // [BARU] Jangan auto-update saat edit
               const imgs = outlet.images || [];
               setImgState(outletImg1Base64, outletImg1Preview, imgs[0]);
               setImgState(outletImg2Base64, outletImg2Preview, imgs[1]);
               setImgState(outletImg3Base64, outletImg3Preview, imgs[2]);
-              outletBankInput.value = outlet.bank || '';
-              outletRekeningInput.value = outlet.rekening || '';
-              outletAtasnamaInput.value = outlet.atasnama || '';
-              outletPpnInput.value = outlet.ppn !== undefined ? outlet.ppn : 10;
-              outletFooterInput.value = outlet.receiptFooter || 'Terima Kasih\nSilakan Datang Kembali!';
           } else {
               outletIndexInput.value = '-1';
               outletIdInput.value = '';
@@ -859,16 +839,11 @@
               outletLink2Input.value = '';
               outletLink3Input.value = '';
               outletOrderingEnabledInput.checked = true;
-              document.getElementById('outlet-reservation-enabled').checked = true;
+              document.getElementById('outlet-is-active').checked = true;
               outletIdInput.dataset.auto = 'true'; // [BARU] Aktifkan auto-update untuk item baru
               setImgState(outletImg1Base64, outletImg1Preview, null);
               setImgState(outletImg2Base64, outletImg2Preview, null);
               setImgState(outletImg3Base64, outletImg3Preview, null);
-              outletBankInput.value = '';
-              outletRekeningInput.value = '';
-              outletAtasnamaInput.value = '';
-              outletPpnInput.value = 10;
-              outletFooterInput.value = '';
           }
       }
 
@@ -931,13 +906,8 @@
                   '3': outletLink3Input.value.trim()
               },
               ordering_enabled: outletOrderingEnabledInput.checked,
-              reservation_enabled: document.getElementById('outlet-reservation-enabled').checked,
-              images: images,
-              bank: outletBankInput.value.trim(),
-              rekening: outletRekeningInput.value.trim(),
-              atasnama: outletAtasnamaInput.value.trim(),
-              ppn: parseFloat(outletPpnInput.value) || 0,
-              receiptFooter: outletFooterInput.value
+              is_active: document.getElementById('outlet-is-active').checked,
+              images: images
           };
 
           if (!newOutlet.id || !newOutlet.name) { alert('ID dan Nama Outlet wajib diisi'); return; }
@@ -1107,7 +1077,6 @@
               } else {
                   currentOutlets = []; // Pastikan kosong jika tidak ada data di Firebase
               }
-              localStorage.setItem('rbm_outlets_data', JSON.stringify(currentOutlets));
               renderOutletList();
               // Sync lokasi + radius ke localStorage untuk Absensi GPS (RBM Pro)
               var rbmLocs = {};
@@ -1195,7 +1164,6 @@
               // [DIUBAH] Full Sync Outlet ke System (rbm_outlets)
               const systemOutlets = currentOutlets.map(o => o.id).filter(id => id);
               localStorage.setItem('rbm_outlets', JSON.stringify(systemOutlets));
-              localStorage.setItem('rbm_outlets_data', JSON.stringify(currentOutlets));
 
               // Sync lokasi + radius per outlet untuk Absensi GPS (RBM Pro)
               const rbmOutletLocations = {};

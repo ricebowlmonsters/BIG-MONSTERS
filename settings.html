@@ -655,6 +655,13 @@
         // Jika kosong, berikan nilai default
         return stored ? JSON.parse(stored) : ['sidoarjo', 'surabaya'];
       }
+      
+      // [BARU] Fungsi untuk mendapatkan outlet internal (tidak tampil di web customer)
+      function getInternalOutlets() {
+        const stored = localStorage.getItem('rbm_internal_outlets');
+        // Defaultnya selalu ada 'office'
+        return stored ? JSON.parse(stored) : ['office'];
+      }
 
       function saveOutlets(outlets) {
         localStorage.setItem(RBM_OUTLETS, JSON.stringify(outlets));
@@ -664,7 +671,10 @@
 
       function renderOutlets() {
         const currentUser = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-        const outlets = getOutlets();
+        // [DIUBAH] Gabungkan outlet publik dan internal untuk ditampilkan di manajemen
+        const publicOutlets = getOutlets();
+        const internalOutlets = getInternalOutlets();
+        const outlets = [...new Set([...publicOutlets, ...internalOutlets])];
         outletListDiv.innerHTML = '';
         if (outlets.length === 0) {
           outletListDiv.innerHTML = '<p class="muted" style="text-align: center;">Belum ada outlet.</p>';
@@ -673,11 +683,13 @@
         outlets.forEach(outlet => {
           const item = document.createElement('div');
           item.className = 'outlet-list-item';
+          const isInternal = internalOutlets.includes(outlet);
           
           const deleteBtn = currentUser.role === 'owner' ? `<button data-outlet="${outlet}" class="btn-delete" style="background:none; border:none; color:red; cursor:pointer; font-size: 16px;">✕</button>` : '';
+          const internalBadge = isInternal ? '<span style="font-size:10px; background:#eef2ff; color:#4338ca; padding:2px 6px; border-radius:4px; margin-left:8px;">Internal</span>' : '';
           
           item.innerHTML = `
-            <span>${outlet}</span>
+            <span>${outlet}${internalBadge}</span>
             ${deleteBtn}
           `;
           outletListDiv.appendChild(item);
@@ -1029,11 +1041,21 @@
 
         const newOutlet = newOutletInput.value.trim().toLowerCase().replace(/\s+/g, '-');
         if (newOutlet) {
-          const outlets = getOutlets();
-          if (!outlets.includes(newOutlet)) {
-            outlets.push(newOutlet);
-            saveOutlets(outlets);
-            renderActiveOutletsSelection(); // [BARU] Perbarui daftar pilihan outlet aktif
+          // [DIUBAH] Cek ke semua jenis outlet agar tidak duplikat
+          const publicOutlets = getOutlets();
+          const internalOutlets = getInternalOutlets();
+          const allOutlets = [...publicOutlets, ...internalOutlets];
+
+          if (!allOutlets.includes(newOutlet)) {
+            // [DIUBAH] Logika: Jika nama outlet adalah "office", masukkan ke internal. Jika tidak, masukkan ke publik.
+            if (newOutlet === 'office') {
+                internalOutlets.push(newOutlet);
+                localStorage.setItem('rbm_internal_outlets', JSON.stringify(internalOutlets));
+            } else {
+                publicOutlets.push(newOutlet);
+                saveOutlets(publicOutlets); // saveOutlets hanya menyimpan outlet publik
+            }
+            renderActiveOutletsSelection();
             newOutletInput.value = '';
           } else {
             CustomUI.alert('Nama outlet sudah ada.');
@@ -1102,9 +1124,22 @@
             }
 
             if (await CustomUI.confirm(`Anda yakin ingin menghapus outlet "${outletToDelete}"?`, 'Hapus Outlet', true)) {
-              let outlets = getOutlets();
-              outlets = outlets.filter(o => o !== outletToDelete);
-              saveOutlets(outlets);
+              // [DIUBAH] Cek dan hapus dari kedua jenis list
+              let publicOutlets = getOutlets();
+              let internalOutlets = getInternalOutlets();
+              
+              const publicIndex = publicOutlets.indexOf(outletToDelete);
+              if (publicIndex > -1) {
+                  publicOutlets.splice(publicIndex, 1);
+                  saveOutlets(publicOutlets);
+              }
+              
+              const internalIndex = internalOutlets.indexOf(outletToDelete);
+              if (internalIndex > -1) {
+                  internalOutlets.splice(internalIndex, 1);
+                  localStorage.setItem('rbm_internal_outlets', JSON.stringify(internalOutlets));
+              }
+              renderActiveOutletsSelection();
             }
           }
         } else if (e.target.classList.contains('btn-delete-user')) {

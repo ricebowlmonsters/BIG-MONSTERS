@@ -272,11 +272,21 @@
               const isBonus = (d.note || '').toLowerCase().includes('bonus');
               const isCuti = (d.note || '').toLowerCase().includes('cuti');
               const isLembur = (d.note || '').toLowerCase().includes('lembur');
+              const isBonusOmset = (d.note || '').toLowerCase().includes('bonus omset');
+              const isBonusAbsensi = (d.note || '').toLowerCase().includes('bonus absensi');
               
               let gajiTitle = `Pengajuan Gaji (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
-              if (isBonus) gajiTitle = `Pengajuan Bonus (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
-              if (isCuti) gajiTitle = `Pencairan Cuti (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
-              if (isLembur) gajiTitle = `Pencairan Lembur (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
+              if (isBonusOmset) {
+                  gajiTitle = `Pengajuan Bonus Omset (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
+              } else if (isBonusAbsensi) {
+                  gajiTitle = `Pengajuan Bonus Absensi (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
+              } else if (isCuti) {
+                  gajiTitle = `Pencairan Cuti (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
+              } else if (isLembur) {
+                  gajiTitle = `Pencairan Lembur (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
+              } else if (isBonus) {
+                  gajiTitle = `Pengajuan Bonus (${d.periodStart || ''} s/d ${d.periodEnd || ''})`;
+              }
               
               const title = isTf ? `TF: ${d.suplier || 'Suplier'} - ${d.keterangan || ''}` : (isGaji ? gajiTitle : `Petty Cash`);
               const total = isTf ? (d.total || d.nominal || 0) : (isGaji ? (d.totalGrand || 0) : (d.nominal || 0));
@@ -400,11 +410,21 @@
               const isBonus = (d.note || '').toLowerCase().includes('bonus');
               const isCuti = (d.note || '').toLowerCase().includes('cuti');
               const isLembur = (d.note || '').toLowerCase().includes('lembur');
+              const isBonusOmset = (d.note || '').toLowerCase().includes('bonus omset');
+              const isBonusAbsensi = (d.note || '').toLowerCase().includes('bonus absensi');
               
               let gajiTitle = `Pengajuan Gaji`;
-              if (isBonus) gajiTitle = `Pengajuan Bonus`;
-              if (isCuti) gajiTitle = `Pencairan Cuti`;
-              if (isLembur) gajiTitle = `Pencairan Lembur`;
+              if (isBonusOmset) {
+                  gajiTitle = `Pengajuan Bonus Omset`;
+              } else if (isBonusAbsensi) {
+                  gajiTitle = `Pengajuan Bonus Absensi`;
+              } else if (isCuti) {
+                  gajiTitle = `Pencairan Cuti`;
+              } else if (isLembur) {
+                  gajiTitle = `Pencairan Lembur`;
+              } else if (isBonus) {
+                  gajiTitle = `Pengajuan Bonus`;
+              }
               
               const title = isTf ? `TF: ${d.suplier || 'Suplier'}` : (isGaji ? gajiTitle : `Petty Cash`);
               const total = isTf ? (d.total || d.nominal || 0) : (isGaji ? (d.totalGrand || 0) : (d.nominal || 0));
@@ -527,11 +547,21 @@ function openOwnerPengajuanModal(id) {
   const isBonusData = (d.note || '').toLowerCase().includes('bonus');
   const isCutiData = (d.note || '').toLowerCase().includes('cuti');
   const isLemburData = (d.note || '').toLowerCase().includes('lembur');
+  const isBonusOmsetData = (d.note || '').toLowerCase().includes('bonus omset');
+  const isBonusAbsensiData = (d.note || '').toLowerCase().includes('bonus absensi');
   
   let gajiTitleModal = 'Rincian Pengajuan Gaji';
-  if (isBonusData) gajiTitleModal = 'Rincian Pengajuan Bonus';
-  if (isCutiData) gajiTitleModal = 'Rincian Pencairan Cuti';
-  if (isLemburData) gajiTitleModal = 'Rincian Pencairan Lembur';
+  if (isBonusOmsetData) {
+      gajiTitleModal = 'Rincian Pengajuan Bonus Omset';
+  } else if (isBonusAbsensiData) {
+      gajiTitleModal = 'Rincian Pengajuan Bonus Absensi';
+  } else if (isCutiData) {
+      gajiTitleModal = 'Rincian Pencairan Cuti';
+  } else if (isLemburData) {
+      gajiTitleModal = 'Rincian Pencairan Lembur';
+  } else if (isBonusData) {
+      gajiTitleModal = 'Rincian Pengajuan Bonus';
+  }
 
   title.innerHTML = (isTf ? 'Rincian Pengajuan Transfer' : (isGaji ? gajiTitleModal : 'Rincian Pengajuan Petty Cash')) + 
     `<div style="font-size:13px; color:#6b7280; font-weight:normal; margin-top:4px;">📍 Outlet: <strong>${outletName}</strong> | 👤 <strong>${submittedBy}</strong></div>`;
@@ -553,8 +583,15 @@ function openOwnerPengajuanModal(id) {
   } else if (isGaji) {
       let trTotalTeks = 'Total Gaji';
       if (isBonusData) trTotalTeks = 'Total Bonus';
-      if (isCutiData) trTotalTeks = 'Total Cuti';
-      if (isLemburData) trTotalTeks = 'Total Lembur';
+      if (isBonusOmsetData) {
+          trTotalTeks = 'Total Bonus Omset';
+      } else if (isBonusAbsensiData) {
+          trTotalTeks = 'Total Bonus Absensi';
+      } else if (isCutiData) {
+          trTotalTeks = 'Total Cuti';
+      } else if (isLemburData) {
+          trTotalTeks = 'Total Lembur';
+      }
       html += `
         <tr><td style="padding:8px; border-bottom:1px solid #eee; width:120px;"><strong>Periode</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${d.periodStart || '-'} s/d ${d.periodEnd || '-'}</td></tr>
         <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>${trTotalTeks}</strong></td><td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; color:#1e40af;">Rp ${parseInt(d.totalGrand||0).toLocaleString('id-ID')}</td></tr>
@@ -692,8 +729,11 @@ function openOwnerPengajuanModal(id) {
       let textLaporan = '📊 Laporan Lengkap (Gaji)';
       let onClickLaporan = () => viewPengajuanDetail(sub.id);
       
-      if (isBonusData) {
-          textLaporan = '📊 Laporan Lengkap (Bonus)';
+      if (isBonusOmsetData) {
+          textLaporan = '📊 Laporan Lengkap (Bonus Omset)';
+          onClickLaporan = () => viewBonusDetail(sub.id);
+      } else if (isBonusAbsensiData) {
+          textLaporan = '📊 Laporan Lengkap (Bonus Absensi)';
           onClickLaporan = () => viewBonusDetail(sub.id);
       } else if (isCutiData) {
           textLaporan = '📊 Laporan Lengkap (Cuti)';
@@ -701,6 +741,9 @@ function openOwnerPengajuanModal(id) {
       } else if (isLemburData) {
           textLaporan = '📊 Laporan Lengkap (Lembur)';
           onClickLaporan = () => viewCutiLemburDetail(sub.id, 'lembur');
+      } else if (isBonusData) {
+          textLaporan = '📊 Laporan Lengkap (Bonus)';
+          onClickLaporan = () => viewBonusDetail(sub.id);
       }
 
       btnLaporan.textContent = textLaporan;
@@ -991,11 +1034,13 @@ window.viewPengajuanDetail = function(id) {
             let jamTerlambat, totalPotTerlambat, grandTotal, unroundedTotal;
             let gajiPerHari, potTerlambatPerJam, uangMakan, totalPotKehadiran, hutang, tunjangan, lemburMinggu, pembulatan;
 
+            // [FIX] Tambahkan variabel parkir dan transport
+            let parkir = 0, transport = 0;
+
             if (emp.jamTerlambat !== undefined) {
                 // New payload format: Use pre-calculated values
                 jamTerlambat = emp.jamTerlambat;
                 totalPotTerlambat = emp.potonganTerlambat;
-                grandTotal = emp.grandTotal;
                 gajiPerHari = emp.gajiPerHari;
                 potTerlambatPerJam = emp.potTerlambatPerJam;
                 uangMakan = emp.uangMakan;
@@ -1003,8 +1048,24 @@ window.viewPengajuanDetail = function(id) {
                 hutang = emp.hutang;
                 tunjangan = emp.tunjangan;
                 lemburMinggu = emp.lemburMinggu || 0;
+                parkir = emp.parkir || 0;
+                transport = emp.transport || 0;
                 pembulatan = emp.grandTotal;
                 unroundedTotal = emp.totalAsli || emp.grandTotal;
+                
+                if (emp.totalAsli !== undefined) {
+                    unroundedTotal = emp.totalAsli;
+                    pembulatan = emp.grandTotal;
+                    // [FIX] Jangan hitung ulang grandTotal, gunakan nilai pembulatan yang sudah ada
+                    grandTotal = (emp.gajiPokok || 0) - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + parkir + transport + tunjangan + lemburMinggu;
+                    grandTotal = unroundedTotal;
+                } else {
+                    if (jamTerlambat < 1) { jamTerlambat = 0; totalPotTerlambat = 0; }
+                    unroundedTotal = (emp.gajiPokok || 0) - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan + lemburMinggu;
+                    unroundedTotal = (emp.gajiPokok || 0) - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + parkir + transport + tunjangan + lemburMinggu;
+                    pembulatan = Math.round(unroundedTotal / 1000) * 1000;
+                    grandTotal = pembulatan;
+                }
             } else {
                 // Old payload format: Recalculate (fallback)
                 const totalMenitTelatGps = getLatenessForEmp(empKeyAbsensi, emp.nama);
@@ -1019,18 +1080,20 @@ window.viewPengajuanDetail = function(id) {
                 
                 lemburMinggu = pData.lemburMinggu !== undefined ? parseInt(pData.lemburMinggu) : 0;
                 
+                parkir = hkAktual * 5000; // Asumsi parkir Rp 5.000 per hari hadir
+                transport = pData.transport !== undefined ? parseInt(pData.transport) : 0;
                 gajiPerHari = Math.round(gajiPokok / 30);
                 potTerlambatPerJam = Math.round(gajiPokok / 173);
                 uangMakan = hkAktual * 10000;
                 totalPotKehadiran = Math.round(potHari * gajiPerHari);
                 totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
                 hutang = parseInt(pData.hutang) || 0;
-                unroundedTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan + lemburMinggu;
+                unroundedTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + parkir + transport + tunjangan + lemburMinggu;
                 pembulatan = Math.round(unroundedTotal / 1000) * 1000;
                 grandTotal = pembulatan;
             }
 
-            totalGrand += grandTotal;
+            totalGrand += pembulatan; // [FIX] Akumulasi total berdasarkan nilai yang sudah dibulatkan
             const jamTerlambatStr = String(jamTerlambat).replace('.', ',');
             const metodeBayar = emp.metodeBayar || pData.metodeBayar || 'TF';
             rowsGaji += `<tr>
@@ -1040,10 +1103,11 @@ window.viewPengajuanDetail = function(id) {
                 <td class="text-right">${formatMoney(gajiPokok)}</td><td class="text-right">${formatMoney(gajiPerHari)}</td>
                 <td>${potHari}</td><td class="text-right">${formatMoney(totalPotKehadiran)}</td>
                 <td>${jamTerlambatStr}</td><td class="text-right">${formatMoney(potTerlambatPerJam)}</td><td class="text-right">${formatMoney(totalPotTerlambat)}</td>
-                <td class="text-right">${formatMoney(hutang)}</td><td class="text-right">${formatMoney(uangMakan)}</td><td class="text-right">${formatMoney(tunjangan)}</td>
-                <td class="text-right" style="font-weight:bold;">${formatMoney(unroundedTotal)}</td>
-                <td class="text-right" style="color:#16a34a; font-weight:bold;">${formatMoney(grandTotal)}</td>
+                <td class="text-right">${formatMoney(hutang)}</td><td class="text-right">${formatMoney(uangMakan)}</td><td class="text-right">${formatMoney(parkir)}</td><td class="text-right">${formatMoney(transport)}</td><td class="text-right">${formatMoney(tunjangan)}</td>
+                <td class="text-right" style="font-weight:bold;">${formatMoney(unroundedTotal)}</td> <!-- [FIX] Tampilkan nilai asli sebelum pembulatan -->
+                <td class="text-right" style="color:#16a34a; font-weight:bold;">${formatMoney(pembulatan)}</td> <!-- [FIX] Tampilkan nilai yang sudah dibulatkan -->
                 <td>${metodeBayar}</td>
+                <td style="text-align:center;">${metodeBayar}</td>
             </tr>`;
         });
         var htmlGaji = `<div class="page">${headerHtml}<h2>REKAPITULASI GAJI KARYAWAN</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
@@ -1051,8 +1115,8 @@ window.viewPengajuanDetail = function(id) {
             <th rowspan="2">Bank</th><th rowspan="2">No Rek</th><th rowspan="2">HK<br>Target</th><th rowspan="2">HK<br>Aktual</th>
             <th colspan="8">Absensi</th>
             <th rowspan="2">Gaji Pokok</th><th rowspan="2">Gaji/Hari</th>
-            <th colspan="2">Potongan Kehadiran</th><th colspan="3">Keterlambatan</th>
-            <th rowspan="2">Hutang</th><th rowspan="2">Makan</th><th rowspan="2">Tunjangan</th>
+            <th colspan="2">Potongan Kehadiran</th><th colspan="3">Keterlambatan</th><th rowspan="2">Hutang</th><th rowspan="2">Makan</th>
+            <th rowspan="2">Parkir</th><th rowspan="2">Transport</th><th rowspan="2">Tunjangan</th>
             <th rowspan="2">Grand Total</th><th rowspan="2">Pembulatan</th><th rowspan="2">Pembayaran</th>
         </tr><tr>
             <th>A</th><th>I</th><th>S</th><th>OFF</th><th>DP</th><th>PH</th><th>AL</th><th>JML</th>
@@ -1789,6 +1853,17 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
             uangMakan = emp.uangMakan;
             lemburMinggu = emp.lemburMinggu || 0;
             pembulatan = emp.grandTotal;
+            
+            if (emp.totalAsli !== undefined) {
+                unroundedTotal = emp.totalAsli;
+                pembulatan = emp.grandTotal;
+                receivedTotal = pembulatan;
+            } else {
+                if (jamTerlambat < 1) { jamTerlambat = 0; totalPotTerlambat = 0; }
+                unroundedTotal = (gajiPokok || 0) - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan + lemburMinggu;
+                pembulatan = Math.round(unroundedTotal / 1000) * 1000;
+                receivedTotal = pembulatan;
+            }
             totalPendapatan = gajiPokok + tunjangan + uangMakan + lemburMinggu;
             unroundedTotal = emp.totalAsli || emp.grandTotal;
             receivedTotal = emp.grandTotal;

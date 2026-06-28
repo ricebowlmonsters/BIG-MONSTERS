@@ -456,18 +456,19 @@ window.addEventListener('load', function() {
             var outlet = (outletSel && outletSel.value) ? outletSel.value : (localStorage.getItem('rbm_last_selected_outlet') || '');
             var sfx = outlet ? '_' + outlet.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
             
-            if (hrText) hrText.innerHTML = '<span class="loading" style="width:14px; height:14px; border-width:2px; margin-right:6px;"></span> Memuat info HR...';
+            if (hrText) hrText.innerHTML = '<div style="display:flex; align-items:center; gap:8px; color:#64748b;"><span class="rbm-spinner" style="border-color:currentColor; border-top-color:transparent;"></span> Memuat info HR...</div>';
             if (hrDisplay) hrDisplay.style.display = 'block';
 
             if (typeof firebase !== 'undefined' && firebase.database) {
                 // Ambil data Employees langsung dari Firebase agar ID dan Join Date presisi
                 firebase.database().ref('rbm_pro/employees' + sfx).once('value').then(function(empSnap) {
-                    var employees = empSnap.val();
-                    var empArr = Array.isArray(employees) ? employees : (employees ? Object.values(employees) : []);
+                    var employees = empSnap.val() || {};
+                    var empArr = Array.isArray(employees) ? employees : Object.values(employees);
                     var emp = empArr.find(function(e) { return e && e.name === empName; });
                     
-                    var empId = emp ? ((emp.id != null) ? emp.id : emp.name.replace(/[^a-zA-Z0-9]/g, '_')) : empName.replace(/[^a-zA-Z0-9]/g, '_');
-                    var joinDate = emp ? emp.joinDate : null;
+                    // [DISEDERHANAKAN] Logika mendapatkan ID Karyawan
+                    var empId = emp?.id || empName.replace(/[^a-zA-Z0-9]/g, '_');
+                    var joinDate = emp?.joinDate || null;
                     var lamaBekerja = joinDate ? hitungLamaKerjaHR(joinDate) : 'Belum di-set (Hubungi Admin)';
 
                     firebase.database().ref('rbm_pro/hr_karyawan/' + outlet + '/' + empId).once('value').then(function(snap) {
@@ -488,7 +489,7 @@ window.addEventListener('load', function() {
             function renderHrInfo(hr, lamaKerja, settings) {
                 var html = '<div style="display:flex; flex-direction:column; gap:12px;">';
                 
-                var quoteKerja = settings.quoteMasaKerja ? '<div style="font-size:11px; color:#64748b; font-style:italic; margin-top:6px; border-top:1px dashed #e2e8f0; padding-top:6px;">"' + settings.quoteMasaKerja + '"</div>' : '';
+                var quoteKerja = settings.quoteMasaKerja ? `<div style="font-size:11px; color:#64748b; font-style:italic; margin-top:8px; border-top:1px dashed #e2e8f0; padding-top:8px;">"${settings.quoteMasaKerja}"</div>` : '';
                 html += '<div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">' +
                             '<div style="display:flex; align-items:center; gap:8px;">' +
                                 '<div style="background:#dcfce7; color:#166534; width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px;">⏳</div>' +
@@ -500,8 +501,8 @@ window.addEventListener('load', function() {
                         '</div>';
                 
                 if (hr.kontrakMulai || hr.kontrakSelesai) {
-                    var start = hr.kontrakMulai ? new Date(hr.kontrakMulai).toLocaleDateString('id-ID') : '...';
-                    var end = hr.kontrakSelesai ? new Date(hr.kontrakSelesai).toLocaleDateString('id-ID') : '...';
+                    var start = hr.kontrakMulai ? new Date(hr.kontrakMulai).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '...';
+                    var end = hr.kontrakSelesai ? new Date(hr.kontrakSelesai).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '...';
                     var statusKontrak = '';
                     var bgKontrak = '#f8fafc';
                     var borderKontrak = '#e2e8f0';
@@ -510,10 +511,10 @@ window.addEventListener('load', function() {
                         var endDate = new Date(hr.kontrakSelesai);
                         var daysLeft = Math.ceil((endDate.setHours(23,59,59,999) - new Date()) / (1000 * 60 * 60 * 24));
                         if (daysLeft < 0) {
-                            statusKontrak = '<span style="background:#fee2e2; color:#dc2626; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:700;">Expired</span>';
+                            statusKontrak = '<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:700;">Expired</span>';
                             bgKontrak = '#fef2f2'; borderKontrak = '#fecaca'; iconKontrak = '⚠️';
                         } else if (daysLeft <= 30) {
-                            statusKontrak = '<span style="background:#fef3c7; color:#d97706; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:700;">Sisa ' + daysLeft + ' hari</span>';
+                            statusKontrak = '<span style="background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:700;">Sisa ' + daysLeft + ' hari</span>';
                             bgKontrak = '#fffbeb'; borderKontrak = '#fde68a'; iconKontrak = '⏱️';
                         } else {
                             statusKontrak = '<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:700;">Aktif</span>';
@@ -564,7 +565,7 @@ window.addEventListener('load', function() {
                                             '<span style="font-size:13px; font-weight:600; color:#7f1d1d; line-height:1.4;">' + sp.keterangan + '</span>' +
                                         '</div>' +
                                         (sp.sanksi ? '<div style="background:#fff1f2; border:1px solid #ffe4e6; padding:8px; border-radius:6px; margin-bottom:6px; font-size:12px; color:#991b1b;"><strong>Sanksi:</strong> ' + sp.sanksi + '</div>' : '') +
-                                        (sp.berlakuHingga ? '<div style="font-size:11px; color:#ef4444; display:flex; align-items:center; gap:4px;"><span>📅</span> Berlaku s/d: <strong>' + new Date(sp.berlakuHingga).toLocaleDateString('id-ID') + '</strong></div>' : '') +
+                                        (sp.berlakuHingga ? '<div style="font-size:11px; color:#ef4444; display:flex; align-items:center; gap:4px;"><span>📅</span> Berlaku s/d: <strong>' + new Date(sp.berlakuHingga).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) + '</strong></div>' : '') +
                                     '</div>';
                         });
                         html += '</div></div>';

@@ -101,6 +101,13 @@
                 <label style="font-size:11px; font-weight:bold; color:#0f172a; display:block; margin-bottom:4px;">Toleransi Keterlambatan</label>
                 <div style="font-size:11px; display:flex; align-items:center; gap:6px;">Maklumi telat hingga <input type="number" id="gps_toleransi_telat_menit" placeholder="0" value="0" min="0" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"> menit sebelum mulai dipotong.</div>
             </div>
+            <div style="border-top:1px dashed #cbd5e1; padding-top:10px;">
+                <label style="font-size:11px; font-weight:bold; color:#166534; display:block; margin-bottom:4px;">Tunjangan Tambahan (Rekap Gaji)</label>
+                <div style="font-size:11px; display:flex; flex-direction:row; gap:16px; align-items:flex-start;">
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; flex:1;"><input type="checkbox" id="gps_enable_parkir"> Aktifkan Uang Parkir (Rp 5.000/hari hadir)</label>
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; flex:1;"><input type="checkbox" id="gps_enable_transport"> Aktifkan Uang Transport (Nominal diisi manual di Rekap Gaji)</label>
+                </div>
+            </div>
         </div>
         <button class="btn-secondary" onclick="saveJamConfig()" style="font-size:11px; padding:5px 10px; margin-top:10px;">Simpan Pengaturan Jam</button>
     </div>
@@ -119,6 +126,9 @@
 <script>
 let isFaceApiLoaded = false;
 let faceRegStream = null;
+window.addEventListener('load', function() {
+    if (typeof renderOutletTunjanganConfig === 'function') renderOutletTunjanganConfig();
+});
 
 async function loadFaceApiModels() {
     if (isFaceApiLoaded) return;
@@ -434,6 +444,7 @@ function deleteFaceData(empName) {
 (function() {
   function runLoad() { 
       if (typeof loadJamConfig === 'function') loadJamConfig(); 
+      if (typeof renderOutletTunjanganConfig === 'function') renderOutletTunjanganConfig();
   }
   runLoad(); // [OPTIMASI] Langsung render dari cache lokal tanpa tunggu Firebase
   if (window.RBMStorage && typeof window.RBMStorage.ready === 'function') {

@@ -2,13 +2,6 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <script>
-  (function(){
-    var b = document.createElement('base');
-    b.target = (location.protocol === 'file:') ? '_self' : '_top';
-    document.head.appendChild(b);
-  })();
-  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RBM Pro</title>
   <link rel="stylesheet" href="rbm-pro.css">
@@ -16,15 +9,11 @@
 <body>
 <script>
 (function(){ 
-  var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); 
-  if (u.role === 'staff') { 
-    if (window.location.protocol === 'file:') {
+  // [FIX] Jangan jalankan redirect jika dibuka dari file lokal untuk menghindari error cross-origin
+  if (window.location.protocol !== 'file:') {
+    var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); 
+    if (u.role === 'staff' && window.self === window.top) { // Redirect only if it's the top window
       window.location.href = 'index.html';
-    } else {
-      try { 
-        if (window.top) window.top.location.href = 'index.html'; 
-        else window.location.href = 'index.html'; 
-      } catch(e) { window.location.href = 'index.html'; } 
     }
   } 
 })();
@@ -277,6 +266,42 @@
                     btnPc.style.display = 'inline-block';
                     btnPc.textContent = 'Pengajuan Petty Cash (Ke Diri Sendiri)';
                 }
+                
+                // [FITUR BARU] Auto-Approve untuk Pengajuan Gaji & Petty Cash oleh Owner
+                window.addEventListener('load', function() {
+                    var checkDb = setInterval(function() {
+                        if (typeof firebase !== 'undefined' && firebase.database) {
+                            clearInterval(checkDb);
+                            var db = firebase.database();
+                            var origRef = db.ref;
+                            
+                            db.ref = function(path) {
+                                var refObj = origRef.apply(this, arguments);
+                                // Target jalur database pengajuan gaji
+                                if (path && typeof path === 'string' && path.includes('gaji_pengajuan')) {
+                                    var origPush = refObj.push;
+                                    refObj.push = function(payload) {
+                                        if (payload && typeof payload === 'object') {
+                                            payload.statusOwner = 'approved';
+                                            payload.statusManager = 'approved'; // Tetap auto-approve untuk manager
+                                            payload.approvedOwnerBy = u.nama || u.username || 'Puji Shohibul Burhan'; // Disetujui oleh owner sendiri
+                                            payload.approvedManagerBy = u.nama || u.username || 'Puji Shohibul Burhan'; // Disetujui oleh owner sendiri (bukan sistem)
+                                            
+                                            var fb = document.getElementById('gaji_pengajuan_feedback');
+                                            if(fb) {
+                                                fb.textContent = '✅ Pengajuan otomatis berstatus Approved (Ke Diri Sendiri)';
+                                                fb.style.color = '#166534';
+                                                setTimeout(function() { fb.textContent = ''; }, 6000);
+                                            }
+                                        }
+                                        return origPush.apply(this, arguments);
+                                    };
+                                }
+                                return refObj;
+                            };
+                        }
+                    }, 500);
+                });
               }
             } catch (e) {}
           })();
@@ -414,29 +439,36 @@
                 </thead>
                 <tbody id="pencairan_tbody">
                 </tbody>
-                <tfoot>
-                    <tr style="background: #fff7ed; font-weight: bold;">
-                        <td id="pencairan_grand_colspan" colspan="6" style="text-align: right; padding: 10px; border: 1px solid #e2e8f0; color: #9a3412;">TOTAL PENCAIRAN <span id="pencairan_lbl_total">CUTI</span>:</td>
-                        <td id="pencairan_grand_total" style="text-align: right; padding: 10px; color: #c2410c; font-size: 15px; border: 1px solid #e2e8f0;">Rp 0</td>
+                <tfoot id="pencairan_tfoot" style="font-weight: bold; display: table-footer-group;">
+                    <tr style="background: #fff7ed; display:none;">
+                        <td id="pencairan_grand_colspan" colspan="7" style="text-align: right; padding: 10px; border: 1px solid #e2e8f0; color: #9a3412;">GRAND TOTAL <span id="pencairan_lbl_total">CUTI</span>:</td>
+                        <td id="pencairan_grand_total" style="text-align: right; padding: 10px; color: #c2410c; font-size: 14px; border: 1px solid #e2e8f0;">Rp 0</td>
+                    </tr>
+                    <tr style="background: #eef2ff;">
+                        <td id="pencairan_bulat_colspan" colspan="7" style="text-align: right; padding: 10px; border: 1px solid #e2e8f0; color: #1e40af;">TOTAL DITERIMA (PEMBULATAN):</td>
+                        <td id="pencairan_pembulatan" style="text-align: right; padding: 10px; color: #1e40af; font-size: 15px; border: 1px solid #e2e8f0;">Rp 0</td>
                     </tr>
                 </tfoot>
             </table>
             <div style="margin-top: 10px; font-size: 11px; color: #64748b;">
                 * <b>Gaji/Hari</b> diambil otomatis dari (Gaji Pokok &divide; 30).<br>
-                * <b>Rate/Jam</b> diambil otomatis dari (Gaji Pokok &divide; 173).
+                * <b>Rate/Jam</b> diambil otomatis dari (Gaji Pokok &divide; 144,17).
             </div>
         </div>
     </div>
 
     <!-- BONUS -->
     <div id="tab-content-bonus" style="display:none;">
-        <div class="filter-row">
-          <button class="btn btn-primary" onclick="saveBonusData()" style="background-color: var(--primary);">Simpan Perubahan Bonus</button>
+        <div class="filter-row" style="border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+          <button id="bonus-subtab-absensi" class="btn btn-primary" onclick="switchBonusSubTab('absensi')" style="border-radius: 20px; background-color: var(--primary);">Bonus Absensi</button>
+          <button id="bonus-subtab-omset" class="btn btn-secondary" onclick="switchBonusSubTab('omset')" style="border-radius: 20px;">Bonus Omset</button>
+          <div style="flex-grow:1;"></div>
         </div>
 
-        <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start;">
+        <div style="margin-top: 15px;">
             <!-- Bonus Absensi Section -->
-            <div style="flex: 1; min-width: 350px; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div id="bonus-content-absensi">
+              <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
               <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid #1e40af; padding-bottom: 10px; margin-bottom: 15px;">
                   <h3 style="margin:0; color: #1e40af; font-size: 16px;">Bonus Absensi</h3>
                   <div style="display:flex; gap:5px;">
@@ -445,14 +477,11 @@
                       <button class="btn-small-danger" style="background:#dc3545; padding: 4px 8px;" onclick="exportBonusAbsensiPDF()">PDF</button>
                   </div>
               </div>
-              <div style="display:flex; gap:8px; align-items:flex-end; margin: 0 0 10px; flex-wrap: wrap;">
-                  <!-- Fitur tambah nama manual untuk dropdown sudah dihapus. -->
-              </div>
               <table class="data-table" id="bonus_absensi_table" style="font-size: 12px;">
                 <thead>
                   <tr>
                     <th>Nama Karyawan</th>
-                    <th style="width: 100px;">Nominal</th>
+                    <th style="width: 120px;">Nominal</th>
                     <th>Keterangan</th>
                     <th style="width: 40px;"></th>
                   </tr>
@@ -461,16 +490,18 @@
                 <tfoot>
                     <tr style="background: #f8fafc;">
                         <td style="text-align: right; font-weight: bold;">Total:</td>
-                        <td id="bonus_absensi_total" style="font-weight: bold; text-align: right;">Rp 0</td>
+                        <td id="bonus_absensi_total" style="font-weight: bold; text-align: right; padding-right: 10px;">Rp 0</td>
                         <td colspan="2"></td>
                     </tr>
                 </tfoot>
               </table>
               <button class="btn btn-secondary" onclick="addBonusAbsensiRow()" style="margin-top: 10px; width: 100%; border-style: dashed;">+ Tambah Baris</button>
+              </div>
             </div>
 
             <!-- Bonus Omset Section -->
-            <div style="flex: 1; min-width: 350px; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div id="bonus-content-omset" style="display: none;">
+              <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
               <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid #059669; padding-bottom: 10px; margin-bottom: 15px;">
                   <h3 style="margin:0; color: #059669; font-size: 16px;">Bonus Omset</h3>
                   <div style="display:flex; gap:5px;">
@@ -494,17 +525,30 @@
                 <div><label style="font-size: 11px;">Total Dibagi</label><input type="text" id="bonus_omset_pool" placeholder="Rp 0" oninput="formatRupiahInput(this); calculateBonusOmsetFromPool()" style="background: white; border: 1px solid #ccc; padding: 5px; border-radius: 4px; font-weight: bold; color: #059669; width: 100%; box-sizing: border-box;"></div>
               </div>
 
-              <table class="data-table" style="font-size: 12px;">
-                <thead><tr><th>Nama</th><th style="text-align: center; width: 60px;">Dapat?</th><th style="text-align: right;">Nominal</th></tr></thead>
+              <table class="data-table" id="bonus_omset_table" style="font-size: 12px;">
+                <thead>
+                  <tr>
+                    <th>Nama</th>
+                    <th style="text-align: center; width: 60px;">Dapat?</th>
+                    <th style="text-align: right; width: 120px;">Nominal</th>
+                    <th style="text-align: right; width: 120px;">Pembulatan</th></tr></thead>
                 <tbody id="bonus_omset_tbody"></tbody>
                 <tfoot id="bonus_omset_tfoot">
                     <tr style="background-color: #f1f5f9;">
                         <td><input type="text" id="bonus_omset_extra_name" placeholder="Ket (Makan-makan, dll)" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; box-sizing:border-box;"></td>
                         <td style="text-align: center; font-weight:bold; color:#64748b;">-</td>
                         <td><input type="text" id="bonus_omset_extra_nominal" placeholder="Rp 0" oninput="if(typeof formatRupiahInput === 'function') formatRupiahInput(this); recalculateOmsetPoolFromManual()" style="width: 100%; text-align: right; padding: 4px; border: 1px solid #ccc; border-radius: 4px; box-sizing:border-box; color:#ef4444; font-weight:bold;"></td>
+                        <td style="text-align: center; font-weight:bold; color:#64748b;">-</td>
+                    </tr>
+                    <tr style="background-color: #eef2ff; font-weight: bold;">
+                        <td colspan="3" style="text-align: right; padding: 8px; color: #1e40af;">TOTAL DITERIMA (PEMBULATAN)</td>
+                        <td id="bonus_omset_total_pembulatan" style="text-align: right; padding: 8px; color: #1e40af; font-size: 14px;">
+                            Rp 0
+                        </td>
                     </tr>
                 </tfoot>
               </table>
+              </div>
             </div>
         </div>
     </div>
@@ -602,7 +646,11 @@
             <tr><td style="padding-left: 15px;">Gaji Pokok</td><td>:</td><td id="slip_gaji_pokok" style="text-align: right;">Rp 0</td><td></td></tr>
             <tr><td style="padding-left: 15px;">Tunjangan</td><td>:</td><td id="slip_tunjangan" style="text-align: right;">Rp 0</td><td></td></tr>
             <tr><td style="padding-left: 15px;">Lembur Minggu</td><td>:</td><td id="slip_lembur" style="text-align: right;">Rp -</td><td></td></tr>
-            <tr style="border-bottom: 1px solid black;"><td style="padding-left: 15px; padding-bottom: 8px;">Uang Makan</td><td style="padding-bottom: 8px;">:</td><td id="slip_uang_makan" style="text-align: right; padding-bottom: 8px;">Rp 0</td><td style="text-align: right; font-weight: bold; padding-bottom: 8px;">+</td></tr>
+            <tr><td style="padding-left: 15px;">Uang Makan</td><td>:</td><td id="slip_uang_makan" style="text-align: right;">Rp 0</td><td></td></tr>
+            <tr><td style="padding-left: 15px;">Parkir</td><td>:</td><td id="slip_parkir" style="text-align: right;">Rp 0</td><td></td></tr>
+            <tr><td style="padding-left: 15px;">Uang Makan</td><td>:</td><td id="slip_uang_makan" style="text-align: right;">Rp 0</td><td></td></tr>
+            <tr><td style="padding-left: 15px;">Parkir</td><td>:</td><td id="slip_parkir" style="text-align: right;">Rp 0</td><td></td></tr>
+            <tr style="border-bottom: 1px solid black;"><td style="padding-left: 15px; padding-bottom: 8px;">Transport</td><td style="padding-bottom: 8px;">:</td><td id="slip_transport" style="text-align: right; padding-bottom: 8px;">Rp 0</td><td style="text-align: right; font-weight: bold; padding-bottom: 8px;">+</td></tr>
             <tr><td style="font-weight: bold; padding-top: 8px;">Total</td><td style="font-weight: bold; padding-top: 8px;">:</td><td id="slip_total_pendapatan" style="text-align: right; font-weight: bold; padding-top: 8px;">Rp 0</td><td></td></tr>
             
             <tr><td colspan="4" style="height: 20px;"></td></tr>
@@ -615,8 +663,8 @@
 
             <tr><td colspan="4" style="height: 20px;"></td></tr>
 
-            <tr style="background: #f0f0f0; border-top: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Grand Total Gaji</td><td style="font-weight: bold; padding: 10px;">:</td><td id="slip_grand_total" style="text-align: right; font-weight: bold; padding: 10px;">Rp 0</td><td></td></tr>
-            <tr style="background: #eef2ff; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px; color: #1e40af;">Pembulatan</td><td style="font-weight: bold; padding: 10px; color: #1e40af;">:</td><td id="slip_pembulatan" style="text-align: right; font-weight: bold; padding: 10px; color: #1e40af;">Rp 0</td><td></td></tr>
+            <tr style="background: #f0f0f0; border-top: 2px solid black;"><td style="font-weight: bold; padding: 10px;">RAND TOTAL</td><td style="font-weight: bold; padding: 10px;">:</td><td id="slip_grand_total" style="text-align: right; font-weight: bold; padding: 10px;">Rp 0</td><td></td></tr>
+            <tr style="background: #eef2ff; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px; color: #1e40af;">PEMBULATAN</td><td style="font-weight: bold; padding: 10px; color: #1e40af;">:</td><td id="slip_pembulatan" style="text-align: right; font-weight: bold; padding: 10px; color: #1e40af;">Rp 0</td><td></td></tr>
         </table>
 
         <!-- Tanda Tangan -->
@@ -753,15 +801,35 @@ window.addEventListener('load', function() {
         rows.forEach(function(tr) {
             var cb = tr.querySelector('input[type="checkbox"]');
             var inp = tr.querySelector('.bonus-nominal-input');
+            var pembulatanCell = tr.querySelector('.bonus-omset-pembulatan-display');
             var span = tr.querySelector('.hidden-nominal');
             if (cb && cb.checked && inp) {
                 inp.value = 'Rp ' + nominal.toLocaleString('id-ID');
                 if (span) span.textContent = inp.value;
+                if (pembulatanCell) {
+                    var rounded = Math.round(nominal / 1000) * 1000;
+                    pembulatanCell.textContent = 'Rp ' + rounded.toLocaleString('id-ID');
+                }
             } else if (inp) {
                 inp.value = 'Rp 0';
                 if (span) span.textContent = inp.value;
+                if (pembulatanCell) pembulatanCell.textContent = 'Rp 0';
             }
         });
+        // Recalculate total pembulatan
+        if(typeof updateTotalPembulatan === 'function') updateTotalPembulatan();
+    }
+
+    // [FIX] Fungsi untuk mendapatkan total dari nilai yang sudah dibulatkan
+    function getRoundedGrandTotal() {
+        let total = 0;
+        const pembulatanCells = document.querySelectorAll('#bonus_omset_tbody .bonus-omset-pembulatan-display');
+        pembulatanCells.forEach(cell => total += parseInt(cell.textContent.replace(/[^0-9]/g, ''), 10) || 0);
+        
+        // [FIX] Tambahkan nilai dari input "Ket (Makan-makan, dll)" ke dalam grand total
+        const extraInput = document.getElementById('bonus_omset_extra_nominal');
+        if (extraInput) total += parseInt(extraInput.value.replace(/[^0-9]/g, ''), 10) || 0;
+        return total;
     }
 
     // Fetch data omset dari Firebase Pembukuan Keuangan
@@ -835,7 +903,7 @@ window.addEventListener('load', function() {
             var cb = tr.querySelector('input[type="checkbox"]');
             if (cb && !cb.hasAttribute('data-hooked')) {
                 cb.setAttribute('data-hooked', 'true');
-                cb.addEventListener('change', function() {
+                cb.addEventListener('change', function() { // Recalculate when checkbox is toggled
                     var tr = this.closest('tr');
                     var inp = tr ? tr.querySelector('.bonus-nominal-input') : null;
                     if (!this.checked && inp) {
@@ -843,7 +911,10 @@ window.addEventListener('load', function() {
                         if (inp.nextElementSibling) inp.nextElementSibling.textContent = 'Rp 0';
                         inp.removeAttribute('data-manual');
                     }
-                    if(typeof recalculateOmsetPoolFromManual === 'function') recalculateOmsetPoolFromManual();
+                    // Use a small timeout to ensure other calculations are done
+                    setTimeout(function() {
+                        if(typeof recalculateOmsetPoolFromManual === 'function') recalculateOmsetPoolFromManual();
+                    }, 50);
                 });
             }
         });
@@ -898,6 +969,16 @@ window.addEventListener('load', function() {
     // Coba rewrite saat onload jika kebetulan tab bonus sudah terbuka
     setTimeout(rewriteBonusOmsetTable, 1500);
     
+    // Fungsi untuk menghitung total pembulatan
+    window.updateTotalPembulatan = function() {
+        var total = 0;
+        document.querySelectorAll('.bonus-omset-pembulatan-display').forEach(function(cell) {
+            total += parseInt(cell.textContent.replace(/[^0-9]/g, ''), 10) || 0;
+        });
+        var totalEl = document.getElementById('bonus_omset_total_pembulatan');
+        if (totalEl) totalEl.textContent = 'Rp ' + total.toLocaleString('id-ID');
+    };
+
     // Fungsi untuk merekap manual dan membagi otomatis sisa ke karyawan lainnya
     window.recalculateOmsetPoolFromManual = function(editedInput) {
         var poolInput = document.getElementById('bonus_omset_pool');
@@ -922,12 +1003,14 @@ window.addEventListener('load', function() {
         rows.forEach(function(tr) {
             var cb = tr.querySelector('.bonus-omset-check');
             var inp = tr.querySelector('.bonus-nominal-input');
+            var pembulatanCell = tr.querySelector('.bonus-omset-pembulatan-display');
             if (!cb || !inp) return;
 
             if (cb.checked) {
                 if (inp.getAttribute('data-manual') === 'true') {
                     var val = parseInt(inp.value.replace(/[^0-9]/g, ''), 10) || 0;
                     manualTotal += val;
+                    if (pembulatanCell) pembulatanCell.textContent = 'Rp ' + (Math.round(val / 1000) * 1000).toLocaleString('id-ID');
                 } else {
                     autoInputs.push(inp);
                 }
@@ -941,11 +1024,15 @@ window.addEventListener('load', function() {
             autoInputs.forEach(function(inp) {
                 inp.value = 'Rp ' + autoVal.toLocaleString('id-ID');
                 if (inp.nextElementSibling) inp.nextElementSibling.textContent = inp.value;
+                var pembulatanCell = inp.closest('tr').querySelector('.bonus-omset-pembulatan-display');
+                if (pembulatanCell) pembulatanCell.textContent = 'Rp ' + (Math.round(autoVal / 1000) * 1000).toLocaleString('id-ID');
             });
         }
         
         var info = document.getElementById('alokasi_manual_info');
         if (info) info.innerHTML = '';
+        // Recalculate total pembulatan
+        if(typeof updateTotalPembulatan === 'function') updateTotalPembulatan();
     };
 
     window.fetchOmsetGlobalDev = async function() {
@@ -1114,6 +1201,32 @@ window.addEventListener('load', function() {
         setTimeout(() => { win.print(); win.close(); }, 500);
     };
 });
+
+// [FIX] Tambahkan fungsi openRekeningPencairanModal yang hilang
+function openRekeningPencairanModal(callback) {
+    const outletId = document.getElementById('rbm-outlet-select')?.value;
+    if (!outletId) return alert('Pilih outlet terlebih dahulu.');
+
+    const u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+    const isOwnerOrDev = String(u.role || '').toLowerCase() === 'owner' || (u.username || '').toLowerCase() === 'burhan';
+
+    // Untuk Owner/Dev, langsung gunakan rekening pusat jika ada, jika tidak, minta input
+    if (isOwnerOrDev) {
+        const rekPusat = JSON.parse(localStorage.getItem('RBM_REKENING_PUSAT') || '{}');
+        if (rekPusat.bank && rekPusat.rekening && rekPusat.atasnama) {
+            if (typeof callback === 'function') callback(rekPusat);
+            return;
+        }
+    }
+
+    // Untuk Manager, gunakan rekening outlet yang sudah tersimpan
+    const rekInfo = JSON.parse(localStorage.getItem(`RBM_PC_REK_INFO_${outletId}`) || '{}');
+    if (rekInfo.bank && rekInfo.rekening && rekInfo.atasnama) {
+        if (typeof callback === 'function') callback(rekInfo);
+    } else {
+        alert('Informasi rekening pencairan untuk outlet ini belum diatur. Silakan hubungi Owner.');
+    }
+}
 </script>
 <script>
 // FITUR: STATUS AKTIF/NON-AKTIF & CASCADE DELETE (HAPUS RIWAYAT PERMANEN)
@@ -1231,54 +1344,4 @@ window.addEventListener('load', function() {
                                     nameInput.value = nameInput.value.trim() + ' (Non-Aktif)';
                                 }
                                 updateUI();
-                                nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            };
-                            
-                            // Memasukkan tombol ke dalam kolom Aksi, tepat sebelum tombol X
-                            actionTd.insertBefore(btn, actionTd.firstChild);
-                            updateUI();
-                            nameInput.addEventListener('input', updateUI);
-                        }
-                    }
-                });
-            }
-        });
-    });
-    
-    var tbody = document.getElementById('absensi_tbody');
-    if (tbody) observer.observe(tbody, { childList: true, subtree: true });
-});
-</script>
-<script>
-// Menambahkan tombol "Save JPG" secara otomatis pada modal detail pengajuan gaji
-window.addEventListener('load', function() {
-    var observer = new MutationObserver(function(mutations) {
-        var buttons = document.querySelectorAll('button');
-        buttons.forEach(function(btn) {
-            // Deteksi tombol Print / PDF
-            if ((btn.textContent.includes('Print') || btn.textContent.includes('PDF')) && !btn.hasAttribute('data-jpg-added')) {
-                var parent = btn.parentElement;
-                // Pastikan ini berada di baris yang sama dengan tombol Tutup Halaman
-                if (parent && (parent.innerHTML.includes('Tutup Halaman') || parent.innerHTML.includes('Tutup'))) {
-                    btn.setAttribute('data-jpg-added', 'true');
-                    
-                    var saveJpgBtn = document.createElement('button');
-                    saveJpgBtn.className = btn.className;
-                    saveJpgBtn.textContent = 'Save JPG';
-                    saveJpgBtn.style.cssText = btn.style.cssText;
-                    saveJpgBtn.style.backgroundColor = '#0dcaf0'; // Warna Cyan
-                    saveJpgBtn.style.borderColor = '#0dcaf0';
-                    saveJpgBtn.style.color = '#fff';
-                    saveJpgBtn.style.marginLeft = '8px';
-                    saveJpgBtn.onclick = function() { if (typeof saveRekapGajiToJpg === 'function') saveRekapGajiToJpg(); };
-                    
-                    parent.insertBefore(saveJpgBtn, btn.nextSibling);
-                }
-            }
-        });
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-});
-</script>
-</body>
-</html>
+                                nameInput.dispatchEvent(new Event('input', { bubbles: true

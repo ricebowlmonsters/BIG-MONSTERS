@@ -402,6 +402,7 @@
     window._rbmParsedCache[key] = { data: data };
     return data;
   }
+  window.getCachedParsedStorage = getCachedParsedStorage;
 
   function sanitizeForStorage(obj) {
     if (!obj) return obj;
@@ -5872,6 +5873,14 @@ function renderRekapGaji() {
     const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
     const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
 
+    const jamConfig = typeof getGpsJamConfig === 'function' ? getGpsJamConfig() : {};
+    const enableParkir = jamConfig.enableParkir === true;
+    const enableTransport = jamConfig.enableTransport === true;
+
+    // [BARU] Variabel untuk menyembunyikan kolom jika dinonaktifkan
+    const parkirHeader = enableParkir ? `<th rowspan="2" style="border:1px solid #ccc; padding:4px;">PARKIR</th>` : '';
+    const transportHeader = enableTransport ? `<th rowspan="2" style="border:1px solid #ccc; padding:4px;">TRANSPORT</th>` : '';
+
     // Key employee untuk menyimpan/membaca hutang-tunjangan harus stabil.
     // Prioritas: `emp.id` jika ada, jika tidak pakai `emp.name`, jika masih kosong pakai idx.
     // Tambahkan prefix agar kunci TIDAK numerik murni (firebase storage akan mengubah object numeric-key jadi array lalu "dipadatkan").
@@ -5906,7 +5915,9 @@ function renderRekapGaji() {
             <th colspan="2" style="border:1px solid #ccc; padding:4px;">POTONGAN KEHADIRAN</th>
             <th colspan="3" style="border:1px solid #ccc; padding:4px;">KETERLAMBATAN</th>
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">HUTANG</th>
-            <th rowspan="2" style="border:1px solid #ccc; padding:4px;">UANG MAKAN</th>
+            <th rowspan="2" style="border:1px solid #ccc; padding:4px;">UANG MAKAN</th>` +
+            parkirHeader +
+            transportHeader + `
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">TUNJANGAN</th>
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">GRAND TOTAL</th>
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">PEMBULATAN</th>
@@ -5924,7 +5935,7 @@ function renderRekapGaji() {
     let html = '';
 
     employees.forEach((emp, idx) => {
-        const empKey = getGajiEmpKey(emp, idx);
+        const empKey = getGajiEmpKey(emp, idx); // Kunci unik untuk data gaji per karyawan
         const empKeyAttr = String(empKey).replace(/"/g, '&quot;');
         // 1. Hitung Absensi
         let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
@@ -5957,6 +5968,8 @@ function renderRekapGaji() {
         const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
         const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0; // Default 0
         const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
+        const parkir = (enableParkir && counts.H > 0) ? 5000 * counts.H : 0;
+        const transport = enableTransport ? (pData.transport !== undefined ? parseInt(pData.transport) : 0) : 0;
         let tunjangan = 0;
         if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
         else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
@@ -5964,14 +5977,14 @@ function renderRekapGaji() {
         const metodeBayar = pData.metodeBayar || 'TF';
 
         // 3. Rumus Perhitungan
-        const gajiPerHari = Math.round(gajiPokok / 30); // Rumus: GP / 30
-        const potTerlambatPerJam = Math.round(gajiPokok / 173); // Rumus: GP / 173
+        const gajiPerHari = Math.round(gajiPokok / 30);
+        const potTerlambatPerJam = Math.round(gajiPokok / 144.17); // Rumus: GP / 144.17
         const uangMakan = counts.H * 10000; // Rumus: HK Aktual * 10.000
         
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
         
-        const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
+        const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + parkir + transport + tunjangan;
         const pembulatan = Math.round(grandTotal / 1000) * 1000;
         totalGrand += pembulatan;
 
@@ -5983,7 +5996,13 @@ function renderRekapGaji() {
         const wPot = Math.max(50, (String(potHari).length * 8) + 20);
         const wJam = Math.max(50, (String(jamTerlambat).length * 8) + 20);
         const wHutang = Math.max(80, (String(hutang).length * 8) + 15);
+        const wParkir = Math.max(80, (String(parkir).length * 8) + 15);
+        const wTransport = Math.max(80, (String(transport).length * 8) + 15);
         const wTunj = Math.max(80, (String(tunjangan).length * 8) + 15);
+
+        // [BARU] Variabel untuk menyembunyikan kolom jika dinonaktifkan
+        const parkirCell = enableParkir ? `<td style="text-align:right; background:#f8fafc; color:#334155;">${formatRupiah(parkir)}</td>` : '';
+        const transportCell = enableTransport ? `<td><input type="text" data-field="transport" value="${formatRupiah(transport)}" oninput="resizeInput(this)" style="width:${wTransport}px; text-align:right; padding:5px;" placeholder="Rp 0"></td>` : '';
 
         // 4. Render Row (NO dan NAMA sticky) - simpan hanya saat klik Simpan Perubahan
         html += `<tr data-emp-index="${idx}" data-emp-id="${empKeyAttr}">
@@ -6023,6 +6042,8 @@ function renderRekapGaji() {
             <!-- Lainnya -->
             <td><input type="text" data-field="hutang" value="${formatRupiah(hutang)}" oninput="resizeInput(this)" style="width:${wHutang}px; text-align:right; padding:5px;" placeholder="Rp 0"></td>
             <td style="text-align:right;">${formatRupiah(uangMakan)}</td>
+            ` + parkirCell + `
+            ` + transportCell + `
             <td style="text-align:right; background:#f8fafc; color:#334155;">${formatRupiah(tunjangan)}</td>
             
             <td style="text-align:right; font-weight:bold; background:#e0f2fe;">${formatRupiah(grandTotal)}</td>
@@ -6041,7 +6062,12 @@ function renderRekapGaji() {
     });
 
     tbody.innerHTML = html;
-    tfoot.innerHTML = `<tr><td colspan="26" style="text-align:right; font-weight:bold; padding:10px;">TOTAL PENGELUARAN GAJI:</td><td style="text-align:right; font-weight:bold; padding:10px; color:#1e40af;">${formatRupiah(totalGrand)}</td><td colspan="2"></td></tr>`;
+
+    // [BARU] Hitung colspan dinamis untuk footer
+    let colspanCount = 25;
+    if (enableParkir) colspanCount++;
+    if (enableTransport) colspanCount++;
+    tfoot.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align:right; font-weight:bold; padding:10px;">TOTAL PENGELUARAN GAJI:</td><td style="text-align:right; font-weight:bold; padding:10px; color:#1e40af;">${formatRupiah(totalGrand)}</td><td colspan="2"></td></tr>`;
 }
 
 async function saveRekapGajiData() {
@@ -6077,6 +6103,7 @@ async function saveRekapGajiData() {
         var inpPotHari = tr.querySelector('input[data-field="potHari"]');
         var inpJamTerlambat = tr.querySelector('input[data-field="jamTerlambat"]');
         var inpHutang = tr.querySelector('input[data-field="hutang"]');
+        var inpTransport = tr.querySelector('input[data-field="transport"]');
         var inpTunjangan = tr.querySelector('input[data-field="tunjangan"]');
         var selMetode = tr.querySelector('select[data-field="metodeBayar"]');
         if (inpBank) employees[empIdx].bank = inpBank.value || '';
@@ -6098,6 +6125,7 @@ async function saveRekapGajiData() {
             delete gajiData[empId].jamTerlambat; // Bersihkan data nyangkut lama
         }
         if (inpHutang) gajiData[empId].hutang = parseRp(inpHutang.value);
+        if (inpTransport && !inpTransport.disabled) gajiData[empId].transport = parseRp(inpTransport.value);
         if (inpTunjangan) gajiData[empId].tunjangan = parseRp(inpTunjangan.value);
         if (selMetode) gajiData[empId].metodeBayar = selMetode.value || 'TF';
     }
@@ -6252,6 +6280,10 @@ async function submitGajiPengajuan() {
                 curr.setDate(curr.getDate() + 1);
             }
 
+        const jamConfig = typeof getGpsJamConfig === 'function' ? getGpsJamConfig() : {};
+        const enableParkir = jamConfig.enableParkir === true;
+        const enableTransport = jamConfig.enableTransport === true;
+
             let totalGrand = 0;
             const items = [];
 
@@ -6262,20 +6294,7 @@ async function submitGajiPengajuan() {
                 const empKeyAbsensi = (emp && emp.id != null && emp.id !== '') ? String(emp.id) : String(idx);
                 const pData = gajiPeriodData[empKey] || {};
 
-                const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
-                const gajiPokok = parseInt(emp.gajiPokok) || 0;
-                const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
-                const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
-                const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-        const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-                let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
-                const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
-                let tunjangan = 0;
-                if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
-                else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
-                else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
-                const metodeBayar = pData.metodeBayar || 'TF';
-
+                // [FIX] Pindahkan kalkulasi `jumlahH` ke atas sebelum digunakan
                 let jumlahH = 0;
                 let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
                 dates.forEach(d => {
@@ -6287,14 +6306,30 @@ async function submitGajiPengajuan() {
                     if (status && counts.hasOwnProperty(countKey)) counts[countKey]++;
                 });
 
+                const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+                const gajiPokok = parseInt(emp.gajiPokok) || 0;
+                const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+                const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
+                const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
+        const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
+                let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+                const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
+            const parkir = enableParkir ? jumlahH * 5000 : 0;
+            const transport = (enableTransport && pData.transport !== undefined) ? parseInt(pData.transport) : 0;
+                let tunjangan = 0;
+                if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
+                else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
+                else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
+                const metodeBayar = pData.metodeBayar || 'TF';
+
                 const gajiPerHari = Math.round(gajiPokok / 30);
-                const potTerlambatPerJam = Math.round(gajiPokok / 173);
+                const potTerlambatPerJam = Math.round(gajiPokok / 144.17); // [FIX] Samakan rumus Rate/Jam dengan tampilan rekap gaji
                 const uangMakan = jumlahH * 10000;
 
                 const totalPotKehadiran = Math.round(potHari * gajiPerHari);
                 const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
 
-                const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
+                const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + parkir + transport + tunjangan; // [FIX] Tambahkan parkir & transport ke Grand Total
                 const pembulatan = Math.round(grandTotal / 1000) * 1000;
 
                 items.push({
@@ -6314,6 +6349,8 @@ async function submitGajiPengajuan() {
                     potTerlambatPerJam: potTerlambatPerJam,
                     hutang: hutang,
                     uangMakan: uangMakan,
+                    parkir: parkir,
+                    transport: transport,
                     tunjangan: tunjangan,
                     hkAktual: jumlahH,
                     hkTarget: hkTarget,
@@ -6598,6 +6635,10 @@ function generateAndShowSlip(idx) {
     const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
     const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
 
+    const jamConfig = typeof getGpsJamConfig === 'function' ? getGpsJamConfig() : {};
+    const enableParkir = jamConfig.enableParkir === true;
+    const enableTransport = jamConfig.enableTransport === true;
+
     // --- Start of calculation logic (copied & adapted from renderRekapGaji) ---
     let curr = new Date(tglAwal);
     const end = new Date(tglAkhir);
@@ -6629,8 +6670,8 @@ function generateAndShowSlip(idx) {
     else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
     else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
 
-    const gajiPerHari = Math.round(gajiPokok / 30);
-    const potTerlambatPerJam = Math.round(gajiPokok / 173);
+    const gajiPerHari = Math.round(gajiPokok / 30); // Rumus: GP / 30
+    const potTerlambatPerJam = Math.round(gajiPokok / 144.17); // Rumus: GP / 144.17
     const uangMakan = counts.H * 10000;
     
     const totalPotKehadiran = Math.round(potHari * gajiPerHari);
@@ -6691,6 +6732,9 @@ function sendSlipEmail(idx) {
     const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
     const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
     let counts = { H:0 };
+    const jamConfig = typeof getGpsJamConfig === 'function' ? getGpsJamConfig() : {};
+    const enableParkir = jamConfig.enableParkir === true;
+    const enableTransport = jamConfig.enableTransport === true;
     let curr = new Date(tglAwal); const end = new Date(tglAkhir);
     while (curr <= end) {
         const key = `${getLocalDateKey(curr)}_${emp.id || idx}`;
@@ -6707,16 +6751,18 @@ function sendSlipEmail(idx) {
     let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
     const hutang = parseInt(pData.hutang) || 0;
+    const parkir = enableParkir ? counts.H * 5000 : 0;
+    const transport = enableTransport ? (parseInt(pData.transport) || 0) : 0;
     let tunjangan = 0;
     if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
     else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
     else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
     const gajiPerHari = Math.round(gajiPokok / 30);
-    const potTerlambatPerJam = Math.round(gajiPokok / 173);
+        const potTerlambatPerJam = Math.round(gajiPokok / 144.17);
     const uangMakan = counts.H * 10000;
     const totalPotKehadiran = Math.round(potHari * gajiPerHari);
     const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
-    const totalPendapatan = gajiPokok + tunjangan + uangMakan;
+    const totalPendapatan = gajiPokok + tunjangan + uangMakan + parkir + transport;
     const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
     const pembulatan = Math.round(grandTotal / 1000) * 1000;
 
@@ -6729,7 +6775,9 @@ function sendSlipEmail(idx) {
                 <tr><td colspan="3" style="font-weight:bold; padding-top:10px;">PENDAPATAN</td></tr>
                 <tr><td>Gaji Pokok</td><td>:</td><td style="text-align:right;">${formatRupiah(gajiPokok)}</td></tr>
                 <tr><td>Tunjangan</td><td>:</td><td style="text-align:right;">${formatRupiah(tunjangan)}</td></tr>
-                <tr><td>Uang Makan</td><td>:</td><td style="text-align:right;">${formatRupiah(uangMakan)}</td></tr>
+                <tr><td style="padding-left: 15px;">Uang Makan</td><td>:</td><td style="text-align:right;">${formatRupiah(uangMakan)}</td></tr>
+                <tr><td style="padding-left: 15px;">Parkir</td><td>:</td><td style="text-align:right;">${formatRupiah(parkir)}</td></tr>
+                <tr><td style="padding-left: 15px;">Transport</td><td>:</td><td style="text-align:right;">${formatRupiah(transport)}</td></tr>
                 <tr><td style="font-weight:bold;">Total Pendapatan</td><td>:</td><td style="text-align:right; font-weight:bold;">${formatRupiah(totalPendapatan)}</td></tr>
                 <tr><td colspan="3" style="font-weight:bold; padding-top:10px;">POTONGAN</td></tr>
                 <tr><td>Absensi</td><td>:</td><td style="text-align:right;">${formatRupiah(totalPotKehadiran)}</td></tr>
@@ -6963,7 +7011,7 @@ function exportCompleteAbsensiExcel() {
 
     // --- SHEET 4: REKAP GAJI ---
     xml += `<Worksheet ss:Name="Rekap Gaji">\n<Table>\n`;
-    const gajiHeaders = ['NO', 'NAMA', 'JABATAN', 'BANK', 'NO REK', 'HK TARGET', 'HK AKTUAL', 'A', 'I', 'S', 'OFF', 'DP', 'PH', 'AL', 'JML', 'GAJI POKOK', 'GAJI/HARI', 'HARI', 'Rp', 'JAM', 'RATE/JAM', 'TOTAL', 'HUTANG', 'UANG MAKAN', 'TUNJANGAN', 'GRAND TOTAL', 'PEMBULATAN', 'PEMBAYARAN'];
+    const gajiHeaders = ['NO', 'NAMA', 'JABATAN', 'BANK', 'NO REK', 'HK TARGET', 'HK AKTUAL', 'A', 'I', 'S', 'OFF', 'DP', 'PH', 'AL', 'JML', 'GAJI POKOK', 'GAJI/HARI', 'HARI', 'Rp', 'JAM', 'RATE/JAM', 'TOTAL', 'HUTANG', 'UANG MAKAN', 'PARKIR', 'TRANSPORT', 'TUNJANGAN', 'GRAND TOTAL', 'PEMBULATAN', 'PEMBAYARAN'];
     gajiHeaders.forEach(h => xml += `<Column ss:Width="${h.length > 5 ? '100' : '60'}"/>\n`);
 
     xml += `<Row ss:Height="25"><Cell ss:StyleID="sTitle" ss:MergeAcross="${gajiHeaders.length - 1}"><Data ss:Type="String">REKAPITULASI GAJI KARYAWAN</Data></Cell></Row>\n`;
@@ -6985,6 +7033,8 @@ function exportCompleteAbsensiExcel() {
     xml += `<Cell ss:StyleID="sHeaderGreen" ss:MergeAcross="2"><Data ss:Type="String">KETERLAMBATAN</Data></Cell>\n`;
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">HUTANG</Data></Cell>\n';
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">UANG MAKAN</Data></Cell>\n';
+    xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">PARKIR</Data></Cell>\n';
+    xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">TRANSPORT</Data></Cell>\n';
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">TUNJANGAN</Data></Cell>\n';
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">GRAND TOTAL</Data></Cell>\n';
     xml += '<Cell ss:StyleID="sHeader" ss:MergeDown="1"><Data ss:Type="String">PEMBULATAN</Data></Cell>\n';
@@ -7053,6 +7103,8 @@ function exportCompleteAbsensiExcel() {
         // Lainnya
         xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${hutang}</Data></Cell>\n`;
         xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${uangMakan}</Data></Cell>\n`;
+        xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${parkir}</Data></Cell>\n`;
+        xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${transport}</Data></Cell>\n`;
         xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${tunjangan}</Data></Cell>\n`;
         xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${grandTotal}</Data></Cell>\n`;
         xml += `<Cell ss:StyleID="sNumCurrency"><Data ss:Type="Number">${pembulatan}</Data></Cell>\n`;
@@ -7062,7 +7114,7 @@ function exportCompleteAbsensiExcel() {
 
     // Total Row
     xml += '<Row>\n';
-    xml += `<Cell ss:StyleID="sTotalLabel" ss:MergeAcross="25"><Data ss:Type="String">TOTAL PENGELUARAN GAJI</Data></Cell>\n`;
+    xml += `<Cell ss:StyleID="sTotalLabel" ss:MergeAcross="28"><Data ss:Type="String">TOTAL PENGELUARAN GAJI</Data></Cell>\n`;
     xml += `<Cell ss:StyleID="sTotalNum"><Data ss:Type="Number">${totalGrand}</Data></Cell>\n`;
     xml += '</Row>\n';
 
@@ -7211,6 +7263,8 @@ function exportCompleteAbsensiPDF() {
         let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
         const hutang = parseInt(pData.hutang) || 0;
+            const parkir = enableParkir ? counts.H * 5000 : 0;
+            const transport = enableTransport ? (parseInt(pData.transport) || 0) : 0;
         let tunjangan = 0;
         if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
         else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
@@ -7221,7 +7275,7 @@ function exportCompleteAbsensiPDF() {
         const uangMakan = hkAktual * 10000;
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
-        const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan;
+        const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + parkir + transport + tunjangan;
         const pembulatan = Math.round(grandTotal / 1000) * 1000;
         totalGrand += pembulatan;
         rowsGaji += `<tr>
@@ -7516,6 +7570,9 @@ async function downloadAllSlipsAsZip(event) {
     const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
     const gajiPeriodKey = getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir);
     const gajiPeriodData = getCachedParsedStorage(gajiPeriodKey, {});
+    const jamConfig = typeof getGpsJamConfig === 'function' ? getGpsJamConfig() : {};
+    const enableParkir = jamConfig.enableParkir === true;
+    const enableTransport = jamConfig.enableTransport === true;
 
     // Create temp container off-screen
     const wrapper = document.createElement('div');
@@ -8057,13 +8114,17 @@ function renderBonusTab() {
     employees.forEach(emp => {
         const isExcluded = (omsetData.excludedIds || []).includes(emp.id);
         const savedNominal = (omsetData.manualNominals && omsetData.manualNominals[emp.id] !== undefined) ? omsetData.manualNominals[emp.id] : null;
+        const nominalValue = savedNominal !== null ? savedNominal : 0;
+        const nominalFormatted = formatRupiah(nominalValue);        
+        const roundedNominal = savedNominal !== null ? Math.round(nominalValue / 1000) * 1000 : 0;
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td>${emp.name}<br><span style="font-size:10px; color:#666;">${emp.jabatan}</span></td>
             <td style="text-align:center;">
                 <input type="checkbox" class="bonus-omset-check" value="${emp.id}" ${!isExcluded ? 'checked' : ''} onchange="calculateBonusOmsetFromPool()">
             </td>
-            <td style="text-align:right;" class="bonus-omset-nominal-display">${savedNominal !== null ? formatRupiah(savedNominal) : '-'}</td>
+            <td style="text-align:right;"><input type="text" class="bonus-nominal-input" style="width: 100%; text-align: right; padding: 4px; border: 1px solid #ccc; border-radius: 4px; box-sizing:border-box;" value="${nominalFormatted}" oninput="if(typeof formatRupiahInput === 'function') formatRupiahInput(this); if(typeof recalculateOmsetPoolFromManual === 'function') recalculateOmsetPoolFromManual(this);"><span class="hidden-nominal bonus-omset-nominal-display" style="display:none;">${nominalFormatted}</span></td>
+            <td style="text-align:right; font-weight:bold; color:#1e40af; background:#eef2ff;" class="bonus-omset-pembulatan-display">${formatRupiah(roundedNominal)}</td>
         `;
         omsetTbody.appendChild(tr);
     });
@@ -8443,7 +8504,13 @@ async function submitBonusOmsetPengajuan() {
                     const emp = employees.find(e => e.name === name);
                     const empId = emp ? (emp.id != null ? emp.id : idx) : idx;
                     
-                    items.push({ empId: empId, nama: name, jabatan: jabatan, grandTotal: nominal, metodeBayar: 'TF', keterangan: 'Bonus Omset' });
+                    // [PERBAIKAN] Simpan detail perhitungan agar data di owner sama persis
+                    const gajiPokok = emp ? (parseInt(emp.gajiPokok) || 0) : 0;
+                    const gajiPerHari = Math.round(gajiPokok / 30);
+
+                    items.push({ empId: empId, nama: name, jabatan: jabatan, grandTotal: nominal, metodeBayar: 'TF', keterangan: 'Bonus Omset',
+                        gajiPerHari: gajiPerHari, cairAL: 0, cairDP: 0, cairPH: 0, lemburJam: 0
+                    });
                 }
             });
             
@@ -8452,7 +8519,9 @@ async function submitBonusOmsetPengajuan() {
             const extraNominal = extraNomEl ? (parseInt(extraNomEl.value.replace(/[^0-9]/g, '')) || 0) : 0;
             if (extraNominal > 0) {
                 totalGrand += extraNominal;
-                items.push({ empId: 'extra', nama: extraNameEl ? extraNameEl.value || 'Lainnya' : 'Lainnya', jabatan: '-', grandTotal: extraNominal, metodeBayar: 'TF', keterangan: 'Bonus Omset (Extra)' });
+                items.push({ empId: 'extra', nama: extraNameEl ? extraNameEl.value || 'Lainnya' : 'Lainnya', jabatan: '-', grandTotal: extraNominal, metodeBayar: 'TF', keterangan: 'Bonus Omset (Extra)',
+                    gajiPerHari: 0, cairAL: 0, cairDP: 0, cairPH: 0, lemburJam: 0
+                });
             }
 
             if (totalGrand === 0) {
@@ -8485,6 +8554,31 @@ async function submitBonusOmsetPengajuan() {
             else alert('Gagal mengajukan: ' + (e.message || e));
         }
     });
+}
+
+function switchBonusSubTab(tab) {
+    const absensiContent = document.getElementById('bonus-content-absensi');
+    const omsetContent = document.getElementById('bonus-content-omset');
+    const absensiBtn = document.getElementById('bonus-subtab-absensi');
+    const omsetBtn = document.getElementById('bonus-subtab-omset');
+
+    if (!absensiContent || !omsetContent || !absensiBtn || !omsetBtn) return;
+
+    if (tab === 'absensi') {
+        absensiContent.style.display = 'block';
+        omsetContent.style.display = 'none';
+        absensiBtn.classList.add('btn-primary');
+        absensiBtn.classList.remove('btn-secondary');
+        omsetBtn.classList.add('btn-secondary');
+        omsetBtn.classList.remove('btn-primary');
+    } else { // omset
+        absensiContent.style.display = 'none';
+        omsetContent.style.display = 'block';
+        omsetBtn.classList.add('btn-primary');
+        omsetBtn.classList.remove('btn-secondary');
+        absensiBtn.classList.add('btn-secondary');
+        absensiBtn.classList.remove('btn-primary');
+    }
 }
 
 // ================= RESERVASI LOGIC =================
@@ -10064,7 +10158,11 @@ function getGpsJamConfig() {
             shifts: validShifts,
             menitTelatPerJamGaji: typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10),
             toleransiTelatMenit: typeof stored.toleransiTelatMenit === 'number' ? stored.toleransiTelatMenit : (parseInt(stored.toleransiTelatMenit, 10) || 0),
-            potonganLupaAbsenJam: typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7)
+            potonganLupaAbsenJam: typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7),
+            enableParkir: stored.enableParkir === true,
+            enableTransport: stored.enableTransport === true,
+            // [DIUBAH] Tambahkan enableParkir dan enableTransport
+
         };
     }
     var num = function(v, def) { var n = parseInt(v, 10); return (n >= 0 && n <= 999) ? n : def; };
@@ -10081,7 +10179,11 @@ function getGpsJamConfig() {
         durasiIstirahatSore: num(stored.durasiIstirahatSore, RBM_GPS_JAM_DEFAULTS.durasiIstirahatSore),
         menitTelatPerJamGaji: typeof stored.menitTelatPerJamGaji === 'number' ? stored.menitTelatPerJamGaji : (parseInt(stored.menitTelatPerJamGaji, 10) || 10),
         toleransiTelatMenit: typeof stored.toleransiTelatMenit === 'number' ? stored.toleransiTelatMenit : (parseInt(stored.toleransiTelatMenit, 10) || 0),
-        potonganLupaAbsenJam: typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7)
+        potonganLupaAbsenJam: typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7),
+        enableParkir: stored.enableParkir === true,
+        enableTransport: stored.enableTransport === true,
+        // [DIUBAH] Tambahkan enableParkir dan enableTransport
+
     };
 }
 
@@ -10222,6 +10324,11 @@ function loadJamConfig() {
     if (tolEl) tolEl.value = (typeof stored.toleransiTelatMenit === 'number' ? stored.toleransiTelatMenit : (parseInt(stored.toleransiTelatMenit, 10) || 0));
     var lupaEl = document.getElementById('gps_potongan_lupa_absen_jam');
     if (lupaEl) lupaEl.value = (typeof stored.potonganLupaAbsenJam === 'number' ? stored.potonganLupaAbsenJam : (parseFloat(stored.potonganLupaAbsenJam) || 7));
+    // [BARU] Muat status untuk tunjangan parkir dan transport
+    var parkirEl = document.getElementById('gps_enable_parkir');
+    if (parkirEl) parkirEl.checked = stored.enableParkir === true;
+    var transportEl = document.getElementById('gps_enable_transport');
+    if (transportEl) transportEl.checked = stored.enableTransport === true;
     
     var existingConfig = document.getElementById('spv_mgr_jam_config');
     if (existingConfig) {
@@ -10265,8 +10372,20 @@ function saveJamConfig() {
     var lupaEl = document.getElementById('gps_potongan_lupa_absen_jam');
     var potonganLupaAbsenJam = (lupaEl && lupaEl.value !== '') ? parseFloat(lupaEl.value) : 7;
     
+    // [BARU] Ambil nilai dari checkbox parkir dan transport
+    var parkirEl = document.getElementById('gps_enable_parkir');
+    var enableParkir = parkirEl ? parkirEl.checked : false;
+    var transportEl = document.getElementById('gps_enable_transport');
+    var enableTransport = transportEl ? transportEl.checked : false;
+    
     var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_GPS_JAM_CONFIG') : 'RBM_GPS_JAM_CONFIG';
-    var objToSave = { shifts: shifts, menitTelatPerJamGaji: menitTelatPerJamGaji, toleransiTelatMenit: toleransiTelatMenit, potonganLupaAbsenJam: potonganLupaAbsenJam };
+    var objToSave = { 
+        shifts: shifts, 
+        menitTelatPerJamGaji: menitTelatPerJamGaji, 
+        toleransiTelatMenit: toleransiTelatMenit, 
+        potonganLupaAbsenJam: potonganLupaAbsenJam,
+        enableParkir: enableParkir, enableTransport: enableTransport // [DIUBAH] Simpan nilai baru
+    };
     
     window._rbmParsedCache = window._rbmParsedCache || {};
     window._rbmParsedCache[key] = { data: objToSave };
@@ -11144,7 +11263,7 @@ function printRekapAbsensiGpsPdf() {
 const JADWAL_BATAS_MASUK = { 'P': '08:30', 'M': '12:30', 'S': '16:30' };
 const JADWAL_BATAS_PULANG = { 'P': '17:00', 'M': '21:00', 'S': '17:00' };
 const JADWAL_LABEL = { 'P': 'Pagi', 'M': 'Middle', 'S': 'Sore', 'Off': 'Libur' };
-const MENIT_TELAT_PER_JAM_GAJI = 10; // 10 menit = 1 jam untuk potongan gaji
+    const MENIT_TELAT_PER_JAM_GAJI = 10; // 10 menit = 1 jam untuk potongan gaji (nilai ini bisa diubah dari Pengaturan Jadwal)
 
 function parseTimeToMinutes(timeStr) {
     if (!timeStr) return 0;
@@ -12035,6 +12154,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof addBonusAbsensiRow !== 'undefined') window.addBonusAbsensiRow = addBonusAbsensiRow;
   if (typeof calculateBonusAbsensiTotal !== 'undefined') window.calculateBonusAbsensiTotal = calculateBonusAbsensiTotal;
   if (typeof calculateBonusOmset !== 'undefined') window.calculateBonusOmset = calculateBonusOmset;
+  if (typeof switchBonusSubTab !== 'undefined') window.switchBonusSubTab = switchBonusSubTab;
   if (typeof calculateBonusOmsetFromPool !== 'undefined') window.calculateBonusOmsetFromPool = calculateBonusOmsetFromPool;
   if (typeof openRekeningPencairanModal !== 'undefined') window.openRekeningPencairanModal = openRekeningPencairanModal;
   if (typeof closeRekeningPencairanModal !== 'undefined') window.closeRekeningPencairanModal = closeRekeningPencairanModal;
@@ -12135,6 +12255,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                         <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Gaji/Hari</th>
                         <th colspan="3" style="text-align: center; border: 1px solid #e2e8f0;">Pencairan Cuti (Hari)</th>
                         <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Total Pencairan Cuti</th>
+                        <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Pembulatan</th>
                     </tr>
                     <tr>
                         <th style="text-align: center; border: 1px solid #e2e8f0; width:70px;">AL</th>
@@ -12145,26 +12266,21 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                 const colSpanEl = document.getElementById('pencairan_grand_colspan');
                 if(colSpanEl) colSpanEl.colSpan = 6;
             } else {
-                thead.innerHTML = `
-                    <tr>
-                        <th rowspan="2" style="text-align: center; border: 1px solid #e2e8f0; width:40px;">No</th>
-                        <th rowspan="2" style="text-align: left; border: 1px solid #e2e8f0;">Nama Karyawan</th>
-                        <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Rate/Jam</th>
-                        <th style="text-align: center; border: 1px solid #e2e8f0; padding:0;">
-                            <table style="width:100%; border-collapse:collapse;">
-                                <tr>
-                                    <th style="width:70px; border:none; border-right:1px solid #e2e8f0; font-size:11px;">Jam</th>
-                                    <th style="width:130px; border:none; border-right:1px solid #e2e8f0; font-size:11px;">Tgl Lembur</th>
-                                    <th style="border:none; border-right:1px solid #e2e8f0; font-size:11px;">Alasan Lembur</th>
-                                    <th style="width:40px; border:none; font-size:11px;">Aksi</th>
-                                </tr>
-                            </table>
-                        </th>
-                        <th rowspan="2" style="text-align: right; border: 1px solid #e2e8f0;">Total Pencairan Lembur</th>
-                    </tr>
-                `;
+                thead.innerHTML = `<tr>
+                    <th style="text-align: center; border: 1px solid #e2e8f0; width:40px;">No</th>
+                    <th style="text-align: left; border: 1px solid #e2e8f0; min-width:150px;">Nama Karyawan</th>
+                    <th style="text-align: right; border: 1px solid #e2e8f0; min-width:90px;">Rate/Jam</th>
+                    <th style="width:70px; border: 1px solid #e2e8f0; font-size:11px;">Jam Lembur</th>
+                    <th style="width:130px; border: 1px solid #e2e8f0; font-size:11px;">Tgl Lembur</th>
+                    <th style="border: 1px solid #e2e8f0; font-size:11px;">Alasan Lembur</th>
+                    <th style="width:120px; border: 1px solid #e2e8f0; font-size:11px;">Aksi</th>
+                    <th style="text-align: right; border: 1px solid #e2e8f0;">Total Pencairan Lembur</th>
+                    <th style="text-align: right; border: 1px solid #e2e8f0;">Pembulatan</th>
+                </tr>`;
                 const colSpanEl = document.getElementById('pencairan_grand_colspan');
-                if(colSpanEl) colSpanEl.colSpan = 4;
+                const bulatColSpanEl = document.getElementById('pencairan_bulat_colspan');
+                if(colSpanEl) colSpanEl.colSpan = 7;
+                if(bulatColSpanEl) bulatColSpanEl.colSpan = 7;
             }
         }
 
@@ -12188,9 +12304,9 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             }
 
             const gajiPerHari = Math.round(gajiPokok / 30);
-            const ratePerJam = Math.round(gajiPokok / 173);
+            const ratePerJam = Math.round(gajiPokok / 144.17);
             const empPencKey = emp.id != null ? String(emp.id) : String(idx);
-            const pData = savedData[empPencKey] || {};
+            const pData = savedData[empPencKey] || { lemburDetails: [] };
             
             const cairAL = parseFloat(pData.cairAL) || 0;
             const cairDP = parseFloat(pData.cairDP) || 0;
@@ -12198,7 +12314,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             
             let lemburDetails = pData.lemburDetails || [];
             if (lemburDetails.length === 0) {
-                if (pData.lemburHari || pData.lemburJam || pData.tglLembur || pData.alasanLembur) {
+                if (pData.lemburHari || pData.lemburJam || pData.tglLembur || pData.alasanLembur) { // Legacy support
                     lemburDetails.push({ hari: pData.lemburHari || 0, jam: pData.lemburJam || 0, tgl: pData.tglLembur || '', alasan: pData.alasanLembur || '' });
                 } else {
                     lemburDetails.push({ hari: '', jam: '', tgl: '', alasan: '' });
@@ -12223,7 +12339,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             if (mode === 'cuti') {
                 gphColHtml = `<td style="text-align:right; border: 1px solid #e2e8f0;">${formatRupiah(gajiPerHari)}</td>`;
             } else {
-                gphColHtml = `<td style="text-align:right; border: 1px solid #e2e8f0;">${formatRupiah(ratePerJam)}/jam</td>`;
+                gphColHtml = `<td style="text-align:right; border: 1px solid #e2e8f0; vertical-align:top; padding-top:10px; color:#64748b; font-size:11px;">${formatRupiah(ratePerJam)}/jam</td>`;
             }
 
             const tr = document.createElement('tr');
@@ -12237,7 +12353,7 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                 tr.innerHTML = `
                     <td style="text-align:center; border: 1px solid #e2e8f0;">${idx + 1}</td>
                     <td style="text-align:left; font-weight:600; border: 1px solid #e2e8f0;">${emp.name}<br><span style="font-size:10px; color:#6b7280; font-weight:normal;">${emp.jabatan}</span></td>
-                    ${gphColHtml}
+                    ${gphColHtml.replace('vertical-align:top; padding-top:10px;', '')}
                 <td style="text-align:center; border: 1px solid #e2e8f0; ${mode !== 'cuti' ? 'display:none;' : ''}">
                     <div style="font-size:9px; color:#6b7280; margin-bottom:2px;">Sisa: ${sisaAL}</div>
                     <input type="number" class="penc-al form-input" value="${cairAL || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
@@ -12250,45 +12366,49 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                     <div style="font-size:9px; color:#6b7280; margin-bottom:2px;">Sisa: ${sisaPH}</div>
                     <input type="number" class="penc-ph form-input" value="${cairPH || ''}" min="0" style="width:45px; padding:4px; text-align:center; font-size:12px;" oninput="calcPencairanRow(this, ${gajiPerHari}, ${ratePerJam})">
                 </td>
-                    <td style="text-align:right; font-weight:bold; color:#059669; border: 1px solid #e2e8f0;" class="penc-total-cell" data-total="${uangCuti}">${formatRupiah(uangCuti)}</td>
+                    <td style="text-align:right; font-weight:bold; border: 1px solid #e2e8f0;" class="penc-total-cell" data-total="${uangCuti}">${formatRupiah(uangCuti)}</td>
+                    <td style="text-align:right; font-weight:bold; color:#1e40af; background:#eef2ff; border: 1px solid #e2e8f0;" class="penc-bulat-cell">${formatRupiah(Math.round(uangCuti / 1000) * 1000)}</td>
                 `;
             } else {
                 let detailRowsHtml = lemburDetails.map(det => `
                     <tr class="lembur-subrow">
-                        <td style="width:70px; border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+                        <td style="padding:4px; border-right: 1px solid #e2e8f0;">
                             <input type="number" class="penc-lembur-jam form-input" value="${det.jam !== 0 && det.jam !== '' ? det.jam : ''}" min="0" style="width:100%; padding:4px; text-align:center; font-size:12px;" placeholder="-" oninput="calcPencairanLemburTotal(this)">
                         </td>
-                        <td style="width:130px; border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+                        <td style="padding:4px; border-right: 1px solid #e2e8f0;">
                             <input type="date" class="penc-tgl-lembur form-input" value="${det.tgl || ''}" style="width:100%; padding:4px; font-size:12px; text-align:center;">
                         </td>
-                        <td style="border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+                        <td style="padding:4px; border-right: 1px solid #e2e8f0;">
                             <input type="text" class="penc-alasan-lembur form-input" value="${det.alasan || ''}" style="width:100%; padding:4px; font-size:12px;" placeholder="Cth: Backup Shift">
                         </td>
-                        <td style="width:40px; border:none; border-bottom:1px solid #e2e8f0; padding:4px; text-align:center;">
-                            <button type="button" class="btn-small-danger" onclick="removePencairanLemburRow(this)" style="padding:2px 6px;">x</button>
+                        <td style="padding:4px; text-align:center;">
+                            <button type="button" class="btn-small-danger" onclick="removePencairanLemburRow(this)" style="padding:2px 6px;" title="Hapus Baris Ini">x</button>
                         </td>
                     </tr>
                 `).join('');
 
                 tr.innerHTML = `
-                    <td style="text-align:center; border: 1px solid #e2e8f0;">${idx + 1}</td>
+                    <td style="text-align:center; border: 1px solid #e2e8f0; vertical-align:top; padding-top:10px;">${idx + 1}</td>
                     <td style="text-align:left; font-weight:600; border: 1px solid #e2e8f0; vertical-align:top; padding-top:10px;">${emp.name}<br><span style="font-size:10px; color:#6b7280; font-weight:normal;">${emp.jabatan}</span></td>
-                    <td style="text-align:right; border: 1px solid #e2e8f0; vertical-align:top; padding-top:10px; color:#64748b; font-size:11px;">${formatRupiah(ratePerJam)}/jam</td>
-                    <td style="padding:0; border: 1px solid #e2e8f0;">
+                    ${gphColHtml}
+                    <td colspan="4" style="padding:0; border: 1px solid #e2e8f0; vertical-align:top;">
                         <table style="width:100%; border-collapse:collapse;">
-                            <tbody class="lembur-details-tbody">
-                                ${detailRowsHtml}
-                            </tbody>
+                            <tbody class="lembur-details-tbody">${detailRowsHtml}</tbody>
                         </table>
                         <button type="button" class="btn btn-secondary" onclick="addPencairanLemburRow(this)" style="margin:4px; padding:4px 8px; font-size:10px;">+ Tambah Lembur</button>
                     </td>
-                    <td style="text-align:right; font-weight:bold; color:#059669; border: 1px solid #e2e8f0; vertical-align:top; padding-top:10px;" class="penc-total-cell" data-total="${totalRowLembur}">${formatRupiah(totalRowLembur)}</td>
+                    <td style="text-align:right; font-weight:bold; border: 1px solid #e2e8f0; vertical-align:top; padding-top:10px;" class="penc-total-cell" data-total="${totalRowLembur}">${formatRupiah(totalRowLembur)}</td>
+                    <td style="text-align:right; font-weight:bold; color:#1e40af; background:#eef2ff; border: 1px solid #e2e8f0; vertical-align:top; padding-top:10px;" class="penc-bulat-cell">${formatRupiah(Math.round(totalRowLembur / 1000) * 1000)}</td>
                 `;
             }
             tbody.appendChild(tr);
         });
 
-        document.getElementById('pencairan_grand_total').innerText = formatRupiah(grandTotalPencairan);
+        const grandTotalEl = document.getElementById('pencairan_grand_total');
+        const pembulatanEl = document.getElementById('pencairan_pembulatan');
+        const pembulatan = Math.round(grandTotalPencairan / 1000) * 1000;
+        if (grandTotalEl) grandTotalEl.innerText = formatRupiah(grandTotalPencairan);
+        if (pembulatanEl) pembulatanEl.innerText = formatRupiah(pembulatan);
     };
 
     window.addPencairanLemburRow = function(btn) {
@@ -12296,16 +12416,16 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
         const tr = document.createElement('tr');
         tr.className = 'lembur-subrow';
         tr.innerHTML = `
-            <td style="width:70px; border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+            <td style="padding:4px; border-right: 1px solid #e2e8f0;">
                 <input type="number" class="penc-lembur-jam form-input" value="" min="0" style="width:100%; padding:4px; text-align:center; font-size:12px;" placeholder="-" oninput="calcPencairanLemburTotal(this)">
             </td>
-            <td style="width:130px; border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+            <td style="padding:4px; border-right: 1px solid #e2e8f0;">
                 <input type="date" class="penc-tgl-lembur form-input" value="" style="width:100%; padding:4px; font-size:12px; text-align:center;">
             </td>
-            <td style="border:none; border-bottom:1px solid #e2e8f0; border-right:1px solid #e2e8f0; padding:4px;">
+            <td style="padding:4px; border-right: 1px solid #e2e8f0;">
                 <input type="text" class="penc-alasan-lembur form-input" value="" style="width:100%; padding:4px; font-size:12px;" placeholder="Cth: Backup Shift">
             </td>
-            <td style="width:40px; border:none; border-bottom:1px solid #e2e8f0; padding:4px; text-align:center;">
+            <td style="padding:4px; text-align:center;">
                 <button type="button" class="btn-small-danger" onclick="removePencairanLemburRow(this)" style="padding:2px 6px;">x</button>
             </td>
         `;
@@ -12313,9 +12433,8 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
     };
 
     window.removePencairanLemburRow = function(btn) {
-        const tr = btn.closest('.lembur-subrow');
         const mainTr = btn.closest('tr[data-empid]');
-        tr.remove();
+        btn.closest('tr.lembur-subrow').remove();
         if (mainTr) calcPencairanLemburTotal(mainTr);
     };
 
@@ -12326,22 +12445,27 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
 
         let totalRow = 0;
         mainTr.querySelectorAll('.lembur-subrow').forEach(subTr => {
-            const elHari = subTr.querySelector('.penc-lembur-hari');
-            const lh = elHari ? (parseFloat(elHari.value) || 0) : 0;
             const lj = parseFloat(subTr.querySelector('.penc-lembur-jam').value) || 0;
-            totalRow += (lh * gph) + (lj * gpj);
+            totalRow += (lj * gpj);
         });
 
         const totalCell = mainTr.querySelector('.penc-total-cell');
         totalCell.dataset.total = totalRow;
         totalCell.innerText = formatRupiah(totalRow);
+        
+        const bulatCell = mainTr.querySelector('.penc-bulat-cell');
+        if (bulatCell) bulatCell.innerText = formatRupiah(Math.round(totalRow / 1000) * 1000);
+
 
         let grandTotal = 0;
         document.querySelectorAll('.penc-total-cell').forEach(cell => {
             grandTotal += parseFloat(cell.dataset.total) || 0;
         });
+        const pembulatan = Math.round(grandTotal / 1000) * 1000;
         const gtEl = document.getElementById('pencairan_grand_total');
+        const pembulatanEl = document.getElementById('pencairan_pembulatan');
         if (gtEl) gtEl.innerText = formatRupiah(grandTotal);
+        if (pembulatanEl) pembulatanEl.innerText = formatRupiah(pembulatan);
     };
 
     window.calcPencairanRow = function(inputEl, gph, gpj) {
@@ -12353,18 +12477,23 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
         const dp = parseFloat(tr.querySelector('.penc-dp').value) || 0;
         const ph = parseFloat(tr.querySelector('.penc-ph').value) || 0;
 
-        const uangCuti = (al + dp + ph) * gph;
+        const uangCuti = (al + dp + ph) * gph; // Cuti calculation remains the same
         
         const total = uangCuti;
         const totalCell = tr.querySelector('.penc-total-cell');
         totalCell.dataset.total = total;
         totalCell.innerText = formatRupiah(total);
+        tr.querySelector('.penc-bulat-cell').innerText = formatRupiah(Math.round(total / 1000) * 1000);
 
         let grandTotal = 0;
         document.querySelectorAll('.penc-total-cell').forEach(cell => {
             grandTotal += parseFloat(cell.dataset.total) || 0;
         });
-        document.getElementById('pencairan_grand_total').innerText = formatRupiah(grandTotal);
+        const pembulatan = Math.round(grandTotal / 1000) * 1000;
+        const gtEl = document.getElementById('pencairan_grand_total');
+        const pembulatanEl = document.getElementById('pencairan_pembulatan');
+        if (gtEl) gtEl.innerText = formatRupiah(grandTotal);
+        if (pembulatanEl) pembulatanEl.innerText = formatRupiah(pembulatan);
     };
 
     window.savePencairanData = function() {
@@ -12390,25 +12519,14 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
             } else {
                 const lemburDetails = [];
                 tr.querySelectorAll('.lembur-subrow').forEach(subTr => {
-                    const elHari = subTr.querySelector('.penc-lembur-hari');
-                    const hari = elHari ? (parseFloat(elHari.value) || 0) : 0;
                     const jam = parseFloat(subTr.querySelector('.penc-lembur-jam').value) || 0;
                     const tgl = subTr.querySelector('.penc-tgl-lembur').value.trim();
                     const alasan = subTr.querySelector('.penc-alasan-lembur').value.trim();
-                    if (hari > 0 || jam > 0 || tgl || alasan) {
-                        lemburDetails.push({ hari, jam, tgl, alasan });
+                    if (jam > 0 || tgl || alasan) {
+                        lemburDetails.push({ hari: 0, jam, tgl, alasan });
                     }
                 });
-                
                 dataObj[empId].lemburDetails = lemburDetails;
-                if (lemburDetails.length > 0) {
-                    dataObj[empId].lemburHari = lemburDetails[0].hari;
-                    dataObj[empId].lemburJam = lemburDetails[0].jam;
-                    dataObj[empId].tglLembur = lemburDetails[0].tgl;
-                    dataObj[empId].alasanLembur = lemburDetails[0].alasan;
-                } else {
-                    dataObj[empId].lemburHari = 0; dataObj[empId].lemburJam = 0; dataObj[empId].tglLembur = ''; dataObj[empId].alasanLembur = '';
-                }
             }
         });
 
@@ -12461,46 +12579,42 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                         let tglLemburStr = '';
                         let alasanLemburStr = '';
                         let totalHariLembur = 0;
-                        let totalJamLembur = 0;
                         
                         if (mode === 'cuti') {
+                            // ... (cuti logic remains the same)
                             const cairAL = parseFloat(tr.querySelector('.penc-al').value) || 0;
                             const cairDP = parseFloat(tr.querySelector('.penc-dp').value) || 0;
                             const cairPH = parseFloat(tr.querySelector('.penc-ph').value) || 0;
-                            if (cairAL > 0) rincianArr.push(cairAL + ' AL');
-                            if (cairDP > 0) rincianArr.push(cairDP + ' DP');
-                            if (cairPH > 0) rincianArr.push(cairPH + ' PH');
-                            
+                            const gph = parseFloat(tr.dataset.gph) || 0;
+                            rincianArr.push(cairAL > 0 ? `${cairAL} AL` : '');
+                            rincianArr.push(cairDP > 0 ? `${cairDP} DP` : '');
+                            rincianArr.push(cairPH > 0 ? `${cairPH} PH` : '');
+
                             items.push({ 
                                 empId: empId, nama: empName, jabatan: empJabatan, grandTotal: nominal, metodeBayar: 'TF', 
                                 keterangan: `Pencairan Cuti: ` + rincianArr.join(', '),
-                                cairAL, cairDP, cairPH
+                                cairAL, cairDP, cairPH, gajiPerHari: gph, lemburJam: 0
                             });
                         } else {
-                            let detailedItems = [];
+                            let detailedItems = []; // [PERBAIKAN] Ubah nama variabel agar tidak konflik
+                            let totalJamLembur = 0;
                             tr.querySelectorAll('.lembur-subrow').forEach(sub => {
-                                const elHari = sub.querySelector('.penc-lembur-hari');
-                                const h = elHari ? (parseFloat(elHari.value) || 0) : 0;
                                 const j = parseFloat(sub.querySelector('.penc-lembur-jam').value) || 0;
                                 const t = sub.querySelector('.penc-tgl-lembur').value.trim();
                                 const a = sub.querySelector('.penc-alasan-lembur').value.trim();
-                                totalHariLembur += h;
                                 totalJamLembur += j;
-                                if (h > 0 || j > 0) {
-                                    let dt = [];
-                                    if (h > 0) dt.push(h + 'h');
-                                    if (j > 0) dt.push(j + 'j');
-                                    rincianArr.push(`[${t || '-'}] ${dt.join('+')}: ${a}`);
-                                    tglLemburStr += (tglLemburStr ? ', ' : '') + t;
-                                    alasanLemburStr += (alasanLemburStr ? ' | ' : '') + a;
-                                    detailedItems.push({ hari: h, jam: j, tgl: t, alasan: a });
+                                if (j > 0) {
+                                    rincianArr.push(`[${t || '-'}] ${j} jam: ${a}`);
+                                    detailedItems.push({ hari: 0, jam: j, tgl: t, alasan: a });
                                 }
                             });
+                            const gpj = parseFloat(tr.dataset.gpj) || 0;
                             
                             items.push({ 
                                 empId: empId, nama: empName, jabatan: empJabatan, grandTotal: nominal, metodeBayar: 'TF', 
                                 keterangan: `Pencairan Lembur: ` + rincianArr.join(' | '),
-                                tglLembur: tglLemburStr, alasanLembur: alasanLemburStr, lemburHari: totalHariLembur, lemburJam: totalJamLembur, lemburDetails: detailedItems
+                                lemburJam: totalJamLembur, lemburDetails: detailedItems, ratePerJam: gpj,
+                                cairAL: 0, cairDP: 0, cairPH: 0
                             });
                         }
                     }
@@ -12521,35 +12635,6 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                 if (typeof showCustomAlert !== 'undefined') showCustomAlert('Pengajuan Pencairan berhasil dikirim ke Owner.', 'Sukses', 'success');
                 else alert('Pengajuan Pencairan berhasil dikirim ke Owner.');
                 
-                if (mode === 'lembur') {
-                    const keyPencairan = getRbmStorageKey('RBM_PENCAIRAN_' + tglAwal + '_' + tglAkhir);
-                    const dataObj = getCachedParsedStorage(keyPencairan, {});
-                    let hasChanges = false;
-                    Object.keys(dataObj).forEach(empId => {
-                        if ((dataObj[empId].lemburDetails && dataObj[empId].lemburDetails.length > 0) || dataObj[empId].lemburHari || dataObj[empId].lemburJam || dataObj[empId].tglLembur || dataObj[empId].alasanLembur) {
-                            dataObj[empId].lemburDetails = [];
-                            dataObj[empId].lemburHari = 0;
-                            dataObj[empId].lemburJam = 0;
-                            dataObj[empId].tglLembur = '';
-                            dataObj[empId].alasanLembur = '';
-                            hasChanges = true;
-                        }
-                    });
-                    if (hasChanges) {
-                        if (window.RBMStorage && window.RBMStorage._useFirebase && window.RBMStorage._db) {
-                            window.RBMStorage._db.ref('rbm_pro/pencairan/' + keyPencairan.slice(14)).set(dataObj).then(function() {
-                                window._rbmParsedCache[keyPencairan] = { data: dataObj };
-                                try { localStorage.setItem(keyPencairan, JSON.stringify(dataObj)); } catch(e){}
-                                if (typeof renderPencairanTab === 'function') renderPencairanTab();
-                            }).catch(function(){});
-                        } else {
-                            RBMStorage.setItem(keyPencairan, JSON.stringify(dataObj));
-                            window._rbmParsedCache[keyPencairan] = { data: dataObj };
-                            if (typeof renderPencairanTab === 'function') renderPencairanTab();
-                        }
-                    }
-                }
-
                 try {
                     if (window.location.protocol !== 'file:' && window.self !== window.top) {
                         window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
@@ -12610,11 +12695,12 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                     if(t) tglLembur += (tglLembur ? ', ' : '') + t;
                     if(a) alasanLembur += (alasanLembur ? ' | ' : '') + a;
                 });
-                xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="Number">${i+1}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${name}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${gpj}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${lj || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${tglLembur}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${alasanLembur}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${rowTotal}</Data></Cell></Row>`;
+                const pembulatan = tr.querySelector('.penc-bulat-cell') ? tr.querySelector('.penc-bulat-cell').innerText : 'Rp 0';
+                xml += `<Row><Cell ss:StyleID="sData"><Data ss:Type="Number">${i+1}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${name}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${gpj}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="Number">${lj || 0}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${tglLembur}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${alasanLembur}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${rowTotal}</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${pembulatan}</Data></Cell></Row>`;
             }
         });
 
-        xml += `<Row><Cell ss:MergeAcross="${mode === 'cuti' ? 5 : 5}" ss:StyleID="sData"><Data ss:Type="String">TOTAL</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${total}</Data></Cell></Row>`;
+        xml += `<Row><Cell ss:MergeAcross="${mode === 'cuti' ? 6 : 7}" ss:StyleID="sData"><Data ss:Type="String">TOTAL</Data></Cell><Cell ss:StyleID="sData"><Data ss:Type="String">${total}</Data></Cell></Row>`;
         xml += '</Table></Worksheet></Workbook>';
 
         const blob = new Blob([xml], {type: 'application/vnd.ms-excel'});
@@ -12663,7 +12749,8 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                     if(t) tglLembur += (tglLembur ? '<br>' : '') + t;
                     if(a) alasanLembur += (alasanLembur ? '<br>' : '') + a;
                 });
-                html += `<tr><td style="text-align:center;">${i+1}</td><td>${name}</td><td style="text-align:right;">${gpj}</td><td style="text-align:center;">${lj || 0}</td><td style="text-align:center;">${tglLembur}</td><td style="text-align:left;">${alasanLembur}</td><td style="text-align:right; font-weight:bold;">${rowTotal}</td></tr>`;
+                const pembulatan = tr.querySelector('.penc-bulat-cell') ? tr.querySelector('.penc-bulat-cell').innerText : 'Rp 0';
+                html += `<tr><td style="text-align:center;">${i+1}</td><td>${name}</td><td style="text-align:right;">${gpj}</td><td style="text-align:center;">${lj || 0}</td><td style="text-align:center;">${tglLembur}</td><td style="text-align:left;">${alasanLembur}</td><td style="text-align:right; font-weight:bold;">${rowTotal}</td><td style="text-align:right; font-weight:bold; color:#1e40af;">${pembulatan}</td></tr>`;
             }
         });
 
