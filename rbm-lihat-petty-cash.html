@@ -11,6 +11,25 @@
 (function(){ var u = JSON.parse(localStorage.getItem('rbm_user') || '{}'); if (u.role === 'staff') { window.location.href = 'index.html'; } })();
 </script>
 <script>
+function openPengajuanPettyCashPage() {
+  var targetUrl = 'rbm-pengajuan.html?jenis=pengajuan-petty-cash';
+  var currentUrl = (window.location.pathname || '') + (window.location.search || '') + (window.location.hash || '');
+  if (currentUrl.indexOf('rbm-pengajuan.html') >= 0 && currentUrl.indexOf('jenis=pengajuan-petty-cash') >= 0) {
+    return;
+  }
+
+  try {
+    var parentIframe = (window.parent && window.parent !== window) ? window.parent.document.getElementById('content-iframe') : null;
+    if (parentIframe) {
+      parentIframe.src = targetUrl;
+      return;
+    }
+  } catch (e) {}
+
+  window.location.assign(targetUrl);
+}
+</script>
+<script>
 // [UX] Set bulan aktif secepat mungkin (tanpa nunggu rbm-pro.js).
 (function(){
   function setMonthNow() {
@@ -41,7 +60,7 @@
   <div style="flex: 0 0 auto; display: flex; gap: 8px;">
     <button type="button" class="btn nav-button active" onclick="showView('lihat-petty-cash-view')">Lihat Petty Cash</button>
     <button type="button" class="btn nav-button" onclick="showView('input-petty-cash-view')">Input Petty Cash</button>
-    <button type="button" class="btn btn-primary" style="background:#8b5cf6; border-color:#8b5cf6; color:white;" onclick="window.location.href='rbm-pengajuan.html?jenis=pengajuan-petty-cash'">Pengajuan Petty Cash</button>
+    <button type="button" class="btn btn-primary" style="background:#8b5cf6; border-color:#8b5cf6; color:white;" onclick="openPengajuanPettyCashPage()">Pengajuan Petty Cash</button>
   </div>
 </section>
 <script>

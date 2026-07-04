@@ -1,0 +1,14 @@
+{
+  "rules": {
+    "rbm_pro": {
+      "pengajuan_tf": {
+        ".indexOn": ["outlet"]
+      },
+      "petty_cash": {
+        "pengajuan": {
+          ".indexOn": ["outlet"]
+        }
+      }
+    }
+  }
+}

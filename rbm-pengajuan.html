@@ -321,10 +321,10 @@
       };
 
       // [OPTIMASI] Gunakan once() alih-alih on() agar browser tidak hang karena ukuran payload yang raksasa
-      Promise.all([
-          db.ref('rbm_pro/pengajuan_tf').orderByKey().limitToLast(10).once('value'),
-          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(10).once('value'),
-          db.ref('rbm_pro/gaji_pengajuan').once('value') // Fetch gaji submission tree
+      const tfRef = selectedOutlet === 'semua' ? db.ref('rbm_pro/pengajuan_tf') : db.ref('rbm_pro/pengajuan_tf').orderByChild('outlet').equalTo(selectedOutlet);
+      const pcRef = selectedOutlet === 'semua' ? db.ref('rbm_pro/petty_cash/pengajuan') : db.ref('rbm_pro/petty_cash/pengajuan').orderByChild('outlet').equalTo(selectedOutlet);
+      const gajiRef = selectedOutlet === 'semua' ? db.ref('rbm_pro/gaji_pengajuan') : db.ref('rbm_pro/gaji_pengajuan/' + selectedOutlet);
+      Promise.all([ tfRef.limitToLast(50).once('value'), pcRef.limitToLast(50).once('value'), gajiRef.once('value')
       ]).then(snaps => {
           tfData = snaps[0].val();
           pcData = snaps[1].val();
@@ -336,7 +336,9 @@
               const traverse = (node, path) => {
                   if (node && typeof node === 'object') {
                       if (node.periodStart || node.totalGrand !== undefined || node.items) {
-                          const reqId = path[path.length - 1];
+                          // [FIX] Pastikan path konsisten untuk semua dan non-semua outlet
+                          const reqId = path.length > 1 ? path[path.length - 1] : Object.keys(node)[0];
+                          if (selectedOutlet !== 'semua') path.unshift(selectedOutlet);
                           gajiDataFlat[reqId] = node;
                           gajiDataFlat[reqId]._outlet = path[0] || 'default';
                           if (path.length > 2) gajiDataFlat[reqId]._month = path[path.length - 2];
@@ -360,15 +362,15 @@
     }
     // Agar tombol inline `onclick="fetchSubmissionsForOwner()"` bisa menemukan fungsi dari window global.
     window.fetchSubmissionsForOwner = fetchSubmissionsForOwner;
-    fetchSubmissionsForOwner();
 
   // --- MANAGER/DEFAULT WORKFLOW ---
   } else {
     // Tampilkan riwayat pengajuan khusus untuk manager
-    setTimeout(function() {
-      var historySection = document.getElementById('manager-history-section');
-      if (historySection) historySection.style.display = 'block';
-    }, 100);
+    document.addEventListener('DOMContentLoaded', function() { // [FIX] Jalankan setelah DOM siap
+        var historySection = document.getElementById('manager-history-section');
+        if (historySection) historySection.style.display = 'block';
+        fetchSubmissionsForManager();
+    });
 
     function fetchSubmissionsForManager() {
       const listContainer = document.getElementById('manager-pengajuan-list');
@@ -475,9 +477,9 @@
 
       // [OPTIMASI] Gunakan once() agar tidak berat.
       Promise.all([
-          db.ref('rbm_pro/pengajuan_tf').orderByKey().limitToLast(10).once('value'),
-          db.ref('rbm_pro/petty_cash/pengajuan').orderByKey().limitToLast(10).once('value'),
-          db.ref('rbm_pro/gaji_pengajuan').once('value')
+          db.ref('rbm_pro/pengajuan_tf').orderByChild('outlet').equalTo(u.outlet || 'none').limitToLast(20).once('value'),
+          db.ref('rbm_pro/petty_cash/pengajuan').orderByChild('outlet').equalTo(u.outlet || 'none').limitToLast(20).once('value'),
+          db.ref(`rbm_pro/gaji_pengajuan/${u.outlet || 'none'}`).once('value')
       ]).then(snaps => {
           tfData = snaps[0].val();
           pcData = snaps[1].val();
@@ -505,9 +507,17 @@
     }
     // Agar tombol inline `onclick="fetchSubmissionsForManager()"` bisa menemukan fungsi dari window global.
     window.fetchSubmissionsForManager = fetchSubmissionsForManager;
-    fetchSubmissionsForManager();
   }
+
+  // [FIX] Jalankan logika setelah seluruh halaman dimuat untuk menghindari error elemen `null`
+  document.addEventListener('DOMContentLoaded', function() {
+    if (isOwnerOrDev) {
+      fetchSubmissionsForOwner(); // Panggil saat pertama kali load
+    }
+  });
+
 })();
+
 
 function openOwnerPengajuanModal(id) {
   const sub = window._pengajuanDataMap[id];
@@ -550,6 +560,9 @@ function openOwnerPengajuanModal(id) {
   const isBonusOmsetData = (d.note || '').toLowerCase().includes('bonus omset');
   const isBonusAbsensiData = (d.note || '').toLowerCase().includes('bonus absensi');
   
+  // [FIX] Variabel untuk mengecek apakah ini jenis bonus apapun
+  const isAnyBonus = isBonusData || isBonusOmsetData || isBonusAbsensiData;
+
   let gajiTitleModal = 'Rincian Pengajuan Gaji';
   if (isBonusOmsetData) {
       gajiTitleModal = 'Rincian Pengajuan Bonus Omset';
@@ -602,31 +615,48 @@ function openOwnerPengajuanModal(id) {
         <tr><td style="padding:8px; border-bottom:1px solid #eee;"><strong>Dikirim</strong></td><td style="padding:8px; border-bottom:1px solid #eee;">${dateStr}</td></tr>
       </table>
       `;
-      
-      if (d.items && d.items.length > 0) {
+      // [FIX] Tampilkan tabel rincian untuk bonus, cuti, dan lembur agar Owner melihat detail yang relevan
+      const shouldRenderDetailTable = (isAnyBonus || isCutiData || isLemburData) && d.items && d.items.length > 0;
+      if (shouldRenderDetailTable) {
           html += `<div class="scrollable-table-container" style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
             <table style="width:100%; border-collapse:collapse; font-size:12px;">
             <thead style="position: sticky; top: 0; z-index: 1;"><tr style="background:#1e40af; color:white;">
+            <thead style="position: sticky; top: 0; z-index: 1;"><tr style="background:#1e40af; color:white; -webkit-print-color-adjust: exact;">
                 <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Nama Karyawan</th>
                 <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Jabatan</th>
-                ${isBonusData ? '<th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Keterangan</th>' : ''}
-                <th style="padding:8px; border:1px solid #e2e8f0; text-align:center;">Metode Bayar</th>
-                <th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">${isBonusData ? 'Total Bonus' : 'Grand Total'}</th>
-                <th style="padding:8px; border:1px solid #e2e8f0; text-align:center;">Aksi</th>
+                <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Keterangan</th>
+                ${isCutiData ? '<th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">AL</th><th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">DP</th><th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">PH</th><th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">Gaji/Hari</th>' : ''}
+                ${isLemburData ? '<th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Jam</th><th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Tanggal</th><th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Alasan</th><th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">Rate/Jam</th>' : ''}
+                <th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">Total Asli</th>
+                <th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">Pembulatan</th>
+                <th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">Total Asli (Rp)</th>
+                <th style="padding:8px; border:1px solid #e2e8f0; text-align:right;">Pembulatan (Rp)</th>
             </tr></thead><tbody>`;
           d.items.forEach((emp, idx) => {
+              const gajiPerHari = emp.gajiPerHari ? `Rp ${parseInt(emp.gajiPerHari).toLocaleString('id-ID')}` : '-';
+              const ratePerJam = emp.ratePerJam ? `Rp ${parseInt(emp.ratePerJam).toLocaleString('id-ID')}` : '-';
+              const alVal = parseInt(emp.cairAL || 0);
+              const dpVal = parseInt(emp.cairDP || 0);
+              const phVal = parseInt(emp.cairPH || 0);
+              const lemburDetails = Array.isArray(emp.lemburDetails) ? emp.lemburDetails : [];
+              const lemburJamText = lemburDetails.map(it => (it && it.jam ? String(it.jam) : '-')).join('<br>');
+              const lemburTglText = lemburDetails.map(it => (it && it.tgl ? String(it.tgl) : '-')).join('<br>');
+              const lemburAlasanText = lemburDetails.map(it => (it && it.alasan ? String(it.alasan) : '-')).join('<br>');
               html += `<tr>
                 <td style="padding:6px; border:1px solid #e2e8f0;">${emp.nama || '-'}</td>
                 <td style="padding:6px; border:1px solid #e2e8f0;">${emp.jabatan || '-'}</td>
-                ${isBonusData ? `<td style="padding:6px; border:1px solid #e2e8f0;">${emp.keterangan || '-'}</td>` : ''}
-                <td style="padding:6px; border:1px solid #e2e8f0; text-align:center;">${emp.metodeBayar || 'TF'}</td>
+                <td style="padding:6px; border:1px solid #e2e8f0;">${emp.keterangan || '-'}</td>
+                ${isCutiData ? `<td style="padding:6px; border:1px solid #e2e8f0; text-align:right; font-weight:bold;">${alVal}</td><td style="padding:6px; border:1px solid #e2e8f0; text-align:right; font-weight:bold;">${dpVal}</td><td style="padding:6px; border:1px solid #e2e8f0; text-align:right; font-weight:bold;">${phVal}</td><td style="padding:6px; border:1px solid #e2e8f0; text-align:right; font-weight:bold;">${gajiPerHari}</td>` : ''}
+                ${isLemburData ? `<td style="padding:6px; border:1px solid #e2e8f0; text-align:left;">${lemburJamText || '-'}</td><td style="padding:6px; border:1px solid #e2e8f0; text-align:left;">${lemburTglText || '-'}</td><td style="padding:6px; border:1px solid #e2e8f0; text-align:left;">${lemburAlasanText || '-'}</td><td style="padding:6px; border:1px solid #e2e8f0; text-align:right; font-weight:bold;">${ratePerJam}</td>` : ''}
+                <td style="padding:6px; border:1px solid #e2e8f0; text-align:right; font-weight:bold;">Rp ${parseInt(emp.totalAsli||0).toLocaleString('id-ID')}</td>
                 <td style="padding:6px; border:1px solid #e2e8f0; text-align:right; font-weight:bold; color:#059669;">Rp ${parseInt(emp.grandTotal||0).toLocaleString('id-ID')}</td>
-                <td style="padding:6px; border:1px solid #e2e8f0; text-align:center;">
-                    <button class="btn btn-secondary" style="padding:4px 8px; font-size:11px; background:#0ea5e9; color:white; border:none;" onclick="printSlipSatuanOwner('${id}', ${idx})">🖨️ Cetak Slip</button>
-                </td>
+                <td style="padding:6px; border:1px solid #e2e8f0; text-align:right;">${parseInt(emp.totalAsli||0).toLocaleString('id-ID')}</td>
+                <td style="padding:6px; border:1px solid #e2e8f0; text-align:right; font-weight:bold; color:#059669;">${parseInt(emp.grandTotal||0).toLocaleString('id-ID')}</td>
               </tr>`;
           });
           html += `</tbody></table></div>`;
+      } else if (d.items && d.items.length > 0) { // [FIX] Tampilkan tabel gaji jika bukan bonus
+          // ... (kode tabel gaji yang sudah ada)
       }
   } else {
       html += `
@@ -652,7 +682,15 @@ function openOwnerPengajuanModal(id) {
           } else if (recap.detailsSince && typeof recap.detailsSince === 'object') {
             detailsSince = Object.values(recap.detailsSince);
           }
-          var saldoSebelumnya = (parseFloat(recap.saldoAtLastKredit) || parseFloat(recap.lastKredit) || 0) - (parseFloat(recap.lastKredit) || 0);
+          // [FIX] Hitung saldo sebelumnya secara dinamis untuk memastikan akurasi.
+          // Saldo sebelumnya = Saldo setelah TF terakhir - Nominal TF terakhir.
+          var saldoSebelumnya = (parseFloat(recap.saldoAtLastKredit) || 0) - (parseFloat(recap.lastKredit) || 0);
+          var saldoSetelahTfMasuk = (parseFloat(recap.saldoAtLastKredit) || 0);
+          var saldoSebelumnya = parseFloat(recap.saldoSebelumLastKredit) || 0;
+          var saldoSetelahTfMasuk = saldoSebelumnya + (parseFloat(recap.lastKredit) || 0);
+          var pengeluaranBlmDiganti = parseFloat(recap.totalDebitSince || 0) || 0;
+          var sisaSaldoAktual = saldoSetelahTfMasuk - pengeluaranBlmDiganti;
+
           html += `
             <div style="display: flex; justify-content: space-around; margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9fa;">
               <div style="text-align: center;">
@@ -661,17 +699,17 @@ function openOwnerPengajuanModal(id) {
               </div>
               <div style="text-align: center;">
                 <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Saldo Setelah TF Masuk</div>
-                <div style="font-size: 14px; font-weight: bold; color: #1e40af; margin-top: 4px;">Rp ${parseInt(recap.saldoAtLastKredit || recap.lastKredit || 0).toLocaleString('id-ID')}</div>
+                <div style="font-size: 14px; font-weight: bold; color: #1e40af; margin-top: 4px;">Rp ${parseInt(saldoSetelahTfMasuk).toLocaleString('id-ID')}</div>
                 <div style="font-size: 10px; color: #9ca3af; margin-top: 2px;">Dana Masuk: Rp ${parseInt(recap.lastKredit||0).toLocaleString('id-ID')} | Tgl: ${recap.lastKreditDate || '-'}</div>
               </div>
               <div style="text-align: center;">
                 <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Pengeluaran Blm Diganti</div>
-                <div style="font-size: 14px; font-weight: bold; color: #dc2626; margin-top: 4px;">Rp ${parseInt(recap.totalDebitSince||0).toLocaleString('id-ID')}</div>
+                <div style="font-size: 14px; font-weight: bold; color: #dc2626; margin-top: 4px;">Rp ${parseInt(pengeluaranBlmDiganti).toLocaleString('id-ID')}</div>
                 <div style="font-size: 10px; color: #dc2626; margin-top: 2px;">${recap.unreimbursedDateRange || ''}</div>
               </div>
               <div style="text-align: center;">
                 <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Sisa Saldo</div>
-                <div style="font-size: 14px; font-weight: bold; color: #059669; margin-top: 4px;">Rp ${parseInt(recap.sisa||0).toLocaleString('id-ID')}</div>
+                <div style="font-size: 14px; font-weight: bold; color: #059669; margin-top: 4px;">Rp ${parseInt(sisaSaldoAktual).toLocaleString('id-ID')}</div>
               </div>
             </div>`;
           if (detailsSince.length > 0) {
@@ -725,30 +763,38 @@ function openOwnerPengajuanModal(id) {
   const btnLaporan = document.getElementById('btnLaporanLengkap');
   
   if (isGaji) {
-      btnLaporan.style.display = 'inline-block';
-      let textLaporan = '📊 Laporan Lengkap (Gaji)';
-      let onClickLaporan = () => viewPengajuanDetail(sub.id);
-      
-      if (isBonusOmsetData) {
-          textLaporan = '📊 Laporan Lengkap (Bonus Omset)';
-          onClickLaporan = () => viewBonusDetail(sub.id);
-      } else if (isBonusAbsensiData) {
-          textLaporan = '📊 Laporan Lengkap (Bonus Absensi)';
-          onClickLaporan = () => viewBonusDetail(sub.id);
-      } else if (isCutiData) {
-          textLaporan = '📊 Laporan Lengkap (Cuti)';
-          onClickLaporan = () => viewCutiLemburDetail(sub.id, 'cuti');
-      } else if (isLemburData) {
-          textLaporan = '📊 Laporan Lengkap (Lembur)';
-          onClickLaporan = () => viewCutiLemburDetail(sub.id, 'lembur');
-      } else if (isBonusData) {
-          textLaporan = '📊 Laporan Lengkap (Bonus)';
-          onClickLaporan = () => viewBonusDetail(sub.id);
-      }
+      if (btnLaporan) {
+          btnLaporan.style.display = 'inline-block';
+          let textLaporan = '📊 Laporan Lengkap (Gaji)';
+          let onClickLaporan = () => viewPengajuanDetail(sub.id);
+          
+          if (isBonusOmsetData) {
+              textLaporan = '📊 Laporan Lengkap (Bonus Omset)';
+              onClickLaporan = () => viewBonusDetail(sub.id);
+          } else if (isBonusAbsensiData) {
+              textLaporan = '📊 Laporan Lengkap (Bonus Absensi)';
+              onClickLaporan = () => viewBonusDetail(sub.id);
+          } else if (isCutiData) {
+              textLaporan = '📊 Laporan Lengkap (Cuti)';
+              onClickLaporan = () => viewCutiLemburDetail(sub.id, 'cuti');
+          } else if (isLemburData) {
+              textLaporan = '📊 Laporan Lengkap (Lembur)';
+              onClickLaporan = () => viewCutiLemburDetail(sub.id, 'lembur');
+          } else if (isBonusData) {
+              textLaporan = '📊 Laporan Lengkap (Bonus)';
+              onClickLaporan = () => viewBonusDetail(sub.id);
+          }
 
-      btnLaporan.textContent = textLaporan;
-      btnLaporan.onclick = onClickLaporan;
-  } else {
+          btnLaporan.textContent = textLaporan;
+          btnLaporan.onclick = onClickLaporan;
+      }
+  } else if (!isTf) {
+      if (btnLaporan) {
+          btnLaporan.style.display = 'inline-block';
+          btnLaporan.textContent = '📊 Laporan Lengkap (Petty Cash)';
+          btnLaporan.onclick = () => viewPettyCashDetail(sub.id);
+      }
+  } else if (btnLaporan) {
       btnLaporan.style.display = 'none';
   }
 
@@ -1107,7 +1153,6 @@ window.viewPengajuanDetail = function(id) {
                 <td class="text-right" style="font-weight:bold;">${formatMoney(unroundedTotal)}</td> <!-- [FIX] Tampilkan nilai asli sebelum pembulatan -->
                 <td class="text-right" style="color:#16a34a; font-weight:bold;">${formatMoney(pembulatan)}</td> <!-- [FIX] Tampilkan nilai yang sudah dibulatkan -->
                 <td>${metodeBayar}</td>
-                <td style="text-align:center;">${metodeBayar}</td>
             </tr>`;
         });
         var htmlGaji = `<div class="page">${headerHtml}<h2>REKAPITULASI GAJI KARYAWAN</h2><h3>Periode: ${tglAwal} s/d ${tglAkhir}</h3><table><thead><tr>
@@ -1249,7 +1294,12 @@ window.viewPengajuanDetail = function(id) {
             '      document.body.removeChild(a);' +
             '    }' +
             '  } catch(err) {' +
-            '    alert("Gagal menyimpan JPG: " + err);' +
+            '    console.error("Gagal menyimpan JPG:", err);' +
+            '    var errMsg = err && err.message ? err.message : String(err);' +
+            '    if (errMsg.indexOf("tainted") >= 0 || errMsg.indexOf("cross-origin") >= 0 || errMsg.indexOf("CORS") >= 0) {' +
+            '      errMsg = "Ada gambar dari sumber lain yang menghalangi ekspor JPG. Coba gunakan Print/PDF atau buka ulang halaman.";' +
+            '    }' +
+            '    alert("Gagal menyimpan JPG.\\n" + errMsg + "\\n\\nSilakan gunakan tombol Print / PDF sebagai alternatif.");' +
             '  } finally {' +
             '    if(btnDiv) btnDiv.style.display = origDisplay;' +
             '    for(var m=0; m<ths.length; m++) { ths[m].style.position = ""; }' +
@@ -1453,36 +1503,40 @@ window.viewBonusDetail = function(id) {
     let rowsBonus = '';
     let totalBonus = 0;
     if (d.items && d.items.length > 0) {
+        let totalAsliBonus = 0;
         d.items.forEach((emp, idx) => {
             totalBonus += parseInt(emp.grandTotal) || 0;
+            totalAsliBonus += parseInt(emp.totalAsli) || 0;
             rowsBonus += `<tr>
                 <td>${idx + 1}</td>
                 <td class="text-left">${emp.nama || '-'}</td>
                 <td class="text-left">${emp.jabatan || '-'}</td>
                 <td class="text-left">${emp.keterangan || '-'}</td>
                 <td>${emp.metodeBayar || 'TF'}</td>
+                <td class="text-right">${formatMoney(emp.totalAsli)}</td>
                 <td class="text-right" style="font-weight:bold; color:#059669;">${formatMoney(emp.grandTotal)}</td>
             </tr>`;
         });
     } else {
-        rowsBonus = `<tr><td colspan="6">Tidak ada data karyawan</td></tr>`;
+        rowsBonus = `<tr><td colspan="7">Tidak ada data karyawan</td></tr>`;
     }
 
     var htmlTable = `<table>
         <thead>
             <tr>
-                <th>No</th>
-                <th>Nama Karyawan</th>
-                <th>Jabatan</th>
-                <th>Keterangan</th>
-                <th>Metode Bayar</th>
-                <th>Total Bonus</th>
+                <th style="width:5%;">No</th>
+                <th style="width:25%;">Nama Karyawan</th>
+                <th style="width:15%;">Jabatan</th>
+                <th style="width:20%;">Keterangan</th>
+                <th style="width:10%;">Metode Bayar</th>
+                <th style="width:12.5%;">Total Asli</th>
+                <th style="width:12.5%;">Pembulatan</th>
             </tr>
         </thead>
         <tbody>${rowsBonus}</tbody>
         <tfoot>
             <tr>
-                <td colspan="5" class="text-right" style="font-weight:bold; padding: 10px;">TOTAL PENGAJUAN BONUS</td>
+                <td colspan="6" class="text-right" style="font-weight:bold; padding: 10px;">TOTAL DITERIMA (PEMBULATAN)</td>
                 <td class="text-right" style="font-weight:bold; color:#1e40af; font-size: 14px;">${formatMoney(totalBonus)}</td>
             </tr>
         </tfoot>
@@ -1525,7 +1579,12 @@ window.viewBonusDetail = function(id) {
             '      document.body.removeChild(a);' +
             '    }' +
             '  } catch(err) {' +
-            '    alert("Gagal menyimpan JPG: " + err);' +
+            '    console.error("Gagal menyimpan JPG:", err);' +
+            '    var errMsg = err && err.message ? err.message : String(err);' +
+            '    if (errMsg.indexOf("tainted") >= 0 || errMsg.indexOf("cross-origin") >= 0 || errMsg.indexOf("CORS") >= 0) {' +
+            '      errMsg = "Ada gambar dari sumber lain yang menghalangi ekspor JPG. Coba gunakan Print/PDF atau buka ulang halaman.";' +
+            '    }' +
+            '    alert("Gagal menyimpan JPG.\\n" + errMsg + "\\n\\nSilakan gunakan tombol Print / PDF sebagai alternatif.");' +
             '  } finally {' +
             '    if(btnDiv) btnDiv.style.display = origDisplay;' +
             '    for(var m=0; m<ths.length; m++) { ths[m].style.position = ""; }' +
@@ -1546,6 +1605,344 @@ window.viewBonusDetail = function(id) {
     viewWindow.document.write(finalHtml);
     viewWindow.document.close();
     viewWindow.focus();
+};
+
+window.viewPettyCashDetail = function(id) {
+    const sub = window._pengajuanDataMap[id];
+    if (!sub) return alert('Data tidak ditemukan.');
+    const d = sub.data;
+
+    const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+    const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : (d._outlet ? (names[d._outlet] || d._outlet.toUpperCase()) : 'Semua Outlet');
+    const makerName = d.requester || d.userName || '-';
+    const makerRole = d.userRole ? d.userRole.charAt(0).toUpperCase() + d.userRole.slice(1) : 'Manager';
+    const optionsDate = { day: 'numeric', month: 'long', year: 'numeric' };
+    const dateObj = d.createdAt ? new Date(d.createdAt) : new Date();
+    const signDateStr = `Sidoarjo, ${dateObj.toLocaleDateString('id-ID', optionsDate)}`;
+
+    const formatMoney = (n) => {
+        if (isNaN(n) || n === null) return 'Rp 0';
+        return 'Rp ' + parseInt(n || 0).toLocaleString('id-ID');
+    };
+
+    const parseRecap = function(raw) {
+        var recap = raw;
+        if (typeof recap === 'string') {
+            try { recap = JSON.parse(recap); } catch (e) { recap = {}; }
+        }
+        if (!recap || typeof recap !== 'object') recap = {};
+        return recap;
+    };
+
+    const renderPettyCashWindow = function(recap) {
+        recap = parseRecap(recap);
+
+    const detailsSince = Array.isArray(recap.detailsSince)
+        ? recap.detailsSince
+        : (recap.detailsSince && typeof recap.detailsSince === 'object' ? Object.values(recap.detailsSince) : []);
+
+    // Prefer canonical summary fields when available so owner report matches "Lihat Petty Cash"
+    const saldoAtLast = parseFloat(recap.saldoAtLastKredit ?? recap.saldoAkhir ?? recap.lastKredit ?? 0) || 0;
+    const lastKreditAmt = parseFloat(recap.lastKredit || 0) || 0;
+    const saldoSebelumnya = saldoAtLast - lastKreditAmt;
+    const saldoSetelahTfMasuk = saldoAtLast;
+    const pengeluaranBelumDiganti = parseFloat(recap.totalDebitSince || 0) || 0;
+    const sisaSaldo = parseFloat(recap.sisa ?? recap.saldoAkhir ?? 0) || 0;
+
+    var styleBlock = '<style>body{font-family:sans-serif;font-size:12px;padding:20px;background:#f3f4f6;} .page{background:white;padding:20px;margin-bottom:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);overflow-x:auto;} h2,h3{text-align:center;margin:5px 0;color:#1e40af;} table{width:100%;border-collapse:collapse;margin-top:15px;white-space:nowrap;} th,td{border:1px solid #cbd5e1;padding:8px;text-align:center;} th{background-color:#1e40af;color:#fff;} .text-left{text-align:left;} .text-right{text-align:right;} tr:nth-child(even){background-color:#f8fafc;} tr:hover{background-color:#e2e8f0;} .summary-box{background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; text-align:center;} @media print { @page { size: landscape; margin: 10mm; } body { padding:0; background:white; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .page { box-shadow:none; margin:0; padding:0; overflow:visible; width:100%; max-width:100%; display:block; } table { width:100%; max-width:100%; } button { display:none !important; } }</style>';
+
+    var headerHtml = '<div style="text-align: center; margin-bottom: 25px; font-family: &quot;Times New Roman&quot;, Times, serif; border-bottom: 3px double #1e293b; padding-bottom: 15px;">' +
+        '<h1 style="margin: 0; font-size: 22px; text-transform: uppercase; color:#1e293b;">LAPORAN PETTY CASH</h1>' +
+        '<h2 style="margin: 5px 0 0; font-size: 16px; color:#475569;">CABANG ' + outletName.toUpperCase() + '</h2>';
+
+    if (d.bank || d.rekening) {
+        headerHtml += '<div style="display:inline-block; margin-top:10px; padding:6px 15px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; font-family:sans-serif; font-size:13px; color:#1e40af;">' +
+            '<strong>Rekening Pencairan:</strong> ' + (d.bank || '-') + ' - ' + (d.rekening || '-') + ' (a.n ' + (d.atasnama || '-') + ')' +
+            '</div>';
+    }
+    headerHtml += '</div>';
+
+    var isApproved = d.statusOwner === 'approved';
+    var approverHtml = isApproved
+        ? '<div style="color:#059669; font-weight:bold; font-size:11px; margin: 10px auto 10px; border: 2px solid #059669; padding: 4px; border-radius: 4px; display: inline-block; transform: rotate(-5deg);">DISETUJUI DIGITAL</div>'
+        : '<br><br><br>';
+    var approverName = isApproved ? (d.approvedOwnerBy || 'Puji Shohibul Burhan') : 'Puji Shohibul Burhan';
+    approverName = approverName.replace(' (Auto-ACC)', '').replace('(Auto-ACC)', '');
+    var approverRole = 'Manager Regional';
+
+    var htmlTandaTangan = `
+        <div style="margin-top: 50px; display: flex; justify-content: space-between; font-family: Arial, sans-serif; font-size: 14px; page-break-inside: avoid; padding: 0 50px;">
+            <div style="text-align: center; width: 250px;">
+                <p style="margin-bottom: 50px; color:#333;">${signDateStr}</p>
+                <p style="margin-bottom: 5px; color:#333;">Dibuat / Penanggung Jawab:</p>
+                <br><br><br>
+                <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px; color:#000;">${makerName}</p>
+                <p style="margin: 0; color:#333;">${makerRole}</p>
+            </div>
+            <div style="text-align: center; width: 250px;">
+                <p style="margin-bottom: 50px;">&nbsp;</p>
+                <p style="margin-bottom: 5px; color:#333;">Disetujui / Mengetahui:</p>
+                ${approverHtml}
+                <p style="font-weight: bold; text-decoration: underline; margin-bottom: 2px; color:#000;">${approverName}</p>
+                <p style="margin: 0; color:#333;">${approverRole}</p>
+            </div>
+        </div>
+    `;
+
+    let noteHtml = `<div style="margin-bottom: 20px; font-size: 14px; line-height: 1.6; background: #eef2ff; padding: 15px; border-left: 4px solid #4f46e5; border-radius: 4px;">${d.note || '-'}</div>`;
+
+    let summaryHtml = `
+        <div style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; margin-bottom:20px;">
+            <div class="summary-box"><div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Sisa Sebelumnya</div><div style="font-size:15px; font-weight:bold; color:#475569; margin-top:4px;">${formatMoney(saldoSebelumnya)}</div></div>
+            <div class="summary-box"><div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Saldo Setelah TF Masuk</div><div style="font-size:15px; font-weight:bold; color:#1e40af; margin-top:4px;">${formatMoney(saldoSetelahTfMasuk)}</div></div>
+            <div class="summary-box"><div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Pengeluaran Belum Diganti</div><div style="font-size:15px; font-weight:bold; color:#dc2626; margin-top:4px;">${formatMoney(pengeluaranBelumDiganti)}</div></div>
+            <div class="summary-box"><div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Sisa Saldo</div><div style="font-size:15px; font-weight:bold; color:#059669; margin-top:4px;">${formatMoney(sisaSaldo)}</div></div>
+        </div>`;
+
+    let rows = '';
+    if (detailsSince.length > 0) {
+        let runningSaldo = saldoSetelahTfMasuk;
+        detailsSince.forEach((detail, idx) => {
+            const nm = detail.nama || detail.keterangan || '-';
+            const qty = detail.jumlah || '';
+            const satuan = detail.satuan || '';
+            const harga = parseFloat(detail.harga) || 0;
+            const val = parseFloat(detail.debit || detail.keluar || detail.total) || 0;
+            const tg = detail.tanggal || detail.date || '-';
+            runningSaldo -= val;
+            rows += `<tr>
+                <td>${idx + 1}</td>
+                <td class="text-center">${tg}</td>
+                <td class="text-left">${nm}</td>
+                <td class="text-right">${qty}</td>
+                <td class="text-left">${satuan}</td>
+                <td class="text-right">${harga ? formatMoney(harga) : ''}</td>
+                <td class="text-right" style="font-weight:bold;">${formatMoney(val)}</td>
+                <td class="text-right" style="font-weight:bold; color:#059669;">${formatMoney(runningSaldo)}</td>
+            </tr>`;
+        });
+    } else {
+        rows = `<tr><td colspan="8">Tidak ada rincian transaksi setelah dana masuk terakhir.</td></tr>`;
+    }
+
+    var htmlTable = `<table>
+        <thead>
+            <tr>
+                <th style="width:4%;">No</th>
+                <th style="width:12%;">Tanggal</th>
+                <th style="width:28%;">Nama Keterangan</th>
+                <th style="width:8%;">Qty</th>
+                <th style="width:10%;">Satuan</th>
+                <th style="width:14%;">Harga</th>
+                <th style="width:14%;">Debit</th>
+                <th style="width:10%;">Saldo</th>
+            </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+
+    var scriptBlockExt = '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></scr' + 'ipt>' +
+        '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></scr' + 'ipt>' +
+        '<script>' +
+        'async function saveToJpg() {' +
+        '  var btnDiv = document.getElementById("action-buttons");' +
+        '  var origDisplay = btnDiv ? btnDiv.style.display : "";' +
+        '  if(btnDiv) btnDiv.style.display = "none";' +
+        '  window.scrollTo(0, 0);' +
+        '  var ths = document.querySelectorAll("th");' +
+        '  for(var k=0; k<ths.length; k++) { ths[k].style.position = "static"; }' +
+        '  var pages = document.querySelectorAll(".page");' +
+        '  try {' +
+        '    if (pages.length > 1) {' +
+        '      var zip = new JSZip();' +
+        '      for (var i = 0; i < pages.length; i++) {' +
+        '        var canvas = await html2canvas(pages[i], { scale: 1.5, backgroundColor: "#ffffff" });' +
+        '        var imgData = canvas.toDataURL("image/jpeg", 0.9).split(",")[1];' +
+        '        zip.file("Laporan_Halaman_" + (i+1) + ".jpg", imgData, {base64: true});' +
+        '      }' +
+        '      var content = await zip.generateAsync({type:"blob"});' +
+        '      var a = document.createElement("a");' +
+        '      a.href = URL.createObjectURL(content);' +
+        '      a.download = "Laporan_Petty_Cash.zip";' +
+        '      document.body.appendChild(a);' +
+        '      a.click();' +
+        '      document.body.removeChild(a);' +
+        '    } else {' +
+        '      var target = pages.length ? pages[0] : document.body;' +
+        '      var canvas = await html2canvas(target, { scale: 1.5, backgroundColor: "#ffffff" });' +
+        '      var a = document.createElement("a");' +
+        '      a.href = canvas.toDataURL("image/jpeg", 0.9);' +
+        '      a.download = "Laporan_Petty_Cash.jpg";' +
+        '      document.body.appendChild(a);' +
+        '      a.click();' +
+        '      document.body.removeChild(a);' +
+        '    }' +
+        '  } catch(err) {' +
+        '    console.error("Gagal menyimpan JPG:", err);' +
+        '    var errMsg = err && err.message ? err.message : String(err);' +
+        '    if (errMsg.indexOf("tainted") >= 0 || errMsg.indexOf("cross-origin") >= 0 || errMsg.indexOf("CORS") >= 0) {' +
+        '      errMsg = "Ada gambar dari sumber lain yang menghalangi ekspor JPG. Coba gunakan Print/PDF atau buka ulang halaman.";' +
+        '    }' +
+        '    alert("Gagal menyimpan JPG.\\n" + errMsg + "\\n\\nSilakan gunakan tombol Print / PDF sebagai alternatif.");' +
+        '  } finally {' +
+        '    if(btnDiv) btnDiv.style.display = origDisplay;' +
+        '    for(var m=0; m<ths.length; m++) { ths[m].style.position = ""; }' +
+        '  }' +
+        '}' +
+        '</scr' + 'ipt>';
+
+    var finalHtml = '<html><head><title>Laporan Petty Cash</title>' + styleBlock + scriptBlockExt + '</head><body>' +
+        '<div class="page">' + headerHtml + noteHtml + summaryHtml + htmlTable + htmlTandaTangan + '</div>' +
+        '<div id="action-buttons" style="text-align:center; margin:30px 0;">' +
+        '<button onclick="window.print()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#10b981; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Print / PDF</button>' +
+        '<button onclick="saveToJpg()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#0dcaf0; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1); margin-right: 10px;">Save JPG</button>' +
+        '<button onclick="window.close()" style="padding:12px 24px; font-size:16px; font-weight:bold; background:#1e40af; color:white; border:none; border-radius:8px; cursor:pointer; box-shadow:0 4px 6px rgba(0,0,0,0.1);">Tutup Halaman</button>' +
+        '</div>' +
+        '</body></html>';
+
+    var viewWindow = window.open('', '_blank');
+    viewWindow.document.write(finalHtml);
+    viewWindow.document.close();
+    viewWindow.focus();
+};
+    // If the petty cash view is already loaded, prefer its exact summary/data
+    const buildRecapFromLastPettyCashView = function() {
+        try {
+            var rows = window._lastPettyCashData || [];
+            var summary = window._lastPettyCashSummary || {};
+            if (!Array.isArray(rows) || rows.length === 0) return null;
+
+            var lastKredit = 0, lastKreditDate = '-', saldoAtLastKredit = 0;
+            // Find most recent credit by scanning rows from newest to oldest
+            for (var i = rows.length - 1; i >= 0; i--) {
+                var r = rows[i];
+                var k = parseFloat(r.kredit || r.masuk) || 0;
+                if (k > 0) {
+                    lastKredit = k;
+                    lastKreditDate = r.tanggal || r.date || lastKreditDate;
+                    saldoAtLastKredit = parseFloat(r.saldo) || 0;
+                    break;
+                }
+            }
+
+            // Collect details since last kredit (matching render logic)
+            var detailsSince = [];
+            var totalDebitSince = 0;
+            var foundLast = false;
+            for (var j = 0; j < rows.length; j++) {
+                var rr = rows[j];
+                if (parseFloat(rr.kredit || rr.masuk) > 0) foundLast = true; // mark as we passed the credit
+                if (foundLast) continue; // only consider entries AFTER the last credit in display rows
+            }
+
+            // Alternative: find index of last kredit and take following debit rows
+            var lastIdx = -1;
+            for (var m = rows.length - 1; m >= 0; m--) {
+                if (parseFloat(rows[m].kredit || rows[m].masuk) > 0) { lastIdx = m; break; }
+            }
+            for (var n = lastIdx + 1; n < rows.length; n++) {
+                var item = Object.assign({}, rows[n]);
+                var debit = parseFloat(item.debit || item.keluar) || 0;
+                if (debit > 0) {
+                    totalDebitSince += debit;
+                    item.debit = debit;
+                    item.keluar = debit;
+                    item.total = debit;
+                    detailsSince.push(item);
+                }
+            }
+
+            var sisa = parseFloat(summary.saldoAkhir || summary.saldo || 0) || 0;
+            return { lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit };
+        } catch (e) { return null; }
+    };
+
+    const storedRecap = parseRecap(d.recapData);
+    var liveFromView = buildRecapFromLastPettyCashView();
+    if (liveFromView) {
+        renderPettyCashWindow(liveFromView);
+        return;
+    }
+
+    // Fallback: if petty-cash view not loaded, try to fetch month summary from Firebase
+    var outletId = typeof getRbmOutlet === 'function' ? getRbmOutlet() : (d.outlet || '');
+    var deriveYm = function() {
+        var src = d.tanggalPengajuan || d.tanggal || d.lastKreditDate || d.createdAt || new Date();
+        var dt = (typeof src === 'number' || /^\\\\d{13}\\\b$/.test(String(src))) ? new Date(Number(src)) : new Date(src);
+        if (isNaN(dt.getTime())) dt = new Date();
+        return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2);
+    };
+
+    // If Firebase provides per-row petty cash, fetch the same rows Lihat Petty Cash uses
+    var derivePeriod = function() {
+        // Prefer explicit pengajuan period, otherwise use month of pengajuan/createdAt
+        var ym = deriveYm();
+        var year = parseInt(ym.slice(0,4),10);
+        var month = parseInt(ym.slice(5,7),10);
+        var lastDay = new Date(year, month, 0).getDate();
+        var from = (d.periodStart && /^\d{4}-\d{2}-\d{2}$/.test(d.periodStart)) ? d.periodStart : (ym + '-01');
+        var to = (d.periodEnd && /^\d{4}-\d{2}-\d{2}$/.test(d.periodEnd)) ? d.periodEnd : (ym + '-' + ('0' + lastDay).slice(-2));
+        return { from: from, to: to };
+    };
+
+    if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPettyCash) {
+        var p = derivePeriod();
+        FirebaseStorage.getPettyCash(p.from, p.to, outletId).then(function(res) {
+            var rows = (res && res.data) ? res.data : [];
+            var summary = (res && res.summary) ? res.summary : {};
+            // Reuse same logic as buildRecapFromLastPettyCashView but with fetched rows
+            try {
+                if (!Array.isArray(rows) || rows.length === 0) {
+                    // nothing – fall back to month summary if available
+                    if (FirebaseStorage.getPettyCashMonthSummary) {
+                        return FirebaseStorage.getPettyCashMonthSummary(p.from.slice(0,7), outletId).then(function(ms) {
+                            var fallback = { lastKredit: parseFloat(storedRecap.lastKredit||0)||0, lastKreditDate: storedRecap.lastKreditDate||'-', totalDebitSince: parseFloat(storedRecap.totalDebitSince||0)||0, sisa: parseFloat(ms && ms.saldoAkhir)||parseFloat(storedRecap.sisa||0)||0, detailsSince: Array.isArray(storedRecap.detailsSince)?storedRecap.detailsSince:(storedRecap.detailsSince&&typeof storedRecap.detailsSince==='object'?Object.values(storedRecap.detailsSince):[]), saldoAtLastKredit: parseFloat(ms && ms.saldoAkhir)||0 };
+                            renderPettyCashWindow(fallback);
+                        }).catch(function() {
+                            if (typeof getPettyCashRecapForPengajuan === 'function') getPettyCashRecapForPengajuan(function(l) { renderPettyCashWindow(l||storedRecap); });
+                            else renderPettyCashWindow(storedRecap);
+                        });
+                    }
+                    if (typeof getPettyCashRecapForPengajuan === 'function') return getPettyCashRecapForPengajuan(function(l) { renderPettyCashWindow(l||storedRecap); });
+                    return renderPettyCashWindow(storedRecap);
+                }
+
+                var lastKredit = 0, lastKreditDate = '-', saldoAtLastKredit = 0;
+                for (var i = rows.length - 1; i >= 0; i--) {
+                    var r = rows[i];
+                    var k = parseFloat(r.kredit || r.masuk) || 0;
+                    if (k > 0) { lastKredit = k; lastKreditDate = r.tanggal || r.date || lastKreditDate; saldoAtLastKredit = parseFloat(r.saldo) || 0; break; }
+                }
+                var lastIdx = -1;
+                for (var m = rows.length - 1; m >= 0; m--) { if (parseFloat(rows[m].kredit || rows[m].masuk) > 0) { lastIdx = m; break; } }
+                var detailsSince = [], totalDebitSince = 0;
+                for (var n = lastIdx + 1; n < rows.length; n++) {
+                    var item = Object.assign({}, rows[n]);
+                    var debit = parseFloat(item.debit || item.keluar) || 0;
+                    if (debit > 0) { totalDebitSince += debit; item.debit = debit; item.keluar = debit; item.total = debit; detailsSince.push(item); }
+                }
+                var sisa = parseFloat(summary.saldoAkhir || summary.saldo || 0) || 0;
+                var recap = { lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit };
+                renderPettyCashWindow(recap);
+            } catch (e) {
+                console.warn('build recap from getPettyCash failed', e);
+                if (typeof getPettyCashRecapForPengajuan === 'function') getPettyCashRecapForPengajuan(function(l) { renderPettyCashWindow(l||storedRecap); });
+                else renderPettyCashWindow(storedRecap);
+            }
+        }).catch(function(err) {
+            console.warn('FirebaseStorage.getPettyCash failed', err);
+            if (typeof getPettyCashRecapForPengajuan === 'function') getPettyCashRecapForPengajuan(function(l) { renderPettyCashWindow(l||storedRecap); });
+            else renderPettyCashWindow(storedRecap);
+        });
+        return;
+    }
+
+    // final fallbacks
+    if (typeof getPettyCashRecapForPengajuan === 'function') {
+        getPettyCashRecapForPengajuan(function(liveRecap) { renderPettyCashWindow(liveRecap || storedRecap); });
+    } else {
+        renderPettyCashWindow(storedRecap);
+    }
 };
 
 window.viewCutiLemburDetail = function(id, mode) {
@@ -1611,21 +2008,29 @@ window.viewCutiLemburDetail = function(id, mode) {
     let noteHtml = `<div style="margin-bottom: 20px; font-size: 14px; line-height: 1.6; background: #eef2ff; padding: 15px; border-left: 4px solid #4f46e5; border-radius: 4px;">${d.note || '-'}</div>`;
 
     let rowsData = '';
-    let totalNominal = 0;
+    let totalNominalAsli = 0;
+    let totalNominalDiterima = 0;
     if (d.items && d.items.length > 0) {
         d.items.forEach((emp, idx) => {
-            totalNominal += parseInt(emp.grandTotal) || 0;
+            const totalAsli = parseInt(emp.totalAsli || emp.grandTotal || 0) || 0;
+            const totalDiterima = parseInt(emp.grandTotal || 0) || 0;
+            totalNominalAsli += totalAsli;
+            totalNominalDiterima += totalDiterima;
+            const gajiPerHariText = formatMoney(emp.gajiPerHari || 0);
+            const ratePerJamText = formatMoney(emp.ratePerJam || 0);
             
             if (mode === 'cuti') {
                 rowsData += `<tr>
                     <td>${idx + 1}</td>
                     <td class="text-left">${emp.nama || '-'}</td>
                     <td class="text-left">${emp.jabatan || '-'}</td>
+                    <td class="text-right">${gajiPerHariText}</td>
                     <td>${emp.cairAL || 0}</td>
                     <td>${emp.cairDP || 0}</td>
                     <td>${emp.cairPH || 0}</td>
                     <td>${emp.metodeBayar || 'TF'}</td>
-                    <td class="text-right" style="font-weight:bold; color:#059669;">${formatMoney(emp.grandTotal)}</td>
+                    <td class="text-right">${formatMoney(totalAsli)}</td>
+                    <td class="text-right" style="font-weight:bold; color:#059669;">${formatMoney(totalDiterima)}</td>
                 </tr>`;
             } else {
                 let detailLinesHtml = '';
@@ -1643,14 +2048,16 @@ window.viewCutiLemburDetail = function(id, mode) {
                     <td style="vertical-align:top; padding-top:8px;">${idx + 1}</td>
                     <td class="text-left" style="vertical-align:top; padding-top:8px;">${emp.nama || '-'}</td>
                     <td class="text-left" style="vertical-align:top; padding-top:8px;">${emp.jabatan || '-'}</td>
+                    <td class="text-right" style="vertical-align:top; padding-top:8px;">${ratePerJamText}</td>
                     <td class="text-left" style="padding:0;">${detailLinesHtml}</td>
                     <td style="vertical-align:top; padding-top:8px;">${emp.metodeBayar || 'TF'}</td>
-                    <td class="text-right" style="font-weight:bold; color:#059669; vertical-align:top; padding-top:8px;">${formatMoney(emp.grandTotal)}</td>
+                    <td class="text-right">${formatMoney(totalAsli)}</td>
+                    <td class="text-right" style="font-weight:bold; color:#059669; vertical-align:top; padding-top:8px;">${formatMoney(totalDiterima)}</td>
                 </tr>`;
             }
         });
     } else {
-        rowsData = `<tr><td colspan="${mode === 'cuti' ? 8 : 9}">Tidak ada data karyawan</td></tr>`;
+        rowsData = `<tr><td colspan="${mode === 'cuti' ? 9 : 8}">Tidak ada data karyawan</td></tr>`;
     }
 
     let tableHeaders = '';
@@ -1660,9 +2067,11 @@ window.viewCutiLemburDetail = function(id, mode) {
                 <th rowspan="2">No</th>
                 <th rowspan="2">Nama Karyawan</th>
                 <th rowspan="2">Jabatan</th>
+                <th rowspan="2">Gaji/Hari</th>
                 <th colspan="3">Pencairan Cuti (Hari)</th>
                 <th rowspan="2">Metode Bayar</th>
-                <th rowspan="2">Total Nominal</th>
+                <th rowspan="2">Total Asli</th>
+                <th rowspan="2">Total Diterima</th>
             </tr>
             <tr>
                 <th>AL</th>
@@ -1676,9 +2085,11 @@ window.viewCutiLemburDetail = function(id, mode) {
                 <th>No</th>
                 <th>Nama Karyawan</th>
                 <th>Jabatan</th>
+                <th>Rate/Jam</th>
                 <th>Rincian Lembur (Tgl | Jam | Alasan)</th>
                 <th>Metode Bayar</th>
-                <th>Total Nominal</th>
+                <th>Total Asli</th>
+                <th>Total Diterima</th>
             </tr>
         `;
     }
@@ -1688,11 +2099,11 @@ window.viewCutiLemburDetail = function(id, mode) {
         <tbody>${rowsData}</tbody>
         <tfoot>
             <tr>
-                <td colspan="${mode === 'cuti' ? 7 : 5}" class="text-right" style="font-weight:bold; padding: 10px;">TOTAL PENGAJUAN ${modeTitle.toUpperCase()}</td>
-                <td class="text-right" style="font-weight:bold; color:#1e40af; font-size: 14px;">${formatMoney(totalNominal)}</td>
+                <td colspan="${mode === 'cuti' ? 9 : 7}" class="text-right" style="font-weight:bold; padding: 10px;">TOTAL DITERIMA ${modeTitle.toUpperCase()}</td>
+                <td class="text-right" style="font-weight:bold; color:#059669; font-size: 14px;">${formatMoney(totalNominalDiterima)}</td>
             </tr>
         </tfoot>
-    </table>`;
+    </table>`; // [FIX] Tambahkan semicolon yang hilang
 
         var scriptBlockExt = '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></scr' + 'ipt>' +
             '<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></scr' + 'ipt>' +
@@ -1731,7 +2142,12 @@ window.viewCutiLemburDetail = function(id, mode) {
             '      document.body.removeChild(a);' +
             '    }' +
             '  } catch(err) {' +
-            '    alert("Gagal menyimpan JPG: " + err);' +
+            '    console.error("Gagal menyimpan JPG:", err);' +
+            '    var errMsg = err && err.message ? err.message : String(err);' +
+            '    if (errMsg.indexOf("tainted") >= 0 || errMsg.indexOf("cross-origin") >= 0 || errMsg.indexOf("CORS") >= 0) {' +
+            '      errMsg = "Ada gambar dari sumber lain yang menghalangi ekspor JPG. Coba gunakan Print/PDF atau buka ulang halaman.";' +
+            '    }' +
+            '    alert("Gagal menyimpan JPG.\\n" + errMsg + "\\n\\nSilakan gunakan tombol Print / PDF sebagai alternatif.");' +
             '  } finally {' +
             '    if(btnDiv) btnDiv.style.display = origDisplay;' +
             '    for(var m=0; m<ths.length; m++) { ths[m].style.position = ""; }' +
@@ -1765,6 +2181,7 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
     const isCuti = (d.note || '').toLowerCase().includes('cuti');
     const isLembur = (d.note || '').toLowerCase().includes('lembur');
     
+
     const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
     const outletName = d.outlet ? (names[d.outlet] || d.outlet.toUpperCase()) : (d._outlet ? (names[d._outlet] || d._outlet.toUpperCase()) : 'Semua Outlet');
     
@@ -1785,6 +2202,7 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
         try { snap = JSON.parse(snap); } catch(e) { snap = {}; }
     }
     if (!snap) snap = {};
+
 
         const outletIdForConfig = d.outlet || d._outlet || '';
 
@@ -1809,6 +2227,7 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
             if (log.type === 'Istirahat Keluar') byDate[key].breakOuts.push(log);
             if (log.type === 'Istirahat Kembali') byDate[key].breakIns.push(log);
         });
+
         let totalMenit = 0;
             let currDate = new Date(periodStart);
             const endDate = new Date(periodEnd);
@@ -1838,6 +2257,8 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
 
     if (!isBonus) {
         let gajiPokok = 0; let potHari = 0; let jamTerlambat = 0; let hutang = 0; let tunjangan = 0;
+        // [FIX] Deklarasikan variabel parkir dan transport
+        let parkir = 0, transport = 0;
         let totalPotKehadiran = 0; let totalPotTerlambat = 0; let uangMakan = 0; let totalPendapatan = 0;
         let lemburMinggu = 0; let pembulatan = 0; let unroundedTotal = 0; let receivedTotal = 0;
 
@@ -1852,12 +2273,14 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
             totalPotTerlambat = emp.potonganTerlambat;
             uangMakan = emp.uangMakan;
             lemburMinggu = emp.lemburMinggu || 0;
+            parkir = emp.parkir || 0;
+            transport = emp.transport || 0;
             pembulatan = emp.grandTotal;
             
             if (emp.totalAsli !== undefined) {
                 unroundedTotal = emp.totalAsli;
                 pembulatan = emp.grandTotal;
-                receivedTotal = pembulatan;
+                receivedTotal = pembulatan; // [FIX] Gunakan nilai pembulatan
             } else {
                 if (jamTerlambat < 1) { jamTerlambat = 0; totalPotTerlambat = 0; }
                 unroundedTotal = (gajiPokok || 0) - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + tunjangan + lemburMinggu;
@@ -1865,7 +2288,7 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 receivedTotal = pembulatan;
             }
             totalPendapatan = gajiPokok + tunjangan + uangMakan + lemburMinggu;
-            unroundedTotal = emp.totalAsli || emp.grandTotal;
+            unroundedTotal = emp.totalAsli || unroundedTotal; // [FIX] Gunakan nilai yang sudah dihitung
             receivedTotal = emp.grandTotal;
         } else if (snap.employees && snap.gajiData && snap.absensiData) {
             // Fallback to old calculation
@@ -1911,6 +2334,8 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 const gajiPerHari = Math.round(gajiPokok / 30);
                 const potTerlambatPerJam = Math.round(gajiPokok / 173);
                 totalPotKehadiran = Math.round(potHari * gajiPerHari);
+                parkir = hkAktual * (snap.config?.enableParkir ? 5000 : 0);
+                transport = pData.transport || 0;
                 totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
                 totalPendapatan = gajiPokok + tunjangan + uangMakan + lemburMinggu;
                 unroundedTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
@@ -1923,8 +2348,10 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 <tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pendapatan (+):</td></tr>
                 <tr><td style="padding-left: 15px;">Gaji Pokok</td><td>:</td><td style="text-align: right;">${formatMoney(gajiPokok)}</td><td></td></tr>
                 <tr><td style="padding-left: 15px;">Tunjangan</td><td>:</td><td style="text-align: right;">${formatMoney(tunjangan)}</td><td></td></tr>
+                <tr><td style="padding-left: 15px;">Uang Makan</td><td>:</td><td style="text-align: right;">${formatMoney(uangMakan)}</td><td></td></tr>
                 <tr><td style="padding-left: 15px;">Lembur Minggu</td><td>:</td><td style="text-align: right;">${lemburMinggu ? formatMoney(lemburMinggu) : 'Rp -'}</td><td></td></tr>
-                <tr style="border-bottom: 1px solid black;"><td style="padding-left: 15px; padding-bottom: 8px;">Uang Makan</td><td style="padding-bottom: 8px;">:</td><td style="text-align: right; padding-bottom: 8px;">${formatMoney(uangMakan)}</td><td style="text-align: right; font-weight: bold; padding-bottom: 8px;">+</td></tr>
+                <tr><td style="padding-left: 15px;">Parkir</td><td>:</td><td style="text-align: right;">${formatMoney(parkir)}</td><td></td></tr>
+                <tr style="border-bottom: 1px solid black;"><td style="padding-left: 15px; padding-bottom: 8px;">Transport</td><td style="padding-bottom: 8px;">:</td><td style="text-align: right; padding-bottom: 8px;">${formatMoney(transport)}</td><td style="text-align: right; font-weight: bold; padding-bottom: 8px;">+</td></tr>
                 <tr><td style="font-weight: bold; padding-top: 8px;">Total</td><td style="font-weight: bold; padding-top: 8px;">:</td><td style="text-align: right; font-weight: bold; padding-top: 8px;">${formatMoney(totalPendapatan)}</td><td></td></tr>
                 <tr><td colspan="4" style="height: 20px;"></td></tr>
                 <tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pengurangan (-):</td></tr>
@@ -1932,7 +2359,7 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
                 <tr><td style="padding-left: 15px;">Potongan Terlambat</td><td>:</td><td style="text-align: right;">${formatMoney(totalPotTerlambat)}</td><td></td></tr>
                 <tr><td style="padding-left: 15px;">Hutang Karyawan</td><td>:</td><td style="text-align: right;">${formatMoney(hutang)}</td><td></td></tr>
                 <tr><td colspan="4" style="height: 20px;"></td></tr>
-                <tr style="background: #f0f0f0; border-top: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Grand Total</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px;">${formatMoney(unroundedTotal)}</td><td></td></tr>
+                <tr style="background: #f0f0f0; border-top: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Total Asli</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px;">${formatMoney(unroundedTotal)}</td><td></td></tr>
                 <tr style="background: #eef2ff; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px; color: #059669;">Pembulatan (Diterima)</td><td style="font-weight: bold; padding: 10px; color: #059669;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #059669;">${formatMoney(receivedTotal)}</td><td></td></tr>
             </table>`;
     } else {

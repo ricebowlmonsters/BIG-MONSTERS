@@ -2228,153 +2228,215 @@ function createPembukuanRows() {
   }
 
 function getPettyCashRecapForPengajuan(cb) {
-    var outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+    const outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+
+    // [FIX] Ambil SEMUA data petty cash untuk perhitungan saldo yang akurat,
+    // bukan hanya data yang sudah di-load untuk tampilan tabel.
+    const getAllTransactions = async () => {
+        if (useFirebaseBackend() && typeof FirebaseStorage.getPettyCashFullList === 'function') {
+            return await FirebaseStorage.getPettyCashFullList(outlet);
+        }
+        // Fallback untuk mode offline/local
+        // [FIX] Logika diubah untuk mencegah data duplikat dari pending dan firebase.
+        // Sekarang, kita hanya akan menggunakan data dari `RBM_PENDING_PETTY_CASH` sebagai satu-satunya sumber kebenaran saat offline.
+        const pendingData = getCachedParsedStorage(getRbmStorageKey('RBM_PENDING_PETTY_CASH'), []);
+        const transactionList = [];
+        const seenIds = new Set(); // Untuk mencegah duplikasi jika ada ID yang sama
+
+        pendingData.forEach(p => {
+            const payload = p.payload || {};
+            const transactions = payload.transactions || [];
+            transactions.forEach(trx => {
+                // Gunakan kombinasi tanggal dan nama sebagai ID sementara jika tidak ada ID unik
+                const trxId = trx.id || `${payload.tanggal}-${trx.nama}-${trx.total}`;
+                if (seenIds.has(trxId)) return;
+                
+                // Normalisasi nilai debit/kredit saat data dimasukkan ke list
+                const total = parseFloat(trx.total) || 0;
+                const debit = payload.jenis === 'pengeluaran' ? total : 0;
+                const kredit = payload.jenis === 'pemasukan' ? total : 0;
+                transactionList.push({ ...trx, tanggal: payload.tanggal, jenis: payload.jenis, debit, kredit });
+                seenIds.add(trxId);
+            });
+        });
+        return transactionList;
+    };
     
     function processTransactions(list) {
-        list.sort(function(a, b) {
-            var parseDate = function(s) {
-                if (!s) return 0;
-                if (s.indexOf('/') >= 0) {
-                    var p = s.split('/');
-                    if (p.length === 3) return new Date(p[2] + '-' + ('0'+p[1]).slice(-2) + '-' + ('0'+p[0]).slice(-2)).getTime();
-                }
-                var t = new Date(s).getTime();
-                return isNaN(t) ? 0 : t;
-            };
-            var t1 = parseDate(a.tanggal || a.date);
-            var t2 = parseDate(b.tanggal || b.date);
-            if (t1 !== t2) return t1 - t2;
-            return (a.createdAt || 0) - (b.createdAt || 0);
-        });
-
-        var lastKreditIndex = -1;
-        for (var i = 0; i < list.length; i++) {
-            var r = list[i];
-            var k = parseFloat(r.kredit || r.masuk) || 0;
-            if (r.jenis === 'pemasukan') k = parseFloat(r.total || r.harga) || 0;
-            if (k > 0) lastKreditIndex = i;
+        function parseNumber(value) {
+            // [FIX] Gunakan pembulatan ke 2 desimal untuk menghindari error floating point
+            // dan pastikan semua kalkulasi konsisten. Ini adalah metode yang paling andal
+            // untuk menangani aritmatika mata uang di JavaScript.
+            const num = parseFloat(String(value || '0').replace(/,/g, '.'));
+            return isNaN(num) ? 0 : Math.round(num * 100) / 100;
+        }
+        function parseDateValue(s) {
+            // [FIX] Handle format tanggal DD/MM/YYYY dari Excel
+            if (typeof s === 'string' && s.includes('/') && s.length === 10) {
+                const parts = s.split('/');
+                if (parts.length === 3) s = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+            if (!s) return 0;
+            if (typeof s === 'number') return s;
+            if (s.indexOf('/') >= 0) {
+                var p = s.split('/');
+                if (p.length === 3) return new Date(p[2] + '-' + ('0'+p[1]).slice(-2) + '-' + ('0'+p[0]).slice(-2)).getTime();
+            }
+            var t = new Date(s).getTime();
+            return isNaN(t) ? 0 : t;
+        }
+        function normalizeRow(r, index) {
+            var jenis = String(r.jenis || '').toLowerCase();
+            var kredit = parseNumber(r.kredit || r.masuk);
+            var debit = parseNumber(r.debit || r.keluar);
+            if (kredit === 0 && jenis === 'pemasukan') {
+                kredit = parseNumber(r.total || r.harga);
+            }
+            if (debit === 0 && jenis === 'pengeluaran') {
+                debit = parseNumber(r.total || r.harga);
+            }
+            return Object.assign({}, r, {
+                kredit: kredit,
+                masuk: kredit,
+                debit: debit,
+                keluar: debit,
+                _pcCreatedAt: parseNumber(r.createdAt),
+                _pcIndex: parseInt(r._firebaseIndexInDate || r.index, 10) || index
+            });
         }
 
-        var lastKredit = 0;
-        var lastKreditDate = '-';
+        list = list.map(normalizeRow);
+        list.sort(function(a, b) {
+            var t1 = parseDateValue(a.tanggal || a.date);
+            var t2 = parseDateValue(b.tanggal || b.date);
+            if (t1 !== t2) return t1 - t2;
+            if (a._pcCreatedAt !== b._pcCreatedAt) return a._pcCreatedAt - b._pcCreatedAt;
+            return (a._pcIndex || 0) - (b._pcIndex || 0);
+        });
+
         var totalDebitSince = 0;
         var detailsSince = [];
         var runningSaldo = 0;
         var saldoAtLastKredit = 0;
+        var saldoSebelumLastKredit = 0;
 
-        for (var i = 0; i < list.length; i++) {
+        // [LOGIKA BARU] Cari indeks dari transaksi kredit terakhir
+        var lastKreditTx = null;
+        var lastKreditTxIndex = -1;
+        for (var i = list.length - 1; i >= 0; i--) { // Cari dari belakang (terbaru)
+            if (list[i].kredit > 0) {
+                lastKreditTx = list[i];
+                lastKreditTxIndex = i;
+                break;
+            }
+        }
+
+        // [LOGIKA BARU] Hitung ulang saldo dari awal untuk mendapatkan nilai yang akurat.
+        let saldoBerjalan = 0;
+        if (lastKreditTxIndex > 0) {
+            // Iterasi dari awal sampai sebelum transaksi kredit terakhir
+            for (let i = 0; i < lastKreditTxIndex; i++) {
+                const trx = list[i];
+                saldoBerjalan = (saldoBerjalan * 100 - (trx.debit || 0) * 100 + (trx.kredit || 0) * 100) / 100;
+            }
+            saldoSebelumLastKredit = saldoBerjalan;
+        } else {
+            saldoSebelumLastKredit = 0; // Tidak ada kredit sebelumnya, saldo awal dianggap 0
+        }
+        
+        // Hitung total pengeluaran SETELAH kredit terakhir
+        for (var i = lastKreditTxIndex + 1; i < list.length; i++) {
             var r = list[i];
-            var k = parseFloat(r.kredit || r.masuk) || 0;
-            var d = parseFloat(r.debit || r.keluar) || parseFloat(r.total) || 0;
-            if (r.jenis === 'pemasukan') k = parseFloat(r.total || r.harga) || 0;
-            if (r.jenis === 'pengeluaran') d = parseFloat(r.total) || 0;
-
-            runningSaldo = runningSaldo - d + k;
-
-            if (i === lastKreditIndex) {
-                lastKredit = k;
-                lastKreditDate = r.tanggal || r.date || '-';
-                saldoAtLastKredit = runningSaldo;
-            } else if (i > lastKreditIndex && d > 0) {
-                totalDebitSince += d;
+            var debit = parseNumber(r.debit);
+            if (debit > 0) {
+                totalDebitSince += debit;
                 var item = Object.assign({}, r);
-                item.debit = d;
-                item.keluar = d;
-                item.total = d;
+                item.debit = debit;
+                item.keluar = debit;
+                item.total = debit;
                 detailsSince.push(item);
             }
         }
+        
+        // Hitung saldo berjalan untuk mendapatkan saldo akhir dan saldo saat kredit
+        list.forEach(function(r) {
+            runningSaldo = runningSaldo - parseNumber(r.debit) + parseNumber(r.kredit);
+        });
+        if (lastKreditTx) {
+            saldoAtLastKredit = lastKreditTx.saldo || 0;
+        } else {
+            saldoAtLastKredit = runningSaldo;
+        }
+
+        var lastKredit = lastKreditTx ? parseNumber(lastKreditTx.kredit) : 0;
+        var lastKreditDate = lastKreditTx ? (lastKreditTx.tanggal || lastKreditTx.date || '-') : '-';
         var sisa = runningSaldo;
         var unreimbursedDates = detailsSince.map(function(d) { return d.tanggal || d.date; }).filter(Boolean).sort();
         var rangeStr = '';
         if (unreimbursedDates.length > 0) {
-            rangeStr = unreimbursedDates[0] === unreimbursedDates[unreimbursedDates.length - 1] 
-                ? ' (Tgl ' + unreimbursedDates[0] + ')' 
+            rangeStr = unreimbursedDates[0] === unreimbursedDates[unreimbursedDates.length - 1]
+                ? ' (Tgl ' + unreimbursedDates[0] + ')'
                 : ' (Tgl ' + unreimbursedDates[0] + ' s/d ' + unreimbursedDates[unreimbursedDates.length - 1] + ')';
         }
-        cb({ lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit, unreimbursedDateRange: rangeStr });
+        cb({ lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit, saldoSebelumLastKredit: saldoSebelumLastKredit, unreimbursedDateRange: rangeStr });
     }
     
-    // Menggunakan kueri langsung yang sangat cepat
-    if (typeof FirebaseStorage !== 'undefined' && typeof FirebaseStorage.isReady === 'function' && FirebaseStorage.isReady()) {
-        var db = typeof FirebaseStorage.db === 'function' ? FirebaseStorage.db() : null;
-        if (db) {
-            db.ref('rbm_pro/petty_cash/' + (outlet || 'default')).orderByKey().limitToLast(60).once('value').then(function(snap) {
-                var root = snap.val();
-                var list = [];
-                if (root && typeof root === 'object') {
-                    Object.keys(root).forEach(function(dateKey) {
-                        var node = root[dateKey];
-                        var arr = node && Array.isArray(node.transactions) ? node.transactions : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
-                        arr.forEach(function(row) { row.tanggal = row.tanggal || dateKey; list.push(row); });
-                    });
-                }
-                processTransactions(list);
-            }).catch(function() { processTransactions([]); });
-            return;
-        }
-    }
-    
-    var pending = [];
-    try { var key = outlet ? 'RBM_PENDING_PETTY_CASH_' + outlet : 'RBM_PENDING_PETTY_CASH'; pending = getCachedParsedStorage(key, []); if(!pending.length) { key = 'RBM_PENDING_PETTY_CASH'; pending = getCachedParsedStorage(key, []); } } catch(e){}
-    var list = [];
-    pending.forEach(function(p) { var payload = p.payload || p; (payload.transactions || []).forEach(function(trx) { list.push({ tanggal: payload.tanggal, nama: trx.nama, jenis: payload.jenis, debit: payload.jenis === 'pengeluaran' ? (parseFloat(trx.total) || 0) : 0, kredit: payload.jenis === 'pemasukan' ? (parseFloat(trx.total) || parseFloat(trx.harga) || 0) : 0 }); }); });
-    processTransactions(list);
+    getAllTransactions().then(processTransactions).catch(() => processTransactions([]));
 }
 
-function createPengajuanForm() {
-  const container = document.getElementById("pengajuan-form-container");
-  const jenisPengajuan = document.getElementById("jenis_pengajuan").value;
-  container.innerHTML = "";
-
-  if (!jenisPengajuan) {
-    container.innerHTML = `<div class="row-group"><div><input type="text" placeholder="Pilih Jenis Pengajuan di atas" disabled></div></div>`;
-    return;
-  }
-
-  container.innerHTML += `
-    <div class="pengajuan-field">
-        <label>Tanggal Pengajuan</label>
-        <input type="date" id="tanggal_pengajuan" value="${new Date().toISOString().split("T")[0]}">
-    </div>
-    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-  `;
-
-  if (jenisPengajuan === 'pengajuan-tf') {
-    container.innerHTML += `<h3>Detail Pengajuan Transfer</h3>`;
-    for (let i = 0; i < 5; i++) {
-      const rowDiv = document.createElement('div');
-      rowDiv.className = 'row-group';
-      rowDiv.style.cssText = 'background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 16px; display: block;';
-      rowDiv.innerHTML = `
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
-            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Nama Suplier</label><input type="text" class="pengajuan_tf_suplier form-input" placeholder="Nama Suplier" onblur="isiOtomatisDataBank(this)" style="width:100%; padding:8px; box-sizing:border-box;"></div>
-            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Tgl. Nota</label><input type="date" class="pengajuan_tf_tgl_nota form-input" value="${new Date().toISOString().split("T")[0]}" style="width:100%; padding:8px; box-sizing:border-box;"></div>
-            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Tgl. Jatuh Tempo</label><input type="date" class="pengajuan_tf_tgl_jt form-input" style="width:100%; padding:8px; box-sizing:border-box;"></div>
-            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Nominal (Rp)</label><input type="number" class="pengajuan_tf_nominal form-input" placeholder="0" oninput="samakanTotal(this)" style="width:100%; padding:8px; box-sizing:border-box;"></div>
-            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Total Bayar (Rp)</label><input type="number" class="pengajuan_tf_total form-input" placeholder="0" style="width:100%; padding:8px; box-sizing:border-box;"></div>
-            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Bank &amp; No. Rekening</label><input type="text" class="pengajuan_tf_bank_acc form-input" placeholder="Contoh: BCA 12345" style="width:100%; padding:8px; box-sizing:border-box;"></div>
-            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Atas Nama (A/N)</label><input type="text" class="pengajuan_tf_atas_nama form-input" placeholder="Nama Pemilik Rekening" style="width:100%; padding:8px; box-sizing:border-box;"></div>
-            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Keterangan</label>
-                <select class="pengajuan_tf_keterangan form-input keterangan-select" onchange="applyKeteranganColor(this)" style="width:100%; padding:8px; box-sizing:border-box;">
-                    <option value="">-- Keterangan --</option>
-                    <option value="Barang Sudah datang">Barang Sudah datang</option>
-                    <option value="Barang Belum Datang">Barang Belum Datang</option>
-                    <option value="DP">DP</option>
-                    <option value="Pelunasan DP">Pelunasan DP</option>
-                    <option value="Pelunasan di Awal">Pelunasan di Awal</option>
-                </select>
-            </div>
-            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Upload Foto TTD (Opsional)</label><input type="file" class="pengajuan_tf_foto_ttd form-input" accept="image/*" style="width:100%; padding:6px; font-size:12px; box-sizing:border-box;"></div>
-        </div>
-      `;
-      container.appendChild(rowDiv);
-    }
-  } else if (jenisPengajuan === 'pengajuan-petty-cash') {
-    container.innerHTML += `<h3>Detail Pengajuan Reimburse Petty Cash</h3>`;
-    container.innerHTML += `<div id="pc_recap_loading" style="padding:20px; text-align:center; color:#64748b;">Menghitung rekap dari dana terakhir... ⏳</div>`;
-
-    getPettyCashRecapForPengajuan(function(recap) {
+ function createPengajuanForm() {
+   const container = document.getElementById("pengajuan-form-container");
+   const jenisPengajuan = document.getElementById("jenis_pengajuan").value;
+   container.innerHTML = "";
+ 
+   if (!jenisPengajuan) {
+     container.innerHTML = `<div class="row-group"><div><input type="text" placeholder="Pilih Jenis Pengajuan di atas" disabled></div></div>`;
+     return;
+   }
+ 
+   container.innerHTML += `
+     <div class="pengajuan-field">
+         <label>Tanggal Pengajuan</label>
+         <input type="date" id="tanggal_pengajuan" value="${new Date().toISOString().split("T")[0]}">
+     </div>
+     <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+   `;
+ 
+   if (jenisPengajuan === 'pengajuan-tf') {
+     container.innerHTML += `<h3>Detail Pengajuan Transfer</h3>`;
+     for (let i = 0; i < 5; i++) {
+       const rowDiv = document.createElement('div');
+       rowDiv.className = 'row-group';
+       rowDiv.style.cssText = 'background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 16px; display: block;';
+       rowDiv.innerHTML = `
+         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+             <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Nama Suplier</label><input type="text" class="pengajuan_tf_suplier form-input" placeholder="Nama Suplier" onblur="isiOtomatisDataBank(this)" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+             <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Tgl. Nota</label><input type="date" class="pengajuan_tf_tgl_nota form-input" value="${new Date().toISOString().split("T")[0]}" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+             <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Tgl. Jatuh Tempo</label><input type="date" class="pengajuan_tf_tgl_jt form-input" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+             <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Nominal (Rp)</label><input type="number" class="pengajuan_tf_nominal form-input" placeholder="0" oninput="samakanTotal(this)" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+             <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Total Bayar (Rp)</label><input type="number" class="pengajuan_tf_total form-input" placeholder="0" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+             <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Bank &amp; No. Rekening</label><input type="text" class="pengajuan_tf_bank_acc form-input" placeholder="Contoh: BCA 12345" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+             <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Atas Nama (A/N)</label><input type="text" class="pengajuan_tf_atas_nama form-input" placeholder="Nama Pemilik Rekening" style="width:100%; padding:8px; box-sizing:border-box;"></div>
+             <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Keterangan</label>
+                 <select class="pengajuan_tf_keterangan form-input keterangan-select" onchange="applyKeteranganColor(this)" style="width:100%; padding:8px; box-sizing:border-box;">
+                     <option value="">-- Keterangan --</option>
+                     <option value="Barang Sudah datang">Barang Sudah datang</option>
+                     <option value="Barang Belum Datang">Barang Belum Datang</option>
+                     <option value="DP">DP</option>
+                     <option value="Pelunasan DP">Pelunasan DP</option>
+                     <option value="Pelunasan di Awal">Pelunasan di Awal</option>
+                 </select>
+             </div>
+             <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Upload Foto TTD (Opsional)</label><input type="file" class="pengajuan_tf_foto_ttd form-input" accept="image/*" style="width:100%; padding:6px; font-size:12px; box-sizing:border-box;"></div>
+         </div>
+       `;
+       container.appendChild(rowDiv);
+     }
+   } else if (jenisPengajuan === 'pengajuan-petty-cash') {
+     container.innerHTML += `<h3>Detail Pengajuan Reimburse Petty Cash</h3>`;
+     container.innerHTML += `<div id="pc_recap_loading" style="padding:20px; text-align:center; color:#64748b;">Menghitung rekap dari dana terakhir... ⏳</div>`;
+ 
+     getPettyCashRecapForPengajuan(function(recap) {
         var detailsHtml = '';
         if (recap.detailsSince.length > 0) {
             detailsHtml += `<table class="data-table" style="width:100%; font-size:11px; margin-top:10px; border:1px solid #e2e8f0;">
@@ -2390,14 +2452,15 @@ function createPengajuanForm() {
             detailsHtml = `<p style="font-size:12px; color:#64748b; margin-top:10px; font-style:italic;">Belum ada pengeluaran yang perlu direimburse (sudah terganti semua).</p>`;
         }
 
-        var saldoSebelumnya = (parseFloat(recap.saldoAtLastKredit) || parseFloat(recap.lastKredit) || 0) - (parseFloat(recap.lastKredit) || 0);
+        var saldoSebelumDanaMasuk = parseFloat(recap.saldoSebelumLastKredit);
+        var saldoSetelahDanaMasuk = saldoSebelumDanaMasuk + recap.lastKredit;
         var html = `
             <div style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:15px;">
-                <p style="margin:0 0 5px; font-size:13px; color:#475569;">Sisa Saldo Sebelumnya: <strong>${formatRupiah(saldoSebelumnya)}</strong></p>
-                <p style="margin:0 0 5px; font-size:13px; color:#475569;">Dana Masuk Terakhir (${recap.lastKreditDate}): <strong>${formatRupiah(recap.lastKredit)}</strong></p>
-                <p style="margin:0 0 5px; font-size:13px; color:#475569;">Total Saldo (Setelah Dana Masuk): <strong>${formatRupiah(recap.saldoAtLastKredit || recap.lastKredit)}</strong></p>
-                <p style="margin:0 0 5px; font-size:13px; color:#dc2626;">Total Pengeluaran Belum Diganti${recap.unreimbursedDateRange || ''}: <strong>${formatRupiah(recap.totalDebitSince)}</strong></p>
-                <p style="margin:0 0 5px; font-size:14px; color:#16a34a; font-weight:bold;">Sisa Uang (Saldo Saat Ini): ${formatRupiah(recap.sisa)}</p>
+                <p style="margin:0 0 5px; font-size:13px; color:#475569;">Saldo Sebelum Dana Masuk: <strong style="color: #b91c1c;">${formatRupiah(saldoSebelumDanaMasuk)}</strong></p>
+                <p style="margin:0 0 5px; font-size:13px; color:#475569;">Dana Masuk Terakhir (${recap.lastKreditDate || 'N/A'}): <strong style="color: #059669;">${formatRupiah(recap.lastKredit)}</strong></p>
+                <p style="margin:0 0 12px; font-size:13px; color:#475569;">Saldo Setelah Dana Masuk: <strong style="color: #1d4ed8;">${formatRupiah(saldoSetelahDanaMasuk)}</strong></p>
+                <p style="margin:0 0 12px; font-size:13px; color:#475569;">Total Pengeluaran Sejak Dana Masuk: <strong style="color: #dc2626;">${formatRupiah(recap.totalDebitSince)}</strong></p>
+                <p style="margin:0 0 12px; font-size:14px; color:#475569; font-weight:bold; border-top:1px solid #ddd; padding-top:10px;">Sisa Saldo Saat Ini: <strong style="color: #059669;">${formatRupiah(recap.sisa)}</strong></p>
                 ${detailsHtml}
             </div>
             <div class="row-group" style="align-items:flex-start; background:white; padding:15px; border:1px solid #e2e8f0; border-radius:8px;">
@@ -2450,25 +2513,25 @@ function createPengajuanForm() {
                 if (data) {
                     if (document.getElementById('pengajuan_pc_bank')) document.getElementById('pengajuan_pc_bank').value = data.bank || '';
                     if (document.getElementById('pengajuan_pc_rekening')) document.getElementById('pengajuan_pc_rekening').value = data.rekening || '';
-                    if (document.getElementById('pengajuan_pc_atasnama')) document.getElementById('pengajuan_pc_atasnama').value = data.atasnama || '';
+                    if (document.getElementById('pengajuan_pc_atasnama')) document.getElementById('pengajuan_pc_atasnama').value = data.atasnama || ''; // Fix typo
                     localStorage.setItem('RBM_PC_REK_INFO_' + outletId, JSON.stringify({ bank: data.bank || '', rekening: data.rekening || '', atasnama: data.atasnama || '' }));
                 }
             }).catch(function(){});
         }
     });
-  } else if (jenisPengajuan === 'sudah-tf') {
-    container.innerHTML += `<h3>Laporan Bukti Transfer</h3>`;
-    for (let i = 0; i < 5; i++) {
-        const rowDiv = document.createElement('div');
-        rowDiv.className = 'row-group';
-        rowDiv.style.cssText = 'background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 16px; display: block;';
-        rowDiv.innerHTML = `
-            <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Upload Foto Bukti Transfer</label><input type="file" class="sudah_tf_foto_bukti form-input" accept="image/*" style="width:100%; padding:6px; font-size:12px; box-sizing:border-box;"></div>
-        `;
-        container.appendChild(rowDiv);
-    }
-  }
-}
+   } else if (jenisPengajuan === 'sudah-tf') {
+     container.innerHTML += `<h3>Laporan Bukti Transfer</h3>`;
+     for (let i = 0; i < 5; i++) {
+         const rowDiv = document.createElement('div');
+         rowDiv.className = 'row-group';
+         rowDiv.style.cssText = 'background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin-bottom: 16px; display: block;';
+         rowDiv.innerHTML = `
+             <div><label style="font-size:12px; font-weight:600; margin-bottom:4px; display:block;">Upload Foto Bukti Transfer</label><input type="file" class="sudah_tf_foto_bukti form-input" accept="image/*" style="width:100%; padding:6px; font-size:12px; box-sizing:border-box;"></div>
+         `;
+         container.appendChild(rowDiv);
+     }
+   }
+ }
 
 function isiOtomatisDataBank(inputElement) {
   const nama = inputElement.value.trim().toLowerCase();
@@ -8430,12 +8493,19 @@ async function submitBonusAbsensiPengajuan() {
                 const keterangan = ketInput ? ketInput.value : '-';
                 
                 if (name && nominal > 0) {
-                    totalGrand += nominal;
+                    // [FIX] Ambil nilai yang sudah dibulatkan untuk total pengajuan
+                    const roundedNominal = Math.round(nominal / 1000) * 1000;
+                    totalGrand += roundedNominal;
+
                     const employees = window._absensiViewEmployees || getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
                     const emp = employees.find(e => e.name === name);
                     const empId = emp ? (emp.id != null ? emp.id : idx) : idx;
                     
-                    items.push({ empId: empId, nama: name, jabatan: emp ? emp.jabatan : '-', grandTotal: nominal, metodeBayar: 'TF', keterangan: keterangan });
+                    items.push({ 
+                        empId: empId, nama: name, jabatan: emp ? emp.jabatan : '-', 
+                        grandTotal: roundedNominal, totalAsli: nominal, // [FIX] Kirim nilai asli dan pembulatan
+                        metodeBayar: 'TF', keterangan: keterangan 
+                    });
                 }
             });
 
@@ -8480,49 +8550,11 @@ async function submitBonusOmsetPengajuan() {
             const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
             const { tglAwal, tglAkhir, monthKey } = period;
 
-            let totalGrand = 0;
-            const items = [];
-            
-            document.querySelectorAll("#bonus_omset_tbody tr").forEach((tr, idx) => {
-                if (!tr.cells || tr.cells.length < 3) return;
-                const nameHtml = tr.cells[0].innerHTML;
-                const name = nameHtml.split('<br>')[0].trim();
-                const jabatanHtml = tr.cells[0].querySelector('span');
-                const jabatan = jabatanHtml ? jabatanHtml.textContent : '-';
-                
-                const checkEl = tr.querySelector(".bonus-omset-check");
-                const checked = checkEl ? checkEl.checked : false;
-                
-                const inputEl = tr.querySelector(".bonus-nominal-input");
-                const nomEl = tr.querySelector(".bonus-omset-nominal-display");
-                const valText = inputEl ? inputEl.value : (nomEl ? nomEl.textContent : "");
-                const nominal = parseInt(valText.replace(/[^0-9]/g, '')) || 0;
-                
-                if (checked && nominal > 0) {
-                    totalGrand += nominal;
-                    const employees = window._absensiViewEmployees || getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
-                    const emp = employees.find(e => e.name === name);
-                    const empId = emp ? (emp.id != null ? emp.id : idx) : idx;
-                    
-                    // [PERBAIKAN] Simpan detail perhitungan agar data di owner sama persis
-                    const gajiPokok = emp ? (parseInt(emp.gajiPokok) || 0) : 0;
-                    const gajiPerHari = Math.round(gajiPokok / 30);
+            // [FIX] Ambil total dari elemen pembulatan di UI
+            let totalGrandEl = document.getElementById('bonus_omset_total_pembulatan');
+            let totalGrand = totalGrandEl ? (parseInt(totalGrandEl.textContent.replace(/[^0-9]/g, '')) || 0) : 0;
 
-                    items.push({ empId: empId, nama: name, jabatan: jabatan, grandTotal: nominal, metodeBayar: 'TF', keterangan: 'Bonus Omset',
-                        gajiPerHari: gajiPerHari, cairAL: 0, cairDP: 0, cairPH: 0, lemburJam: 0
-                    });
-                }
-            });
-            
-            const extraNameEl = document.getElementById("bonus_omset_extra_name");
-            const extraNomEl = document.getElementById("bonus_omset_extra_nominal");
-            const extraNominal = extraNomEl ? (parseInt(extraNomEl.value.replace(/[^0-9]/g, '')) || 0) : 0;
-            if (extraNominal > 0) {
-                totalGrand += extraNominal;
-                items.push({ empId: 'extra', nama: extraNameEl ? extraNameEl.value || 'Lainnya' : 'Lainnya', jabatan: '-', grandTotal: extraNominal, metodeBayar: 'TF', keterangan: 'Bonus Omset (Extra)',
-                    gajiPerHari: 0, cairAL: 0, cairDP: 0, cairPH: 0, lemburJam: 0
-                });
-            }
+            const items = [];
 
             if (totalGrand === 0) {
                 if(!confirm("Total bonus omset adalah Rp 0. Lanjutkan pengajuan?")) return;
@@ -8535,6 +8567,38 @@ async function submitBonusOmsetPengajuan() {
             const u = _getCurrentUser();
             const requester = (u && (u.username || u.nama)) ? (u.username || u.nama) : 'unknown';
             const note = `Pengajuan BONUS OMSET periode ${tglAwal} s/d ${tglAkhir}<br><span style="font-size:11px; color:#475569;">&bull; Total Omset: <b>${omsetTotal}</b><br>&bull; Persentase: <b>${omsetPersen}%</b><br>&bull; Total Dibagi: <b>${omsetPool}</b></span>`;
+
+            // [FIX] Ambil detail item dari UI untuk disimpan ke Firebase
+            document.querySelectorAll("#bonus_omset_tbody tr").forEach((tr, idx) => {
+                const checkEl = tr.querySelector(".bonus-omset-check");
+                if (!checkEl || !checkEl.checked) return;
+
+                const nameHtml = tr.cells[0].innerHTML;
+                const name = nameHtml.split('<br>')[0].trim();
+                const jabatanHtml = tr.cells[0].querySelector('span');
+                const jabatan = jabatanHtml ? jabatanHtml.textContent : '-';
+                
+                const inputEl = tr.querySelector(".bonus-nominal-input");
+                // [FIX] Pastikan inputEl ada sebelum membaca 'value'
+                const valText = inputEl ? inputEl.value : "Rp 0";
+                const nominalAsli = parseInt(valText.replace(/[^0-9]/g, '')) || 0;
+
+                const pembulatanEl = tr.querySelector('.bonus-omset-pembulatan-display');
+                const nominalBulat = pembulatanEl ? (parseInt(pembulatanEl.textContent.replace(/[^0-9]/g, '')) || 0) : 0;
+
+                if (nominalBulat > 0) {
+                    const employees = window._absensiViewEmployees || getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+                    const emp = employees.find(e => e.name === name);
+                    const empId = emp ? (emp.id != null ? emp.id : idx) : idx;
+                    items.push({ empId, nama: name, jabatan, grandTotal: nominalBulat, totalAsli: nominalAsli, metodeBayar: 'TF', keterangan: 'Bonus Omset' });
+                }
+            });
+            const extraNameEl = document.getElementById("bonus_omset_extra_name");
+            const extraNomEl = document.getElementById("bonus_omset_extra_nominal");
+            const extraNominal = extraNomEl ? (parseInt(extraNomEl.value.replace(/[^0-9]/g, '')) || 0) : 0;
+            if (extraNominal > 0) {
+                items.push({ empId: 'extra', nama: extraNameEl.value || 'Lainnya', jabatan: '-', grandTotal: extraNominal, totalAsli: extraNominal, metodeBayar: 'TF', keterangan: 'Bonus Omset (Extra)' });
+            }
 
             await FirebaseStorage.saveGajiPengajuan({ 
                 outletId, monthKey, periodStart: tglAwal, periodEnd: tglAkhir, requester, totalGrand, note,
@@ -12562,14 +12626,14 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
         openRekeningPencairanModal(async (rekInfo) => {
             try {
                 const outletId = (typeof getRbmOutlet === 'function' && getRbmOutlet()) || 'default';
+                
+                // [FIX] Ambil total dari elemen pembulatan di UI
+                let totalGrandEl = document.getElementById('pencairan_pembulatan');
+                let totalGrand = totalGrandEl ? (parseInt(totalGrandEl.textContent.replace(/[^0-9]/g, '')) || 0) : 0;
 
-                let totalGrand = 0;
                 const items = [];
                 
                 document.querySelectorAll("#pencairan_tbody tr[data-empid]").forEach(tr => {
-                    const empId = tr.dataset.empid;
-                    const empName = tr.dataset.empname;
-                    const empJabatan = tr.dataset.empjabatan;
                     
                     const nominal = parseFloat(tr.querySelector('.penc-total-cell').dataset.total) || 0;
                     
@@ -12578,7 +12642,6 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                         let rincianArr = [];
                         let tglLemburStr = '';
                         let alasanLemburStr = '';
-                        let totalHariLembur = 0;
                         
                         if (mode === 'cuti') {
                             // ... (cuti logic remains the same)
@@ -12589,32 +12652,44 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
                             rincianArr.push(cairAL > 0 ? `${cairAL} AL` : '');
                             rincianArr.push(cairDP > 0 ? `${cairDP} DP` : '');
                             rincianArr.push(cairPH > 0 ? `${cairPH} PH` : '');
-
+                            
+                            // [FIX] Ambil nilai pembulatan per baris
+                            const pembulatanEl = tr.querySelector('.penc-bulat-cell');
+                            const nominalBulat = pembulatanEl ? (parseInt(pembulatanEl.textContent.replace(/[^0-9]/g, '')) || 0) : nominal;
+                            
                             items.push({ 
-                                empId: empId, nama: empName, jabatan: empJabatan, grandTotal: nominal, metodeBayar: 'TF', 
+                                empId: tr.dataset.empid, nama: tr.dataset.empname, jabatan: tr.dataset.empjabatan, 
+                                grandTotal: nominalBulat, totalAsli: nominal, // [FIX] Kirim nilai asli dan pembulatan
+                                metodeBayar: 'TF', 
                                 keterangan: `Pencairan Cuti: ` + rincianArr.join(', '),
                                 cairAL, cairDP, cairPH, gajiPerHari: gph, lemburJam: 0
                             });
                         } else {
-                            let detailedItems = []; // [PERBAIKAN] Ubah nama variabel agar tidak konflik
                             let totalJamLembur = 0;
+                            let lemburDetailsObj = []; // [FIX] Buat array objek terpisah untuk detail
                             tr.querySelectorAll('.lembur-subrow').forEach(sub => {
                                 const j = parseFloat(sub.querySelector('.penc-lembur-jam').value) || 0;
                                 const t = sub.querySelector('.penc-tgl-lembur').value.trim();
                                 const a = sub.querySelector('.penc-alasan-lembur').value.trim();
                                 totalJamLembur += j;
                                 if (j > 0) {
-                                    rincianArr.push(`[${t || '-'}] ${j} jam: ${a}`);
-                                    detailedItems.push({ hari: 0, jam: j, tgl: t, alasan: a });
+                                    lemburDetailsObj.push({ tgl: t, jam: j, alasan: a }); // [FIX] Simpan sebagai objek
+                                    rincianArr.push(`[${t || '-'}] ${j} jam: ${a || '-'}`);
                                 }
                             });
                             const gpj = parseFloat(tr.dataset.gpj) || 0;
-                            
+
+                            // Ambil nilai pembulatan per baris untuk detail
+                            const pembulatanEl = tr.querySelector('.penc-bulat-cell');
+                            const nominalBulat = pembulatanEl ? (parseInt(pembulatanEl.textContent.replace(/[^0-9]/g, '')) || 0) : nominal;
+
                             items.push({ 
-                                empId: empId, nama: empName, jabatan: empJabatan, grandTotal: nominal, metodeBayar: 'TF', 
+                                empId: tr.dataset.empid, nama: tr.dataset.empname, jabatan: tr.dataset.empjabatan, 
+                                grandTotal: nominalBulat, totalAsli: nominal, // [FIX] Kirim nilai asli dan pembulatan
+                                metodeBayar: 'TF', 
                                 keterangan: `Pencairan Lembur: ` + rincianArr.join(' | '),
-                                lemburJam: totalJamLembur, lemburDetails: detailedItems, ratePerJam: gpj,
-                                cairAL: 0, cairDP: 0, cairPH: 0
+                                lemburJam: totalJamLembur, lemburDetails: lemburDetailsObj, ratePerJam: gpj, // [FIX] Kirim array objek yang benar
+                                cairAL: 0, cairDP: 0, cairPH: 0,
                             });
                         }
                     }

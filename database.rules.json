@@ -1,0 +1,25 @@
+{
+  "rules": {
+    "rbm_pro": {
+      "pengajuan_tf": {
+        ".indexOn": ["outlet"],
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+      "petty_cash": {
+        "pengajuan": {
+          ".indexOn": ["outlet"],
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        ".indexOn": ["outlet"],
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    ".read": "auth != null",
+    ".write": "auth != null"
+  }
+}

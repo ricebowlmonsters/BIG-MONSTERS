@@ -12,7 +12,8 @@
     // [PENTING] Mencegah dashboard terbuka ganda di dalam iframe (Penyebab lonceng bertumpuk)
     try {
       if (window.self !== window.top) {
-        if (window.location.protocol !== 'file:') {
+        // [FIX] Jangan lakukan redirect jika dibuka dari file lokal untuk menghindari error cross-origin
+        if (window.location.protocol !== 'file:' && window.location.protocol !== 'cdvfile:') {
           window.top.location.href = window.location.href;
         }
       }
