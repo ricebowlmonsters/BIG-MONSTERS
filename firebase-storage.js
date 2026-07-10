@@ -446,6 +446,12 @@
     return 'rbm_pro/petty_cash_month_summary/' + outletKey + '/' + ym;
   }
 
+  function getPettyCashRecapPath(outletId) {
+    var o = outletId || (typeof getRbmOutlet === 'function' && getRbmOutlet()) || (window.getRbmOutlet && window.getRbmOutlet()) || '';
+    var outletKey = (o ? String(o).replace(/[.#$[\]]/g, '_') : 'default');
+    return 'rbm_pro/petty_cash_recap/' + outletKey;
+  }
+
   function _daysInMonth(yyyyMm) {
     try {
       var y = parseInt(yyyyMm.slice(0, 4), 10);
@@ -1243,6 +1249,8 @@
           var ym = dateStr.slice(0, 7);
           return buildPettyCashMonthSummary(ym, outletId).catch(function() {});
         } catch (e) {}
+      }).then(function() {
+        return buildAndSavePettyCashRecapSnapshot(outletId);
       }).then(function() { return '✅ Transaksi petty cash disimpan di Firebase.'; });
   }
 
@@ -1310,6 +1318,8 @@
       });
     }).then(function() {
       return syncPettyCashIndexForDate(outletId, normDate);
+    }).then(function() {
+      return buildAndSavePettyCashRecapSnapshot(outletId);
     }).then(function() { return '✅ Transaksi petty cash dihapus.'; });
   }
 
@@ -1328,6 +1338,178 @@
       });
       return list;
     });
+  }
+
+  function normalizePettyCashRecapRow(r, index) {
+    var parseNumber = function(value) {
+      if (value == null || value === '') return 0;
+      if (typeof value === 'number') return value;
+      var s = String(value).trim();
+      s = s.replace(/[^0-9,.-]/g, '');
+      var commaCount = (s.match(/,/g) || []).length;
+      var dotCount = (s.match(/\./g) || []).length;
+      if (commaCount > 0 && dotCount > 0) {
+        s = s.replace(/\./g, '').replace(/,/g, '.');
+      } else if (commaCount > 0) {
+        if (commaCount > 1) s = s.replace(/,/g, '');
+        else s = s.replace(/,/g, '.');
+      } else if (dotCount > 1) {
+        s = s.replace(/\./g, '');
+      }
+      var num = parseFloat(s);
+      return isNaN(num) ? 0 : num;
+    };
+    var jenis = String(r && r.jenis ? r.jenis : '').toLowerCase();
+    var kredit = parseNumber(r && (r.kredit || r.masuk));
+    var debit = parseNumber(r && (r.debit || r.keluar));
+    if (kredit === 0 && jenis === 'pemasukan') {
+      kredit = parseNumber(r && (r.total || r.harga));
+    }
+    if (debit === 0 && jenis === 'pengeluaran') {
+      debit = parseNumber(r && (r.total || r.harga));
+    }
+    return Object.assign({}, r, {
+      kredit: kredit,
+      masuk: kredit,
+      debit: debit,
+      keluar: debit,
+      _pcIndex: parseInt(r && (r._firebaseIndexInDate || r._pcIndex || r.index), 10) || index
+    });
+  }
+
+  function buildPettyCashRecapSnapshotFromList(list) {
+    var rows = Array.isArray(list) ? list.slice() : [];
+    if (!rows.length) {
+      return {
+        lastKredit: 0,
+        lastKreditDate: '-',
+        totalDebitSince: 0,
+        sisa: 0,
+        saldoAtLastKredit: 0,
+        saldoSebelumLastKredit: 0
+      };
+    }
+
+    function parseNumber(value) {
+      if (value == null || value === '') return 0;
+      if (typeof value === 'number') return value;
+      var s = String(value).trim();
+      s = s.replace(/[^0-9,.-]/g, '');
+      var commaCount = (s.match(/,/g) || []).length;
+      var dotCount = (s.match(/\./g) || []).length;
+      if (commaCount > 0 && dotCount > 0) {
+        s = s.replace(/\./g, '').replace(/,/g, '.');
+      } else if (commaCount > 0) {
+        if (commaCount > 1) s = s.replace(/,/g, '');
+        else s = s.replace(/,/g, '.');
+      } else if (dotCount > 1) {
+        s = s.replace(/\./g, '');
+      }
+      var num = parseFloat(s);
+      return isNaN(num) ? 0 : num;
+    }
+
+    function roundCurrencyValue(value) {
+      var num = parseNumber(value);
+      return Math.round(num * 100) / 100;
+    }
+
+    function parseDateValue(s) {
+      if (typeof s === 'string' && s.includes('/') && s.length === 10) {
+        var parts = s.split('/');
+        if (parts.length === 3) s = parts[2] + '-' + ('0' + parts[1]).slice(-2) + '-' + ('0' + parts[0]).slice(-2);
+      }
+      if (!s) return 0;
+      if (typeof s === 'number') return s;
+      if (s.indexOf('/') >= 0) {
+        var p = s.split('/');
+        if (p.length === 3) return new Date(p[2] + '-' + ('0' + p[1]).slice(-2) + '-' + ('0' + p[0]).slice(-2)).getTime();
+      }
+      var t = new Date(s).getTime();
+      return isNaN(t) ? 0 : t;
+    }
+
+    var normalized = rows.map(function(r, index) { return normalizePettyCashRecapRow(r, index); });
+    normalized.sort(function(a, b) {
+      var t1 = parseDateValue(a.tanggal || a.date);
+      var t2 = parseDateValue(b.tanggal || b.date);
+      if (t1 !== t2) return t1 - t2;
+      return (a._pcIndex || 0) - (b._pcIndex || 0);
+    });
+
+    var lastKreditTxIndex = -1;
+    for (var i = normalized.length - 1; i >= 0; i--) {
+      if ((normalized[i].kredit || normalized[i].masuk || 0) > 0) {
+        lastKreditTxIndex = i;
+        break;
+      }
+    }
+
+    var saldoSebelumLastKredit = 0;
+    var runningSaldo = 0;
+    var saldoAtLastKredit = 0;
+
+    for (var x = 0; x < normalized.length; x++) {
+      var trx = normalized[x];
+      var debit = parseNumber(trx.debit || trx.keluar || 0);
+      var kredit = parseNumber(trx.kredit || trx.masuk || 0);
+
+      if (lastKreditTxIndex >= 0 && x < lastKreditTxIndex) {
+        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+      } else if (lastKreditTxIndex >= 0 && x === lastKreditTxIndex) {
+        saldoSebelumLastKredit = roundCurrencyValue(runningSaldo);
+        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+        saldoAtLastKredit = roundCurrencyValue(runningSaldo);
+      } else if (lastKreditTxIndex >= 0) {
+        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+      } else {
+        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+      }
+    }
+
+    var lastRow = lastKreditTxIndex >= 0 ? normalized[lastKreditTxIndex] : null;
+    var lastKredit = lastRow ? (lastRow.kredit || lastRow.masuk || 0) : 0;
+    var lastKreditDate = lastRow ? (lastRow.tanggal || lastRow.date || '-') : '-';
+
+    var totalDebitSince = 0;
+    for (var n = lastKreditTxIndex + 1; n < normalized.length; n++) {
+      totalDebitSince += parseNumber(normalized[n].debit || normalized[n].keluar || 0);
+    }
+
+    if (lastKreditTxIndex < 0) {
+      saldoAtLastKredit = roundCurrencyValue(runningSaldo);
+    }
+
+    return {
+      lastKredit: lastKredit,
+      lastKreditDate: lastKreditDate,
+      totalDebitSince: totalDebitSince,
+      sisa: runningSaldo,
+      saldoAtLastKredit: saldoAtLastKredit,
+      saldoSebelumLastKredit: saldoSebelumLastKredit
+    };
+  }
+
+  function getPettyCashRecapSnapshot(outletId) {
+    if (!init()) return Promise.resolve(null);
+    return db.ref(getPettyCashRecapPath(outletId) + '/latest').once('value').then(function(snap) {
+      var v = snap.val();
+      return (v && typeof v === 'object') ? v : null;
+    }).catch(function() { return null; });
+  }
+
+  function savePettyCashRecapSnapshot(outletId, recap) {
+    if (!init()) return Promise.resolve(null);
+    var payload = recap && typeof recap === 'object' ? Object.assign({}, recap) : {};
+    payload.updatedAt = firebase.database.ServerValue.TIMESTAMP;
+    return db.ref(getPettyCashRecapPath(outletId) + '/latest').set(payload).catch(function() { return null; });
+  }
+
+  function buildAndSavePettyCashRecapSnapshot(outletId) {
+    return getPettyCashFullList(outletId).then(function(list) {
+      var recap = buildPettyCashRecapSnapshotFromList(list);
+      return savePettyCashRecapSnapshot(outletId, recap);
+    }).catch(function() { return null; });
   }
 
   function updatePettyCashTransactionByDateAndIndex(dateStr, indexInDate, data, outletId) {
@@ -1363,6 +1545,8 @@
     }).then(function() {
       var nd = normalizeDateKeyToYyyyMmDd(dateStr) || dateStr;
       return syncPettyCashIndexForDate(outletId, nd);
+    }).then(function() {
+      return buildAndSavePettyCashRecapSnapshot(outletId);
     }).then(function() { return '✅ Transaksi petty cash diperbarui.'; });
   }
 
@@ -1941,6 +2125,9 @@
     savePettyCashTransactions: savePettyCashTransactions,
     deletePettyCashByDateAndIndex: deletePettyCashByDateAndIndex,
     getPettyCashFullList: getPettyCashFullList,
+    getPettyCashRecapSnapshot: getPettyCashRecapSnapshot,
+    savePettyCashRecapSnapshot: savePettyCashRecapSnapshot,
+    buildAndSavePettyCashRecapSnapshot: buildAndSavePettyCashRecapSnapshot,
     updatePettyCashTransactionByDateAndIndex: updatePettyCashTransactionByDateAndIndex,
     savePettyCashPengajuan: savePettyCashPengajuan,
     saveDatabaseBarang: saveDatabaseBarang,

@@ -124,6 +124,26 @@
   var names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
   var sel = document.getElementById('rbm-outlet-select');
 
+  function parseCurrencyValue(value) {
+      if (value == null || value === '') return 0;
+      if (typeof value === 'number') return value;
+      var s = String(value).trim();
+      s = s.replace(/[^0-9,.-]/g, '');
+      var commaCount = (s.match(/,/g) || []).length;
+      var dotCount = (s.match(/\./g) || []).length;
+      if (commaCount > 0 && dotCount > 0) {
+          s = s.replace(/\./g, '').replace(/,/g, '.');
+      } else if (commaCount > 0) {
+          if (commaCount > 1) s = s.replace(/,/g, '');
+          else s = s.replace(/,/g, '.');
+      } else if (dotCount > 1) {
+          s = s.replace(/\./g, '');
+      }
+      var num = parseFloat(s);
+      return isNaN(num) ? 0 : num;
+  }
+  window.parseCurrencyValue = parseCurrencyValue;
+
   window.switchOwnerTab = function(tab) {
       const pendingBtn = document.getElementById('tab-pending');
       const historyBtn = document.getElementById('tab-history');
@@ -683,19 +703,19 @@ function openOwnerPengajuanModal(id) {
             detailsSince = Object.values(recap.detailsSince);
           }
           // [FIX] Hitung saldo sebelumnya secara dinamis untuk memastikan akurasi.
-          // Saldo sebelumnya = Saldo setelah TF terakhir - Nominal TF terakhir.
-          var saldoSebelumnya = (parseFloat(recap.saldoAtLastKredit) || 0) - (parseFloat(recap.lastKredit) || 0);
-          var saldoSetelahTfMasuk = (parseFloat(recap.saldoAtLastKredit) || 0);
-          var saldoSebelumnya = parseFloat(recap.saldoSebelumLastKredit) || 0;
-          var saldoSetelahTfMasuk = saldoSebelumnya + (parseFloat(recap.lastKredit) || 0);
-          var pengeluaranBlmDiganti = parseFloat(recap.totalDebitSince || 0) || 0;
+          var saldoSebelumnya =
+            typeof recap.saldoSebelumLastKredit !== 'undefined'
+              ? parseCurrencyValue(recap.saldoSebelumLastKredit)
+              : 0;
+          var saldoSetelahTfMasuk = saldoSebelumnya + parseCurrencyValue(recap.lastKredit);
+          var pengeluaranBlmDiganti = parseCurrencyValue(recap.totalDebitSince);
           var sisaSaldoAktual = saldoSetelahTfMasuk - pengeluaranBlmDiganti;
 
           html += `
             <div style="display: flex; justify-content: space-around; margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9fa;">
               <div style="text-align: center;">
                 <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Sisa Sebelumnya</div>
-                <div style="font-size: 14px; font-weight: bold; color: #475569; margin-top: 4px;">Rp ${parseInt(saldoSebelumnya).toLocaleString('id-ID')}</div>
+                <div style="font-size: 14px; font-weight: bold; color: #475569; margin-top: 4px;">Rp ${Math.round(saldoSebelumnya).toLocaleString('id-ID')}</div>
               </div>
               <div style="text-align: center;">
                 <div style="font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Saldo Setelah TF Masuk</div>
@@ -726,13 +746,13 @@ function openOwnerPengajuanModal(id) {
                         <th style="padding:8px; border:1px solid #e2e8f0; text-align:right; -webkit-print-color-adjust: exact;">Saldo</th>
                     </tr></thead><tbody>`;
               let no = 1;
-              let currentSaldo = parseFloat(recap.lastKredit) || 0;
+              let currentSaldo = parseCurrencyValue(recap.lastKredit);
               detailsSince.forEach(detail => {
                   const nm = detail.nama || detail.keterangan || '-';
                   const qty = detail.jumlah || '';
                   const satuan = detail.satuan || '';
-                  const harga = parseFloat(detail.harga) || 0;
-                  const val = parseFloat(detail.debit || detail.keluar || detail.total) || 0;
+                  const harga = parseCurrencyValue(detail.harga);
+                  const val = parseCurrencyValue(detail.debit || detail.keluar || detail.total);
                   const tg = detail.tanggal || detail.date || '-';
                   currentSaldo -= val;
                   html += `<tr>
@@ -1642,12 +1662,12 @@ window.viewPettyCashDetail = function(id) {
         : (recap.detailsSince && typeof recap.detailsSince === 'object' ? Object.values(recap.detailsSince) : []);
 
     // Prefer canonical summary fields when available so owner report matches "Lihat Petty Cash"
-    const saldoAtLast = parseFloat(recap.saldoAtLastKredit ?? recap.saldoAkhir ?? recap.lastKredit ?? 0) || 0;
-    const lastKreditAmt = parseFloat(recap.lastKredit || 0) || 0;
-    const saldoSebelumnya = saldoAtLast - lastKreditAmt;
-    const saldoSetelahTfMasuk = saldoAtLast;
-    const pengeluaranBelumDiganti = parseFloat(recap.totalDebitSince || 0) || 0;
-    const sisaSaldo = parseFloat(recap.sisa ?? recap.saldoAkhir ?? 0) || 0;
+    const saldoAtLast = parseCurrencyValue(recap.saldoAtLastKredit ?? recap.saldoAkhir ?? recap.lastKredit ?? 0) || 0;
+    const lastKreditAmt = parseCurrencyValue(recap.lastKredit || 0) || 0;
+    const saldoSebelumnya = parseCurrencyValue(recap.saldoSebelumLastKredit ?? 0) || 0;
+    const saldoSetelahTfMasuk = saldoSebelumnya + lastKreditAmt;
+    const pengeluaranBelumDiganti = parseCurrencyValue(recap.totalDebitSince || 0) || 0;
+    const sisaSaldo = parseCurrencyValue(recap.sisa ?? recap.saldoAkhir ?? 0) || 0;
 
     var styleBlock = '<style>body{font-family:sans-serif;font-size:12px;padding:20px;background:#f3f4f6;} .page{background:white;padding:20px;margin-bottom:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);overflow-x:auto;} h2,h3{text-align:center;margin:5px 0;color:#1e40af;} table{width:100%;border-collapse:collapse;margin-top:15px;white-space:nowrap;} th,td{border:1px solid #cbd5e1;padding:8px;text-align:center;} th{background-color:#1e40af;color:#fff;} .text-left{text-align:left;} .text-right{text-align:right;} tr:nth-child(even){background-color:#f8fafc;} tr:hover{background-color:#e2e8f0;} .summary-box{background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; text-align:center;} @media print { @page { size: landscape; margin: 10mm; } body { padding:0; background:white; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .page { box-shadow:none; margin:0; padding:0; overflow:visible; width:100%; max-width:100%; display:block; } table { width:100%; max-width:100%; } button { display:none !important; } }</style>';
 
@@ -1706,8 +1726,8 @@ window.viewPettyCashDetail = function(id) {
             const nm = detail.nama || detail.keterangan || '-';
             const qty = detail.jumlah || '';
             const satuan = detail.satuan || '';
-            const harga = parseFloat(detail.harga) || 0;
-            const val = parseFloat(detail.debit || detail.keluar || detail.total) || 0;
+            const harga = parseCurrencyValue(detail.harga);
+            const val = parseCurrencyValue(detail.debit || detail.keluar || detail.total);
             const tg = detail.tanggal || detail.date || '-';
             runningSaldo -= val;
             rows += `<tr>
@@ -1805,55 +1825,104 @@ window.viewPettyCashDetail = function(id) {
     viewWindow.document.close();
     viewWindow.focus();
 };
-    // If the petty cash view is already loaded, prefer its exact summary/data
+    const parsePettyCashDate = function(value) {
+        if (!value) return 0;
+        if (typeof value === 'number') return value;
+        var s = String(value).trim();
+        if (s.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+            var parts = s.split('/');
+            return new Date(parts[2] + '-' + parts[1] + '-' + parts[0]).getTime();
+        }
+        var parsed = new Date(s).getTime();
+        if (!isNaN(parsed)) return parsed;
+        return 0;
+    };
+    const sortPettyCashRowsByDate = function(rows) {
+        var sorted = Array.isArray(rows) ? rows.slice() : [];
+        sorted.sort(function(a, b) {
+            var t1 = parsePettyCashDate(a.tanggal || a.date || 0);
+            var t2 = parsePettyCashDate(b.tanggal || b.date || 0);
+            if (t1 !== t2) return t1 - t2;
+            var idxA = parseInt(a._firebaseIndexInDate || a._pcIndex || a.index || 0, 10) || 0;
+            var idxB = parseInt(b._firebaseIndexInDate || b._pcIndex || b.index || 0, 10) || 0;
+            return idxA - idxB;
+        });
+        return sorted;
+    };
+
+    const buildRecapFromPettyCashRows = function(rawRows, summary) {
+        var rows = Array.isArray(rawRows) ? rawRows.slice() : [];
+        if (!rows.length) return null;
+        var sortedRows = sortPettyCashRowsByDate(rows);
+        var lastIdx = -1;
+        for (var i = sortedRows.length - 1; i >= 0; i--) {
+            if (parseCurrencyValue(sortedRows[i].kredit || sortedRows[i].masuk) > 0) {
+                lastIdx = i;
+                break;
+            }
+        }
+        if (lastIdx < 0) return null;
+
+        var roundCurrencyValue = function(value) {
+            var num = parseCurrencyValue(value);
+            return Math.round(num * 100) / 100;
+        };
+
+        var runningSaldo = 0;
+        var saldoSebelumLastKredit = 0;
+        var saldoAtLastKredit = 0;
+
+        for (var x = 0; x < sortedRows.length; x++) {
+            var row = sortedRows[x];
+            var debit = parseCurrencyValue(row.debit || row.keluar || 0);
+            var kredit = parseCurrencyValue(row.kredit || row.masuk || 0);
+
+            if (x < lastIdx) {
+                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+            } else if (x === lastIdx) {
+                saldoSebelumLastKredit = roundCurrencyValue(runningSaldo);
+                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+                saldoAtLastKredit = roundCurrencyValue(runningSaldo);
+            } else {
+                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+            }
+        }
+
+        var lastRow = sortedRows[lastIdx];
+        var lastKredit = parseCurrencyValue(lastRow.kredit || lastRow.masuk);
+        var lastKreditDate = lastRow.tanggal || lastRow.date || '-';
+
+        var detailsSince = [];
+        var totalDebitSince = 0;
+        for (var n = lastIdx + 1; n < sortedRows.length; n++) {
+            var item = Object.assign({}, sortedRows[n]);
+            var debit = parseCurrencyValue(item.debit || item.keluar);
+            if (debit > 0) {
+                totalDebitSince += debit;
+                item.debit = debit;
+                item.keluar = debit;
+                item.total = debit;
+                detailsSince.push(item);
+            }
+        }
+
+        return {
+            lastKredit: lastKredit,
+            lastKreditDate: lastKreditDate,
+            totalDebitSince: totalDebitSince,
+            sisa: roundCurrencyValue(runningSaldo),
+            detailsSince: detailsSince,
+            saldoAtLastKredit: saldoAtLastKredit,
+            saldoSebelumLastKredit: saldoSebelumLastKredit
+        };
+    };
+
+    // If the petty cash view is already loaded, prefer its exact summary/data.
+    // Skip if the view is using server-side pagination / partial page data.
     const buildRecapFromLastPettyCashView = function() {
         try {
-            var rows = window._lastPettyCashData || [];
-            var summary = window._lastPettyCashSummary || {};
-            if (!Array.isArray(rows) || rows.length === 0) return null;
-
-            var lastKredit = 0, lastKreditDate = '-', saldoAtLastKredit = 0;
-            // Find most recent credit by scanning rows from newest to oldest
-            for (var i = rows.length - 1; i >= 0; i--) {
-                var r = rows[i];
-                var k = parseFloat(r.kredit || r.masuk) || 0;
-                if (k > 0) {
-                    lastKredit = k;
-                    lastKreditDate = r.tanggal || r.date || lastKreditDate;
-                    saldoAtLastKredit = parseFloat(r.saldo) || 0;
-                    break;
-                }
-            }
-
-            // Collect details since last kredit (matching render logic)
-            var detailsSince = [];
-            var totalDebitSince = 0;
-            var foundLast = false;
-            for (var j = 0; j < rows.length; j++) {
-                var rr = rows[j];
-                if (parseFloat(rr.kredit || rr.masuk) > 0) foundLast = true; // mark as we passed the credit
-                if (foundLast) continue; // only consider entries AFTER the last credit in display rows
-            }
-
-            // Alternative: find index of last kredit and take following debit rows
-            var lastIdx = -1;
-            for (var m = rows.length - 1; m >= 0; m--) {
-                if (parseFloat(rows[m].kredit || rows[m].masuk) > 0) { lastIdx = m; break; }
-            }
-            for (var n = lastIdx + 1; n < rows.length; n++) {
-                var item = Object.assign({}, rows[n]);
-                var debit = parseFloat(item.debit || item.keluar) || 0;
-                if (debit > 0) {
-                    totalDebitSince += debit;
-                    item.debit = debit;
-                    item.keluar = debit;
-                    item.total = debit;
-                    detailsSince.push(item);
-                }
-            }
-
-            var sisa = parseFloat(summary.saldoAkhir || summary.saldo || 0) || 0;
-            return { lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit };
+            if (window._pcUseServerPaging) return null;
+            return buildRecapFromPettyCashRows(window._lastPettyCashData, window._lastPettyCashSummary);
         } catch (e) { return null; }
     };
 
@@ -1861,6 +1930,13 @@ window.viewPettyCashDetail = function(id) {
     var liveFromView = buildRecapFromLastPettyCashView();
     if (liveFromView) {
         renderPettyCashWindow(liveFromView);
+        return;
+    }
+
+    if (typeof getPettyCashRecapForPengajuan === 'function') {
+        getPettyCashRecapForPengajuan(function(liveRecap) {
+            renderPettyCashWindow(liveRecap || storedRecap);
+        });
         return;
     }
 
@@ -1896,7 +1972,11 @@ window.viewPettyCashDetail = function(id) {
                     // nothing – fall back to month summary if available
                     if (FirebaseStorage.getPettyCashMonthSummary) {
                         return FirebaseStorage.getPettyCashMonthSummary(p.from.slice(0,7), outletId).then(function(ms) {
-                            var fallback = { lastKredit: parseFloat(storedRecap.lastKredit||0)||0, lastKreditDate: storedRecap.lastKreditDate||'-', totalDebitSince: parseFloat(storedRecap.totalDebitSince||0)||0, sisa: parseFloat(ms && ms.saldoAkhir)||parseFloat(storedRecap.sisa||0)||0, detailsSince: Array.isArray(storedRecap.detailsSince)?storedRecap.detailsSince:(storedRecap.detailsSince&&typeof storedRecap.detailsSince==='object'?Object.values(storedRecap.detailsSince):[]), saldoAtLastKredit: parseFloat(ms && ms.saldoAkhir)||0 };
+                            var lastK = parseCurrencyValue(storedRecap.lastKredit);
+                            var storedSaldoSebelum = typeof storedRecap.saldoSebelumLastKredit !== 'undefined' ? parseCurrencyValue(storedRecap.saldoSebelumLastKredit) : null;
+                            var saldoSebelumLastKredit = storedSaldoSebelum !== null ? storedSaldoSebelum : 0;
+                            var saldoAkhir = parseCurrencyValue(storedRecap.sisa || storedRecap.saldoAtLastKredit || (ms && ms.saldoAkhir) || 0);
+                            var fallback = { lastKredit: lastK, lastKreditDate: storedRecap.lastKreditDate||'-', totalDebitSince: parseCurrencyValue(storedRecap.totalDebitSince)||0, sisa: saldoAkhir, detailsSince: Array.isArray(storedRecap.detailsSince)?storedRecap.detailsSince:(storedRecap.detailsSince&&typeof storedRecap.detailsSince==='object'?Object.values(storedRecap.detailsSince):[]), saldoAtLastKredit: parseCurrencyValue(storedRecap.saldoAtLastKredit || saldoAkhir || 0), saldoSebelumLastKredit: saldoSebelumLastKredit };
                             renderPettyCashWindow(fallback);
                         }).catch(function() {
                             if (typeof getPettyCashRecapForPengajuan === 'function') getPettyCashRecapForPengajuan(function(l) { renderPettyCashWindow(l||storedRecap); });
@@ -1907,22 +1987,54 @@ window.viewPettyCashDetail = function(id) {
                     return renderPettyCashWindow(storedRecap);
                 }
 
+                var sortedRows = sortPettyCashRowsByDate(Array.isArray(rows) ? rows : []);
                 var lastKredit = 0, lastKreditDate = '-', saldoAtLastKredit = 0;
-                for (var i = rows.length - 1; i >= 0; i--) {
-                    var r = rows[i];
-                    var k = parseFloat(r.kredit || r.masuk) || 0;
-                    if (k > 0) { lastKredit = k; lastKreditDate = r.tanggal || r.date || lastKreditDate; saldoAtLastKredit = parseFloat(r.saldo) || 0; break; }
-                }
                 var lastIdx = -1;
-                for (var m = rows.length - 1; m >= 0; m--) { if (parseFloat(rows[m].kredit || rows[m].masuk) > 0) { lastIdx = m; break; } }
-                var detailsSince = [], totalDebitSince = 0;
-                for (var n = lastIdx + 1; n < rows.length; n++) {
-                    var item = Object.assign({}, rows[n]);
-                    var debit = parseFloat(item.debit || item.keluar) || 0;
-                    if (debit > 0) { totalDebitSince += debit; item.debit = debit; item.keluar = debit; item.total = debit; detailsSince.push(item); }
+                for (var i = sortedRows.length - 1; i >= 0; i--) {
+                    if (parseCurrencyValue(sortedRows[i].kredit || sortedRows[i].masuk) > 0) {
+                        lastIdx = i;
+                        break;
+                    }
                 }
-                var sisa = parseFloat(summary.saldoAkhir || summary.saldo || 0) || 0;
-                var recap = { lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit };
+                if (lastIdx >= 0) {
+                    var lastRow = sortedRows[lastIdx];
+                    lastKredit = parseCurrencyValue(lastRow.kredit || lastRow.masuk);
+                    lastKreditDate = lastRow.tanggal || lastRow.date || lastKreditDate;
+                }
+                var roundCurrencyValue = function(value) {
+                    var num = parseCurrencyValue(value);
+                    return Math.round(num * 100) / 100;
+                };
+                var detailsSince = [], totalDebitSince = 0;
+                var runningSaldo = 0;
+                var saldoSebelumLastKredit = 0;
+                var saldoAtLastKredit = 0;
+                for (var x = 0; x < sortedRows.length; x++) {
+                    var trx = sortedRows[x];
+                    var debit = parseCurrencyValue(trx.debit || trx.keluar || 0);
+                    var kredit = parseCurrencyValue(trx.kredit || trx.masuk || 0);
+                    if (x < lastIdx) {
+                        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+                    } else if (x === lastIdx) {
+                        saldoSebelumLastKredit = roundCurrencyValue(runningSaldo);
+                        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+                        saldoAtLastKredit = roundCurrencyValue(runningSaldo);
+                    } else {
+                        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+                    }
+                    if (x >= lastIdx + 1) {
+                        var item = Object.assign({}, trx);
+                        var debitSince = parseCurrencyValue(item.debit || item.keluar);
+                        if (debitSince > 0) {
+                            totalDebitSince += debitSince;
+                            item.debit = debitSince;
+                            item.keluar = debitSince;
+                            item.total = debitSince;
+                            detailsSince.push(item);
+                        }
+                    }
+                }
+                var recap = { lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: roundCurrencyValue(runningSaldo), detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit, saldoSebelumLastKredit: saldoSebelumLastKredit };
                 renderPettyCashWindow(recap);
             } catch (e) {
                 console.warn('build recap from getPettyCash failed', e);
@@ -2658,10 +2770,19 @@ const AppPopup = {
 // Override permanent window.alert dan window.confirm agar device popup tidak pernah muncul
 window.alert = function(msg) { 
     const msgStr = msg ? msg.toString().toLowerCase() : '';
-    const btn = document.getElementById('submitButtonPengajuan');
+    const btn = document.getElementById('submitButtonPengajuan'); // Tombol di form pengajuan
     
     if (msgStr.includes('berhasil')) {
         AppPopup.success('Pengajuan sudah dikirim, tunggu disetujui.', 'Pengajuan');
+        // [FIX] Berikan konfirmasi yang lebih baik dan opsi kembali
+        AppPopup.show('Pengajuan Terkirim', 'Pengajuan Anda sudah berhasil dikirim dan akan segera direview oleh Owner.', '✅', true, function() {
+            // Coba kembali ke halaman utama jika memungkinkan
+            try {
+                if (window.parent && window.parent.location.href.includes('index.html')) window.parent.location.reload();
+                else window.location.href = 'index.html';
+            } catch(e) { window.location.href = 'index.html'; }
+        });
+        if (typeof createPengajuanForm === 'function') createPengajuanForm(); // Reset form
     } else if (msgStr.includes('gagal') || msgStr.includes('error')) {
         AppPopup.error(msg, 'Gagal');
     } else {

@@ -2264,11 +2264,30 @@ function getPettyCashRecapForPengajuan(cb) {
     
     function processTransactions(list) {
         function parseNumber(value) {
-            // [FIX] Gunakan pembulatan ke 2 desimal untuk menghindari error floating point
-            // dan pastikan semua kalkulasi konsisten. Ini adalah metode yang paling andal
-            // untuk menangani aritmatika mata uang di JavaScript.
-            const num = parseFloat(String(value || '0').replace(/,/g, '.'));
-            return isNaN(num) ? 0 : Math.round(num * 100) / 100;
+            if (value == null || value === '') return 0;
+            if (typeof value === 'number') return value;
+            var s = String(value).trim();
+            s = s.replace(/[^0-9,.-]/g, '');
+            var commaCount = (s.match(/,/g) || []).length;
+            var dotCount = (s.match(/\./g) || []).length;
+            if (commaCount > 0 && dotCount > 0) {
+                // Indonesian format: 1.000.000,50
+                s = s.replace(/\./g, '').replace(/,/g, '.');
+            } else if (commaCount > 0) {
+                if (commaCount > 1) {
+                    s = s.replace(/,/g, '');
+                } else {
+                    s = s.replace(/,/g, '.');
+                }
+            } else if (dotCount > 1) {
+                s = s.replace(/\./g, '');
+            }
+            var num = parseFloat(s);
+            return isNaN(num) ? 0 : num;
+        }
+        function roundCurrencyValue(value) {
+            var num = parseNumber(value);
+            return Math.round(num * 100) / 100;
         }
         function parseDateValue(s) {
             // [FIX] Handle format tanggal DD/MM/YYYY dari Excel
@@ -2320,10 +2339,10 @@ function getPettyCashRecapForPengajuan(cb) {
         var saldoAtLastKredit = 0;
         var saldoSebelumLastKredit = 0;
 
-        // [LOGIKA BARU] Cari indeks dari transaksi kredit terakhir
+        // Cari indeks dari transaksi kredit terakhir
         var lastKreditTx = null;
         var lastKreditTxIndex = -1;
-        for (var i = list.length - 1; i >= 0; i--) { // Cari dari belakang (terbaru)
+        for (var i = list.length - 1; i >= 0; i--) {
             if (list[i].kredit > 0) {
                 lastKreditTx = list[i];
                 lastKreditTxIndex = i;
@@ -2331,23 +2350,29 @@ function getPettyCashRecapForPengajuan(cb) {
             }
         }
 
-        // [LOGIKA BARU] Hitung ulang saldo dari awal untuk mendapatkan nilai yang akurat.
-        let saldoBerjalan = 0;
-        if (lastKreditTxIndex > 0) {
-            // Iterasi dari awal sampai sebelum transaksi kredit terakhir
-            for (let i = 0; i < lastKreditTxIndex; i++) {
-                const trx = list[i];
-                saldoBerjalan = (saldoBerjalan * 100 - (trx.debit || 0) * 100 + (trx.kredit || 0) * 100) / 100;
+        // Hitung saldo berjalan dari awal transaksi, tanpa mengandalkan field saldo lama yang bisa stale.
+        for (var i = 0; i < list.length; i++) {
+            var trx = list[i];
+            var debit = parseNumber(trx.debit || trx.keluar || 0);
+            var kredit = parseNumber(trx.kredit || trx.masuk || 0);
+
+            if (lastKreditTxIndex >= 0 && i < lastKreditTxIndex) {
+                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+            } else if (lastKreditTxIndex >= 0 && i === lastKreditTxIndex) {
+                saldoSebelumLastKredit = roundCurrencyValue(runningSaldo);
+                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+                saldoAtLastKredit = roundCurrencyValue(runningSaldo);
+            } else if (lastKreditTxIndex >= 0) {
+                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+            } else {
+                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
             }
-            saldoSebelumLastKredit = saldoBerjalan;
-        } else {
-            saldoSebelumLastKredit = 0; // Tidak ada kredit sebelumnya, saldo awal dianggap 0
         }
-        
+
         // Hitung total pengeluaran SETELAH kredit terakhir
         for (var i = lastKreditTxIndex + 1; i < list.length; i++) {
             var r = list[i];
-            var debit = parseNumber(r.debit);
+            var debit = parseNumber(r.debit || r.keluar || 0);
             if (debit > 0) {
                 totalDebitSince += debit;
                 var item = Object.assign({}, r);
@@ -2357,20 +2382,14 @@ function getPettyCashRecapForPengajuan(cb) {
                 detailsSince.push(item);
             }
         }
-        
-        // Hitung saldo berjalan untuk mendapatkan saldo akhir dan saldo saat kredit
-        list.forEach(function(r) {
-            runningSaldo = runningSaldo - parseNumber(r.debit) + parseNumber(r.kredit);
-        });
-        if (lastKreditTx) {
-            saldoAtLastKredit = lastKreditTx.saldo || 0;
-        } else {
-            saldoAtLastKredit = runningSaldo;
+
+        if (!lastKreditTx) {
+            saldoAtLastKredit = roundCurrencyValue(runningSaldo);
         }
 
         var lastKredit = lastKreditTx ? parseNumber(lastKreditTx.kredit) : 0;
         var lastKreditDate = lastKreditTx ? (lastKreditTx.tanggal || lastKreditTx.date || '-') : '-';
-        var sisa = runningSaldo;
+        var sisa = roundCurrencyValue(runningSaldo);
         var unreimbursedDates = detailsSince.map(function(d) { return d.tanggal || d.date; }).filter(Boolean).sort();
         var rangeStr = '';
         if (unreimbursedDates.length > 0) {
@@ -2378,10 +2397,33 @@ function getPettyCashRecapForPengajuan(cb) {
                 ? ' (Tgl ' + unreimbursedDates[0] + ')'
                 : ' (Tgl ' + unreimbursedDates[0] + ' s/d ' + unreimbursedDates[unreimbursedDates.length - 1] + ')';
         }
-        cb({ lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit, saldoSebelumLastKredit: saldoSebelumLastKredit, unreimbursedDateRange: rangeStr });
+        var computedRecap = { lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit, saldoSebelumLastKredit: saldoSebelumLastKredit, unreimbursedDateRange: rangeStr };
+        if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.savePettyCashRecapSnapshot) {
+            FirebaseStorage.savePettyCashRecapSnapshot(outlet, computedRecap).catch(function() {});
+        }
+        cb(computedRecap);
     }
     
     getAllTransactions().then(processTransactions).catch(() => processTransactions([]));
+}
+
+function parseCurrencyValue(value) {
+    if (value == null || value === '') return 0;
+    if (typeof value === 'number') return value;
+    var s = String(value).trim();
+    s = s.replace(/[^0-9,.-]/g, '');
+    var commaCount = (s.match(/,/g) || []).length;
+    var dotCount = (s.match(/\./g) || []).length;
+    if (commaCount > 0 && dotCount > 0) {
+        s = s.replace(/\./g, '').replace(/,/g, '.');
+    } else if (commaCount > 0) {
+        if (commaCount > 1) s = s.replace(/,/g, '');
+        else s = s.replace(/,/g, '.');
+    } else if (dotCount > 1) {
+        s = s.replace(/\./g, '');
+    }
+    var num = parseFloat(s);
+    return isNaN(num) ? 0 : num;
 }
 
  function createPengajuanForm() {
@@ -2443,7 +2485,7 @@ function getPettyCashRecapForPengajuan(cb) {
                 <thead><tr style="background:#f1f5f9;"><th style="padding:6px; text-align:left;">Tanggal</th><th style="padding:6px; text-align:left;">Keterangan Pengeluaran</th><th style="padding:6px; text-align:right;">Nominal</th></tr></thead><tbody>`;
             recap.detailsSince.forEach(function(d) {
                 var nm = d.nama || d.keterangan || '-';
-                var val = parseFloat(d.debit || d.keluar || d.total) || 0;
+                var val = parseCurrencyValue(d.debit || d.keluar || d.total);
                 var tg = d.tanggal || d.date || '-';
                 detailsHtml += `<tr><td style="padding:4px 6px; border-bottom:1px solid #eee;">${tg}</td><td style="padding:4px 6px; border-bottom:1px solid #eee;">${nm}</td><td style="padding:4px 6px; text-align:right; border-bottom:1px solid #eee;">${formatRupiah(val)}</td></tr>`;
             });
@@ -2452,12 +2494,13 @@ function getPettyCashRecapForPengajuan(cb) {
             detailsHtml = `<p style="font-size:12px; color:#64748b; margin-top:10px; font-style:italic;">Belum ada pengeluaran yang perlu direimburse (sudah terganti semua).</p>`;
         }
 
-        var saldoSebelumDanaMasuk = parseFloat(recap.saldoSebelumLastKredit);
-        var saldoSetelahDanaMasuk = saldoSebelumDanaMasuk + recap.lastKredit;
+        var saldoSebelumDanaMasuk = parseCurrencyValue(recap.saldoSebelumLastKredit);
+        var lastKreditAmt = parseCurrencyValue(recap.lastKredit);
+        var saldoSetelahDanaMasuk = saldoSebelumDanaMasuk + lastKreditAmt;
         var html = `
             <div style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:15px;">
                 <p style="margin:0 0 5px; font-size:13px; color:#475569;">Saldo Sebelum Dana Masuk: <strong style="color: #b91c1c;">${formatRupiah(saldoSebelumDanaMasuk)}</strong></p>
-                <p style="margin:0 0 5px; font-size:13px; color:#475569;">Dana Masuk Terakhir (${recap.lastKreditDate || 'N/A'}): <strong style="color: #059669;">${formatRupiah(recap.lastKredit)}</strong></p>
+                <p style="margin:0 0 5px; font-size:13px; color:#475569;">Dana Masuk Terakhir (${recap.lastKreditDate || 'N/A'}): <strong style="color: #059669;">${formatRupiah(lastKreditAmt)}</strong></p>
                 <p style="margin:0 0 12px; font-size:13px; color:#475569;">Saldo Setelah Dana Masuk: <strong style="color: #1d4ed8;">${formatRupiah(saldoSetelahDanaMasuk)}</strong></p>
                 <p style="margin:0 0 12px; font-size:13px; color:#475569;">Total Pengeluaran Sejak Dana Masuk: <strong style="color: #dc2626;">${formatRupiah(recap.totalDebitSince)}</strong></p>
                 <p style="margin:0 0 12px; font-size:14px; color:#475569; font-weight:bold; border-top:1px solid #ddd; padding-top:10px;">Sisa Saldo Saat Ini: <strong style="color: #059669;">${formatRupiah(recap.sisa)}</strong></p>
