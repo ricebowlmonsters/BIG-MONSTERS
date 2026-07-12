@@ -124,9 +124,10 @@
       } else if (page.indexOf('petty-cash') >= 0) {
           // [OPTIMASI KILAT] Jangan load seluruh petty_cash karena data sangat besar dan sudah diload otomatis sesuai tanggal
       } else if (page.indexOf('barang') >= 0 || page.indexOf('stok') >= 0) {
-          nodesToLoad.push('stok_items' + sfx);
+          nodesToLoad.push('stok_items_sales' + sfx);
+          nodesToLoad.push('stok_items_fruits' + sfx);
+          nodesToLoad.push('stok_items_notsales' + sfx);
           nodesToLoad.push('stok_transactions' + sfx);
-          if (outlet) nodesToLoad.push(outlet + '/stok_items');
       } else if (page.indexOf('pembukuan') >= 0 || page.indexOf('keuangan') >= 0) {
           nodesToLoad.push('bank');
       } else if (page.indexOf('inventaris') >= 0) {
@@ -498,8 +499,8 @@
         curr[parts[parts.length - 1]] = toSet;
         
         // [PERBAIKAN] Simpan juga ke localStorage untuk cache offline/startup cepat
-        // Khusus untuk data master yang sering dibaca (Karyawan, Config)
-        if (key.indexOf('RBM_EMPLOYEES') === 0 || key.indexOf('RBM_GPS_') === 0 || key.indexOf('RBM_FACE_DATA') === 0 || key.indexOf('RBM_GAJI_') === 0 || key.indexOf('RBM_BONUS_') === 0 || key.indexOf('RBM_RESERVASI_') === 0) {
+        // Khusus untuk data master yang sering dibaca (Karyawan, Config) dan stok yang sering direfresh
+        if (key.indexOf('RBM_EMPLOYEES') === 0 || key.indexOf('RBM_GPS_') === 0 || key.indexOf('RBM_FACE_DATA') === 0 || key.indexOf('RBM_GAJI_') === 0 || key.indexOf('RBM_BONUS_') === 0 || key.indexOf('RBM_RESERVASI_') === 0 || key.indexOf('RBM_STOK_') === 0) {
            try { localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); } catch(e) {}
         }
 

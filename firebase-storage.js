@@ -1188,6 +1188,10 @@
       dateStr = p[2] + '-' + ('0' + p[1]).slice(-2) + '-' + ('0' + p[0]).slice(-2);
     }
     var path = getPettyCashDatePath(outletId, dateStr);
+    var roundCurrencyValue = function(value) {
+      var num = parseFloat(value);
+      return isNaN(num) ? 0 : Math.round(num * 100) / 100;
+    };
     var newList = (data.transactions || []).map(function(trx) {
       var nominalPemasukan = parseFloat(trx.total) || parseFloat(trx.harga) || 0;
       var nominalPengeluaran = (parseFloat(trx.jumlah) || 0) * (parseFloat(trx.harga) || 0);
@@ -1207,43 +1211,85 @@
         createdAt: firebase.database.ServerValue.TIMESTAMP
       };
     });
-    return db.ref(path).once('value').then(function(snap) {
-      var existing = snap.val();
-      var existingArr = existing && Array.isArray(existing.transactions) ? existing.transactions : (existing && existing.transactions && typeof existing.transactions === 'object' ? Object.values(existing.transactions) : []);
-      var startIdx = existingArr.length;
-      existingArr = existingArr.concat(newList);
-      return db.ref(path).set({
-        tanggal: dateStr,
-        transactions: existingArr,
-        createdAt: (existing && existing.createdAt) || firebase.database.ServerValue.TIMESTAMP
-      }).then(function() {
-        // [BARU] Simpan index ringan per-bulan agar "muat bulan" jadi sangat cepat
-        var ym = dateStr.slice(0, 7);
-        var idxBase = getPettyCashIndexMonthPath(outletId, ym);
-        var updates = {};
-        for (var i = 0; i < newList.length; i++) {
-          var it = newList[i] || {};
-          // [FIX] Index key harus urut berdasarkan tanggal+index transaksi
-          // agar paging tidak loncat dan per-urutan sesuai awal bulan.
-          var refIndex = startIdx + i;
-          var refIndexPadded = ('000000' + refIndex).slice(-6);
-          var key = dateStr + '_' + refIndexPadded;
-          updates[idxBase + '/' + key] = {
-            tanggal: dateStr,
-            nama: it.nama || '',
-            jumlah: it.jumlah,
-            satuan: it.satuan || '',
-            harga: it.harga,
-            debit: it.debit || 0,
-            kredit: it.kredit || 0,
-            refDate: dateStr,
-            refIndex: refIndex
-          };
+    // [FIX] Ambil saldo akhir dari tanggal sebelumnya sebagai starting balance
+    var getPreviousDayEndingSaldo = function() {
+      var parseDateValue = function(s) {
+        if (typeof s === 'string' && s.includes('/') && s.length === 10) {
+          var parts = s.split('/');
+          if (parts.length === 3) s = parts[2] + '-' + ('0' + parts[1]).slice(-2) + '-' + ('0' + parts[0]).slice(-2);
         }
-        if (Object.keys(updates).length === 0) return;
-        return db.ref().update(updates).catch(function(e) { console.warn('petty_cash_index update failed', e); });
+        if (!s) return 0;
+        if (typeof s === 'number') return s;
+        if (s.indexOf('/') >= 0) {
+          var p = s.split('/');
+          if (p.length === 3) return new Date(p[2] + '-' + ('0' + p[1]).slice(-2) + '-' + ('0' + p[0]).slice(-2)).getTime();
+        }
+        var t = new Date(s).getTime();
+        return isNaN(t) ? 0 : t;
+      };
+      var currentDate = new Date(dateStr);
+      var previousDate = new Date(currentDate.getTime() - 24 * 60 * 60 * 1000);
+      var prevDateStr = previousDate.toISOString().split('T')[0];
+      var prevPath = getPettyCashDatePath(outletId, prevDateStr);
+      return db.ref(prevPath).once('value').then(function(prevSnap) {
+        var prevNode = prevSnap.val();
+        if (!prevNode) return 0;
+        var prevArr = Array.isArray(prevNode.transactions) ? prevNode.transactions : (prevNode.transactions && typeof prevNode.transactions === 'object' ? Object.values(prevNode.transactions) : []);
+        if (prevArr.length === 0) return 0;
+        var lastTrx = prevArr[prevArr.length - 1];
+        return parseFloat(lastTrx.saldo || 0) || 0;
       });
-      }).then(function() {
+    };
+
+    return getPreviousDayEndingSaldo().then(function(previousEndingSaldo) {
+      return db.ref(path).once('value').then(function(snap) {
+        var existing = snap.val();
+        var existingArr = existing && Array.isArray(existing.transactions) ? existing.transactions : (existing && existing.transactions && typeof existing.transactions === 'object' ? Object.values(existing.transactions) : []);
+        var consolidatedArr = existingArr.concat(newList);
+        // [FIX] Mulai dari saldo akhir hari sebelumnya, bukan dari 0
+        var runningSaldo = previousEndingSaldo;
+        for (var i = 0; i < consolidatedArr.length; i++) {
+          var row = consolidatedArr[i] || {};
+          var debit = parseFloat(row.debit || row.keluar || 0) || 0;
+          var kredit = parseFloat(row.kredit || row.masuk || 0) || 0;
+          runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+          row.saldo = runningSaldo; // Simpan saldo SETELAH transaksi
+        }
+        var startIdx = existingArr.length;
+        existingArr = consolidatedArr;
+        return db.ref(path).set({
+          tanggal: dateStr,
+          transactions: existingArr,
+          createdAt: (existing && existing.createdAt) || firebase.database.ServerValue.TIMESTAMP
+        }).then(function() {
+          // [BARU] Simpan index ringan per-bulan agar "muat bulan" jadi sangat cepat
+          var ym = dateStr.slice(0, 7);
+          var idxBase = getPettyCashIndexMonthPath(outletId, ym);
+          var updates = {};
+          for (var i = 0; i < newList.length; i++) {
+            var it = newList[i] || {};
+            // [FIX] Index key harus urut berdasarkan tanggal+index transaksi
+            // agar paging tidak loncat dan per-urutan sesuai awal bulan.
+            var refIndex = startIdx + i;
+            var refIndexPadded = ('000000' + refIndex).slice(-6);
+            var key = dateStr + '_' + refIndexPadded;
+            updates[idxBase + '/' + key] = {
+              tanggal: dateStr,
+              nama: it.nama || '',
+              jumlah: it.jumlah,
+              satuan: it.satuan || '',
+              harga: it.harga,
+              debit: it.debit || 0,
+              kredit: it.kredit || 0,
+              refDate: dateStr,
+              refIndex: refIndex
+            };
+          }
+          if (Object.keys(updates).length === 0) return;
+          return db.ref().update(updates).catch(function(e) { console.warn('petty_cash_index update failed', e); });
+        });
+      });
+    }).then(function() {
         // Update summary bulan ini (ringan) agar tampilan saldo cepat tanpa scan besar
         try {
           var ym = dateStr.slice(0, 7);
@@ -1304,10 +1350,21 @@
     var path = getPettyCashDatePath(outletId, dateStr);
     var normDate = normalizeDateKeyToYyyyMmDd(dateStr) || dateStr;
     return db.ref(path).once('value').then(function(snap) {
-      var node = snap.val();
-      var arr = node && Array.isArray(node.transactions) ? node.transactions.slice() : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
-      if (indexInDate < 0 || indexInDate >= arr.length) {
-        return Promise.reject(new Error('Index transaksi tidak valid (data mungkin hanya di index — refresh halaman).'));
+      var node = snap.val() || {};
+      var arr = [];
+      if (node && Array.isArray(node.transactions)) {
+        arr = node.transactions.slice();
+      } else if (node && node.transactions && typeof node.transactions === 'object') {
+        arr = Object.values(node.transactions);
+      }
+      // [FIX] Jika index tidak valid ATAU array transaksi sudah kosong,
+      // jangan langsung reject. Coba sinkronisasi dulu, lalu beri pesan yang lebih jelas.
+      if (arr.length === 0 || indexInDate < 0 || indexInDate >= arr.length) {
+        return syncPettyCashIndexForDate(outletId, normDate).then(function() {
+          // Setelah sinkronisasi, tolak promise dengan pesan bahwa data sudah tidak ada.
+          // Ini akan ditangkap oleh .catch() di rbm-pro.js dan menampilkan alert.
+          return Promise.reject(new Error('Data ini sepertinya sudah dihapus. Silakan refresh halaman untuk melihat data terbaru.'));
+        });
       }
       arr.splice(indexInDate, 1);
       if (arr.length === 0) return db.ref(path).remove();
@@ -1453,17 +1510,15 @@
       var trx = normalized[x];
       var debit = parseNumber(trx.debit || trx.keluar || 0);
       var kredit = parseNumber(trx.kredit || trx.masuk || 0);
-
-      if (lastKreditTxIndex >= 0 && x < lastKreditTxIndex) {
-        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
-      } else if (lastKreditTxIndex >= 0 && x === lastKreditTxIndex) {
-        saldoSebelumLastKredit = roundCurrencyValue(runningSaldo);
-        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
-        saldoAtLastKredit = roundCurrencyValue(runningSaldo);
-      } else if (lastKreditTxIndex >= 0) {
-        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
-      } else {
-        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+      runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+      
+      if (lastKreditTxIndex >= 0 && x === lastKreditTxIndex) {
+        if (x > 0 && normalized[x - 1]) {
+          saldoSebelumLastKredit = roundCurrencyValue(parseNumber(normalized[x - 1].saldo || 0));
+        } else {
+          saldoSebelumLastKredit = 0;
+        }
+        saldoAtLastKredit = roundCurrencyValue(saldoSebelumLastKredit + kredit);
       }
     }
 
@@ -1480,11 +1535,13 @@
       saldoAtLastKredit = roundCurrencyValue(runningSaldo);
     }
 
+    var sisa = lastKreditTxIndex >= 0 ? roundCurrencyValue(saldoAtLastKredit - totalDebitSince) : roundCurrencyValue(runningSaldo);
+
     return {
       lastKredit: lastKredit,
       lastKreditDate: lastKreditDate,
       totalDebitSince: totalDebitSince,
-      sisa: runningSaldo,
+      sisa: sisa,
       saldoAtLastKredit: saldoAtLastKredit,
       saldoSebelumLastKredit: saldoSebelumLastKredit
     };

@@ -12,9 +12,14 @@
 </script>
 <script>
 function openPengajuanPettyCashPage() {
-  var targetUrl = 'rbm-pengajuan.html?jenis=pengajuan-petty-cash';
+  // Gunakan sessionStorage untuk menghindari file:// cross-origin error
+  sessionStorage.setItem('rbm_pengajuan_jenis', 'pengajuan-petty-cash');
+  
+  var targetUrl = 'rbm-pengajuan.html';
   var currentUrl = (window.location.pathname || '') + (window.location.search || '') + (window.location.hash || '');
-  if (currentUrl.indexOf('rbm-pengajuan.html') >= 0 && currentUrl.indexOf('jenis=pengajuan-petty-cash') >= 0) {
+  if (currentUrl.indexOf('rbm-pengajuan.html') >= 0) {
+    // Reload halaman yang sudah terbuka
+    window.location.reload();
     return;
   }
 

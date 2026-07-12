@@ -1413,11 +1413,10 @@ function savePembukuanToJpg() {
     if(oldDatalist2) oldDatalist2.remove();
 
     // Create datalist from Stok Barang (aman jika sales/fruits/notsales bukan array)
-    const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
-    const raw = getCachedParsedStorage(stokKey, { sales: [], fruits: [], notsales: [] });
-    const sales = Array.isArray(raw && raw.sales) ? raw.sales : [];
-    const fruits = Array.isArray(raw && raw.fruits) ? raw.fruits : [];
-    const notsales = Array.isArray(raw && raw.notsales) ? raw.notsales : [];
+    const stokItems = getCachedStokItemsData();
+    const sales = Array.isArray(stokItems.sales) ? stokItems.sales : [];
+    const fruits = Array.isArray(stokItems.fruits) ? stokItems.fruits : [];
+    const notsales = Array.isArray(stokItems.notsales) ? stokItems.notsales : [];
     const combinedItems = [ ...sales, ...fruits, ...notsales ];
     const uniqueNames = [...new Set(combinedItems.map(item => item.name))];
 
@@ -1619,13 +1618,11 @@ function submitDataBarang(){
             }
             let isNew = false;
             if (!itemInfo) {
-                const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
-                const allItems = getCachedParsedStorage(stokKey, { sales: [], fruits: [], notsales: [] });
+                const allItems = getCachedStokItemsData(true);
                 const newId = Date.now() + Math.floor(Math.random() * 10000);
                 const newItem = { id: newId, name: itemData.nama, unit: 'Pcs', ratio: 1 };
                 allItems.sales.push(newItem);
-                RBMStorage.setItem(stokKey, JSON.stringify(allItems));
-                window._rbmParsedCache[stokKey] = { data: allItems };
+                saveStokStorageData('RBM_STOK_ITEMS', allItems, { changedCategories: ['sales'], writeLegacy: false });
                 itemInfo = { id: newId, category: 'sales', ratio: 1, name: itemData.nama };
                 isNew = true;
             }
@@ -2350,22 +2347,21 @@ function getPettyCashRecapForPengajuan(cb) {
             }
         }
 
-        // Hitung saldo berjalan dari awal transaksi, tanpa mengandalkan field saldo lama yang bisa stale.
+        // Hitung saldo berjalan dari awal transaksi
         for (var i = 0; i < list.length; i++) {
             var trx = list[i];
             var debit = parseNumber(trx.debit || trx.keluar || 0);
             var kredit = parseNumber(trx.kredit || trx.masuk || 0);
-
-            if (lastKreditTxIndex >= 0 && i < lastKreditTxIndex) {
-                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
-            } else if (lastKreditTxIndex >= 0 && i === lastKreditTxIndex) {
-                saldoSebelumLastKredit = roundCurrencyValue(runningSaldo);
-                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
-                saldoAtLastKredit = roundCurrencyValue(runningSaldo);
-            } else if (lastKreditTxIndex >= 0) {
-                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
-            } else {
-                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+            runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+            
+            // Jika ini kredit terakhir, gunakan saldo yang disimpan dari transaksi sebelumnya
+            if (lastKreditTxIndex >= 0 && i === lastKreditTxIndex) {
+                if (lastKreditTxIndex > 0 && list[lastKreditTxIndex - 1]) {
+                    saldoSebelumLastKredit = roundCurrencyValue(parseNumber(list[lastKreditTxIndex - 1].saldo || 0));
+                } else {
+                    saldoSebelumLastKredit = 0;
+                }
+                saldoAtLastKredit = roundCurrencyValue(saldoSebelumLastKredit + kredit);
             }
         }
 
@@ -2389,7 +2385,7 @@ function getPettyCashRecapForPengajuan(cb) {
 
         var lastKredit = lastKreditTx ? parseNumber(lastKreditTx.kredit) : 0;
         var lastKreditDate = lastKreditTx ? (lastKreditTx.tanggal || lastKreditTx.date || '-') : '-';
-        var sisa = roundCurrencyValue(runningSaldo);
+        var sisa = lastKreditTx ? roundCurrencyValue(saldoAtLastKredit - totalDebitSince) : roundCurrencyValue(runningSaldo);
         var unreimbursedDates = detailsSince.map(function(d) { return d.tanggal || d.date; }).filter(Boolean).sort();
         var rangeStr = '';
         if (unreimbursedDates.length > 0) {
@@ -8907,10 +8903,223 @@ function selectCalendarDate(dateStr) {
 // ================= STOK BARANG LOGIC =================
 let activeStokTab = 'sales'; // sales, fruits, notsales
 
+function normalizeStokItemsData(data) {
+    const fallback = { sales: [], fruits: [], notsales: [] };
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        return { ...fallback };
+    }
+    return {
+        sales: Array.isArray(data.sales) ? data.sales : [],
+        fruits: Array.isArray(data.fruits) ? data.fruits : [],
+        notsales: Array.isArray(data.notsales) ? data.notsales : []
+    };
+}
+
+function getStokCategoryStorageKey(category) {
+    const cat = String(category || '').toLowerCase();
+    const normalized = cat === 'fruits' ? 'fruits' : cat === 'notsales' ? 'notsales' : 'sales';
+    return typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS_' + normalized) : 'RBM_STOK_ITEMS_' + normalized;
+}
+
+function getStorageLookupKeys(baseKey) {
+    const keys = [];
+    const directKey = baseKey;
+    if (directKey) keys.push(directKey);
+
+    const outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+    const outletSuffix = outlet ? '_' + outlet : '';
+    const alreadyScoped = !!(outletSuffix && directKey && String(directKey).slice(-outletSuffix.length) === outletSuffix);
+
+    if (!alreadyScoped && typeof getRbmStorageKey === 'function') {
+        const outletKey = getRbmStorageKey(baseKey);
+        if (outletKey && outletKey !== directKey) keys.push(outletKey);
+    }
+
+    return keys.filter(function(value, index, arr) { return arr.indexOf(value) === index; });
+}
+
+function getStokStorageData(baseKey, fallback) {
+    if (baseKey === 'RBM_STOK_ITEMS') {
+        const categories = ['sales', 'fruits', 'notsales'];
+        const merged = {};
+        let hasCategoryData = false;
+        categories.forEach(function(cat) {
+            const categoryData = getStokStorageData(getStokCategoryStorageKey(cat), []);
+            merged[cat] = Array.isArray(categoryData.data) ? categoryData.data : [];
+            if (Array.isArray(categoryData.data) && categoryData.data.length > 0) hasCategoryData = true;
+        });
+
+        if (!hasCategoryData) {
+            const legacyKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
+            try {
+                const raw = RBMStorage && typeof RBMStorage.getItem === 'function' ? RBMStorage.getItem(legacyKey) : null;
+                if (raw !== null && raw !== undefined && raw !== '') {
+                    const parsed = safeParse(raw, null);
+                    if (parsed) {
+                        return { data: normalizeStokItemsData(parsed), key: legacyKey };
+                    }
+                }
+            } catch (e) {}
+            try {
+                if (typeof localStorage !== 'undefined') {
+                    const raw = localStorage.getItem(legacyKey);
+                    if (raw !== null && raw !== undefined && raw !== '') {
+                        const parsed = safeParse(raw, null);
+                        if (parsed) {
+                            return { data: normalizeStokItemsData(parsed), key: legacyKey };
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+
+        return { data: normalizeStokItemsData(merged), key: 'RBM_STOK_ITEMS' };
+    }
+
+    const uniqueKeys = getStorageLookupKeys(baseKey);
+
+    if (window._rbmParsedCache) {
+        for (const key of uniqueKeys) {
+            if (window._rbmParsedCache[key]) {
+                return { data: window._rbmParsedCache[key].data, key: key };
+            }
+        }
+    }
+
+    let resolvedKey = null;
+    let rawValue = null;
+    for (const key of uniqueKeys) {
+        try {
+            const raw = RBMStorage && typeof RBMStorage.getItem === 'function' ? RBMStorage.getItem(key) : null;
+            if (raw !== null && raw !== undefined && raw !== '') {
+                resolvedKey = key;
+                rawValue = raw;
+                break;
+            }
+        } catch (e) {}
+        try {
+            if (typeof localStorage !== 'undefined') {
+                const raw = localStorage.getItem(key);
+                if (raw !== null && raw !== undefined && raw !== '') {
+                    resolvedKey = key;
+                    rawValue = raw;
+                    break;
+                }
+            }
+        } catch (e) {}
+    }
+
+    const parsed = safeParse(rawValue, fallback || []);
+    return { data: parsed, key: resolvedKey || uniqueKeys[0] || baseKey };
+}
+
+function getCachedStokItemsData(forceRefresh) {
+    if (!forceRefresh && window._rbmStokItemsCache) {
+        return window._rbmStokItemsCache;
+    }
+    const storageData = getStokStorageData('RBM_STOK_ITEMS', { sales: [], fruits: [], notsales: [] });
+    const normalized = normalizeStokItemsData(storageData.data);
+    const categories = ['sales', 'fruits', 'notsales'];
+    categories.forEach(function(cat) {
+        if (!Array.isArray(normalized[cat]) || normalized[cat].length === 0) {
+            try {
+                const legacyKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS_' + cat) : 'RBM_STOK_ITEMS_' + cat;
+                const raw = RBMStorage && typeof RBMStorage.getItem === 'function' ? RBMStorage.getItem(legacyKey) : null;
+                if (raw) {
+                    const parsed = safeParse(raw, []);
+                    if (Array.isArray(parsed) && parsed.length) {
+                        normalized[cat] = parsed;
+                    }
+                }
+            } catch (e) {}
+        }
+    });
+    window._rbmStokItemsCache = normalized;
+    window._rbmStokItemsCacheKey = storageData.key;
+    return normalized;
+}
+
+function queueStokPersistenceSync(normalized, legacyKey, changedCategories, writeLegacy) {
+    if (!window._rbmStokPendingSync) window._rbmStokPendingSync = {};
+    window._rbmStokPendingSync.normalized = normalized;
+    window._rbmStokPendingSync.legacyKey = legacyKey;
+    window._rbmStokPendingSync.changedCategories = Array.isArray(changedCategories) && changedCategories.length ? changedCategories : ['sales', 'fruits', 'notsales'];
+    window._rbmStokPendingSync.writeLegacy = writeLegacy !== false;
+
+    if (window._rbmStokSyncTimer) {
+        clearTimeout(window._rbmStokSyncTimer);
+    }
+
+    window._rbmStokSyncTimer = setTimeout(function() {
+        const pending = window._rbmStokPendingSync;
+        window._rbmStokPendingSync = null;
+        window._rbmStokSyncTimer = null;
+        if (!pending || !pending.normalized) return;
+
+        try {
+            const tasks = [];
+            const catKeys = pending.changedCategories || ['sales', 'fruits', 'notsales'];
+            catKeys.forEach(function(cat) {
+                const catKey = getStokCategoryStorageKey(cat);
+                const payload = JSON.stringify(pending.normalized[cat] || []);
+                tasks.push(Promise.resolve().then(function() {
+                    if (RBMStorage && typeof RBMStorage.setItem === 'function') {
+                        return RBMStorage.setItem(catKey, payload);
+                    }
+                    return Promise.resolve();
+                }));
+            });
+            if (pending.writeLegacy) {
+                tasks.push(Promise.resolve().then(function() {
+                    if (RBMStorage && typeof RBMStorage.setItem === 'function') {
+                        return RBMStorage.setItem(pending.legacyKey, JSON.stringify(pending.normalized));
+                    }
+                    return Promise.resolve();
+                }));
+            }
+            Promise.allSettled(tasks).catch(function() {});
+        } catch (e) {}
+    }, 150);
+}
+
+function saveStokStorageData(baseKey, data, options) {
+    if (baseKey === 'RBM_STOK_ITEMS') {
+        const normalized = normalizeStokItemsData(data);
+        const legacyKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
+        const changedCategories = Array.isArray(options && options.changedCategories) && options.changedCategories.length
+            ? options.changedCategories
+            : ['sales', 'fruits', 'notsales'];
+        const writeLegacy = options && options.writeLegacy !== false;
+
+        if (writeLegacy) {
+            try { localStorage.setItem(legacyKey, JSON.stringify(normalized)); } catch (e) {}
+            try { if (window._rbmParsedCache) window._rbmParsedCache[legacyKey] = { data: normalized }; } catch (e) {}
+        }
+
+        changedCategories.forEach(function(cat) {
+            const catKey = getStokCategoryStorageKey(cat);
+            const payload = normalized[cat] || [];
+            try { if (window._rbmParsedCache) window._rbmParsedCache[catKey] = { data: payload }; } catch (e) {}
+            try { localStorage.setItem(catKey, JSON.stringify(payload)); } catch (e) {}
+        });
+        queueStokPersistenceSync(normalized, legacyKey, changedCategories, writeLegacy);
+        window._rbmStokItemsCache = normalized;
+        window._rbmStokItemsCacheKey = 'RBM_STOK_ITEMS';
+        return 'RBM_STOK_ITEMS';
+    }
+
+    const payload = JSON.stringify(data);
+    const uniqueKeys = getStorageLookupKeys(baseKey);
+    uniqueKeys.forEach(function(key) {
+        try { RBMStorage.setItem(key, payload); } catch (e) {}
+        try { if (window._rbmParsedCache) window._rbmParsedCache[key] = { data: data }; } catch (e) {}
+    });
+    return uniqueKeys[0] || baseKey;
+}
+
 // Helper to find item ID by name across all categories
 function findStokItemId(name) {
-    const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
-    const allItems = getCachedParsedStorage(stokKey, {sales:[], fruits:[], notsales:[]});
+    const allItems = getStokStorageData('RBM_STOK_ITEMS', {sales:[], fruits:[], notsales:[]}).data;
     for (const cat in allItems) {
         const list = allItems[cat];
         if (!Array.isArray(list)) continue;
@@ -8923,8 +9132,7 @@ function findStokItemId(name) {
 // Cari item by nama di kategori tertentu (untuk rusak: bedakan Sales vs Fruits)
 function findStokItemIdByCategory(name, category) {
     if (!name || !name.trim() || !category) return null;
-    const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
-    const allItems = getCachedParsedStorage(stokKey, { sales: [], fruits: [], notsales: [] });
+    const allItems = getStokStorageData('RBM_STOK_ITEMS', { sales: [], fruits: [], notsales: [] }).data;
     const list = Array.isArray(allItems && allItems[category]) ? allItems[category] : null;
     if (!list) return null;
     const item = list.find(i => i.name.toLowerCase() === name.trim().toLowerCase());
@@ -8935,8 +9143,7 @@ function findStokItemIdByCategory(name, category) {
 // Ambil satuan dari Stok Barang berdasarkan nama (untuk Input Barang)
 function getStokUnitByName(name) {
     if (!name || !name.trim()) return '';
-    const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
-    const allItems = getCachedParsedStorage(stokKey, { sales: [], fruits: [], notsales: [] });
+    const allItems = getStokStorageData('RBM_STOK_ITEMS', { sales: [], fruits: [], notsales: [] }).data;
     for (const cat in allItems) {
         const list = Array.isArray(allItems[cat]) ? allItems[cat] : [];
         const item = list.find(i => i.name.toLowerCase() === name.trim().toLowerCase());
@@ -9052,43 +9259,57 @@ function switchStokTab(tab) {
     renderStokTable();
 }
 
-function getStokItems(category) {
-    const stokKey = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_STOK_ITEMS') : 'RBM_STOK_ITEMS';
-    const allItems = getCachedParsedStorage(stokKey, {
-        sales: [
-            {id:1, name:'Ayam', unit:'Ekor', ratio:1}, 
-            {id:2, name:'Saus BBQ', unit:'Pck', ratio:20}
-        ],
-        fruits: [
-            {id:101, name:'Tomat', unit:'Kg', ratio:1},
-            {id:102, name:'Selada', unit:'Ikat', ratio:1}
-        ],
-        notsales: [
-            {id:201, name:'Tisu', unit:'Pack', ratio:1},
-            {id:202, name:'Sabun Cuci', unit:'Btl', ratio:1}
-        ]
-    });
+function getStokItems(category, forceRefresh) {
+    const allItems = getCachedStokItemsData(forceRefresh);
     const list = allItems && allItems[category];
     return Array.isArray(list) ? list : [];
 }
 
 // Untuk tab Same Item on Sales: gabung item Sales + item Fruits yang belum ada di Sales (nama sama)
-function getStokItemsForSalesTab() {
-    const sales = getStokItems('sales');
-    const fruits = getStokItems('fruits');
+function getStokItemsForSalesTab(forceRefresh) {
+    const allItems = getCachedStokItemsData(forceRefresh);
+    const sales = Array.isArray(allItems.sales) ? allItems.sales : [];
+    const fruits = Array.isArray(allItems.fruits) ? allItems.fruits : [];
     const salesNames = new Set(sales.map(s => s.name.toLowerCase()));
     const fruitsOnly = fruits.filter(f => !salesNames.has(f.name.toLowerCase()));
     return [...sales, ...fruitsOnly];
 }
 
 function renderStokTable() {
+    if (window._stokRenderTimer) {
+        clearTimeout(window._stokRenderTimer);
+    }
+    window._stokRenderTimer = setTimeout(function() {
+        window._stokRenderTimer = null;
+        renderStokTableNow();
+    }, 60);
+}
+
+function scheduleStokTableRefresh() {
+    if (window._stokTableRefreshTimer) {
+        clearTimeout(window._stokTableRefreshTimer);
+    }
+    window._stokTableRefreshTimer = setTimeout(function() {
+        window._stokTableRefreshTimer = null;
+        var modal = document.getElementById('stokItemModal');
+        if (modal && modal.style.display === 'flex') return;
+        renderStokTable();
+    }, 300);
+}
+
+function renderStokTableNow() {
     window._isBatchUpdatingStok = true;
+    window._stokDirty = false;
     const monthVal = document.getElementById("stok_bulan_filter").value;
     if (!monthVal) return;
 
     const [year, month] = monthVal.split('-');
     const daysInMonth = new Date(year, month, 0).getDate();
-    let items = activeStokTab === 'sales' ? getStokItemsForSalesTab() : getStokItems(activeStokTab);
+    const stokItemsData = getCachedStokItemsData(true);
+    const fruitLookup = new Map((Array.isArray(stokItemsData.fruits) ? stokItemsData.fruits : []).map(function(item) {
+        return [String(item && item.name ? item.name : '').toLowerCase(), item];
+    }));
+    let items = activeStokTab === 'sales' ? getStokItemsForSalesTab(true) : getStokItems(activeStokTab, true);
     const stokKey = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
     const stokData = getCachedParsedStorage(stokKey, {});
 
@@ -9247,7 +9468,7 @@ function renderStokTable() {
         // Determine item name color based on source
         let nameColor = '#ffffff';
         if (activeStokTab === 'sales') {
-            const fruitItem = getStokItems('fruits').find(f => f.name.toLowerCase() === item.name.toLowerCase());
+            const fruitItem = fruitLookup.get(String(item.name || '').toLowerCase());
             nameColor = fruitItem ? '#bfdbfe' : '#d1d5db';
         } else if (activeStokTab === 'fruits') {
             nameColor = '#bfdbfe';
@@ -9274,7 +9495,7 @@ function renderStokTable() {
                 // Logic: In comes from Input Barang. 
                 // BUT if this item exists in Fruits & Veg (as Finished), In = Finished of Fruits.
                 // We check if there is a Fruit item with same name.
-                const fruitItem = getStokItems('fruits').find(f => f.name.toLowerCase() === item.name.toLowerCase());
+                const fruitItem = fruitLookup.get(String(item.name || '').toLowerCase());
                 let isLinked = false;
                 if (fruitItem) {
                     const valFinFruit = parseFloat(getStokValue(stokData, fruitItem.id, `fin_${dateKey}`)) || 0;
@@ -9379,8 +9600,10 @@ function renderStokTable() {
     
     if (window._isBatchUpdatingStok) {
         window._isBatchUpdatingStok = false;
-        RBMStorage.setItem(stokKey, JSON.stringify(stokData));
-        window._rbmParsedCache[stokKey] = { data: stokData };
+        if (window._stokDirty) {
+            RBMStorage.setItem(stokKey, JSON.stringify(stokData));
+            window._rbmParsedCache[stokKey] = { data: stokData };
+        }
     }
 }
 
@@ -9405,7 +9628,10 @@ function updateStokValue(itemId, field, monthVal, value) {
     } else {
         key = `${itemId}_${field}`;
     }
+    const prevValue = data[key];
+    if (prevValue === value) return;
     data[key] = value;
+    window._stokDirty = true;
     if (!window._isBatchUpdatingStok) {
         RBMStorage.setItem(stokKey, JSON.stringify(data));
         window._rbmParsedCache[stokKey] = { data: data };
@@ -9641,74 +9867,107 @@ function exportStokBarangToPdf() {
 
 function manageStokItems() {
     const tbody = document.getElementById("stok_item_tbody");
+    const modal = document.getElementById("stokItemModal");
     if (!tbody) return;
-    tbody.innerHTML = "";
-    const items = getStokItems(activeStokTab);
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b;">Memuat item stok...</td></tr>';
+    if (modal) modal.style.display = "flex";
+
     var tabLabel = activeStokTab === 'sales' ? 'Same Item on Sales' : activeStokTab === 'fruits' ? 'Fruits & Vegetables' : 'Same Item Not Sales';
     var titleEl = document.getElementById("stokItemModalTitle");
     if (titleEl) titleEl.textContent = "Kelola Item Stok (" + tabLabel + ")";
     var subEl = document.getElementById("stokItemModalSub");
     if (subEl) subEl.textContent = "Menambah/hapus item di tab \"" + tabLabel + "\". Setelah tambah, tutup modal dan cek tabel di tab tersebut.";
-    items.forEach(function(item, idx) {
-        var qtyPorsi = 1;
-        if (item.ratio) {
-            qtyPorsi = 1 / item.ratio;
-            qtyPorsi = Math.round((qtyPorsi + Number.EPSILON) * 100) / 100;
+
+    function renderItems(items) {
+        tbody.innerHTML = "";
+        if (!items.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#64748b;">Belum ada item di tab ini. Tambahkan item baru untuk mulai menggunakan stok.</td></tr>';
+            return;
         }
-        var actionCell = (window.rbmOnlyOwnerCanEditDelete && window.rbmOnlyOwnerCanEditDelete()) ? '<button class="btn-small-danger" onclick="removeStokItem(' + idx + ')">x</button>' : '-';
-        tbody.innerHTML += "<tr><td>" + item.name + "</td><td>" + item.unit + "</td><td>" + qtyPorsi + "</td><td>" + actionCell + "</td></tr>";
-    });
-    document.getElementById("stokItemModal").style.display = "flex";
+        items.forEach(function(item, idx) {
+            var qtyPorsi = 1;
+            if (item && item.ratio) {
+                qtyPorsi = 1 / item.ratio;
+                qtyPorsi = Math.round((qtyPorsi + Number.EPSILON) * 100) / 100;
+            }
+            var actionCell = (window.rbmOnlyOwnerCanEditDelete && window.rbmOnlyOwnerCanEditDelete()) ? '<button class="btn-small-danger" onclick="removeStokItem(' + idx + ')">x</button>' : '-';
+            tbody.innerHTML += "<tr><td>" + (item && item.name ? item.name : '') + "</td><td>" + (item && item.unit ? item.unit : '') + "</td><td>" + qtyPorsi + "</td><td>" + actionCell + "</td></tr>";
+        });
+    }
+
+    function tryRender() {
+        const items = getStokItems(activeStokTab, true);
+        renderItems(items);
+    }
+
+    setTimeout(function() {
+        tryRender();
+    }, 0);
 }
 
 function addStokItem() {
-    const name = document.getElementById("new_stok_name").value;
-    const unit = document.getElementById("new_stok_unit").value;
-    const qtyPorsi = parseFloat(document.getElementById("new_stok_qty_porsi").value);
+    const nameInput = document.getElementById("new_stok_name");
+    const unitInput = document.getElementById("new_stok_unit");
+    const qtyInput = document.getElementById("new_stok_qty_porsi");
+    const addBtn = document.querySelector('#stokItemModal .btn-primary');
+    const name = (nameInput && nameInput.value ? nameInput.value : '').toString().trim();
+    const unit = (unitInput && unitInput.value ? unitInput.value : '').toString().trim();
+    const qtyPorsi = parseFloat(qtyInput && qtyInput.value ? qtyInput.value : '');
     
     if(!name) { alert("Nama item wajib diisi"); return; }
 
+    if (addBtn) {
+        addBtn.disabled = true;
+        addBtn.textContent = 'Menyimpan...';
+    }
+
     let ratio = 1;
     if (qtyPorsi && qtyPorsi > 0) {
-        // Jika user mengisi pembagi (misal 70gr), maka ratio = 1/70
         ratio = 1 / qtyPorsi;
     }
 
-    const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
-    const allItems = safeParse(RBMStorage.getItem(stokKey), {sales:[], fruits:[], notsales:[]});
+    const allItems = getCachedStokItemsData(true);
     if (!Array.isArray(allItems[activeStokTab])) allItems[activeStokTab] = [];
-    const newId = Date.now();
+    const newId = Date.now() + Math.floor(Math.random() * 1000);
     allItems[activeStokTab].push({id: newId, name, unit, ratio});
     
-    // Jika menambah di Fruits & Vegetables, otomatis tambah ke Same Item on Sales
+    const changedCategories = [activeStokTab];
     if (activeStokTab === 'fruits') {
         if (!Array.isArray(allItems.sales)) allItems.sales = [];
-        const exists = allItems.sales.some(i => i.name.toLowerCase() === name.toLowerCase());
+        const exists = allItems.sales.some(i => String(i.name || '').toLowerCase() === name.toLowerCase());
         if (!exists) {
             allItems.sales.push({id: newId + 1, name, unit, ratio});
+            changedCategories.push('sales');
         }
     }
     
-    RBMStorage.setItem(stokKey, JSON.stringify(allItems));
-    window._rbmParsedCache[stokKey] = { data: allItems };
+    saveStokStorageData('RBM_STOK_ITEMS', allItems, { changedCategories: changedCategories, writeLegacy: false });
     
-    document.getElementById("new_stok_name").value = "";
-    document.getElementById("new_stok_unit").value = "";
-    document.getElementById("new_stok_qty_porsi").value = "";
-    manageStokItems(); // Refresh modal
-    renderStokTable(); // Refresh table
+    if (nameInput) nameInput.value = "";
+    if (unitInput) unitInput.value = "";
+    if (qtyInput) qtyInput.value = "";
+
+    setTimeout(function() {
+        manageStokItems();
+        scheduleStokTableRefresh();
+    }, 0);
+
+    setTimeout(function() {
+        if (addBtn) {
+            addBtn.disabled = false;
+            addBtn.textContent = '+';
+        }
+    }, 250);
 }
 
 function removeStokItem(idx) {
     if (window.rbmOnlyOwnerCanEditDelete && !window.rbmOnlyOwnerCanEditDelete()) { showCustomAlert('Hanya Owner yang dapat menghapus data.', 'Akses Ditolak', 'error'); return; }
     showCustomConfirm("Hapus item ini?", "Konfirmasi Hapus", function() {
-        const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
-        const allItems = getCachedParsedStorage(stokKey, {sales:[], fruits:[], notsales:[]});
+        const allItems = getCachedStokItemsData(true);
         if (Array.isArray(allItems[activeStokTab])) allItems[activeStokTab].splice(idx, 1);
-        RBMStorage.setItem(stokKey, JSON.stringify(allItems));
-        window._rbmParsedCache[stokKey] = { data: allItems };
+        saveStokStorageData('RBM_STOK_ITEMS', allItems, { changedCategories: [activeStokTab], writeLegacy: false });
         manageStokItems();
-        renderStokTable();
+        scheduleStokTableRefresh();
     });
 }
 
@@ -9734,8 +9993,7 @@ function processStokImport(input) {
             return;
         }
 
-        const stokKey = getRbmStorageKey('RBM_STOK_ITEMS');
-        const allItems = getCachedParsedStorage(stokKey, {sales:[], fruits:[], notsales:[]});
+        const allItems = getCachedStokItemsData(true);
         if (!Array.isArray(allItems[activeStokTab])) allItems[activeStokTab] = [];
         let count = 0;
 
@@ -9758,11 +10016,10 @@ function processStokImport(input) {
             }
         });
 
-        RBMStorage.setItem(stokKey, JSON.stringify(allItems));
-        window._rbmParsedCache[stokKey] = { data: allItems };
+        saveStokStorageData('RBM_STOK_ITEMS', allItems, { changedCategories: [activeStokTab], writeLegacy: false });
         alert(`Berhasil mengimpor ${count} item baru.`);
         manageStokItems();
-        renderStokTable();
+        scheduleStokTableRefresh();
         input.value = '';
     };
     reader.readAsArrayBuffer(file);

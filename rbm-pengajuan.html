@@ -1876,15 +1876,16 @@ window.viewPettyCashDetail = function(id) {
             var row = sortedRows[x];
             var debit = parseCurrencyValue(row.debit || row.keluar || 0);
             var kredit = parseCurrencyValue(row.kredit || row.masuk || 0);
-
-            if (x < lastIdx) {
-                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
-            } else if (x === lastIdx) {
-                saldoSebelumLastKredit = roundCurrencyValue(runningSaldo);
-                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
-                saldoAtLastKredit = roundCurrencyValue(runningSaldo);
-            } else {
-                runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+            runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+            
+            // Jika ini kredit terakhir, gunakan saldo yang disimpan dari transaksi sebelumnya
+            if (x === lastIdx) {
+                if (x > 0 && sortedRows[x - 1]) {
+                    saldoSebelumLastKredit = roundCurrencyValue(parseCurrencyValue(sortedRows[x - 1].saldo || 0));
+                } else {
+                    saldoSebelumLastKredit = 0;
+                }
+                saldoAtLastKredit = roundCurrencyValue(saldoSebelumLastKredit + kredit);
             }
         }
 
@@ -1906,11 +1907,13 @@ window.viewPettyCashDetail = function(id) {
             }
         }
 
+        var sisa = lastIdx >= 0 ? roundCurrencyValue(saldoAtLastKredit - totalDebitSince) : roundCurrencyValue(runningSaldo);
+
         return {
             lastKredit: lastKredit,
             lastKreditDate: lastKreditDate,
             totalDebitSince: totalDebitSince,
-            sisa: roundCurrencyValue(runningSaldo),
+            sisa: sisa,
             detailsSince: detailsSince,
             saldoAtLastKredit: saldoAtLastKredit,
             saldoSebelumLastKredit: saldoSebelumLastKredit
@@ -1996,10 +1999,19 @@ window.viewPettyCashDetail = function(id) {
                         break;
                     }
                 }
-                if (lastIdx >= 0) {
+                if (lastIdx >= 0 && lastIdx > 0) {
+                    var lastRow = sortedRows[lastIdx];
+                    var rowBefore = sortedRows[lastIdx - 1];
+                    lastKredit = parseCurrencyValue(lastRow.kredit || lastRow.masuk);
+                    lastKreditDate = lastRow.tanggal || lastRow.date || lastKreditDate;
+                    saldoSebelumLastKredit = roundCurrencyValue(parseCurrencyValue(rowBefore.saldo || 0));
+                    saldoAtLastKredit = roundCurrencyValue(saldoSebelumLastKredit + lastKredit);
+                } else if (lastIdx === 0) {
                     var lastRow = sortedRows[lastIdx];
                     lastKredit = parseCurrencyValue(lastRow.kredit || lastRow.masuk);
                     lastKreditDate = lastRow.tanggal || lastRow.date || lastKreditDate;
+                    saldoSebelumLastKredit = 0;
+                    saldoAtLastKredit = roundCurrencyValue(lastKredit);
                 }
                 var roundCurrencyValue = function(value) {
                     var num = parseCurrencyValue(value);
@@ -2013,14 +2025,15 @@ window.viewPettyCashDetail = function(id) {
                     var trx = sortedRows[x];
                     var debit = parseCurrencyValue(trx.debit || trx.keluar || 0);
                     var kredit = parseCurrencyValue(trx.kredit || trx.masuk || 0);
-                    if (x < lastIdx) {
-                        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
-                    } else if (x === lastIdx) {
-                        saldoSebelumLastKredit = roundCurrencyValue(runningSaldo);
-                        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
-                        saldoAtLastKredit = roundCurrencyValue(runningSaldo);
-                    } else {
-                        runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+                    runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
+                    
+                    if (x === lastIdx) {
+                        if (x > 0 && sortedRows[x - 1]) {
+                            saldoSebelumLastKredit = roundCurrencyValue(parseCurrencyValue(sortedRows[x - 1].saldo || 0));
+                        } else {
+                            saldoSebelumLastKredit = 0;
+                        }
+                        saldoAtLastKredit = roundCurrencyValue(saldoSebelumLastKredit + kredit);
                     }
                     if (x >= lastIdx + 1) {
                         var item = Object.assign({}, trx);
@@ -2034,7 +2047,8 @@ window.viewPettyCashDetail = function(id) {
                         }
                     }
                 }
-                var recap = { lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: roundCurrencyValue(runningSaldo), detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit, saldoSebelumLastKredit: saldoSebelumLastKredit };
+                var sisa = lastIdx >= 0 ? roundCurrencyValue(saldoAtLastKredit - totalDebitSince) : roundCurrencyValue(runningSaldo);
+                var recap = { lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit, saldoSebelumLastKredit: saldoSebelumLastKredit };
                 renderPettyCashWindow(recap);
             } catch (e) {
                 console.warn('build recap from getPettyCash failed', e);
@@ -2806,11 +2820,12 @@ window.confirm = function(msg) {
 <script src="firebase-storage.js"></script>
 <script src="rbm-pro.js"></script>
 <script>
-// Auto-select jenis pengajuan dari URL agar tombol dari halaman lain langsung membuka form yang sesuai.
+// Auto-select jenis pengajuan dari URL atau sessionStorage agar tombol dari halaman lain langsung membuka form yang sesuai.
+// Menggunakan sessionStorage untuk menghindari file:// cross-origin error
 (function(){
   try {
     var params = new URLSearchParams(window.location.search || '');
-    var jenis = params.get('jenis') || params.get('pengajuanJenis') || params.get('tambah');
+    var jenis = params.get('jenis') || params.get('pengajuanJenis') || params.get('tambah') || sessionStorage.getItem('rbm_pengajuan_jenis');
     if (!jenis) return;
 
     var select = document.getElementById('jenis_pengajuan');
