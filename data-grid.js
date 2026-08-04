@@ -685,10 +685,14 @@ document.addEventListener('DOMContentLoaded', function() {
             tabDeleteBtn.className = 'sheet-tab-delete';
             tabDeleteBtn.title = 'Hapus sheet ini';
             tabDeleteBtn.textContent = '×';
-            tabDeleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openDeleteSheetModal(index);
-            });
+            if (userCanConfigureLocks()) {
+                tabDeleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deleteSheet(index);
+                });
+            } else {
+                tabDeleteBtn.style.display = 'none';
+            }
             tab.appendChild(tabDeleteBtn);
 
             sheetsBar.insertBefore(tab, addSheetBtn);
@@ -1040,11 +1044,37 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             await RBMStorage.ready();
             await RBMStorage.setItem(storageKey, JSON.stringify(appData));
+            if (userIsOwner() && outletId === 'GLOBAL') {
+                await saveGlobalDataToAllOutlets(appData);
+            }
             showStatus('Data berhasil disimpan di cloud!', 'success');
         } catch (error) {
             console.error('Gagal menyimpan data:', error);
             showStatus('Gagal menyimpan data. Pastikan halaman dibuka melalui HTTP/HTTPS agar Firebase bisa dipakai.', 'error');
         }
+    }
+
+    async function saveGlobalDataToAllOutlets(dataToSave) {
+        let outlets = [];
+        try {
+            outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+        } catch (e) {
+            outlets = [];
+        }
+        if (!Array.isArray(outlets) || outlets.length === 0) {
+            return;
+        }
+
+        const savePromises = outlets.map(async function(outletId) {
+            if (!outletId) return Promise.resolve();
+            const storageKey = `${STORAGE_KEY_PREFIX}${outletId}`;
+            try {
+                await RBMStorage.setItem(storageKey, JSON.stringify(dataToSave));
+            } catch (e) {
+                console.warn('Gagal menyalin global sheet ke outlet:', outletId, e);
+            }
+        });
+        await Promise.all(savePromises);
     }
 
     /**
@@ -1298,6 +1328,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Delete active sheet with index or current active
     let _sheetToDeleteIndex = null;
     function openDeleteSheetModal(index) {
+        if (!userCanConfigureLocks()) return;
         const modal = document.getElementById('delete-sheet-modal');
         const span = document.getElementById('sheet-to-delete-name');
         if (typeof index === 'number') _sheetToDeleteIndex = index; else _sheetToDeleteIndex = appData.activeSheetIndex;
@@ -1312,15 +1343,16 @@ document.addEventListener('DOMContentLoaded', function() {
         _sheetToDeleteIndex = null;
     }
 
-    function confirmDeleteSheet() {
-        if (_sheetToDeleteIndex === null) return closeDeleteSheetModal();
-        if (!Array.isArray(appData.sheets)) return closeDeleteSheetModal();
+    function deleteSheet(index) {
+        if (!userCanConfigureLocks()) return;
+        if (!Array.isArray(appData.sheets) || typeof index !== 'number' || index < 0 || index >= appData.sheets.length) return;
+        const sheetName = appData.sheets[index].name || `Sheet${index + 1}`;
+        if (!confirm(`Hapus sheet "${sheetName}"?`)) return;
         if (appData.sheets.length <= 1) {
-            // if last sheet, just clear data
             appData.sheets = [{ name: 'Sheet1', data: Array(10).fill(null).map(() => Array(5).fill('')), headers: [], lockedColumns: [], lockedRows: [], dropdownColumns: [] }];
             appData.activeSheetIndex = 0;
         } else {
-            appData.sheets.splice(_sheetToDeleteIndex, 1);
+            appData.sheets.splice(index, 1);
             if (appData.activeSheetIndex >= appData.sheets.length) appData.activeSheetIndex = appData.sheets.length - 1;
         }
         closeDeleteSheetModal();
@@ -1328,6 +1360,11 @@ document.addEventListener('DOMContentLoaded', function() {
         renderGrid();
         saveGrid();
         showStatus('Sheet dihapus.', 'success');
+    }
+
+    function confirmDeleteSheet() {
+        if (_sheetToDeleteIndex === null) return closeDeleteSheetModal();
+        deleteSheet(_sheetToDeleteIndex);
     }
 
     function toggleDeveloperMode() {
@@ -1351,7 +1388,13 @@ document.addEventListener('DOMContentLoaded', function() {
     addSheetBtn.addEventListener('click', addSheet);
     // delete sheet button in toolbar
     const deleteSheetToolbarBtn = document.getElementById('delete-sheet-toolbar-btn');
-    if (deleteSheetToolbarBtn) deleteSheetToolbarBtn.addEventListener('click', openDeleteSheetModal);
+    if (deleteSheetToolbarBtn) {
+        if (userCanConfigureLocks()) {
+            deleteSheetToolbarBtn.addEventListener('click', () => deleteSheet(appData.activeSheetIndex));
+        } else {
+            deleteSheetToolbarBtn.style.display = 'none';
+        }
+    }
     lockSettingsBtn.addEventListener('click', openLockSettingsModal);
     toggleDevModeBtn.addEventListener('click', toggleDeveloperMode);
 
