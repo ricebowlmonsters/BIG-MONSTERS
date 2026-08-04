@@ -43,6 +43,31 @@
           } 
       } 
   }
+  function getPersistedStokTab() {
+      try {
+          var tab = localStorage.getItem('rbm_stok_active_tab');
+          if (tab) tab = String(tab).toLowerCase();
+          if (tab === 'sales' || tab === 'fruits' || tab === 'notsales') return tab;
+      } catch (e) {}
+      return null;
+  }
+  function persistStokTab(tab) {
+      if (!tab) return;
+      try {
+          tab = String(tab).toLowerCase();
+          if (tab === 'sales' || tab === 'fruits' || tab === 'notsales') {
+              localStorage.setItem('rbm_stok_active_tab', tab);
+          }
+      } catch (e) {}
+  }
+  function applyStokTabButtonState(tab) {
+      if (!tab) return;
+      try {
+          document.querySelectorAll('#stok-barang-view .tab-btn').forEach(function(b) { b.classList.remove('active'); });
+          var btn = document.getElementById('tab-stok-' + tab);
+          if (btn) btn.classList.add('active');
+      } catch (e) {}
+  }
   function getRbmOutlet() {
     var s = document.getElementById('rbm-outlet-select');
     if (s && s.value) return s.value;
@@ -213,6 +238,11 @@
     setPersistedVal("rekap_gps_end", payrollEnd);
     setVal("riwayat_barang_start", firstDay);
     setVal("riwayat_barang_end", today);
+    var savedTab = getPersistedStokTab();
+    if (savedTab) {
+      activeStokTab = savedTab;
+      applyStokTabButtonState(savedTab);
+    }
     var pageView = window.RBM_PAGE || (window.location.hash || '').replace(/^#/, '');
     var containers = document.querySelectorAll('.view-container');
     if (containers.length === 1) {
@@ -343,6 +373,19 @@
       FirebaseStorage.init();
       return FirebaseStorage.isReady();
     } catch (e) { return false; }
+  }
+
+  function isFirebaseDatabaseReady() {
+    if (typeof firebase === 'undefined' || typeof firebase.database !== 'function') return false;
+    try {
+      return Array.isArray(firebase.apps) ? firebase.apps.length > 0 : !!firebase.app();
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function getFirebaseDatabase() {
+    return isFirebaseDatabaseReady() ? firebase.database() : null;
   }
 
   // safe JSON parse utility: returns fallback when input is null/empty/invalid
@@ -1606,24 +1649,27 @@ function submitDataBarang(){
             return;
         }
 
+        const preferredCategory = getPreferredStokCategoryForInput();
         const stokUpdates = [];
         const reportItems = [];
         dataList.forEach(itemData => {
             let itemInfo = null;
             if (itemData.jenis === 'rusak') {
-                itemInfo = findStokItemIdByCategory(itemData.nama, itemData.tujuanKategori || 'sales');
+                itemInfo = findStokItemIdByCategory(itemData.nama, itemData.tujuanKategori || preferredCategory);
                 if (!itemInfo) itemInfo = findStokItemId(itemData.nama);
             } else {
-                itemInfo = findStokItemId(itemData.nama);
+                itemInfo = findStokItemIdByPreferredCategory(itemData.nama, preferredCategory);
             }
             let isNew = false;
             if (!itemInfo) {
                 const allItems = getCachedStokItemsData(true);
+                const targetCategory = preferredCategory || 'sales';
+                if (!Array.isArray(allItems[targetCategory])) allItems[targetCategory] = [];
                 const newId = Date.now() + Math.floor(Math.random() * 10000);
                 const newItem = { id: newId, name: itemData.nama, unit: 'Pcs', ratio: 1 };
-                allItems.sales.push(newItem);
-                saveStokStorageData('RBM_STOK_ITEMS', allItems, { changedCategories: ['sales'], writeLegacy: false });
-                itemInfo = { id: newId, category: 'sales', ratio: 1, name: itemData.nama };
+                allItems[targetCategory].push(newItem);
+                saveStokStorageData('RBM_STOK_ITEMS', allItems, { changedCategories: [targetCategory], writeLegacy: false });
+                itemInfo = { id: newId, category: targetCategory, ratio: 1, name: itemData.nama };
                 isNew = true;
             }
             if (itemInfo) {
@@ -1639,6 +1685,9 @@ function submitDataBarang(){
 
         // Update stok tabel dulu di semua mode
         processStokUpdates(stokUpdates);
+        if (typeof renderStokTable === 'function') {
+            try { renderStokTable(); } catch (e) {}
+        }
         if (reportItems.length > 0) {
             let msg = "Laporan Update Stok:\n";
             reportItems.forEach(item => {
@@ -1677,6 +1726,9 @@ function showResultBarang(res) {
   button.innerText = "Simpan Data Barang";
   document.getElementById("jenis_barang").value = "";
   createBarangRows();
+  if (typeof renderStokTable === 'function') {
+    try { renderStokTable(); } catch (e) {}
+  }
   setTimeout(() => { output.innerText = "" }, 3000);
 }
 
@@ -2544,8 +2596,8 @@ function parseCurrencyValue(value) {
             loadingEl.outerHTML = html;
         }
         
-        if (typeof firebase !== 'undefined' && firebase.database) {
-            firebase.database().ref('customer_app_settings/outlets').once('value').then(function(snap) {
+        if (isFirebaseDatabaseReady()) {
+            getFirebaseDatabase().ref('customer_app_settings/outlets').once('value').then(function(snap) {
                 var o = snap.val();
                 var list = o ? (Array.isArray(o) ? o : Object.values(o)) : [];
                 var data = list.find(function(i) { return i && i.id === outletId; });
@@ -2584,8 +2636,8 @@ function isiOtomatisDataBank(inputElement) {
     return;
   }
 
-  if (typeof firebase !== 'undefined' && firebase.database) {
-      firebase.database().ref('rbm_pro/bank').once('value').then(snap => {
+  if (isFirebaseDatabaseReady()) {
+      getFirebaseDatabase().ref('rbm_pro/bank').once('value').then(snap => {
           const data = snap.val() || {};
           let found = false;
           Object.values(data).forEach(item => {
@@ -2616,8 +2668,8 @@ function isiOtomatisDataBank(inputElement) {
 
 window.suplierDataCache = {};
 window.loadSuplierData = function() {
-    if (typeof firebase !== 'undefined' && firebase.database) {
-        firebase.database().ref('rbm_pro/bank').once('value').then(snap => {
+    if (isFirebaseDatabaseReady()) {
+        getFirebaseDatabase().ref('rbm_pro/bank').once('value').then(snap => {
             window.suplierDataCache = snap.val() || {};
             if (typeof renderSuplierTable === 'function') renderSuplierTable();
             if (document.getElementById('jenis_pengajuan') && document.getElementById('jenis_pengajuan').value === 'pengajuan-tf') {
@@ -2678,8 +2730,8 @@ window.saveSuplier = function() {
     
     if (!nama) { alert("Nama suplier harus diisi."); return; }
     
-    if (typeof firebase !== 'undefined' && firebase.database) {
-        firebase.database().ref('rbm_pro/bank/' + id).set({
+    if (isFirebaseDatabaseReady()) {
+        getFirebaseDatabase().ref('rbm_pro/bank/' + id).set({
             namaSuplier: nama,
             bank: bank,
             noRekening: rek,
@@ -2708,8 +2760,8 @@ window.editSuplier = function(k) {
 
 window.deleteSuplier = function(k) {
     if (confirm("Hapus data suplier ini?")) {
-        if (typeof firebase !== 'undefined' && firebase.database) {
-            firebase.database().ref('rbm_pro/bank/' + k).remove().then(() => {
+        if (isFirebaseDatabaseReady()) {
+            getFirebaseDatabase().ref('rbm_pro/bank/' + k).remove().then(() => {
                 loadSuplierData();
             });
         }
@@ -6313,8 +6365,8 @@ function openRekeningPencairanModal(actionCallback) {
         }
     };
 
-    if (typeof firebase !== 'undefined' && firebase.database) {
-        firebase.database().ref('customer_app_settings/outlets').once('value').then(function(snap) {
+    if (isFirebaseDatabaseReady()) {
+        getFirebaseDatabase().ref('customer_app_settings/outlets').once('value').then(function(snap) {
             var o = snap.val();
             var list = o ? (Array.isArray(o) ? o : Object.values(o)) : [];
             var data = list.find(function(i) { return i && i.id === outletId; });
@@ -6486,9 +6538,9 @@ async function submitGajiPengajuan() {
             let reqId = res ? (res.requestId || res.id || res.key) : null;
             if (!reqId && typeof res === 'string') reqId = res;
             
-            if (reqId && typeof firebase !== 'undefined' && firebase.database) {
+            if (reqId && isFirebaseDatabaseReady()) {
                 try {
-                    await firebase.database().ref(`rbm_pro/gaji_pengajuan/${outletId}/${monthKey}/${reqId}`).update({
+                    await getFirebaseDatabase().ref(`rbm_pro/gaji_pengajuan/${outletId}/${monthKey}/${reqId}`).update({
                         snapshot: JSON.stringify({
                             employees: employees,
                             absensiData: absensiData,
@@ -8938,6 +8990,26 @@ function getStorageLookupKeys(baseKey) {
     return keys.filter(function(value, index, arr) { return arr.indexOf(value) === index; });
 }
 
+function persistStoragePayload(baseKey, payload) {
+    const uniqueKeys = getStorageLookupKeys(baseKey);
+    const serialized = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    uniqueKeys.forEach(function(key) {
+        try {
+            if (RBMStorage && typeof RBMStorage.setItem === 'function') {
+                RBMStorage.setItem(key, serialized);
+            } else if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(key, serialized);
+            }
+        } catch (e) {}
+        try {
+            if (window._rbmParsedCache) {
+                window._rbmParsedCache[key] = { data: payload };
+            }
+        } catch (e) {}
+    });
+    return uniqueKeys;
+}
+
 function getStokStorageData(baseKey, fallback) {
     if (baseKey === 'RBM_STOK_ITEMS') {
         const categories = ['sales', 'fruits', 'notsales'];
@@ -9092,15 +9164,13 @@ function saveStokStorageData(baseKey, data, options) {
         const writeLegacy = options && options.writeLegacy !== false;
 
         if (writeLegacy) {
-            try { localStorage.setItem(legacyKey, JSON.stringify(normalized)); } catch (e) {}
-            try { if (window._rbmParsedCache) window._rbmParsedCache[legacyKey] = { data: normalized }; } catch (e) {}
+            persistStoragePayload(legacyKey, normalized);
         }
 
         changedCategories.forEach(function(cat) {
             const catKey = getStokCategoryStorageKey(cat);
             const payload = normalized[cat] || [];
-            try { if (window._rbmParsedCache) window._rbmParsedCache[catKey] = { data: payload }; } catch (e) {}
-            try { localStorage.setItem(catKey, JSON.stringify(payload)); } catch (e) {}
+            persistStoragePayload(catKey, payload);
         });
         queueStokPersistenceSync(normalized, legacyKey, changedCategories, writeLegacy);
         window._rbmStokItemsCache = normalized;
@@ -9162,6 +9232,33 @@ function getPreviousMonth(monthVal) {
     return y + '-' + String(m).padStart(2, '0');
 }
 
+function getPreferredStokCategoryForInput() {
+    const tab = (typeof activeStokTab !== 'undefined' && activeStokTab) ? String(activeStokTab).toLowerCase() : 'sales';
+    if (tab === 'fruits') return 'fruits';
+    if (tab === 'notsales') return 'notsales';
+    return 'sales';
+}
+
+function findStokItemIdByPreferredCategory(name, preferredCategory) {
+    if (!name || !name.trim()) return null;
+    const normalizedName = name.trim().toLowerCase();
+    const allItems = getStokStorageData('RBM_STOK_ITEMS', { sales: [], fruits: [], notsales: [] }).data;
+    const orderedCategories = [];
+    if (preferredCategory) orderedCategories.push(preferredCategory);
+    ['sales', 'fruits', 'notsales'].forEach(function(cat) {
+        if (orderedCategories.indexOf(cat) === -1) orderedCategories.push(cat);
+    });
+
+    for (const cat of orderedCategories) {
+        const list = Array.isArray(allItems && allItems[cat]) ? allItems[cat] : [];
+        const item = list.find(function(entry) {
+            return entry && entry.name && entry.name.toLowerCase() === normalizedName;
+        });
+        if (item) return { id: item.id, category: cat, ratio: item.ratio, name: item.name };
+    }
+    return null;
+}
+
 // Process updates from Input Barang
 function processStokUpdates(updates) {
     const stokKey = getRbmStorageKey('RBM_STOK_TRANSACTIONS');
@@ -9204,8 +9301,7 @@ function processStokUpdates(updates) {
         }
     });
     
-    RBMStorage.setItem(stokKey, JSON.stringify(data));
-    window._rbmParsedCache[stokKey] = { data: data };
+    persistStoragePayload(stokKey, data);
 }
 
 function getRusakDetail(itemId, dateKey) {
@@ -9254,8 +9350,8 @@ function closeRusakDetailModal() {
 
 function switchStokTab(tab) {
     activeStokTab = tab;
-    document.querySelectorAll('#stok-barang-view .tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(`tab-stok-${tab}`).classList.add('active');
+    persistStokTab(tab);
+    applyStokTabButtonState(tab);
     renderStokTable();
 }
 
@@ -9633,8 +9729,7 @@ function updateStokValue(itemId, field, monthVal, value) {
     data[key] = value;
     window._stokDirty = true;
     if (!window._isBatchUpdatingStok) {
-        RBMStorage.setItem(stokKey, JSON.stringify(data));
-        window._rbmParsedCache[stokKey] = { data: data };
+        persistStoragePayload(stokKey, data);
     }
 }
 

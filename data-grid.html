@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Grid Editor - BIG MONSTERS</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Gaya khusus untuk halaman data grid */
+        .grid-toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .data-grid-container {
+            width: 100%;
+            overflow-x: auto;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+        }
+        .data-grid {
+            border-collapse: collapse;
+            width: 100%;
+            min-width: 600px;
+        }
+        .data-grid th, .data-grid td {
+            border: 1px solid #d1d5db;
+            padding: 8px 12px;
+            min-width: 120px;
+        }
+        .data-grid th {
+            background-color: #f9fafb;
+            font-weight: 600;
+        }
+        .data-grid td {
+            background-color: #fff;
+        }
+        .data-grid td:focus {
+            outline: 2px solid #4C2A85;
+            background-color: #f7f3ff;
+        }
+        /* [BARU] Gaya untuk sel yang terkunci */
+        .data-grid td.locked-cell {
+            background-color: #f3f4f6; /* Abu-abu terang */
+        }
+        /* [BARU] Gaya untuk Tab Sheet */
+        .grid-sheets-bar {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 8px;
+            background-color: #f9fafb;
+            border: 1px solid #d1d5db;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            overflow-x: auto;
+        }
+        .sheet-tab {
+            padding: 6px 12px;
+            border: 1px solid transparent;
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            font-size: 13px;
+            background-color: #e5e7eb;
+            color: #4b5563;
+            white-space: nowrap;
+        }
+        .sheet-tab.active {
+            background-color: #fff;
+            border-color: #d1d5db;
+            font-weight: 600;
+            color: #4C2A85;
+        }
+        .add-sheet-btn {
+            background: none; border: 1px solid #9ca3af; color: #4b5563; border-radius: 50%; width: 24px; height: 24px; font-size: 16px; cursor: pointer; margin-left: 8px; flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1 class="page-title">📝 Data Grid Editor</h1>
+        </header>
+        <main class="content">
+            <div class="card">
+                <!-- [BARU] Pilihan Outlet -->
+                <div class="form-group" style="margin-bottom: 20px; max-width: 300px;">
+                    <label for="outlet-selector" class="form-label">Pilih Outlet:</label>
+                    <select id="outlet-selector" class="form-input">
+                        <option value="default">Memuat outlet...</option>
+                    </select>
+                </div>
+                <div class="grid-toolbar">
+                    <button id="save-btn" class="btn btn-primary">💾 Simpan ke Cloud</button>
+                    <button id="export-btn" class="btn btn-secondary">📄 Export ke Excel</button>
+                    <button id="import-btn" class="btn btn-secondary">📥 Import dari Excel</button>
+                    <button id="add-row-btn" class="btn btn-secondary">➕ Tambah Baris</button>
+                    <button id="delete-row-btn" class="btn btn-secondary">🗑️ Hapus Baris</button>
+                    <!-- [BARU] Tombol untuk Developer Mode -->
+                    <button id="lock-settings-btn" class="btn btn-secondary" style="display: none;">⚙️ Pengaturan Kunci</button>
+                    <button id="toggle-dev-mode-btn" class="btn btn-secondary" style="display: none;">⚙️ Edit Struktur</button>
+                    <button id="add-col-btn" class="btn btn-secondary">➕ Tambah Kolom</button>
+                    <button id="delete-col-btn" class="btn btn-secondary">🗑️ Hapus Kolom</button>
+                    <button id="delete-sheet-toolbar-btn" class="btn btn-danger" title="Hapus sheet aktif">🗑️ Hapus Sheet</button>
+                </div>
+                <div id="grid-status" class="status-info" style="display: none;"></div>
+                <div class="data-grid-container">
+                    <table id="data-grid" class="data-grid"></table>
+                </div>
+                <!-- [BARU] Tab Bar untuk Sheets -->
+                <div id="grid-sheets-bar" class="grid-sheets-bar">
+                    <!-- Tabs akan dibuat oleh JavaScript -->
+                    <button id="add-sheet-btn" class="add-sheet-btn" title="Tambah Sheet Baru">+</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- [BARU] Modal Pengaturan Kunci Kolom/Baris -->
+    <div id="lock-settings-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="background:white; padding:24px; width:500px; max-width:95%; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.15);">
+            <span class="modal-close" onclick="closeLockSettingsModal()" style="color:#333; top:10px; right:14px; cursor:pointer;">&times;</span>
+            <h3 style="margin-top:0;">⚙️ Pengaturan Kunci Kolom & Baris</h3>
+            <p style="font-size:13px; color:#64748b; margin-bottom:20px;">Pilih kolom atau baris yang ingin dikunci. Data di sel yang terkunci tidak dapat diedit oleh pengguna non-developer.</p>
+
+            <div class="form-section">
+                <label for="locked-columns-input" class="form-label">Kunci Kolom (Contoh: A,B,C)</label>
+                <input type="text" id="locked-columns-input" class="form-input" placeholder="Pisahkan dengan koma (A, B, C)">
+                <p style="font-size:11px; color:#9ca3af; margin-top:4px;">*Kolom A adalah kolom pertama data, bukan nomor baris.</p>
+            </div>
+
+            <div class="form-section">
+                <label for="dropdown-columns-input" class="form-label">Kolom Dropdown (Contoh: B,C)</label>
+                <input type="text" id="dropdown-columns-input" class="form-input" placeholder="Pilih kolom yang akan menjadi dropdown (A, B, C)">
+                <p style="font-size:11px; color:#9ca3af; margin-top:4px;">*Semua kolom yang dipilih akan menggunakan daftar opsi yang sama.</p>
+            </div>
+
+            <div class="form-section">
+                <label for="dropdown-options-input" class="form-label">Opsi Dropdown (pisahkan dengan koma)</label>
+                <textarea id="dropdown-options-input" class="form-input" rows="3" placeholder="Contoh: Ya, Tidak, Nanti"></textarea>
+                <p style="font-size:11px; color:#9ca3af; margin-top:4px;">*Opsi akan ditampilkan sebagai pilihan pada kolom dropdown.</p>
+            </div>
+
+            <div class="form-section">
+                <label for="locked-rows-input" class="form-label">Kunci Baris (Contoh: 1,2,3)</label>
+                <input type="text" id="locked-rows-input" class="form-input" placeholder="Pisahkan dengan koma (1, 2, 3)">
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
+                <button type="button" class="btn btn-secondary" onclick="closeLockSettingsModal()">Batal</button>
+                <button type="button" class="btn btn-primary" onclick="saveLockSettings()">Simpan Pengaturan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal untuk konfirmasi penghapusan sheet -->
+    <div id="delete-sheet-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="background:white; padding:24px; width:350px; max-width:95%; border-radius:12px; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,0.15);">
+            <h3 style="margin-top:0;">Hapus Sheet?</h3>
+            <p style="font-size:14px; color:#64748b; margin-bottom:20px;">Anda yakin ingin menghapus sheet "<span id="sheet-to-delete-name" style="font-weight:bold;"></span>"? Aksi ini tidak dapat dibatalkan.</p>
+            <div style="display:flex; gap:10px; justify-content:center;">
+                <button type="button" class="btn btn-secondary" onclick="closeDeleteSheetModal()">Batal</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete-sheet-btn">Hapus</button>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Input file tersembunyi untuk fitur import -->
+    <input type="file" id="import-file-input" style="display: none;" accept=".xlsx, .xls, .csv" />
+
+    <!-- Library untuk Export Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- Firebase & Storage Helper -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="rbm-pro.js"></script>
+    <script src="rbm-pro-storage.js"></script>
+    <!-- Logika Halaman -->
+    <script src="data-grid.js"></script>
+</body>
+</html>

@@ -41,6 +41,30 @@
     return key.replace(/^RBM_/, '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
   }
 
+  function loadScript(src) {
+    return new Promise(function(resolve, reject) {
+      var script = document.createElement('script');
+      script.src = src;
+      script.onload = function() { resolve(); };
+      script.onerror = function() { reject(new Error('Gagal memuat script: ' + src)); };
+      document.head.appendChild(script);
+    });
+  }
+
+  function ensureFirebaseSdk() {
+    if (typeof firebase !== 'undefined' && typeof firebase.database === 'function') {
+      return Promise.resolve();
+    }
+    return loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js').then(function() {
+      if (typeof firebase === 'undefined') {
+        throw new Error('Firebase SDK belum tersedia setelah memuat firebase-app.js');
+      }
+      if (typeof firebase.database !== 'function') {
+        return loadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js');
+      }
+    });
+  }
+
   var RBMStorage = {
     _cache: {},
     _db: null,
@@ -54,18 +78,48 @@
       try { outlet = (outletId || '').toString().trim(); } catch (_) { outlet = ''; }
       return outlet ? '_' + outlet.toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
     },
+    _requireFirebase: false,
 
-    init: function() {
+    init: async function() {
       var conn = getActiveConnection();
       if (!conn) return;
-      if (conn.type === 'local' || conn.type === 'server') return;
+      if (conn.type === 'local' || conn.type === 'server') {
+          if (this._requireFirebase) {
+              console.warn('RBM Storage: conn.type=' + conn.type + ' terdeteksi, tetapi requireFirebase aktif. Menggunakan DEFAULT_FIREBASE_CONFIG untuk menyimpan ke Firebase.');
+              conn = DEFAULT_FIREBASE_CONFIG;
+          } else {
+              this._useFirebase = false;
+              console.warn('RBM Storage: Running in offline mode (' + conn.type + '). Data akan disimpan lokal.');
+              this._initDevTools();
+              return;
+          }
+      }
+      if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:' && this._requireFirebase) {
+          var err = new Error('Firebase tidak dapat digunakan dari file://. Jalankan halaman ini melalui HTTP/HTTPS agar Firebase dapat dipakai.');
+          console.error('RBM Storage: ' + err.message);
+          this._useFirebase = false;
+          this._initDevTools();
+          throw err;
+      }
       try {
-        if (typeof firebase === 'undefined') return;
+        await ensureFirebaseSdk();
+        if (typeof firebase === 'undefined') {
+            throw new Error('Firebase library belum dimuat.');
+        }
         if (!firebase.apps.length) firebase.initializeApp(conn);
         this._db = firebase.database();
         this._useFirebase = true;
+        console.info('RBM Storage: Firebase berhasil diinisialisasi.');
       } catch (e) {
-        console.warn('RBM Storage: Firebase init failed', e);
+        var errorMessage = (e && e.message) ? e.message : e;
+        if (this._requireFirebase) {
+            console.error('RBM Storage: Firebase init gagal, requireFirebase aktif. Tidak boleh fallback ke localStorage.', errorMessage);
+            this._useFirebase = false;
+            this._initDevTools();
+            throw e;
+        }
+        console.warn('RBM Storage: Firebase init gagal, fallback ke localStorage.', errorMessage);
+        this._useFirebase = false; // Pastikan false jika init gagal
       }
       this._initDevTools(); // [DEV] Cek apakah mode developer aktif
     },
@@ -73,6 +127,9 @@
     loadFromFirebase: function() {
       var self = this;
       if (!this._db) {
+        if (this._requireFirebase) {
+          return Promise.reject(new Error('Firebase tidak tersedia.'));        
+        }
         this._readyPromise = Promise.resolve();
         return this._readyPromise;
       }
@@ -304,10 +361,17 @@
     },
 
     ready: function() {
-      var self = this;
       if (this._readyPromise) return this._readyPromise;
-      this.init();
-      return this.loadFromFirebase();
+      var self = this;
+      this._readyPromise = Promise.resolve().then(function() {
+        return self.init();
+      }).then(function() {
+        if (self._requireFirebase && !self._useFirebase) {
+          return Promise.reject(new Error('Firebase tidak tersedia.'));        
+        }
+        return self.loadFromFirebase();
+      });
+      return this._readyPromise;
     },
 
     getRawData: function(key) {
@@ -390,6 +454,9 @@
 
     getItem: function(key) {
       if (!key || key.indexOf('RBM_') !== 0) return _origGetItem.call(localStorage, key);
+      if (this._requireFirebase && !this._useFirebase) {
+        return null;
+      }
       var path = keyToPath(key);
       if (this._useFirebase) {
         var self = this;
@@ -471,6 +538,9 @@
         if (path.indexOf('gps_jam_config_') === 0) { var fb = getFromCache('gps_jam_config'); if (fb) return fb; }
         if (path.indexOf('face_data_') === 0) { var fb = getFromCache('face_data'); if (fb) return fb; }
 
+        if (this._requireFirebase) {
+            return null;
+        }
         return _origGetItem.call(localStorage, key);
       }
       return _origGetItem.call(localStorage, key);
@@ -506,6 +576,9 @@
 
         var refPath = 'rbm_pro/' + path.replace(/\//g, '/');
         return this._db.ref(refPath).set(toSet);
+      }
+      if (this._requireFirebase) {
+        return Promise.reject(new Error('Firebase tidak tersedia. Simpanan hanya boleh ke Firebase.'));
       }
       try {
         _origSetItem.call(localStorage, key, value);
