@@ -6069,6 +6069,7 @@ function renderRekapGaji() {
             <th colspan="2" style="border:1px solid #ccc; padding:4px;">POTONGAN KEHADIRAN</th>
             <th colspan="3" style="border:1px solid #ccc; padding:4px;">KETERLAMBATAN</th>
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">HUTANG</th>
+            <th rowspan="2" style="border:1px solid #ccc; padding:4px;">POTONGAN BPJS</th>
             <th rowspan="2" style="border:1px solid #ccc; padding:4px;">UANG MAKAN</th>` +
             parkirHeader +
             transportHeader + `
@@ -6122,6 +6123,7 @@ function renderRekapGaji() {
         const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
         const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0; // Default 0
         const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
+        const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
         const parkir = (enableParkir && counts.H > 0) ? 5000 * counts.H : 0;
         const transport = enableTransport ? (pData.transport !== undefined ? parseInt(pData.transport) : 0) : 0;
         let tunjangan = 0;
@@ -6138,7 +6140,7 @@ function renderRekapGaji() {
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
         
-        const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + parkir + transport + tunjangan;
+        const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang - potonganBpjs + uangMakan + parkir + transport + tunjangan;
         const pembulatan = Math.round(grandTotal / 1000) * 1000;
         totalGrand += pembulatan;
 
@@ -6150,6 +6152,7 @@ function renderRekapGaji() {
         const wPot = Math.max(50, (String(potHari).length * 8) + 20);
         const wJam = Math.max(50, (String(jamTerlambat).length * 8) + 20);
         const wHutang = Math.max(80, (String(hutang).length * 8) + 15);
+        const wBpjs = Math.max(80, (String(potonganBpjs).length * 8) + 15);
         const wParkir = Math.max(80, (String(parkir).length * 8) + 15);
         const wTransport = Math.max(80, (String(transport).length * 8) + 15);
         const wTunj = Math.max(80, (String(tunjangan).length * 8) + 15);
@@ -6195,6 +6198,7 @@ function renderRekapGaji() {
 
             <!-- Lainnya -->
             <td><input type="text" data-field="hutang" value="${formatRupiah(hutang)}" oninput="resizeInput(this)" style="width:${wHutang}px; text-align:right; padding:5px;" placeholder="Rp 0"></td>
+            <td><input type="text" data-field="potonganBpjs" value="${formatRupiah(potonganBpjs)}" oninput="resizeInput(this)" style="width:${wBpjs}px; text-align:right; padding:5px;" placeholder="Rp 0"></td>
             <td style="text-align:right;">${formatRupiah(uangMakan)}</td>
             ` + parkirCell + `
             ` + transportCell + `
@@ -6218,7 +6222,7 @@ function renderRekapGaji() {
     tbody.innerHTML = html;
 
     // [BARU] Hitung colspan dinamis untuk footer
-    let colspanCount = 25;
+    let colspanCount = 26;
     if (enableParkir) colspanCount++;
     if (enableTransport) colspanCount++;
     tfoot.innerHTML = `<tr><td colspan="${colspanCount}" style="text-align:right; font-weight:bold; padding:10px;">TOTAL PENGELUARAN GAJI:</td><td style="text-align:right; font-weight:bold; padding:10px; color:#1e40af;">${formatRupiah(totalGrand)}</td><td colspan="2"></td></tr>`;
@@ -6257,6 +6261,7 @@ async function saveRekapGajiData() {
         var inpPotHari = tr.querySelector('input[data-field="potHari"]');
         var inpJamTerlambat = tr.querySelector('input[data-field="jamTerlambat"]');
         var inpHutang = tr.querySelector('input[data-field="hutang"]');
+        var inpPotonganBpjs = tr.querySelector('input[data-field="potonganBpjs"]');
         var inpTransport = tr.querySelector('input[data-field="transport"]');
         var inpTunjangan = tr.querySelector('input[data-field="tunjangan"]');
         var selMetode = tr.querySelector('select[data-field="metodeBayar"]');
@@ -6279,6 +6284,7 @@ async function saveRekapGajiData() {
             delete gajiData[empId].jamTerlambat; // Bersihkan data nyangkut lama
         }
         if (inpHutang) gajiData[empId].hutang = parseRp(inpHutang.value);
+        if (inpPotonganBpjs) gajiData[empId].potonganBpjs = parseRp(inpPotonganBpjs.value);
         if (inpTransport && !inpTransport.disabled) gajiData[empId].transport = parseRp(inpTransport.value);
         if (inpTunjangan) gajiData[empId].tunjangan = parseRp(inpTunjangan.value);
         if (selMetode) gajiData[empId].metodeBayar = selMetode.value || 'TF';
@@ -6468,6 +6474,7 @@ async function submitGajiPengajuan() {
         const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
                 let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
                 const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
+                const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
             const parkir = enableParkir ? jumlahH * 5000 : 0;
             const transport = (enableTransport && pData.transport !== undefined) ? parseInt(pData.transport) : 0;
                 let tunjangan = 0;
@@ -6483,7 +6490,7 @@ async function submitGajiPengajuan() {
                 const totalPotKehadiran = Math.round(potHari * gajiPerHari);
                 const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
 
-                const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang + uangMakan + parkir + transport + tunjangan; // [FIX] Tambahkan parkir & transport ke Grand Total
+                const grandTotal = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang - potonganBpjs + uangMakan + parkir + transport + tunjangan; // Potongan BPJS mengurangi total diterima
                 const pembulatan = Math.round(grandTotal / 1000) * 1000;
 
                 items.push({
@@ -6502,6 +6509,7 @@ async function submitGajiPengajuan() {
                     potHari: potHari,
                     potTerlambatPerJam: potTerlambatPerJam,
                     hutang: hutang,
+                    potonganBpjs: potonganBpjs,
                     uangMakan: uangMakan,
                     parkir: parkir,
                     transport: transport,
@@ -6819,6 +6827,10 @@ function generateAndShowSlip(idx) {
     let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
     const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
+    const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
+    const parkir = enableParkir ? counts.H * 5000 : 0;
+    const transport = enableTransport ? (parseInt(pData.transport) || 0) : 0;
+    const lemburMinggu = parseInt(pData.lemburMinggu) || 0;
     let tunjangan = 0;
     if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
     else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
@@ -6831,8 +6843,8 @@ function generateAndShowSlip(idx) {
     const totalPotKehadiran = Math.round(potHari * gajiPerHari);
     const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
     
-    const totalPendapatan = gajiPokok + tunjangan + uangMakan; // Lembur is not implemented yet
-    const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
+    const totalPendapatan = gajiPokok + tunjangan + lemburMinggu + uangMakan + parkir + transport;
+    const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang - potonganBpjs;
     const pembulatan = Math.round(grandTotal / 1000) * 1000;
     // --- End of calculation logic ---
 
@@ -6847,11 +6859,15 @@ function generateAndShowSlip(idx) {
     document.getElementById('slip_gaji_pokok').innerText = formatRupiah(gajiPokok);
     document.getElementById('slip_tunjangan').innerText = formatRupiah(tunjangan);
     document.getElementById('slip_uang_makan').innerText = formatRupiah(uangMakan);
+    document.getElementById('slip_lembur').innerText = formatRupiah(lemburMinggu);
+    document.getElementById('slip_parkir').innerText = formatRupiah(parkir);
+    document.getElementById('slip_transport').innerText = formatRupiah(transport);
     document.getElementById('slip_total_pendapatan').innerText = formatRupiah(totalPendapatan);
 
     document.getElementById('slip_pot_absensi').innerText = formatRupiah(totalPotKehadiran);
     document.getElementById('slip_pot_terlambat').innerText = formatRupiah(totalPotTerlambat);
     document.getElementById('slip_hutang').innerText = formatRupiah(hutang);
+    document.getElementById('slip_pot_bpjs').innerText = formatRupiah(potonganBpjs);
     document.getElementById('slip_grand_total').innerText = formatRupiah(grandTotal);
     const elPembulatan = document.getElementById('slip_pembulatan');
     if (elPembulatan) elPembulatan.innerText = formatRupiah(pembulatan);
@@ -6905,6 +6921,7 @@ function sendSlipEmail(idx) {
     let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
     const hutang = parseInt(pData.hutang) || 0;
+    const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
     const parkir = enableParkir ? counts.H * 5000 : 0;
     const transport = enableTransport ? (parseInt(pData.transport) || 0) : 0;
     let tunjangan = 0;
@@ -6917,7 +6934,9 @@ function sendSlipEmail(idx) {
     const totalPotKehadiran = Math.round(potHari * gajiPerHari);
     const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
     const totalPendapatan = gajiPokok + tunjangan + uangMakan + parkir + transport;
-    const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
+    const lemburMinggu = parseInt(pData.lemburMinggu) || 0;
+    const totalPendapatanDenganLembur = totalPendapatan + lemburMinggu;
+    const grandTotal = totalPendapatanDenganLembur - totalPotKehadiran - totalPotTerlambat - hutang - potonganBpjs;
     const pembulatan = Math.round(grandTotal / 1000) * 1000;
 
     const htmlBody = `
@@ -6929,14 +6948,16 @@ function sendSlipEmail(idx) {
                 <tr><td colspan="3" style="font-weight:bold; padding-top:10px;">PENDAPATAN</td></tr>
                 <tr><td>Gaji Pokok</td><td>:</td><td style="text-align:right;">${formatRupiah(gajiPokok)}</td></tr>
                 <tr><td>Tunjangan</td><td>:</td><td style="text-align:right;">${formatRupiah(tunjangan)}</td></tr>
+                <tr><td style="padding-left: 15px;">Lembur Minggu</td><td>:</td><td style="text-align:right;">${formatRupiah(lemburMinggu)}</td></tr>
                 <tr><td style="padding-left: 15px;">Uang Makan</td><td>:</td><td style="text-align:right;">${formatRupiah(uangMakan)}</td></tr>
                 <tr><td style="padding-left: 15px;">Parkir</td><td>:</td><td style="text-align:right;">${formatRupiah(parkir)}</td></tr>
                 <tr><td style="padding-left: 15px;">Transport</td><td>:</td><td style="text-align:right;">${formatRupiah(transport)}</td></tr>
-                <tr><td style="font-weight:bold;">Total Pendapatan</td><td>:</td><td style="text-align:right; font-weight:bold;">${formatRupiah(totalPendapatan)}</td></tr>
+                <tr><td style="font-weight:bold;">Total Pendapatan</td><td>:</td><td style="text-align:right; font-weight:bold;">${formatRupiah(totalPendapatanDenganLembur)}</td></tr>
                 <tr><td colspan="3" style="font-weight:bold; padding-top:10px;">POTONGAN</td></tr>
                 <tr><td>Absensi</td><td>:</td><td style="text-align:right;">${formatRupiah(totalPotKehadiran)}</td></tr>
                 <tr><td>Terlambat</td><td>:</td><td style="text-align:right;">${formatRupiah(totalPotTerlambat)}</td></tr>
                 <tr><td>Hutang</td><td>:</td><td style="text-align:right;">${formatRupiah(hutang)}</td></tr>
+                <tr><td>BPJS</td><td>:</td><td style="text-align:right;">${formatRupiah(potonganBpjs)}</td></tr>
                 <tr><td colspan="3" style="border-top:2px solid black; padding-top:10px; font-weight:bold;">GRAND TOTAL: ${formatRupiah(grandTotal)}</td></tr>
                 <tr><td colspan="3" style="padding-bottom:10px; font-weight:bold; color:#1e40af;">PEMBULATAN: ${formatRupiah(pembulatan)}</td></tr>
             </table>
@@ -7768,6 +7789,7 @@ async function downloadAllSlipsAsZip(event) {
         let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
             const hutang = parseInt(pData.hutang) || 0;
+            const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
             let tunjangan = 0;
             if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
             else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
@@ -7779,7 +7801,7 @@ async function downloadAllSlipsAsZip(event) {
             const totalPotKehadiran = Math.round(potHari * gajiPerHari);
             const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
             const totalPendapatan = gajiPokok + tunjangan + uangMakan;
-            const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang;
+            const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang - potonganBpjs;
             const pembulatan = Math.round(grandTotal / 1000) * 1000;
 
             // Render HTML Template

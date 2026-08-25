@@ -23,10 +23,14 @@ document.addEventListener('DOMContentLoaded', function() {
     let appData = {
         activeSheetIndex: 0,
         sheets: [],
-        selectedColumnIndex: null
+        selectedColumnIndex: null,
+        selectedRange: null
     };
     // Clipboard buffer for copy/paste support (single-cell)
     let clipboardBuffer = null;
+    let rangeAnchor = null;
+    let isSelectingRange = false;
+    let fillDrag = null;
 
     // Inject minimal CSS for drag handle visuals if not already present
     (function injectGridHandlesStyle() {
@@ -41,6 +45,8 @@ document.addEventListener('DOMContentLoaded', function() {
             #data-grid th:hover .col-drag-handle, #data-grid th.selected .col-drag-handle { opacity: 1; }\n\
             #data-grid th:hover .col-delete-handle, #data-grid th.selected .col-delete-handle { opacity: 1; }\n\
             #data-grid th.drag-over { outline: 2px dashed rgba(99,102,241,0.35); }\n\
+            #data-grid th.selected, #data-grid td.column-selected, #data-grid td.range-selected { background-color: #e0e7ff; }\n\
+            .fill-handle { position: absolute; right: -4px; bottom: -4px; width: 8px; height: 8px; background: #4C2A85; border: 1px solid #fff; cursor: crosshair; z-index: 5; }\n\
             .formula-cell { font-style: normal; }\n\
             .sheet-tab { position: relative; display:inline-flex; align-items:center; padding-right:18px; }\n\
             .sheet-tab-delete { position: absolute; right:4px; top:4px; width:16px; height:16px; border-radius:8px; background:#ef4444; color:white; border:none; font-size:12px; line-height:14px; cursor:pointer; display:none; }\n\
@@ -246,6 +252,19 @@ document.addEventListener('DOMContentLoaded', function() {
         return letters;
     }
 
+    function getExportCellValue(cellValue, sheetData, rowIndex, colIndex) {
+        if (!isFormulaValue(cellValue)) return cellValue;
+        return evaluateFormula(cellValue, sheetData, rowIndex, colIndex);
+    }
+
+    function getExportData(sheet) {
+        return (Array.isArray(sheet.data) ? sheet.data : []).map((row, rowIndex) =>
+            (Array.isArray(row) ? row : []).map((cellValue, colIndex) =>
+                getExportCellValue(cellValue, sheet.data, rowIndex, colIndex)
+            )
+        );
+    }
+
     function parseA1Reference(reference) {
         const match = String(reference || '').trim().toUpperCase().match(/^([A-Z]+)(\d+)$/);
         if (!match) return null;
@@ -338,7 +357,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function openLockSettingsModal() {
         const activeSheet = appData.sheets[appData.activeSheetIndex];
-        document.getElementById('locked-columns-input').value = (activeSheet.lockedColumns || []).map(idx => String.fromCharCode(65 + idx)).join(', ');
+        document.getElementById('locked-columns-input').value = (activeSheet.lockedColumns || []).map(columnIndexToLetters).join(', ');
         document.getElementById('locked-rows-input').value = (activeSheet.lockedRows || []).map(idx => idx + 1).join(', ');
 
         const dropdownCols = activeSheet.dropdownColumns || [];
@@ -527,20 +546,277 @@ document.addEventListener('DOMContentLoaded', function() {
         saveGrid();
     }
 
-    // Keyboard copy/paste (single-cell)
+    function focusGridCell(cell) {
+        if (!cell) return;
+        const target = cell.querySelector('select') || cell;
+        target.focus();
+        if (target.isContentEditable) {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(target);
+            range.collapse(false);
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+    }
+
+    function getCaretOffset(element) {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount || !element.contains(selection.anchorNode)) return null;
+        const range = selection.getRangeAt(0);
+        const beforeCaret = range.cloneRange();
+        beforeCaret.selectNodeContents(element);
+        beforeCaret.setEnd(range.startContainer, range.startOffset);
+        return beforeCaret.toString().length;
+    }
+
+    function moveToGridCell(cell, rowOffset, colOffset) {
+        const row = cell.parentElement;
+        const rows = Array.from(gridTable.querySelectorAll('tbody tr'));
+        const rowIndex = rows.indexOf(row);
+        const cellIndex = Array.from(row.children).indexOf(cell) - 1;
+        const targetRow = rows[rowIndex + rowOffset];
+        const targetCell = targetRow && targetRow.children[cellIndex + colOffset + 1];
+        if (targetCell) {
+            cell.blur();
+            focusGridCell(targetCell);
+            return true;
+        }
+        return false;
+    }
+
+    function getCellRawValue(td) {
+        const select = td.querySelector('select');
+        if (select) return select.value;
+        if (typeof td.dataset.rawValue !== 'undefined' && td.dataset.rawValue !== '') return td.dataset.rawValue;
+        return td.textContent || '';
+    }
+
+    function pasteValueIntoCell(td, value, sheet, rowIndex, cellIndex) {
+        if (!td || !sheet || !Array.isArray(sheet.data[rowIndex])) return;
+        if (td.classList.contains('locked-cell') || td.querySelector('select')?.disabled) return;
+        const stringValue = String(value ?? '');
+        const select = td.querySelector('select');
+        if (select) {
+            select.value = stringValue;
+            sheet.data[rowIndex][cellIndex] = select.value;
+            return;
+        }
+        sheet.data[rowIndex][cellIndex] = stringValue;
+        if (stringValue.startsWith('=')) {
+            td.dataset.rawValue = stringValue;
+            td.textContent = evaluateFormula(stringValue, sheet.data, rowIndex, cellIndex);
+            td.classList.add('formula-cell');
+        } else {
+            delete td.dataset.rawValue;
+            td.textContent = stringValue;
+            td.classList.remove('formula-cell');
+        }
+    }
+
+    function getCellCoordinates(td) {
+        if (!td || td.tagName !== 'TD') return null;
+        const row = td.parentElement;
+        const rowHead = row.querySelector('th[data-row-index]');
+        const rowIndex = rowHead ? parseInt(rowHead.dataset.rowIndex, 10) : -1;
+        const colIndex = Array.from(row.children).indexOf(td) - 1;
+        return rowIndex >= 0 && colIndex >= 0 ? { rowIndex, colIndex } : null;
+    }
+
+    function normalizeRange(start, end) {
+        return {
+            rowStart: Math.min(start.rowIndex, end.rowIndex),
+            rowEnd: Math.max(start.rowIndex, end.rowIndex),
+            colStart: Math.min(start.colIndex, end.colIndex),
+            colEnd: Math.max(start.colIndex, end.colIndex)
+        };
+    }
+
+    function getFillValue(sheet, range, rowIndex, colIndex) {
+        const sourceHeight = range.rowEnd - range.rowStart + 1;
+        const sourceRowIndex = range.rowStart + ((rowIndex - range.rowStart) % sourceHeight);
+        const sourceValue = sheet.data[sourceRowIndex]?.[colIndex] ?? '';
+        const sourceValues = [];
+        for (let sourceRow = range.rowStart; sourceRow <= range.rowEnd; sourceRow++) {
+            sourceValues.push(sheet.data[sourceRow]?.[colIndex] ?? '');
+        }
+
+        const numericValues = sourceValues.map(Number);
+        if (sourceValues.every(value => String(value).trim() !== '' && Number.isFinite(Number(value)))) {
+            const step = numericValues.length > 1 ? numericValues[1] - numericValues[0] : 1;
+            return numericValues[0] + step * (rowIndex - range.rowStart);
+        }
+        if (isFormulaValue(sourceValue)) {
+            return adjustFormulaForPaste(sourceValue, rowIndex - sourceRowIndex, 0);
+        }
+        return sourceValue;
+    }
+
+    function updateFillHandle() {
+        document.querySelectorAll('#data-grid .fill-handle').forEach(handle => handle.remove());
+        const range = appData.selectedRange;
+        if (!range) return;
+        const row = gridTable.querySelectorAll('tbody tr')[range.rowEnd];
+        const cell = row && row.children[range.colEnd + 1];
+        if (!cell) return;
+
+        const handle = document.createElement('div');
+        handle.className = 'fill-handle';
+        handle.title = 'Tarik untuk mengisi pola ke bawah';
+        handle.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            fillDrag = { range: Object.assign({}, range), lastRow: range.rowEnd };
+        });
+        cell.appendChild(handle);
+    }
+
+    function updateRangeSelection(range) {
+        document.querySelectorAll('#data-grid td.range-selected').forEach(cell => cell.classList.remove('range-selected'));
+        document.querySelectorAll('#data-grid td.column-selected').forEach(cell => cell.classList.remove('column-selected'));
+        if (!range) return;
+        document.querySelectorAll('#data-grid tbody tr').forEach((row, rowIndex) => {
+            if (rowIndex < range.rowStart || rowIndex > range.rowEnd) return;
+            for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
+                const cell = row.children[colIndex + 1];
+                if (cell) cell.classList.add('range-selected');
+            }
+        });
+        updateFillHandle();
+    }
+
+    function getRangeData(sheet, range) {
+        const values = [];
+        for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
+            const row = [];
+            for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
+                row.push(sheet.data[rowIndex]?.[colIndex] ?? '');
+            }
+            values.push(row);
+        }
+        return values;
+    }
+
+    function adjustFormulaForPaste(value, rowOffset, colOffset) {
+        if (!isFormulaValue(value)) return value;
+        return value.replace(/(\$?)([A-Z]+)(\$?)(\d+)/gi, (match, absoluteCol, letters, absoluteRow, number) => {
+            const parsed = parseA1Reference(letters + number);
+            if (!parsed) return match;
+            const nextCol = absoluteCol ? parsed.col : Math.max(0, parsed.col + colOffset);
+            const nextRow = absoluteRow ? parsed.row : Math.max(0, parsed.row + rowOffset);
+            return `${absoluteCol ? '$' : ''}${columnIndexToLetters(nextCol)}${absoluteRow ? '$' : ''}${nextRow + 1}`;
+        });
+    }
+
+    function pasteRangeIntoGrid(values, sheet, startRow, startCol, rowDelta, colDelta) {
+        values.forEach((sourceRow, rowOffset) => {
+            sourceRow.forEach((value, colOffset) => {
+                const rowIndex = startRow + rowOffset;
+                const colIndex = startCol + colOffset;
+                const row = gridTable.querySelectorAll('tbody tr')[rowIndex];
+                const td = row && row.children[colIndex + 1];
+                const adjustedValue = adjustFormulaForPaste(value, rowDelta, colDelta);
+                if (td) pasteValueIntoCell(td, adjustedValue, sheet, rowIndex, colIndex);
+            });
+        });
+    }
+
+    function clearSelectedCells() {
+        const activeSheet = appData.sheets[appData.activeSheetIndex];
+        if (!activeSheet) return false;
+        let range = appData.selectedRange;
+        if (!range && typeof appData.selectedColumnIndex === 'number') {
+            range = {
+                rowStart: 0,
+                rowEnd: activeSheet.data.length - 1,
+                colStart: appData.selectedColumnIndex,
+                colEnd: appData.selectedColumnIndex
+            };
+        }
+        if (!range) return false;
+
+        for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
+            for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
+                const row = gridTable.querySelectorAll('tbody tr')[rowIndex];
+                const td = row && row.children[colIndex + 1];
+                if (td) pasteValueIntoCell(td, '', activeSheet, rowIndex, colIndex);
+            }
+        }
+        renderGrid();
+        saveGrid();
+        showStatus('Isi blok terhapus.', 'success');
+        return true;
+    }
+
+    document.addEventListener('mouseup', () => {
+        if (fillDrag) {
+            fillDrag = null;
+            renderGrid();
+            saveGrid();
+        }
+        isSelectingRange = false;
+    });
+
+    document.addEventListener('mousemove', (event) => {
+        if (!fillDrag) return;
+        const td = event.target && event.target.closest ? event.target.closest('td') : null;
+        const coordinates = getCellCoordinates(td);
+        if (!coordinates || coordinates.rowIndex <= fillDrag.range.rowEnd) return;
+        const activeSheet = appData.sheets[appData.activeSheetIndex];
+        if (!activeSheet) return;
+        for (let rowIndex = fillDrag.range.rowEnd + 1; rowIndex <= coordinates.rowIndex; rowIndex++) {
+            for (let colIndex = fillDrag.range.colStart; colIndex <= fillDrag.range.colEnd; colIndex++) {
+                const row = gridTable.querySelectorAll('tbody tr')[rowIndex];
+                const td = row && row.children[colIndex + 1];
+                if (td) pasteValueIntoCell(td, getFillValue(activeSheet, fillDrag.range, rowIndex, colIndex), activeSheet, rowIndex, colIndex);
+            }
+        }
+        fillDrag.lastRow = coordinates.rowIndex;
+        appData.selectedRange = normalizeRange(
+            { rowIndex: fillDrag.range.rowStart, colIndex: fillDrag.range.colStart },
+            { rowIndex: coordinates.rowIndex, colIndex: fillDrag.range.colEnd }
+        );
+        updateRangeSelection(appData.selectedRange);
+    });
+
+    // Keyboard copy/paste for cells and selected ranges.
     document.addEventListener('keydown', function (e) {
+        const activeCell = e.target && e.target.closest ? e.target.closest('td') : null;
+        const isFormControl = e.target && e.target.closest ? e.target.closest('input, textarea, select') : null;
+        if (e.key === 'Delete' && (activeCell || !isFormControl) && clearSelectedCells()) {
+            e.preventDefault();
+            return;
+        }
+
         if ((e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'c') {
             const active = document.activeElement;
             const td = active && typeof active.closest === 'function' ? active.closest('td') : null;
-            if (td) {
-                const select = td.querySelector('select');
-                let val = '';
-                if (select) val = select.value;
-                else if (typeof td.dataset.rawValue !== 'undefined' && td.dataset.rawValue !== '') val = td.dataset.rawValue;
-                else val = td.textContent || '';
-                clipboardBuffer = String(val);
+            if (appData.selectedRange) {
+                const activeSheet = appData.sheets[appData.activeSheetIndex];
+                if (activeSheet) {
+                    clipboardBuffer = {
+                        type: 'range',
+                        values: getRangeData(activeSheet, appData.selectedRange),
+                        sourceRow: appData.selectedRange.rowStart,
+                        sourceCol: appData.selectedRange.colStart
+                    };
+                    showStatus('Blok sel tersalin ke clipboard internal', 'success');
+                    e.preventDefault();
+                }
+            } else if (td) {
+                clipboardBuffer = { type: 'cell', value: String(getCellRawValue(td)) };
                 showStatus('Tersalin ke clipboard internal', 'success');
                 e.preventDefault();
+            } else if (typeof appData.selectedColumnIndex === 'number') {
+                const activeSheet = appData.sheets[appData.activeSheetIndex];
+                if (activeSheet) {
+                    clipboardBuffer = {
+                        type: 'column',
+                        values: activeSheet.data.map(row => row[appData.selectedColumnIndex] ?? '')
+                    };
+                    showStatus('Kolom tersalin ke clipboard internal', 'success');
+                    e.preventDefault();
+                }
             }
         }
 
@@ -549,35 +825,41 @@ document.addEventListener('DOMContentLoaded', function() {
             const active = document.activeElement;
             const td = active && typeof active.closest === 'function' ? active.closest('td') : null;
             if (td) {
-                const row = td.parentElement;
-                const rowHead = row.querySelector('th[data-row-index]');
-                const rowIndex = rowHead ? parseInt(rowHead.dataset.rowIndex, 10) : Array.from(row.parentElement.children).indexOf(row);
-                const cellIndex = Array.from(row.children).indexOf(td) - 1;
+                const coordinates = getCellCoordinates(td);
+                if (!coordinates) return;
+                const { rowIndex, colIndex: cellIndex } = coordinates;
 
                 const activeSheet = appData.sheets[appData.activeSheetIndex];
                 if (!activeSheet) return;
-                // If dropdown cell
-                const select = td.querySelector('select');
-                if (select) {
-                    select.value = clipboardBuffer;
-                    activeSheet.data[rowIndex][cellIndex] = clipboardBuffer;
+                if (clipboardBuffer.type === 'range') {
+                    pasteRangeIntoGrid(
+                        clipboardBuffer.values,
+                        activeSheet,
+                        rowIndex,
+                        cellIndex,
+                        rowIndex - clipboardBuffer.sourceRow,
+                        cellIndex - clipboardBuffer.sourceCol
+                    );
+                    renderGrid();
                 } else {
-                    // Preserve formula raw when user pastes starting with '='
-                    if (String(clipboardBuffer).startsWith('=')) {
-                        td.dataset.rawValue = clipboardBuffer;
-                        activeSheet.data[rowIndex][cellIndex] = clipboardBuffer;
-                        td.textContent = evaluateFormula(clipboardBuffer, activeSheet.data, rowIndex, cellIndex);
-                        td.classList.add('formula-cell');
-                    } else {
-                        delete td.dataset.rawValue;
-                        activeSheet.data[rowIndex][cellIndex] = clipboardBuffer;
-                        td.textContent = clipboardBuffer;
-                        td.classList.remove('formula-cell');
-                    }
+                    const value = clipboardBuffer.type === 'cell' ? clipboardBuffer.value : clipboardBuffer.values[rowIndex];
+                    pasteValueIntoCell(td, value, activeSheet, rowIndex, cellIndex);
                 }
 
                 saveGrid();
                 showStatus('Terpaste', 'success');
+                e.preventDefault();
+            } else if (clipboardBuffer.type === 'column' && typeof appData.selectedColumnIndex === 'number') {
+                const activeSheet = appData.sheets[appData.activeSheetIndex];
+                if (!activeSheet) return;
+                const rows = gridTable.querySelectorAll('tbody tr');
+                rows.forEach((row, rowIndex) => {
+                    const td = row.children[appData.selectedColumnIndex + 1];
+                    if (td) pasteValueIntoCell(td, clipboardBuffer.values[rowIndex], activeSheet, rowIndex, appData.selectedColumnIndex);
+                });
+                renderGrid();
+                saveGrid();
+                showStatus('Kolom terpaste', 'success');
                 e.preventDefault();
             }
         }
@@ -593,7 +875,8 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     function getActiveOutletId() {
         if (userIsOwner()) {
-            return 'GLOBAL';
+            if (outletSelector && outletSelector.value) return outletSelector.value;
+            return localStorage.getItem('rbm_last_selected_outlet') || 'GLOBAL';
         }
         if (typeof getRbmOutlet === 'function') {
             return getRbmOutlet() || 'default';
@@ -615,12 +898,6 @@ document.addEventListener('DOMContentLoaded', function() {
      * [BARU] Mengisi dropdown outlet dan mengatur event listener.
      */
     function initializeOutletSelector() {
-        if (userIsOwner()) {
-            outletSelector.innerHTML = '<option value="GLOBAL">GLOBAL (Owner)</option>';
-            outletSelector.disabled = true;
-            return;
-        }
-
         const outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
         const outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
         const activeOutlet = getActiveOutletId();
@@ -628,11 +905,21 @@ document.addEventListener('DOMContentLoaded', function() {
         outletSelector.innerHTML = ''; // Kosongkan pilihan
 
         if (outlets.length === 0) {
-            outletSelector.innerHTML = '<option value="default">Tidak ada outlet</option>';
+            outletSelector.innerHTML = userIsOwner()
+                ? '<option value="GLOBAL">GLOBAL (Template Owner)</option>'
+                : '<option value="default">Tidak ada outlet</option>';
             return;
         }
 
         outletSelector.disabled = false;
+        if (userIsOwner()) {
+            const globalOption = document.createElement('option');
+            globalOption.value = 'GLOBAL';
+            globalOption.textContent = 'GLOBAL (Template Owner)';
+            globalOption.selected = activeOutlet === 'GLOBAL';
+            outletSelector.appendChild(globalOption);
+        }
+
         outlets.forEach(outletId => {
             const option = document.createElement('option');
             option.value = outletId;
@@ -738,7 +1025,7 @@ document.addEventListener('DOMContentLoaded', function() {
         headerRow.appendChild(cornerCell); // Pojok kiri atas
         for (let i = 0; i < gridData[0].length; i++) { // [DIUBAH] Gunakan gridData[0].length untuk jumlah kolom
             const th = document.createElement('th');
-            th.textContent = activeSheet.headers[i] || String.fromCharCode(65 + i); // [DIUBAH] Ambil dari headers atau default A, B, C...
+            th.textContent = activeSheet.headers[i] || columnIndexToLetters(i); // [DIUBAH] Ambil dari headers atau default A, B, C...
             th.setAttribute('contenteditable', developerMode ? 'true' : 'false'); // [BARU] Editable di mode developer
             th.style.cursor = developerMode ? 'text' : 'default'; // [BARU] Kursor teks di mode developer
             // Make header draggable to allow column reorder
@@ -748,6 +1035,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Select header on click to show handle
             th.addEventListener('click', () => {
                 appData.selectedColumnIndex = i;
+                appData.selectedRange = null;
+                rangeAnchor = null;
                 renderGrid();
             });
 
@@ -779,7 +1068,7 @@ document.addEventListener('DOMContentLoaded', function() {
             delHandle.textContent = '×';
             delHandle.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (!confirm(`Hapus kolom ${String.fromCharCode(65 + i)} ?`)) return;
+                if (!confirm(`Hapus kolom ${columnIndexToLetters(i)} ?`)) return;
                 appData.selectedColumnIndex = i;
                 deleteColumn();
             });
@@ -811,31 +1100,30 @@ document.addEventListener('DOMContentLoaded', function() {
             const rowNumCell = row.insertCell();
             rowNumCell.outerHTML = `<th data-row-index="${rowIndex}">${rowIndex + 1}</th>`; // Nomor baris
 
-            // [BARU] Tambahkan event listener untuk Enter
-            row.addEventListener('keydown', (e) => { // [DIUBAH] Hapus e.preventDefault() untuk multiline
-                if (e.key === 'Enter' && !e.shiftKey) { // Hanya Enter, bukan Shift+Enter
-                    e.preventDefault(); // Mencegah baris baru di dalam sel
-                    const currentCell = e.target;
-                    if (currentCell.tagName === 'TD') {
-                        const currentRow = currentCell.parentElement;
-                        const currentCellIndex = Array.from(currentRow.children).indexOf(currentCell);
-                        
-                        const nextRow = currentRow.nextElementSibling;
-                        if (nextRow) {
-                            const nextCell = nextRow.children[currentCellIndex];
-                            if (nextCell && nextCell.tagName === 'TD') {
-                                nextCell.focus();
-                            } else if (nextRow.children.length > 1) { // Jika tidak ada sel di kolom yang sama, pindah ke sel pertama di baris berikutnya
-                                nextRow.children[1].focus();
-                            }
-                        }
-                    }
-                }
-            });
-
             rowData.forEach(cellData => {
                 const cell = row.insertCell();
                 const cellIndex = Array.from(row.children).indexOf(cell) - 1; // -1 karena ada kolom nomor baris
+                if (cellIndex === appData.selectedColumnIndex) cell.classList.add('column-selected');
+                if (appData.selectedRange && rowIndex >= appData.selectedRange.rowStart && rowIndex <= appData.selectedRange.rowEnd && cellIndex >= appData.selectedRange.colStart && cellIndex <= appData.selectedRange.colEnd) {
+                    cell.classList.add('range-selected');
+                }
+                cell.addEventListener('mousedown', (event) => {
+                    const coordinates = getCellCoordinates(cell);
+                    if (!coordinates) return;
+                    if (!event.shiftKey) rangeAnchor = coordinates;
+                    if (!rangeAnchor) rangeAnchor = coordinates;
+                    appData.selectedColumnIndex = null;
+                    appData.selectedRange = normalizeRange(rangeAnchor, coordinates);
+                    isSelectingRange = true;
+                    updateRangeSelection(appData.selectedRange);
+                });
+                cell.addEventListener('mouseover', () => {
+                    if (!isSelectingRange || !rangeAnchor) return;
+                    const coordinates = getCellCoordinates(cell);
+                    if (!coordinates) return;
+                    appData.selectedRange = normalizeRange(rangeAnchor, coordinates);
+                    updateRangeSelection(appData.selectedRange);
+                });
                 const isColumnLocked = lockedColumns.includes(cellIndex);
                 const isRowLocked = lockedRows.includes(rowIndex);
                 const dropdownConfig = findDropdownConfigForCell(rowIndex, cellIndex) || { options: [] };
@@ -915,19 +1203,28 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     });
 
-                    // Enter to move focus to next cell and trigger blur/save
                     cell.addEventListener('keydown', function(e) {
                         if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
                             cell.blur();
-                            // move focus to next row same column if exists
-                            const nextRow = cell.parentElement.nextElementSibling;
-                            if (nextRow) {
-                                const nextCell = nextRow.children[cellIndex + 1];
-                                if (nextCell) {
-                                    const target = nextCell.querySelector('select') || nextCell;
-                                    if (target) target.focus();
-                                }
+                            moveToGridCell(cell, 1, 0);
+                            return;
+                        }
+
+                        if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+                        if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            moveToGridCell(cell, 1, 0);
+                        } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            moveToGridCell(cell, -1, 0);
+                        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                            const caretOffset = getCaretOffset(cell);
+                            const textLength = cell.textContent.length;
+                            const atBoundary = e.key === 'ArrowLeft' ? caretOffset === 0 : caretOffset === textLength;
+                            if (atBoundary) {
+                                e.preventDefault();
+                                moveToGridCell(cell, 0, e.key === 'ArrowLeft' ? -1 : 1);
                             }
                         }
                     });
@@ -936,6 +1233,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (isColumnLocked || isRowLocked) cell.classList.add('locked-cell');
             });
         });
+        updateFillHandle();
     }
 
     /**
@@ -1080,29 +1378,100 @@ document.addEventListener('DOMContentLoaded', function() {
     /**
      * Mengekspor data ke file Excel (.xlsx)
      */
-    function exportToExcel() {
+    function exportToExcel(selectedSheetIndexes) {
         if (typeof XLSX === 'undefined') {
             showStatus('Library Excel belum siap. Coba lagi.', 'error');
             return;
         }
 
         const workbook = XLSX.utils.book_new();
-        appData.sheets.forEach((sheet, sheetIndex) => {
-            // [BARU] Gabungkan header dengan data untuk ekspor
-            const exportData = [];
-            if (sheet.headers && sheet.headers.length > 0) exportData.push(sheet.headers);
-            exportData.push(...sheet.data);
+        const sheetsToExport = Array.isArray(selectedSheetIndexes) && selectedSheetIndexes.length > 0
+            ? appData.sheets.filter((_, index) => selectedSheetIndexes.includes(index))
+            : appData.sheets;
+
+        sheetsToExport.forEach((sheet) => {
+            const exportData = getExportData(sheet);
 
             const worksheet = XLSX.utils.aoa_to_sheet(exportData);
-            // Nama sheet tidak boleh lebih dari 31 karakter dan tidak boleh mengandung karakter tertentu
             const safeSheetName = sheet.name.substring(0, 31).replace(/[*?:\\/\[\]]/g, '');
-            XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName);
+            XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName || 'Sheet');
         });
 
-        // Buat nama file dengan tanggal
         const today = new Date().toISOString().slice(0, 10);
         XLSX.writeFile(workbook, `DataGrid_Export_${getActiveOutletId()}_${today}.xlsx`);
         showStatus('File Excel sedang diunduh.', 'success');
+    }
+
+    function openExportSheetModal() {
+        const modal = document.getElementById('export-sheet-modal');
+        const sheetList = document.getElementById('export-sheet-list');
+        if (!Array.isArray(appData.sheets) || appData.sheets.length === 0) {
+            showStatus('Tidak ada sheet yang tersedia untuk diekspor.', 'error');
+            return;
+        }
+
+        if (!modal || !sheetList) {
+            openExportSheetPrompt();
+            return;
+        }
+
+        sheetList.innerHTML = '';
+        appData.sheets.forEach((sheet, index) => {
+            const label = document.createElement('label');
+            label.style.display = 'block';
+            label.style.marginBottom = '8px';
+            label.style.cursor = 'pointer';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = index;
+            checkbox.checked = index === appData.activeSheetIndex;
+            checkbox.style.marginRight = '8px';
+
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(sheet.name || `Sheet${index + 1}`));
+            sheetList.appendChild(label);
+        });
+
+        modal.style.display = 'flex';
+        modal.classList.add('show');
+    }
+
+    function closeExportSheetModal() {
+        const modal = document.getElementById('export-sheet-modal');
+        if (!modal) return;
+        modal.style.display = 'none';
+        modal.classList.remove('show');
+    }
+
+    function openExportSheetPrompt() {
+        const sheetLabels = appData.sheets.map((sheet, index) => `${index + 1}. ${sheet.name || `Sheet${index + 1}`}`).join('\n');
+        const defaultSelection = appData.activeSheetIndex + 1;
+        const answer = window.prompt(`Pilih sheet untuk diekspor (masukkan nomor terpisah koma):\n${sheetLabels}`, `${defaultSelection}`);
+        if (answer === null) return;
+
+        const selectedIndexes = answer.split(',').map(part => Number(part.trim()) - 1).filter(i => Number.isInteger(i) && i >= 0 && i < appData.sheets.length);
+        if (selectedIndexes.length === 0) {
+            showStatus('Masukkan minimal satu nomor sheet yang valid.', 'error');
+            return;
+        }
+        exportToExcel(selectedIndexes);
+    }
+
+    function confirmExportSheets() {
+        const sheetList = document.getElementById('export-sheet-list');
+        if (!sheetList) return;
+        const checkboxes = sheetList.querySelectorAll('input[type="checkbox"]');
+        const selectedSheetIndexes = [];
+        checkboxes.forEach(input => {
+            if (input.checked) selectedSheetIndexes.push(Number(input.value));
+        });
+        if (selectedSheetIndexes.length === 0) {
+            showStatus('Pilih minimal satu sheet untuk diekspor.', 'error');
+            return;
+        }
+        closeExportSheetModal();
+        exportToExcel(selectedSheetIndexes);
     }
 
     /**
@@ -1127,21 +1496,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 workbook.SheetNames.forEach(sheetName => {
                     const worksheet = workbook.Sheets[sheetName];
                     const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }); // Ambil semua baris
-                    // Treat first row as header if present
-                    const headers = sheetData.length > 0 ? sheetData.shift() : [];
                     newSheets.push({
                         name: sheetName,
                         data: sheetData,
-                        headers: headers
+                        headers: []
                     });
                 });
                 // Normalize rows/columns: ensure consistent column counts and basic padding
                 appData.sheets = newSheets.map(sheet => {
                     const data = Array.isArray(sheet.data) ? sheet.data.map(r => Array.isArray(r) ? r.slice() : []) : [];
-                    // Compute max columns in this sheet (consider headers too)
-                    const headerCols = Array.isArray(sheet.headers) ? sheet.headers.length : 0;
                     const maxDataCols = data.reduce((m, r) => Math.max(m, r.length), 0);
-                    const maxCols = Math.max(5, headerCols, maxDataCols);
+                    const maxCols = Math.max(5, maxDataCols);
                     // Pad rows
                     for (let ri = 0; ri < data.length; ri++) {
                         for (let ci = 0; ci < maxCols; ci++) {
@@ -1375,7 +1740,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Event Listeners
     saveBtn.addEventListener('click', saveGrid);
-    exportBtn.addEventListener('click', exportToExcel);
+    exportBtn.addEventListener('click', function(event) {
+        event.preventDefault();
+        openExportSheetModal();
+    });
     importBtn.addEventListener('click', handleImport);
     addRowBtn.addEventListener('click', addRow);
     // delete row button
@@ -1405,4 +1773,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Wire confirm delete button (modal)
     const confirmDeleteBtn = document.getElementById('confirm-delete-sheet-btn');
     if (confirmDeleteBtn) confirmDeleteBtn.addEventListener('click', confirmDeleteSheet);
+    const confirmExportBtn = document.getElementById('confirm-export-sheets-btn');
+    if (confirmExportBtn) confirmExportBtn.addEventListener('click', confirmExportSheets);
 });
