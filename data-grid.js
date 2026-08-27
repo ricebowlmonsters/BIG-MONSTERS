@@ -81,7 +81,8 @@ document.addEventListener('DOMContentLoaded', function() {
             #data-grid th.selected, #data-grid td.column-selected, #data-grid td.range-selected { background-color: #e0e7ff; }\n\
             #data-grid td { user-select: none; touch-action: none; }\n\
             #data-grid td[contenteditable=true] { user-select: text; }\n\
-            .fill-handle { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; border-radius: 50%; background: #4C2A85; border: 2px solid #fff; cursor: crosshair; z-index: 5; }\n\
+            .fill-handle { position: absolute; right: -8px; bottom: -8px; width: 24px; height: 24px; border: 0; background: transparent; cursor: crosshair; z-index: 5; line-height: 0; touch-action: none; }\n\
+            .fill-handle::after { content: ''; position: absolute; right: 7px; bottom: 7px; width: 8px; height: 8px; border-radius: 50%; background: #4C2A85; border: 2px solid #fff; }\n\
             .column-resize-handle { position: absolute; right: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 6; }\n\
             .row-resize-handle { position: absolute; left: 0; right: 0; bottom: -3px; height: 7px; cursor: row-resize; z-index: 6; }\n\
             .formula-cell { font-style: normal; }\n\
@@ -920,11 +921,16 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.addEventListener('pointermove', (event) => {
-        if (!fillDrag) return;
         const element = document.elementFromPoint(event.clientX, event.clientY);
         const td = element && element.closest ? element.closest('td') : null;
         const coordinates = getCellCoordinates(td);
         if (!coordinates) return;
+        if (!fillDrag) {
+            if (!isSelectingRange || !rangeAnchor) return;
+            appData.selectedRange = normalizeRange(rangeAnchor, coordinates);
+            updateRangeSelection(appData.selectedRange);
+            return;
+        }
         appData.selectedRange = normalizeRange(
             { rowIndex: fillDrag.range.rowStart, colIndex: fillDrag.range.colStart },
             coordinates
@@ -1341,6 +1347,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     cell.classList.add('range-selected');
                 }
                 cell.addEventListener('pointerdown', (event) => {
+                    if (cell.setPointerCapture) cell.setPointerCapture(event.pointerId);
                     const coordinates = getCellCoordinates(cell);
                     if (!coordinates) return;
                     const oldCell = editingCell || document.activeElement?.closest?.('td');
@@ -1411,6 +1418,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                         if (cell.dataset.rawValue) {
                             cell.textContent = cell.dataset.rawValue;
+                            updateFillHandle();
                         }
                     });
 
@@ -1430,6 +1438,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             }
                             const evaluated = evaluateFormula(currentValue, activeSheet.data, rowIndex, cellIndex);
                             cell.textContent = evaluated;
+                            updateFillHandle();
                         } else {
                             delete cell.dataset.rawValue;
                             const activeSheet = appData.sheets[appData.activeSheetIndex];
@@ -1437,6 +1446,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 activeSheet.data[rowIndex][cellIndex] = currentValue;
                             }
                             cell.textContent = currentValue;
+                            updateFillHandle();
                         }
                     });
 
