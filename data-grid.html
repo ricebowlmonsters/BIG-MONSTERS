@@ -17,20 +17,22 @@
             width: 100%;
             max-width: 100%;
             box-sizing: border-box;
+            position: relative;
             overflow-x: auto;
+            overflow-y: hidden;
             border: 1px solid #d1d5db;
             border-radius: 8px;
         }
         .data-grid {
             border-collapse: collapse;
-            width: 100%;
-            min-width: 600px;
-            table-layout: fixed;
+            width: max-content;
+            min-width: max(600px, 100%);
+            table-layout: auto;
         }
         .data-grid th, .data-grid td {
             border: 1px solid #d1d5db;
             padding: 8px 12px;
-            min-width: 120px;
+            min-width: 50px;
             box-sizing: border-box;
         }
         .data-grid th {
@@ -39,10 +41,12 @@
         }
         .data-grid td {
             background-color: #fff;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-            word-break: break-all;
+            position: relative;
+            white-space: nowrap;
+            overflow-wrap: normal;
+            word-break: normal;
             overflow: hidden;
+            text-overflow: ellipsis;
             vertical-align: top;
         }
         .data-grid td:focus {
@@ -125,6 +129,12 @@
                     <button id="toggle-dev-mode-btn" class="btn btn-secondary" style="display: none;">⚙️ Edit Struktur</button>
                     <button id="add-col-btn" class="btn btn-secondary">➕ Tambah Kolom</button>
                     <button id="delete-col-btn" class="btn btn-secondary">🗑️ Hapus Kolom</button>
+                    <label class="btn btn-secondary" for="column-color-input">🎨 Warna Sel</label>
+                    <input id="column-color-input" type="color" value="#ffffff" title="Pilih warna sel" style="width:42px; height:38px; padding:3px; cursor:pointer;">
+                    <button id="apply-column-color-btn" class="btn btn-secondary">Terapkan ke Sel</button>
+                    <label class="btn btn-secondary" for="text-color-input">A Warna Teks</label>
+                    <input id="text-color-input" type="color" value="#1f2937" title="Pilih warna teks" style="width:42px; height:38px; padding:3px; cursor:pointer;">
+                    <button id="apply-text-color-btn" class="btn btn-secondary">Terapkan Teks</button>
                     <button id="delete-sheet-toolbar-btn" class="btn btn-danger" title="Hapus sheet aktif">🗑️ Hapus Sheet</button>
                 </div>
                 <div id="grid-status" class="status-info" style="display: none;"></div>

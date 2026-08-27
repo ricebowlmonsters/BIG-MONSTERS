@@ -6,6 +6,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const importFileInput = document.getElementById('import-file-input');
     const addRowBtn = document.getElementById('add-row-btn');
     const addColBtn = document.getElementById('add-col-btn');
+    const columnColorInput = document.getElementById('column-color-input');
+    const applyColumnColorBtn = document.getElementById('apply-column-color-btn');
+    const textColorInput = document.getElementById('text-color-input');
+    const applyTextColorBtn = document.getElementById('apply-text-color-btn');
     const statusEl = document.getElementById('grid-status');
     const lockSettingsBtn = document.getElementById('lock-settings-btn'); // [BARU] Tombol pengaturan kunci
     const toggleDevModeBtn = document.getElementById('toggle-dev-mode-btn');
@@ -31,6 +35,35 @@ document.addEventListener('DOMContentLoaded', function() {
     let rangeAnchor = null;
     let isSelectingRange = false;
     let fillDrag = null;
+    let resizeState = null;
+    const undoStack = [];
+    let lastFocusedCell = null;
+    let editingCell = null;
+
+    function cloneGridState() {
+        return JSON.parse(JSON.stringify(appData));
+    }
+
+    function pushUndoState() {
+        const snapshot = cloneGridState();
+        const previous = undoStack[undoStack.length - 1];
+        if (previous && JSON.stringify(previous) === JSON.stringify(snapshot)) return;
+        undoStack.push(snapshot);
+        if (undoStack.length > 50) undoStack.shift();
+    }
+
+    function undoLastChange() {
+        if (undoStack.length === 0) {
+            showStatus('Tidak ada perubahan yang bisa dibatalkan.', 'info');
+            return;
+        }
+        appData = undoStack.pop();
+        lastFocusedCell = null;
+        renderTabs();
+        renderGrid();
+        saveGrid();
+        showStatus('Perubahan dibatalkan.', 'success');
+    }
 
     // Inject minimal CSS for drag handle visuals if not already present
     (function injectGridHandlesStyle() {
@@ -46,7 +79,11 @@ document.addEventListener('DOMContentLoaded', function() {
             #data-grid th:hover .col-delete-handle, #data-grid th.selected .col-delete-handle { opacity: 1; }\n\
             #data-grid th.drag-over { outline: 2px dashed rgba(99,102,241,0.35); }\n\
             #data-grid th.selected, #data-grid td.column-selected, #data-grid td.range-selected { background-color: #e0e7ff; }\n\
-            .fill-handle { position: absolute; right: -4px; bottom: -4px; width: 8px; height: 8px; background: #4C2A85; border: 1px solid #fff; cursor: crosshair; z-index: 5; }\n\
+            #data-grid td { user-select: none; touch-action: none; }\n\
+            #data-grid td[contenteditable=true] { user-select: text; }\n\
+            .fill-handle { position: absolute; right: -3px; bottom: -3px; width: 9px; height: 9px; border-radius: 50%; background: #4C2A85; border: 2px solid #fff; cursor: crosshair; z-index: 5; }\n\
+            .column-resize-handle { position: absolute; right: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 6; }\n\
+            .row-resize-handle { position: absolute; left: 0; right: 0; bottom: -3px; height: 7px; cursor: row-resize; z-index: 6; }\n\
             .formula-cell { font-style: normal; }\n\
             .sheet-tab { position: relative; display:inline-flex; align-items:center; padding-right:18px; }\n\
             .sheet-tab-delete { position: absolute; right:4px; top:4px; width:16px; height:16px; border-radius:8px; background:#ef4444; color:white; border:none; font-size:12px; line-height:14px; cursor:pointer; display:none; }\n\
@@ -251,6 +288,107 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         return letters;
     }
+
+    function applyColumnColor() {
+        const activeSheet = appData.sheets[appData.activeSheetIndex];
+        const range = appData.selectedRange;
+        if (!activeSheet || !range) {
+            showStatus('Pilih sel atau blok sel terlebih dahulu.', 'error');
+            return;
+        }
+        pushUndoState();
+        activeSheet.cellColors = activeSheet.cellColors && typeof activeSheet.cellColors === 'object' ? activeSheet.cellColors : {};
+        for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
+            for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
+                activeSheet.cellColors[`${rowIndex}:${colIndex}`] = columnColorInput.value;
+            }
+        }
+        renderGrid();
+        saveGrid();
+        showStatus('Warna sel diterapkan.', 'success');
+    }
+
+    function applyTextColor() {
+        const activeSheet = appData.sheets[appData.activeSheetIndex];
+        const range = appData.selectedRange;
+        if (!activeSheet || !range) {
+            showStatus('Pilih sel atau blok sel terlebih dahulu.', 'error');
+            return;
+        }
+        pushUndoState();
+        activeSheet.textColors = activeSheet.textColors && typeof activeSheet.textColors === 'object' ? activeSheet.textColors : {};
+        for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
+            for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
+                activeSheet.textColors[`${rowIndex}:${colIndex}`] = textColorInput.value;
+            }
+        }
+        renderGrid();
+        saveGrid();
+        showStatus('Warna teks diterapkan.', 'success');
+    }
+
+    function applyColumnWidth(sheet, colIndex, width) {
+        if (!resizeState) pushUndoState();
+        const safeWidth = Math.min(600, Math.max(50, Math.round(width)));
+        sheet.columnWidths = Array.isArray(sheet.columnWidths) ? sheet.columnWidths : [];
+        sheet.columnWidths[colIndex] = safeWidth;
+        gridTable.querySelectorAll('tr').forEach(row => {
+            const cell = row.children[colIndex + 1];
+            if (cell) cell.style.width = `${safeWidth}px`;
+        });
+    }
+
+    function autoFitColumn(sheet, colIndex) {
+        pushUndoState();
+        const header = gridTable.querySelector(`thead th[data-col-index="${colIndex}"]`);
+        const cells = Array.from(gridTable.querySelectorAll('tbody tr'))
+            .map(row => row.children[colIndex + 1])
+            .filter(Boolean);
+        const values = [header ? header.textContent : columnIndexToLetters(colIndex)]
+            .concat(cells.map(cell => cell.textContent || ''));
+        const measure = document.createElement('span');
+        const source = header || cells[0] || gridTable;
+        const style = window.getComputedStyle(source);
+        measure.style.cssText = `position:absolute; visibility:hidden; white-space:nowrap; font:${style.font}; font-size:${style.fontSize}; font-family:${style.fontFamily}; font-weight:${style.fontWeight};`;
+        document.body.appendChild(measure);
+        const longestWidth = values.reduce((width, value) => {
+            const valueWidth = String(value).split('\n').reduce((longest, line) => {
+                measure.textContent = line;
+                return Math.max(longest, measure.getBoundingClientRect().width);
+            }, 0);
+            return Math.max(width, valueWidth);
+        }, 0);
+        measure.remove();
+        applyColumnWidth(sheet, colIndex, longestWidth + 28);
+        saveGrid();
+    }
+
+    function applyRowHeight(sheet, rowIndex, height) {
+        if (!resizeState) pushUndoState();
+        const safeHeight = Math.max(24, Math.round(height));
+        sheet.rowHeights = Array.isArray(sheet.rowHeights) ? sheet.rowHeights : [];
+        sheet.rowHeights[rowIndex] = safeHeight;
+        const row = gridTable.querySelectorAll('tbody tr')[rowIndex];
+        if (row) row.style.height = `${safeHeight}px`;
+    }
+
+    document.addEventListener('mousemove', (event) => {
+        if (!resizeState) return;
+        const amount = resizeState.axis === 'column'
+            ? event.clientX - resizeState.startPointer
+            : event.clientY - resizeState.startPointer;
+        if (resizeState.axis === 'column') {
+            applyColumnWidth(resizeState.sheet, resizeState.index, resizeState.startSize + amount);
+        } else {
+            applyRowHeight(resizeState.sheet, resizeState.index, resizeState.startSize + amount);
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!resizeState) return;
+        resizeState = null;
+        saveGrid();
+    });
 
     function getExportCellValue(cellValue, sheetData, rowIndex, colIndex) {
         if (!isFormulaValue(cellValue)) return cellValue;
@@ -501,6 +639,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function reorderColumns(fromIndex, toIndex) {
         const activeSheet = appData.sheets[appData.activeSheetIndex];
         if (!activeSheet) return;
+        pushUndoState();
         const numCols = activeSheet.data && activeSheet.data[0] ? activeSheet.data[0].length : 0;
         if (fromIndex < 0 || fromIndex >= numCols || toIndex < 0 || toIndex >= numCols) return;
 
@@ -592,6 +731,18 @@ document.addEventListener('DOMContentLoaded', function() {
         return td.textContent || '';
     }
 
+    function commitCellValue(cell, sheet, rowIndex, cellIndex) {
+        if (!cell || !sheet || !Array.isArray(sheet.data[rowIndex])) return;
+        const value = String(getCellRawValue(cell)).trim();
+        if (value.startsWith('=')) {
+            cell.dataset.rawValue = value;
+            sheet.data[rowIndex][cellIndex] = value;
+        } else {
+            delete cell.dataset.rawValue;
+            sheet.data[rowIndex][cellIndex] = value;
+        }
+    }
+
     function pasteValueIntoCell(td, value, sheet, rowIndex, cellIndex) {
         if (!td || !sheet || !Array.isArray(sheet.data[rowIndex])) return;
         if (td.classList.contains('locked-cell') || td.querySelector('select')?.disabled) return;
@@ -633,40 +784,51 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function getFillValue(sheet, range, rowIndex, colIndex) {
+        const isHorizontal = colIndex > range.colEnd;
+        const sourceWidth = range.colEnd - range.colStart + 1;
         const sourceHeight = range.rowEnd - range.rowStart + 1;
         const sourceRowIndex = range.rowStart + ((rowIndex - range.rowStart) % sourceHeight);
-        const sourceValue = sheet.data[sourceRowIndex]?.[colIndex] ?? '';
+        const sourceColIndex = range.colStart + ((colIndex - range.colStart) % sourceWidth);
+        const sourceValue = sheet.data[sourceRowIndex]?.[sourceColIndex] ?? '';
         const sourceValues = [];
-        for (let sourceRow = range.rowStart; sourceRow <= range.rowEnd; sourceRow++) {
-            sourceValues.push(sheet.data[sourceRow]?.[colIndex] ?? '');
+        if (isHorizontal) {
+            for (let sourceCol = range.colStart; sourceCol <= range.colEnd; sourceCol++) {
+                sourceValues.push(sheet.data[rowIndex]?.[sourceCol] ?? '');
+            }
+        } else {
+            for (let sourceRow = range.rowStart; sourceRow <= range.rowEnd; sourceRow++) {
+                sourceValues.push(sheet.data[sourceRow]?.[colIndex] ?? '');
+            }
         }
 
         const numericValues = sourceValues.map(Number);
         if (sourceValues.every(value => String(value).trim() !== '' && Number.isFinite(Number(value)))) {
             const step = numericValues.length > 1 ? numericValues[1] - numericValues[0] : 1;
-            return numericValues[0] + step * (rowIndex - range.rowStart);
+            const distance = isHorizontal ? colIndex - range.colStart : rowIndex - range.rowStart;
+            return numericValues[0] + step * distance;
         }
         if (isFormulaValue(sourceValue)) {
-            return adjustFormulaForPaste(sourceValue, rowIndex - sourceRowIndex, 0);
+            return adjustFormulaForPaste(sourceValue, rowIndex - sourceRowIndex, colIndex - sourceColIndex);
         }
         return sourceValue;
     }
 
     function updateFillHandle() {
         document.querySelectorAll('#data-grid .fill-handle').forEach(handle => handle.remove());
+        if (fillDrag) return;
         const range = appData.selectedRange;
         if (!range) return;
         const row = gridTable.querySelectorAll('tbody tr')[range.rowEnd];
         const cell = row && row.children[range.colEnd + 1];
         if (!cell) return;
-
         const handle = document.createElement('div');
         handle.className = 'fill-handle';
-        handle.title = 'Tarik untuk mengisi pola ke bawah';
-        handle.addEventListener('mousedown', (event) => {
+        handle.title = 'Tarik untuk memilih blok sel';
+        handle.addEventListener('pointerdown', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            fillDrag = { range: Object.assign({}, range), lastRow: range.rowEnd };
+            if (handle.setPointerCapture) handle.setPointerCapture(event.pointerId);
+            fillDrag = { range: Object.assign({}, range), pointerId: event.pointerId };
         });
         cell.appendChild(handle);
     }
@@ -734,6 +896,7 @@ document.addEventListener('DOMContentLoaded', function() {
             };
         }
         if (!range) return false;
+        pushUndoState();
 
         for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
             for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
@@ -748,33 +911,23 @@ document.addEventListener('DOMContentLoaded', function() {
         return true;
     }
 
-    document.addEventListener('mouseup', () => {
+    document.addEventListener('pointerup', () => {
         if (fillDrag) {
             fillDrag = null;
             renderGrid();
-            saveGrid();
         }
         isSelectingRange = false;
     });
 
-    document.addEventListener('mousemove', (event) => {
+    document.addEventListener('pointermove', (event) => {
         if (!fillDrag) return;
-        const td = event.target && event.target.closest ? event.target.closest('td') : null;
+        const element = document.elementFromPoint(event.clientX, event.clientY);
+        const td = element && element.closest ? element.closest('td') : null;
         const coordinates = getCellCoordinates(td);
-        if (!coordinates || coordinates.rowIndex <= fillDrag.range.rowEnd) return;
-        const activeSheet = appData.sheets[appData.activeSheetIndex];
-        if (!activeSheet) return;
-        for (let rowIndex = fillDrag.range.rowEnd + 1; rowIndex <= coordinates.rowIndex; rowIndex++) {
-            for (let colIndex = fillDrag.range.colStart; colIndex <= fillDrag.range.colEnd; colIndex++) {
-                const row = gridTable.querySelectorAll('tbody tr')[rowIndex];
-                const td = row && row.children[colIndex + 1];
-                if (td) pasteValueIntoCell(td, getFillValue(activeSheet, fillDrag.range, rowIndex, colIndex), activeSheet, rowIndex, colIndex);
-            }
-        }
-        fillDrag.lastRow = coordinates.rowIndex;
+        if (!coordinates) return;
         appData.selectedRange = normalizeRange(
             { rowIndex: fillDrag.range.rowStart, colIndex: fillDrag.range.colStart },
-            { rowIndex: coordinates.rowIndex, colIndex: fillDrag.range.colEnd }
+            coordinates
         );
         updateRangeSelection(appData.selectedRange);
     });
@@ -783,6 +936,11 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('keydown', function (e) {
         const activeCell = e.target && e.target.closest ? e.target.closest('td') : null;
         const isFormControl = e.target && e.target.closest ? e.target.closest('input, textarea, select') : null;
+        if ((e.ctrlKey || e.metaKey) && e.key && e.key.toLowerCase() === 'z' && !isFormControl && (activeCell || appData.selectedRange || typeof appData.selectedColumnIndex === 'number')) {
+            e.preventDefault();
+            undoLastChange();
+            return;
+        }
         if (e.key === 'Delete' && (activeCell || !isFormControl) && clearSelectedCells()) {
             e.preventDefault();
             return;
@@ -824,14 +982,33 @@ document.addEventListener('DOMContentLoaded', function() {
             if (clipboardBuffer === null) return;
             const active = document.activeElement;
             const td = active && typeof active.closest === 'function' ? active.closest('td') : null;
+            const activeSheet = appData.sheets[appData.activeSheetIndex];
+            if (appData.selectedRange && activeSheet) {
+                pushUndoState();
+                const pastedValue = clipboardBuffer.type === 'cell'
+                    ? clipboardBuffer.value
+                    : clipboardBuffer.values?.[0]?.[0] ?? clipboardBuffer.values?.[0] ?? '';
+                for (let rowIndex = appData.selectedRange.rowStart; rowIndex <= appData.selectedRange.rowEnd; rowIndex++) {
+                    for (let colIndex = appData.selectedRange.colStart; colIndex <= appData.selectedRange.colEnd; colIndex++) {
+                        const row = gridTable.querySelectorAll('tbody tr')[rowIndex];
+                        const targetCell = row && row.children[colIndex + 1];
+                        if (targetCell) pasteValueIntoCell(targetCell, pastedValue, activeSheet, rowIndex, colIndex);
+                    }
+                }
+                renderGrid();
+                saveGrid();
+                showStatus('Data ditempel ke semua sel yang dipilih.', 'success');
+                e.preventDefault();
+                return;
+            }
             if (td) {
                 const coordinates = getCellCoordinates(td);
                 if (!coordinates) return;
                 const { rowIndex, colIndex: cellIndex } = coordinates;
 
-                const activeSheet = appData.sheets[appData.activeSheetIndex];
                 if (!activeSheet) return;
                 if (clipboardBuffer.type === 'range') {
+                    pushUndoState();
                     pasteRangeIntoGrid(
                         clipboardBuffer.values,
                         activeSheet,
@@ -842,6 +1019,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     );
                     renderGrid();
                 } else {
+                    pushUndoState();
                     const value = clipboardBuffer.type === 'cell' ? clipboardBuffer.value : clipboardBuffer.values[rowIndex];
                     pasteValueIntoCell(td, value, activeSheet, rowIndex, cellIndex);
                 }
@@ -852,6 +1030,7 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (clipboardBuffer.type === 'column' && typeof appData.selectedColumnIndex === 'number') {
                 const activeSheet = appData.sheets[appData.activeSheetIndex];
                 if (!activeSheet) return;
+                pushUndoState();
                 const rows = gridTable.querySelectorAll('tbody tr');
                 rows.forEach((row, rowIndex) => {
                     const td = row.children[appData.selectedColumnIndex + 1];
@@ -1026,6 +1205,9 @@ document.addEventListener('DOMContentLoaded', function() {
         for (let i = 0; i < gridData[0].length; i++) { // [DIUBAH] Gunakan gridData[0].length untuk jumlah kolom
             const th = document.createElement('th');
             th.textContent = activeSheet.headers[i] || columnIndexToLetters(i); // [DIUBAH] Ambil dari headers atau default A, B, C...
+            if (Array.isArray(activeSheet.columnWidths) && activeSheet.columnWidths[i]) {
+                th.style.width = `${activeSheet.columnWidths[i]}px`;
+            }
             th.setAttribute('contenteditable', developerMode ? 'true' : 'false'); // [BARU] Editable di mode developer
             th.style.cursor = developerMode ? 'text' : 'default'; // [BARU] Kursor teks di mode developer
             // Make header draggable to allow column reorder
@@ -1085,13 +1267,37 @@ document.addEventListener('DOMContentLoaded', function() {
             handle.addEventListener('click', (e) => {
                 e.stopPropagation();
                 appData.selectedColumnIndex = i;
+                appData.selectedRange = null;
+                rangeAnchor = null;
                 renderGrid();
+            });
+
+            const resizeHandle = document.createElement('div');
+            resizeHandle.className = 'column-resize-handle';
+            resizeHandle.title = 'Seret untuk mengatur lebar kolom';
+            resizeHandle.addEventListener('dblclick', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                autoFitColumn(activeSheet, i);
+            });
+            resizeHandle.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                pushUndoState();
+                resizeState = {
+                    axis: 'column',
+                    sheet: activeSheet,
+                    index: i,
+                    startPointer: event.clientX,
+                    startSize: th.getBoundingClientRect().width
+                };
             });
 
             if (i === appData.selectedColumnIndex) th.classList.add('selected');
             headerRow.appendChild(th);
             th.appendChild(delHandle);
             th.appendChild(handle);
+            th.appendChild(resizeHandle);
         }
         // Buat Body
         const tbody = gridTable.createTBody();
@@ -1099,17 +1305,49 @@ document.addEventListener('DOMContentLoaded', function() {
             const row = tbody.insertRow();
             const rowNumCell = row.insertCell();
             rowNumCell.outerHTML = `<th data-row-index="${rowIndex}">${rowIndex + 1}</th>`; // Nomor baris
+            const renderedRowHeader = row.querySelector('th[data-row-index]');
+            if (Array.isArray(activeSheet.rowHeights) && activeSheet.rowHeights[rowIndex]) {
+                row.style.height = `${activeSheet.rowHeights[rowIndex]}px`;
+            }
+            if (renderedRowHeader) {
+                renderedRowHeader.style.position = 'relative';
+                const rowResizeHandle = document.createElement('div');
+                rowResizeHandle.className = 'row-resize-handle';
+                rowResizeHandle.title = 'Seret untuk mengatur tinggi baris';
+                rowResizeHandle.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    pushUndoState();
+                    resizeState = {
+                        axis: 'row',
+                        sheet: activeSheet,
+                        index: rowIndex,
+                        startPointer: event.clientY,
+                        startSize: row.getBoundingClientRect().height
+                    };
+                });
+                renderedRowHeader.appendChild(rowResizeHandle);
+            }
 
             rowData.forEach(cellData => {
                 const cell = row.insertCell();
                 const cellIndex = Array.from(row.children).indexOf(cell) - 1; // -1 karena ada kolom nomor baris
+                const cellColor = activeSheet.cellColors?.[`${rowIndex}:${cellIndex}`];
+                if (cellColor) cell.style.backgroundColor = cellColor;
+                const textColor = activeSheet.textColors?.[`${rowIndex}:${cellIndex}`];
+                if (textColor) cell.style.color = textColor;
                 if (cellIndex === appData.selectedColumnIndex) cell.classList.add('column-selected');
                 if (appData.selectedRange && rowIndex >= appData.selectedRange.rowStart && rowIndex <= appData.selectedRange.rowEnd && cellIndex >= appData.selectedRange.colStart && cellIndex <= appData.selectedRange.colEnd) {
                     cell.classList.add('range-selected');
                 }
-                cell.addEventListener('mousedown', (event) => {
+                cell.addEventListener('pointerdown', (event) => {
                     const coordinates = getCellCoordinates(cell);
                     if (!coordinates) return;
+                    const oldCell = editingCell || document.activeElement?.closest?.('td');
+                    if (oldCell && oldCell !== cell) {
+                        const oldCoordinates = getCellCoordinates(oldCell);
+                        if (oldCoordinates) commitCellValue(oldCell, activeSheet, oldCoordinates.rowIndex, oldCoordinates.colIndex);
+                    }
                     if (!event.shiftKey) rangeAnchor = coordinates;
                     if (!rangeAnchor) rangeAnchor = coordinates;
                     appData.selectedColumnIndex = null;
@@ -1117,7 +1355,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     isSelectingRange = true;
                     updateRangeSelection(appData.selectedRange);
                 });
-                cell.addEventListener('mouseover', () => {
+                cell.addEventListener('pointerover', () => {
                     if (!isSelectingRange || !rangeAnchor) return;
                     const coordinates = getCellCoordinates(cell);
                     if (!coordinates) return;
@@ -1156,6 +1394,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     const displayValue = isFormula ? evaluateFormula(cellData, activeSheet.data, rowIndex, cellIndex) : cellData;
                     cell.textContent = typeof displayValue === 'undefined' || displayValue === null ? '' : displayValue;
                     cell.setAttribute('contenteditable', canEdit ? 'true' : 'false');
+                    cell.draggable = false;
+                    cell.addEventListener('dragstart', event => event.preventDefault());
                     if (isFormula) {
                         cell.dataset.rawValue = cellData;
                         cell.classList.add('formula-cell');
@@ -1164,27 +1404,24 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
 
                     cell.addEventListener('focus', function() {
+                        editingCell = cell;
+                        if (lastFocusedCell !== cell) {
+                            pushUndoState();
+                            lastFocusedCell = cell;
+                        }
                         if (cell.dataset.rawValue) {
                             cell.textContent = cell.dataset.rawValue;
                         }
                     });
 
                     cell.addEventListener('input', function() {
-                        const currentValue = String(cell.textContent || '').trim();
-                        if (currentValue.startsWith('=')) {
-                            // keep raw formula while editing
-                            cell.dataset.rawValue = currentValue;
-                        } else {
-                            delete cell.dataset.rawValue;
-                            const activeSheet = appData.sheets[appData.activeSheetIndex];
-                            if (activeSheet && activeSheet.data && Array.isArray(activeSheet.data[rowIndex])) {
-                                activeSheet.data[rowIndex][cellIndex] = currentValue;
-                            }
-                        }
+                        commitCellValue(cell, activeSheet, rowIndex, cellIndex);
                     });
 
                     cell.addEventListener('blur', function() {
                         const currentValue = String(cell.textContent || '').trim();
+                        commitCellValue(cell, activeSheet, rowIndex, cellIndex);
+                        if (editingCell === cell) editingCell = null;
                         if (currentValue.startsWith('=')) {
                             cell.dataset.rawValue = currentValue;
                             const activeSheet = appData.sheets[appData.activeSheetIndex];
@@ -1265,6 +1502,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (!sheet.lockedColumns) sheet.lockedColumns = [];
                     if (!sheet.lockedRows) sheet.lockedRows = [];
                     if (!sheet.dropdownColumns) sheet.dropdownColumns = [];
+                    if (!Array.isArray(sheet.columnWidths)) sheet.columnWidths = [];
+                    if (!Array.isArray(sheet.rowHeights)) sheet.rowHeights = [];
+                    if (!sheet.cellColors || typeof sheet.cellColors !== 'object') sheet.cellColors = {};
+                    if (!sheet.textColors || typeof sheet.textColors !== 'object') sheet.textColors = {};
                 });
                 appData = parsedData;
                 showStatus('Data berhasil dimuat.', 'success');
@@ -1277,7 +1518,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         headers: [],
                         lockedColumns: [], // [BARU] Inisialisasi
                         lockedRows: [],    // [BARU] Inisialisasi
-                        dropdownColumns: []
+                        dropdownColumns: [],
+                        columnWidths: [],
+                        rowHeights: [],
+                        cellColors: {},
+                        textColors: {}
                     }]
                 };
                 showStatus('Membuat grid baru. Jangan lupa simpan.', 'info');
@@ -1291,7 +1536,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     data: Array(10).fill(null).map(() => Array(5).fill('')),
                     headers: [],
                     lockedColumns: [],
-                    lockedRows: []
+                    lockedRows: [],
+                    columnWidths: [],
+                    rowHeights: [],
+                    cellColors: {},
+                    textColors: {}
                 }]
             };
             showStatus('Gagal memuat data, grid baru dibuat.', 'error');
@@ -1490,6 +1739,7 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
+                pushUndoState();
                 
                 // [DIUBAH] Import semua sheet dari file Excel
                 const newSheets = [];
@@ -1528,7 +1778,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         headers: sheet.headers || [],
                         lockedColumns: sheet.lockedColumns || [],
                         lockedRows: sheet.lockedRows || [],
-                        dropdownColumns: sheet.dropdownColumns || []
+                        dropdownColumns: sheet.dropdownColumns || [],
+                        columnWidths: sheet.columnWidths || [],
+                        rowHeights: sheet.rowHeights || [],
+                        cellColors: sheet.cellColors || {},
+                        textColors: sheet.textColors || {}
                     };
                 });
                 // [BARU] Set sheet pertama sebagai aktif setelah import
@@ -1557,6 +1811,7 @@ document.addEventListener('DOMContentLoaded', function() {
      * [BARU] Menambah sheet baru
      */
     function addSheet() {
+        pushUndoState();
         const newSheetName = `Sheet${appData.sheets.length + 1}`;
         appData.sheets.push({
             name: newSheetName,
@@ -1564,7 +1819,11 @@ document.addEventListener('DOMContentLoaded', function() {
             headers: [], // [BARU] Inisialisasi headers untuk sheet baru
             lockedColumns: [],
             lockedRows: [],
-            dropdownColumns: []
+            dropdownColumns: [],
+            columnWidths: [],
+            rowHeights: [],
+            cellColors: {},
+            textColors: {}
         });
         appData.activeSheetIndex = appData.sheets.length - 1;
         renderTabs();
@@ -1574,6 +1833,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function addRow() {
         const activeSheet = appData.sheets[appData.activeSheetIndex];
         if (!activeSheet) return;
+        pushUndoState();
         const numCols = activeSheet.data.length > 0 ? activeSheet.data[0].length : 5;
         activeSheet.data.push(Array(numCols).fill(''));
         renderGrid();
@@ -1582,6 +1842,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function addColumn() {
         const activeSheet = appData.sheets[appData.activeSheetIndex];
         if (!activeSheet) return;
+        pushUndoState();
         if (activeSheet.data.length === 0) {
             addRow(); // Jika grid kosong, buat baris pertama dulu
         }
@@ -1593,6 +1854,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function deleteRow() {
         const activeSheet = appData.sheets[appData.activeSheetIndex];
         if (!activeSheet) return;
+        pushUndoState();
         // try to get focused cell's row
         let rowIndex = null;
         const active = document.activeElement;
@@ -1638,6 +1900,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function deleteColumn() {
         const activeSheet = appData.sheets[appData.activeSheetIndex];
         if (!activeSheet) return;
+        pushUndoState();
         let colIndex = null;
         if (typeof appData.selectedColumnIndex === 'number') colIndex = appData.selectedColumnIndex;
         const active = document.activeElement;
@@ -1713,8 +1976,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!Array.isArray(appData.sheets) || typeof index !== 'number' || index < 0 || index >= appData.sheets.length) return;
         const sheetName = appData.sheets[index].name || `Sheet${index + 1}`;
         if (!confirm(`Hapus sheet "${sheetName}"?`)) return;
+        pushUndoState();
         if (appData.sheets.length <= 1) {
-            appData.sheets = [{ name: 'Sheet1', data: Array(10).fill(null).map(() => Array(5).fill('')), headers: [], lockedColumns: [], lockedRows: [], dropdownColumns: [] }];
+            appData.sheets = [{ name: 'Sheet1', data: Array(10).fill(null).map(() => Array(5).fill('')), headers: [], lockedColumns: [], lockedRows: [], dropdownColumns: [], columnWidths: [], rowHeights: [], cellColors: {}, textColors: {} }];
             appData.activeSheetIndex = 0;
         } else {
             appData.sheets.splice(index, 1);
@@ -1750,6 +2014,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const deleteRowBtn = document.getElementById('delete-row-btn');
     if (deleteRowBtn) deleteRowBtn.addEventListener('click', deleteRow);
     addColBtn.addEventListener('click', addColumn);
+    applyColumnColorBtn.addEventListener('click', applyColumnColor);
+    applyTextColorBtn.addEventListener('click', applyTextColor);
     // delete column button
     const deleteColBtn = document.getElementById('delete-col-btn');
     if (deleteColBtn) deleteColBtn.addEventListener('click', deleteColumn);
