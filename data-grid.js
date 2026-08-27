@@ -40,6 +40,88 @@ document.addEventListener('DOMContentLoaded', function() {
     let lastFocusedCell = null;
     let editingCell = null;
 
+    function getSelectedRange() {
+        if (appData.selectedRange) return appData.selectedRange;
+        if (Number.isInteger(appData.selectedColumnIndex)) {
+            const sheet = appData.sheets[appData.activeSheetIndex];
+            return sheet ? { rowStart: 0, rowEnd: sheet.data.length - 1, colStart: appData.selectedColumnIndex, colEnd: appData.selectedColumnIndex } : null;
+        }
+        return null;
+    }
+
+    function applyCellFormat(formatName, value) {
+        const sheet = appData.sheets[appData.activeSheetIndex];
+        const range = getSelectedRange();
+        if (!sheet || !range) return;
+        pushUndoState();
+        sheet.cellFormats = sheet.cellFormats && typeof sheet.cellFormats === 'object' ? sheet.cellFormats : {};
+        for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
+            for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
+                const key = `${rowIndex}:${colIndex}`;
+                sheet.cellFormats[key] = Object.assign({}, sheet.cellFormats[key], { [formatName]: value });
+            }
+        }
+        renderGrid();
+        saveGrid();
+    }
+
+    function createSelectionPopup() {
+        if (document.getElementById('grid-selection-popup')) return document.getElementById('grid-selection-popup');
+        const popup = document.createElement('div');
+        popup.id = 'grid-selection-popup';
+        popup.className = 'grid-selection-popup';
+        popup.addEventListener('pointerdown', event => event.stopPropagation());
+        popup.innerHTML = `
+            <label title="Warna sel">Sel <input class="popup-cell-color" type="color" value="#ffffff"></label>
+            <label title="Warna teks">Teks <input class="popup-text-color" type="color" value="#1f2937"></label>
+            <button type="button" data-format="bold" title="Tebal"><strong>B</strong></button>
+            <button type="button" data-format="italic" title="Miring"><em>I</em></button>
+            <button type="button" data-format="align" data-value="left" title="Rata kiri">Kiri</button>
+            <button type="button" data-format="align" data-value="center" title="Rata tengah">Tengah</button>
+            <button type="button" data-format="align" data-value="right" title="Rata kanan">Kanan</button>
+            <button type="button" class="popup-delete" title="Hapus isi sel">Hapus</button>
+        `;
+        popup.querySelector('.popup-cell-color').addEventListener('input', event => applyCellColor(event.target.value));
+        popup.querySelector('.popup-text-color').addEventListener('input', event => applyTextColorValue(event.target.value));
+        popup.querySelectorAll('[data-format]').forEach(button => button.addEventListener('click', () => {
+            const range = getSelectedRange();
+            const sheet = appData.sheets[appData.activeSheetIndex];
+            const current = sheet?.cellFormats?.[`${range?.rowStart}:${range?.colStart}`]?.[button.dataset.format];
+            applyCellFormat(button.dataset.format, button.dataset.value || !current);
+        }));
+        popup.querySelector('.popup-delete').addEventListener('click', clearSelectedCells);
+        document.body.appendChild(popup);
+        return popup;
+    }
+
+    function showSelectionPopup() {
+        const range = getSelectedRange();
+        if (!range) {
+            const oldPopup = document.getElementById('grid-selection-popup');
+            if (oldPopup) oldPopup.style.display = 'none';
+            return;
+        }
+        const popup = createSelectionPopup();
+        const sheet = appData.sheets[appData.activeSheetIndex];
+        const firstFormat = sheet?.cellFormats?.[`${range.rowStart}:${range.colStart}`] || {};
+        popup.querySelector('.popup-cell-color').value = sheet?.cellColors?.[`${range.rowStart}:${range.colStart}`] || '#ffffff';
+        popup.querySelector('.popup-text-color').value = sheet?.textColors?.[`${range.rowStart}:${range.colStart}`] || '#1f2937';
+        popup.style.display = 'flex';
+        const targetRow = gridTable.querySelectorAll('tbody tr')[range.rowEnd];
+        const targetCell = targetRow?.children[range.colEnd + 1];
+        if (targetCell) {
+            const rect = targetCell.getBoundingClientRect();
+            popup.style.left = `${Math.max(8, Math.min(window.innerWidth - popup.offsetWidth - 8, rect.left))}px`;
+            popup.style.top = `${Math.max(8, rect.top - popup.offsetHeight - 6)}px`;
+        }
+        popup.querySelectorAll('[data-format="bold"], [data-format="italic"]').forEach(button => button.classList.toggle('active', !!firstFormat[button.dataset.format]));
+    }
+
+    function hideSelectionPopup() {
+        const popup = document.getElementById('grid-selection-popup');
+        if (popup) popup.style.display = 'none';
+    }
+
     function cloneGridState() {
         return JSON.parse(JSON.stringify(appData));
     }
@@ -72,7 +154,7 @@ document.addEventListener('DOMContentLoaded', function() {
         style.id = 'rbm-data-grid-styles';
         style.textContent = "\
             /* Positioning for header and handle */\n\
-            #data-grid th { position: relative; }\n\
+            #data-grid th { position: sticky; top: 0; }\n\
             .col-drag-handle { position: absolute; right: 6px; top: 6px; width: 10px; height: 10px; background: #6b7280; border-radius: 50%; cursor: grab; opacity: 0; transition: opacity 0.12s; z-index: 3; }\n\
             .col-delete-handle { position: absolute; left: 6px; top: 6px; width: 14px; height: 14px; background: #ef4444; color: white; border-radius: 50%; font-size:11px; line-height:14px; text-align:center; cursor: pointer; opacity: 0; transition: opacity 0.12s; z-index: 4; }\n\
             #data-grid th:hover .col-drag-handle, #data-grid th.selected .col-drag-handle { opacity: 1; }\n\
@@ -81,6 +163,10 @@ document.addEventListener('DOMContentLoaded', function() {
             #data-grid th.selected, #data-grid td.column-selected, #data-grid td.range-selected { background-color: #e0e7ff; }\n\
             #data-grid td { user-select: none; touch-action: none; }\n\
             #data-grid td[contenteditable=true] { user-select: text; }\n\
+            .grid-selection-popup { position: fixed; display: none; align-items: center; gap: 4px; padding: 6px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 5px 18px rgba(15,23,42,.18); z-index: 10000; flex-wrap: wrap; }\n\
+            .grid-selection-popup label, .grid-selection-popup button { font: inherit; font-size: 12px; }\n\
+            .grid-selection-popup button { border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 4px; padding: 4px 7px; cursor: pointer; }\n\
+            .grid-selection-popup button.active { background: #e0e7ff; border-color: #6366f1; }\n\
             .fill-handle { position: absolute; right: -8px; bottom: -8px; width: 24px; height: 24px; border: 0; background: transparent; cursor: crosshair; z-index: 5; line-height: 0; touch-action: none; }\n\
             .fill-handle::after { content: ''; position: absolute; right: 7px; bottom: 7px; width: 8px; height: 8px; border-radius: 50%; background: #4C2A85; border: 2px solid #fff; }\n\
             .column-resize-handle { position: absolute; right: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 6; }\n\
@@ -290,41 +376,53 @@ document.addEventListener('DOMContentLoaded', function() {
         return letters;
     }
 
-    function applyColumnColor() {
+    function applyCellColor(color) {
         const activeSheet = appData.sheets[appData.activeSheetIndex];
-        const range = appData.selectedRange;
+        const range = getSelectedRange();
         if (!activeSheet || !range) {
-            showStatus('Pilih sel atau blok sel terlebih dahulu.', 'error');
-            return;
+            return false;
         }
         pushUndoState();
         activeSheet.cellColors = activeSheet.cellColors && typeof activeSheet.cellColors === 'object' ? activeSheet.cellColors : {};
         for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
             for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
-                activeSheet.cellColors[`${rowIndex}:${colIndex}`] = columnColorInput.value;
+                activeSheet.cellColors[`${rowIndex}:${colIndex}`] = color;
             }
         }
         renderGrid();
         saveGrid();
-        showStatus('Warna sel diterapkan.', 'success');
+        return true;
     }
 
-    function applyTextColor() {
-        const activeSheet = appData.sheets[appData.activeSheetIndex];
-        const range = appData.selectedRange;
-        if (!activeSheet || !range) {
+    function applyColumnColor() {
+        if (!applyCellColor(columnColorInput.value)) {
             showStatus('Pilih sel atau blok sel terlebih dahulu.', 'error');
             return;
         }
+        showStatus('Warna sel diterapkan.', 'success');
+    }
+
+    function applyTextColorValue(color) {
+        const activeSheet = appData.sheets[appData.activeSheetIndex];
+        const range = getSelectedRange();
+        if (!activeSheet || !range) return false;
         pushUndoState();
         activeSheet.textColors = activeSheet.textColors && typeof activeSheet.textColors === 'object' ? activeSheet.textColors : {};
         for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
             for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
-                activeSheet.textColors[`${rowIndex}:${colIndex}`] = textColorInput.value;
+                activeSheet.textColors[`${rowIndex}:${colIndex}`] = color;
             }
         }
         renderGrid();
         saveGrid();
+        return true;
+    }
+
+    function applyTextColor() {
+        if (!applyTextColorValue(textColorInput.value)) {
+            showStatus('Pilih sel atau blok sel terlebih dahulu.', 'error');
+            return;
+        }
         showStatus('Warna teks diterapkan.', 'success');
     }
 
@@ -834,7 +932,7 @@ document.addEventListener('DOMContentLoaded', function() {
         cell.appendChild(handle);
     }
 
-    function updateRangeSelection(range) {
+    function updateRangeSelection(range, showPopup = false) {
         document.querySelectorAll('#data-grid td.range-selected').forEach(cell => cell.classList.remove('range-selected'));
         document.querySelectorAll('#data-grid td.column-selected').forEach(cell => cell.classList.remove('column-selected'));
         if (!range) return;
@@ -846,6 +944,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         updateFillHandle();
+        if (showPopup) showSelectionPopup();
     }
 
     function getRangeData(sheet, range) {
@@ -1225,6 +1324,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 appData.selectedColumnIndex = i;
                 appData.selectedRange = null;
                 rangeAnchor = null;
+                showSelectionPopup();
                 renderGrid();
             });
 
@@ -1316,7 +1416,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 row.style.height = `${activeSheet.rowHeights[rowIndex]}px`;
             }
             if (renderedRowHeader) {
-                renderedRowHeader.style.position = 'relative';
+                renderedRowHeader.style.position = 'sticky';
+                renderedRowHeader.style.left = '0';
                 const rowResizeHandle = document.createElement('div');
                 rowResizeHandle.className = 'row-resize-handle';
                 rowResizeHandle.title = 'Seret untuk mengatur tinggi baris';
@@ -1342,11 +1443,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (cellColor) cell.style.backgroundColor = cellColor;
                 const textColor = activeSheet.textColors?.[`${rowIndex}:${cellIndex}`];
                 if (textColor) cell.style.color = textColor;
+                const cellFormat = activeSheet.cellFormats?.[`${rowIndex}:${cellIndex}`] || {};
+                if (cellFormat.bold) cell.style.fontWeight = '700';
+                if (cellFormat.italic) cell.style.fontStyle = 'italic';
+                if (cellFormat.align) cell.style.textAlign = cellFormat.align;
                 if (cellIndex === appData.selectedColumnIndex) cell.classList.add('column-selected');
                 if (appData.selectedRange && rowIndex >= appData.selectedRange.rowStart && rowIndex <= appData.selectedRange.rowEnd && cellIndex >= appData.selectedRange.colStart && cellIndex <= appData.selectedRange.colEnd) {
                     cell.classList.add('range-selected');
                 }
                 cell.addEventListener('pointerdown', (event) => {
+                    if (event.button !== 0) return;
+                    hideSelectionPopup();
                     if (cell.setPointerCapture) cell.setPointerCapture(event.pointerId);
                     const coordinates = getCellCoordinates(cell);
                     if (!coordinates) return;
@@ -1360,7 +1467,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     appData.selectedColumnIndex = null;
                     appData.selectedRange = normalizeRange(rangeAnchor, coordinates);
                     isSelectingRange = true;
-                    updateRangeSelection(appData.selectedRange);
+                    updateRangeSelection(appData.selectedRange, false);
+                });
+                cell.addEventListener('contextmenu', (event) => {
+                    event.preventDefault();
+                    const coordinates = getCellCoordinates(cell);
+                    if (!coordinates) return;
+                    const oldCell = editingCell || document.activeElement?.closest?.('td');
+                    if (oldCell && oldCell !== cell) {
+                        const oldCoordinates = getCellCoordinates(oldCell);
+                        if (oldCoordinates) commitCellValue(oldCell, activeSheet, oldCoordinates.rowIndex, oldCoordinates.colIndex);
+                    }
+                    rangeAnchor = coordinates;
+                    appData.selectedColumnIndex = null;
+                    appData.selectedRange = coordinates && normalizeRange(coordinates, coordinates);
+                    isSelectingRange = false;
+                    updateRangeSelection(appData.selectedRange, true);
                 });
                 cell.addEventListener('pointerover', () => {
                     if (!isSelectingRange || !rangeAnchor) return;
@@ -1516,6 +1638,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (!Array.isArray(sheet.rowHeights)) sheet.rowHeights = [];
                     if (!sheet.cellColors || typeof sheet.cellColors !== 'object') sheet.cellColors = {};
                     if (!sheet.textColors || typeof sheet.textColors !== 'object') sheet.textColors = {};
+                    if (!sheet.cellFormats || typeof sheet.cellFormats !== 'object') sheet.cellFormats = {};
                 });
                 appData = parsedData;
                 showStatus('Data berhasil dimuat.', 'success');
@@ -1532,7 +1655,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         columnWidths: [],
                         rowHeights: [],
                         cellColors: {},
-                        textColors: {}
+                        textColors: {},
+                        cellFormats: {}
                     }]
                 };
                 showStatus('Membuat grid baru. Jangan lupa simpan.', 'info');
@@ -1550,7 +1674,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     columnWidths: [],
                     rowHeights: [],
                     cellColors: {},
-                    textColors: {}
+                    textColors: {},
+                    cellFormats: {}
                 }]
             };
             showStatus('Gagal memuat data, grid baru dibuat.', 'error');
@@ -1792,7 +1917,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         columnWidths: sheet.columnWidths || [],
                         rowHeights: sheet.rowHeights || [],
                         cellColors: sheet.cellColors || {},
-                        textColors: sheet.textColors || {}
+                        textColors: sheet.textColors || {},
+                        cellFormats: sheet.cellFormats || {}
                     };
                 });
                 // [BARU] Set sheet pertama sebagai aktif setelah import
@@ -1833,7 +1959,8 @@ document.addEventListener('DOMContentLoaded', function() {
             columnWidths: [],
             rowHeights: [],
             cellColors: {},
-            textColors: {}
+            textColors: {},
+            cellFormats: {}
         });
         appData.activeSheetIndex = appData.sheets.length - 1;
         renderTabs();
@@ -1988,7 +2115,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!confirm(`Hapus sheet "${sheetName}"?`)) return;
         pushUndoState();
         if (appData.sheets.length <= 1) {
-            appData.sheets = [{ name: 'Sheet1', data: Array(10).fill(null).map(() => Array(5).fill('')), headers: [], lockedColumns: [], lockedRows: [], dropdownColumns: [], columnWidths: [], rowHeights: [], cellColors: {}, textColors: {} }];
+            appData.sheets = [{ name: 'Sheet1', data: Array(10).fill(null).map(() => Array(5).fill('')), headers: [], lockedColumns: [], lockedRows: [], dropdownColumns: [], columnWidths: [], rowHeights: [], cellColors: {}, textColors: {}, cellFormats: {} }];
             appData.activeSheetIndex = 0;
         } else {
             appData.sheets.splice(index, 1);

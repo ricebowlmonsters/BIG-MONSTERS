@@ -16,12 +16,16 @@
         .data-grid-container {
             width: 100%;
             max-width: 100%;
+            max-height: calc(100vh - 280px);
             box-sizing: border-box;
             position: relative;
             overflow-x: auto;
-            overflow-y: hidden;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
             border: 1px solid #d1d5db;
             border-radius: 8px;
+            scrollbar-width: auto;
         }
         .data-grid {
             border-collapse: collapse;
@@ -38,6 +42,13 @@
         .data-grid th {
             background-color: #f9fafb;
             font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 3;
+        }
+        .data-grid th:first-child {
+            left: 0;
+            z-index: 4;
         }
         .data-grid td {
             background-color: #fff;
@@ -52,6 +63,17 @@
         .data-grid td:focus {
             outline: 2px solid #4C2A85;
             background-color: #f7f3ff;
+        }
+        .data-grid td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 2;
+            background-color: #fff;
+        }
+        .data-grid tbody th {
+            position: sticky;
+            left: 0;
+            z-index: 2;
         }
         .modal-overlay {
             display: none;
