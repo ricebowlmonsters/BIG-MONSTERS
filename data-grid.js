@@ -1147,8 +1147,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 isSelectingRange = false;
                 updateRangeSelection(appData.selectedRange, false);
                 requestAnimationFrame(() => focusGridCell(cell));
-            } else if (!appData.selectedRange || appData.selectedRange.rowStart === appData.selectedRange.rowEnd && appData.selectedRange.colStart === appData.selectedRange.colEnd) {
-                appData.selectedRange = normalizeRange({ rowIndex: coordinates.rowIndex, colIndex: coordinates.colIndex }, { rowIndex: coordinates.rowIndex, colIndex: coordinates.colIndex });
+            } else {
+                if (!appData.selectedRange) {
+                    appData.selectedRange = normalizeRange(rangeAnchor || coordinates, coordinates);
+                }
+                isSelectingRange = false;
                 updateRangeSelection(appData.selectedRange, false);
             }
             touchPressState = null;
@@ -1181,17 +1184,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 touchPressState.moved = true;
                 if (!rangeAnchor) {
                     rangeAnchor = touchPressState.coordinates;
-                    isSelectingRange = true;
-                    appData.selectedColumnIndex = null;
-                    appData.selectedRange = normalizeRange(rangeAnchor, touchPressState.coordinates);
-                    updateRangeSelection(appData.selectedRange, false);
                 }
-            }
-            const element = document.elementFromPoint(event.clientX, event.clientY);
-            const td = element && element.closest ? element.closest('td') : null;
-            const coordinates = getCellCoordinates(td);
-            if (coordinates && isSelectingRange && rangeAnchor) {
-                appData.selectedRange = normalizeRange(rangeAnchor, coordinates);
+                isSelectingRange = true;
+                appData.selectedColumnIndex = null;
+                const element = document.elementFromPoint(event.clientX, event.clientY);
+                const td = element && element.closest ? element.closest('td') : null;
+                const targetCoordinates = getCellCoordinates(td) || touchPressState.coordinates;
+                appData.selectedRange = normalizeRange(rangeAnchor, targetCoordinates);
                 updateRangeSelection(appData.selectedRange, false);
             }
             return;
