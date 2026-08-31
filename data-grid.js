@@ -1176,7 +1176,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (touchPressState && (touchPressState.pointerId === event.pointerId)) {
             const dx = Math.abs(event.clientX - touchPressState.startX);
             const dy = Math.abs(event.clientY - touchPressState.startY);
-            if (dx > 8 || dy > 8) {
+            const activationThreshold = 4;
+            if (dx > activationThreshold || dy > activationThreshold) {
                 touchPressState.moved = true;
                 if (!rangeAnchor) {
                     rangeAnchor = touchPressState.coordinates;
