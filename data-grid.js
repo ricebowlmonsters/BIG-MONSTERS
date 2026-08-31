@@ -169,7 +169,8 @@ document.addEventListener('DOMContentLoaded', function() {
             #data-grid td.range-selected.range-left { box-shadow: inset 1px 0 0 0 rgba(59, 130, 246, 0.35), inset 0 0 0 1px rgba(59, 130, 246, 0.15); }\n\
             #data-grid td.range-selected.range-right { box-shadow: inset -1px 0 0 0 rgba(59, 130, 246, 0.35), inset 0 0 0 1px rgba(59, 130, 246, 0.15); }\n\
             #data-grid td.active-cell, #data-grid td.range-end-cell { position: relative; background-color: #ffffff; border-color: transparent; overflow: visible; z-index: 1; }\n\
-            #data-grid td.active-cell::after, #data-grid td.range-end-cell::after { content: ''; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; border-radius: 50%; background: #1a73e8; box-shadow: 0 0 0 2px rgba(255,255,255,0.9); z-index: 3; }\n\
+            #data-grid td.active-cell::after { content: ''; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; border-radius: 50%; background: #1a73e8; box-shadow: 0 0 0 2px rgba(255,255,255,0.9); z-index: 3; }\n\
+            #data-grid td.range-end-cell::after { display: none; }\n\
             #data-grid td { user-select: none; touch-action: pan-x pan-y; }\n\
             #data-grid td[contenteditable=true] { user-select: text; touch-action: auto; }\n\
             .grid-selection-popup { position: fixed; display: none; align-items: center; gap: 4px; padding: 6px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 5px 18px rgba(15,23,42,.18); z-index: 10000; flex-wrap: wrap; }\n\
@@ -178,8 +179,8 @@ document.addEventListener('DOMContentLoaded', function() {
             .grid-selection-popup button.active { background: #e0e7ff; border-color: #6366f1; }\n\
             .fill-handle { position: absolute; right: -8px; bottom: -8px; width: 24px; height: 24px; border: 0; background: transparent; cursor: crosshair; z-index: 5; line-height: 0; touch-action: none; }\n\
             .fill-handle::after { content: ''; position: absolute; right: 7px; bottom: 7px; width: 8px; height: 8px; border-radius: 50%; background: #4C2A85; border: 2px solid #fff; }\n\
-            .range-move-handle { position: absolute; right: -10px; bottom: -10px; width: 20px; height: 20px; border-radius: 999px; background: rgba(76, 42, 133, 0.9); border: 2px solid #fff; box-shadow: 0 2px 10px rgba(76,42,133,0.25); cursor: move; z-index: 6; touch-action: none; }\n\
-            .range-move-handle::before { content: '↕'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 700; }\n\
+            .range-move-handle { position: absolute; right: -10px; bottom: -10px; width: 16px; height: 16px; border-radius: 50%; background: rgba(76, 42, 133, 0.9); border: 2px solid #fff; box-shadow: 0 2px 10px rgba(76,42,133,0.25); cursor: move; z-index: 6; touch-action: none; }\n\
+            .range-move-handle::before { content: ''; position: absolute; inset: 0; }\n\
             .column-resize-handle { position: absolute; right: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 6; }\n\
             .row-resize-handle { position: absolute; left: 0; right: 0; bottom: -3px; height: 7px; cursor: row-resize; z-index: 6; }\n\
             .formula-cell { font-style: normal; }\n\
@@ -1013,6 +1014,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const range = appData.selectedRange;
         if (!range) return;
         if (range.rowStart === range.rowEnd && range.colStart === range.colEnd) return;
+        // Multi-cell selection keeps only a single move handle; the extra fill dot creates
+        // duplicate visible points at the selection corner on touch screens.
+        if (range.rowStart !== range.rowEnd || range.colStart !== range.colEnd) return;
         const row = gridTable.querySelectorAll('tbody tr')[range.rowEnd];
         const cell = row && row.children[range.colEnd + 1];
         if (!cell) return;
@@ -1159,10 +1163,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.addEventListener('pointercancel', () => {
         touchPressState = null;
-    });
-
-    document.addEventListener('pointercancel', () => {
-        touchPressState = null;
+        rangeAnchor = null;
+        isSelectingRange = false;
     });
 
     document.addEventListener('pointerup', () => {
@@ -1175,14 +1177,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 isSelectingRange = false;
                 updateRangeSelection(appData.selectedRange, false);
                 requestAnimationFrame(() => focusGridCell(cell));
-            } else {
-                if (!appData.selectedRange) {
-                    appData.selectedRange = normalizeRange(rangeAnchor || coordinates, coordinates);
-                }
-                isSelectingRange = false;
+            } else if (!appData.selectedRange) {
+                appData.selectedRange = normalizeRange(rangeAnchor || coordinates, coordinates);
                 updateRangeSelection(appData.selectedRange, false);
             }
             touchPressState = null;
+            rangeAnchor = null;
+            isSelectingRange = false;
             return;
         }
         if (rangeMoveDrag) {
@@ -1207,19 +1208,19 @@ document.addEventListener('DOMContentLoaded', function() {
         if (touchPressState && (touchPressState.pointerId === event.pointerId)) {
             const dx = Math.abs(event.clientX - touchPressState.startX);
             const dy = Math.abs(event.clientY - touchPressState.startY);
-            const activationThreshold = 4;
+            const activationThreshold = 10;
+            const element = document.elementFromPoint(event.clientX, event.clientY);
+            const td = element && element.closest ? element.closest('td') : null;
+            const currentCoordinates = getCellCoordinates(td) || touchPressState.coordinates;
+
             if (dx > activationThreshold || dy > activationThreshold) {
                 touchPressState.moved = true;
-                if (!rangeAnchor) {
-                    rangeAnchor = touchPressState.coordinates;
-                }
+                rangeAnchor = rangeAnchor || touchPressState.coordinates;
                 isSelectingRange = true;
                 appData.selectedColumnIndex = null;
-                const element = document.elementFromPoint(event.clientX, event.clientY);
-                const td = element && element.closest ? element.closest('td') : null;
-                const targetCoordinates = getCellCoordinates(td) || touchPressState.coordinates;
-                appData.selectedRange = normalizeRange(rangeAnchor, targetCoordinates);
+                appData.selectedRange = normalizeRange(rangeAnchor, currentCoordinates);
                 updateRangeSelection(appData.selectedRange, false);
+                event.preventDefault();
             }
             return;
         }
@@ -1689,10 +1690,11 @@ document.addEventListener('DOMContentLoaded', function() {
                             startY: event.clientY,
                             moved: false
                         };
+                        rangeAnchor = coordinates;
                         appData.selectedColumnIndex = null;
-                        appData.selectedRange = null;
+                        appData.selectedRange = normalizeRange(coordinates, coordinates);
                         isSelectingRange = false;
-                        updateRangeSelection(null, false);
+                        updateRangeSelection(appData.selectedRange, false);
                         return;
                     }
 
