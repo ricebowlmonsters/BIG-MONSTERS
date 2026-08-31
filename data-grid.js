@@ -162,7 +162,10 @@ document.addEventListener('DOMContentLoaded', function() {
             #data-grid th:hover .col-drag-handle, #data-grid th.selected .col-drag-handle { opacity: 1; }\n\
             #data-grid th:hover .col-delete-handle, #data-grid th.selected .col-delete-handle { opacity: 1; }\n\
             #data-grid th.drag-over { outline: 2px dashed rgba(99,102,241,0.35); }\n\
-            #data-grid th.selected, #data-grid td.column-selected, #data-grid td.range-selected { background-color: #e0e7ff; }\n\
+            #data-grid th.selected, #data-grid td.column-selected { background-color: #e0e7ff; }\n\
+            #data-grid td.range-selected { background-color: #edf4ff; border-color: transparent; }\n\
+            #data-grid td.active-cell { position: relative; background-color: #ffffff; border-color: transparent; }\n\
+            #data-grid td.active-cell::after { content: ''; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; border-radius: 50%; background: #1a73e8; box-shadow: 0 0 0 2px #fff; }\n\
             #data-grid td { user-select: none; touch-action: pan-x pan-y; }\n\
             #data-grid td[contenteditable=true] { user-select: text; touch-action: auto; }\n\
             .grid-selection-popup { position: fixed; display: none; align-items: center; gap: 4px; padding: 6px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 5px 18px rgba(15,23,42,.18); z-index: 10000; flex-wrap: wrap; }\n\
@@ -993,6 +996,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (fillDrag || rangeMoveDrag) return;
         const range = appData.selectedRange;
         if (!range) return;
+        if (range.rowStart === range.rowEnd && range.colStart === range.colEnd) return;
         const row = gridTable.querySelectorAll('tbody tr')[range.rowEnd];
         const cell = row && row.children[range.colEnd + 1];
         if (!cell) return;
@@ -1012,6 +1016,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('#data-grid .range-move-handle').forEach(handle => handle.remove());
         const range = appData.selectedRange;
         if (!range || fillDrag || rangeMoveDrag) return;
+        if (range.rowStart === range.rowEnd && range.colStart === range.colEnd) return;
         const row = gridTable.querySelectorAll('tbody tr')[range.rowEnd];
         const cell = row && row.children[range.colEnd + 1];
         if (!cell) return;
@@ -1041,12 +1046,18 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateRangeSelection(range, showPopup = false) {
         document.querySelectorAll('#data-grid td.range-selected').forEach(cell => cell.classList.remove('range-selected'));
         document.querySelectorAll('#data-grid td.column-selected').forEach(cell => cell.classList.remove('column-selected'));
+        document.querySelectorAll('#data-grid td.active-cell').forEach(cell => cell.classList.remove('active-cell'));
         if (!range) return;
         document.querySelectorAll('#data-grid tbody tr').forEach((row, rowIndex) => {
             if (rowIndex < range.rowStart || rowIndex > range.rowEnd) return;
             for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
                 const cell = row.children[colIndex + 1];
-                if (cell) cell.classList.add('range-selected');
+                if (!cell) continue;
+                if (range.rowStart === range.rowEnd && range.colStart === range.colEnd) {
+                    cell.classList.add('active-cell');
+                } else {
+                    cell.classList.add('range-selected');
+                }
             }
         });
         updateFillHandle();
