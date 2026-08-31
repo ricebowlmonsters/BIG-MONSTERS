@@ -1147,6 +1147,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 isSelectingRange = false;
                 updateRangeSelection(appData.selectedRange, false);
                 requestAnimationFrame(() => focusGridCell(cell));
+            } else if (!appData.selectedRange || appData.selectedRange.rowStart === appData.selectedRange.rowEnd && appData.selectedRange.colStart === appData.selectedRange.colEnd) {
+                appData.selectedRange = normalizeRange({ rowIndex: coordinates.rowIndex, colIndex: coordinates.colIndex }, { rowIndex: coordinates.rowIndex, colIndex: coordinates.colIndex });
+                updateRangeSelection(appData.selectedRange, false);
             }
             touchPressState = null;
             return;
@@ -1175,6 +1178,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const dy = Math.abs(event.clientY - touchPressState.startY);
             if (dx > 8 || dy > 8) {
                 touchPressState.moved = true;
+                if (!rangeAnchor) {
+                    rangeAnchor = touchPressState.coordinates;
+                    isSelectingRange = true;
+                    appData.selectedColumnIndex = null;
+                    appData.selectedRange = normalizeRange(rangeAnchor, touchPressState.coordinates);
+                    updateRangeSelection(appData.selectedRange, false);
+                }
+            }
+            const element = document.elementFromPoint(event.clientX, event.clientY);
+            const td = element && element.closest ? element.closest('td') : null;
+            const coordinates = getCellCoordinates(td);
+            if (coordinates && isSelectingRange && rangeAnchor) {
+                appData.selectedRange = normalizeRange(rangeAnchor, coordinates);
+                updateRangeSelection(appData.selectedRange, false);
             }
             return;
         }
