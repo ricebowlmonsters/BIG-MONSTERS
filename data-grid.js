@@ -35,6 +35,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let rangeAnchor = null;
     let isSelectingRange = false;
     let fillDrag = null;
+    let rangeMoveDrag = null;
+    let touchPressState = null;
     let resizeState = null;
     const undoStack = [];
     let lastFocusedCell = null;
@@ -161,14 +163,16 @@ document.addEventListener('DOMContentLoaded', function() {
             #data-grid th:hover .col-delete-handle, #data-grid th.selected .col-delete-handle { opacity: 1; }\n\
             #data-grid th.drag-over { outline: 2px dashed rgba(99,102,241,0.35); }\n\
             #data-grid th.selected, #data-grid td.column-selected, #data-grid td.range-selected { background-color: #e0e7ff; }\n\
-            #data-grid td { user-select: none; touch-action: none; }\n\
-            #data-grid td[contenteditable=true] { user-select: text; }\n\
+            #data-grid td { user-select: none; touch-action: pan-x pan-y; }\n\
+            #data-grid td[contenteditable=true] { user-select: text; touch-action: auto; }\n\
             .grid-selection-popup { position: fixed; display: none; align-items: center; gap: 4px; padding: 6px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 5px 18px rgba(15,23,42,.18); z-index: 10000; flex-wrap: wrap; }\n\
             .grid-selection-popup label, .grid-selection-popup button { font: inherit; font-size: 12px; }\n\
             .grid-selection-popup button { border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 4px; padding: 4px 7px; cursor: pointer; }\n\
             .grid-selection-popup button.active { background: #e0e7ff; border-color: #6366f1; }\n\
             .fill-handle { position: absolute; right: -8px; bottom: -8px; width: 24px; height: 24px; border: 0; background: transparent; cursor: crosshair; z-index: 5; line-height: 0; touch-action: none; }\n\
             .fill-handle::after { content: ''; position: absolute; right: 7px; bottom: 7px; width: 8px; height: 8px; border-radius: 50%; background: #4C2A85; border: 2px solid #fff; }\n\
+            .range-move-handle { position: absolute; right: -10px; bottom: -10px; width: 20px; height: 20px; border-radius: 999px; background: rgba(76, 42, 133, 0.9); border: 2px solid #fff; box-shadow: 0 2px 10px rgba(76,42,133,0.25); cursor: move; z-index: 6; touch-action: none; }\n\
+            .range-move-handle::before { content: '↕'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 700; }\n\
             .column-resize-handle { position: absolute; right: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 6; }\n\
             .row-resize-handle { position: absolute; left: 0; right: 0; bottom: -3px; height: 7px; cursor: row-resize; z-index: 6; }\n\
             .formula-cell { font-style: normal; }\n\
@@ -912,9 +916,81 @@ document.addEventListener('DOMContentLoaded', function() {
         return sourceValue;
     }
 
+    function clampRangeToGrid(range) {
+        const activeSheet = appData.sheets[appData.activeSheetIndex];
+        if (!activeSheet || !Array.isArray(activeSheet.data) || activeSheet.data.length === 0) return range;
+        const maxRow = Math.max(0, activeSheet.data.length - 1);
+        const maxCol = Math.max(0, Math.max(0, (activeSheet.data[0] || []).length - 1));
+        return {
+            rowStart: Math.max(0, Math.min(range.rowStart, maxRow)),
+            rowEnd: Math.max(0, Math.min(range.rowEnd, maxRow)),
+            colStart: Math.max(0, Math.min(range.colStart, maxCol)),
+            colEnd: Math.max(0, Math.min(range.colEnd, maxCol))
+        };
+    }
+
+    function clearCellMetadata(sheet, rowIndex, colIndex) {
+        if (!sheet || !Array.isArray(sheet.data[rowIndex])) return;
+        delete sheet.cellColors?.[`${rowIndex}:${colIndex}`];
+        delete sheet.textColors?.[`${rowIndex}:${colIndex}`];
+        delete sheet.cellFormats?.[`${rowIndex}:${colIndex}`];
+        sheet.data[rowIndex][colIndex] = '';
+    }
+
+    function moveSelectedRangeContents(sourceRange, targetRange) {
+        const activeSheet = appData.sheets[appData.activeSheetIndex];
+        if (!activeSheet || !sourceRange || !targetRange) return;
+
+        const sourceWidth = sourceRange.colEnd - sourceRange.colStart + 1;
+        const sourceHeight = sourceRange.rowEnd - sourceRange.rowStart + 1;
+        const targetWidth = targetRange.colEnd - targetRange.colStart + 1;
+        const targetHeight = targetRange.rowEnd - targetRange.rowStart + 1;
+        if (sourceWidth !== targetWidth || sourceHeight !== targetHeight) return;
+
+        const snapshot = [];
+        for (let rowIndex = sourceRange.rowStart; rowIndex <= sourceRange.rowEnd; rowIndex++) {
+            for (let colIndex = sourceRange.colStart; colIndex <= sourceRange.colEnd; colIndex++) {
+                snapshot.push({
+                    rowIndex,
+                    colIndex,
+                    value: activeSheet.data[rowIndex]?.[colIndex] ?? '',
+                    color: activeSheet.cellColors?.[`${rowIndex}:${colIndex}`] ?? null,
+                    textColor: activeSheet.textColors?.[`${rowIndex}:${colIndex}`] ?? null,
+                    format: activeSheet.cellFormats?.[`${rowIndex}:${colIndex}`] ? Object.assign({}, activeSheet.cellFormats[`${rowIndex}:${colIndex}`]) : null
+                });
+            }
+        }
+
+        for (let rowIndex = sourceRange.rowStart; rowIndex <= sourceRange.rowEnd; rowIndex++) {
+            for (let colIndex = sourceRange.colStart; colIndex <= sourceRange.colEnd; colIndex++) {
+                clearCellMetadata(activeSheet, rowIndex, colIndex);
+            }
+        }
+
+        snapshot.forEach(item => {
+            const offsetRow = item.rowIndex - sourceRange.rowStart;
+            const offsetCol = item.colIndex - sourceRange.colStart;
+            const targetRow = targetRange.rowStart + offsetRow;
+            const targetCol = targetRange.colStart + offsetCol;
+            if (!activeSheet.data[targetRow] || !Array.isArray(activeSheet.data[targetRow][targetCol])) {
+                if (!Array.isArray(activeSheet.data[targetRow])) {
+                    activeSheet.data[targetRow] = [];
+                }
+            }
+            if (targetRow >= 0 && targetRow < activeSheet.data.length && targetCol >= 0 && targetCol < (activeSheet.data[targetRow]?.length || 0)) {
+                activeSheet.data[targetRow][targetCol] = item.value;
+                if (item.color) activeSheet.cellColors[`${targetRow}:${targetCol}`] = item.color;
+                if (item.textColor) activeSheet.textColors[`${targetRow}:${targetCol}`] = item.textColor;
+                if (item.format) activeSheet.cellFormats[`${targetRow}:${targetCol}`] = item.format;
+            }
+        });
+
+        appData.selectedRange = targetRange;
+    }
+
     function updateFillHandle() {
         document.querySelectorAll('#data-grid .fill-handle').forEach(handle => handle.remove());
-        if (fillDrag) return;
+        if (fillDrag || rangeMoveDrag) return;
         const range = appData.selectedRange;
         if (!range) return;
         const row = gridTable.querySelectorAll('tbody tr')[range.rowEnd];
@@ -932,6 +1008,36 @@ document.addEventListener('DOMContentLoaded', function() {
         cell.appendChild(handle);
     }
 
+    function updateRangeMoveHandle() {
+        document.querySelectorAll('#data-grid .range-move-handle').forEach(handle => handle.remove());
+        const range = appData.selectedRange;
+        if (!range || fillDrag || rangeMoveDrag) return;
+        const row = gridTable.querySelectorAll('tbody tr')[range.rowEnd];
+        const cell = row && row.children[range.colEnd + 1];
+        if (!cell) return;
+
+        const handle = document.createElement('div');
+        handle.className = 'range-move-handle';
+        handle.title = 'Geser blok sel';
+        handle.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (handle.setPointerCapture) handle.setPointerCapture(event.pointerId);
+            const sourceRange = normalizeRange(
+                { rowIndex: range.rowStart, colIndex: range.colStart },
+                { rowIndex: range.rowEnd, colIndex: range.colEnd }
+            );
+            const startCell = { rowIndex: range.rowEnd, colIndex: range.colEnd };
+            rangeMoveDrag = {
+                pointerId: event.pointerId,
+                sourceRange: Object.assign({}, sourceRange),
+                startCell,
+                currentRange: Object.assign({}, sourceRange)
+            };
+        });
+        cell.appendChild(handle);
+    }
+
     function updateRangeSelection(range, showPopup = false) {
         document.querySelectorAll('#data-grid td.range-selected').forEach(cell => cell.classList.remove('range-selected'));
         document.querySelectorAll('#data-grid td.column-selected').forEach(cell => cell.classList.remove('column-selected'));
@@ -944,6 +1050,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         updateFillHandle();
+        updateRangeMoveHandle();
         if (showPopup) showSelectionPopup();
     }
 
@@ -1011,7 +1118,39 @@ document.addEventListener('DOMContentLoaded', function() {
         return true;
     }
 
+    document.addEventListener('pointercancel', () => {
+        touchPressState = null;
+    });
+
+    document.addEventListener('pointercancel', () => {
+        touchPressState = null;
+    });
+
     document.addEventListener('pointerup', () => {
+        if (touchPressState) {
+            const { cell, coordinates, moved } = touchPressState;
+            if (!moved) {
+                rangeAnchor = coordinates;
+                appData.selectedColumnIndex = null;
+                appData.selectedRange = normalizeRange(rangeAnchor, coordinates);
+                isSelectingRange = false;
+                updateRangeSelection(appData.selectedRange, false);
+                requestAnimationFrame(() => focusGridCell(cell));
+            }
+            touchPressState = null;
+            return;
+        }
+        if (rangeMoveDrag) {
+            const sourceRange = rangeMoveDrag.sourceRange;
+            const targetRange = appData.selectedRange ? clampRangeToGrid(appData.selectedRange) : sourceRange;
+            if (sourceRange && targetRange && (sourceRange.rowStart !== targetRange.rowStart || sourceRange.rowEnd !== targetRange.rowEnd || sourceRange.colStart !== targetRange.colStart || sourceRange.colEnd !== targetRange.colEnd)) {
+                moveSelectedRangeContents(sourceRange, targetRange);
+                renderGrid();
+                saveGrid();
+            }
+            rangeMoveDrag = null;
+            renderGrid();
+        }
         if (fillDrag) {
             fillDrag = null;
             renderGrid();
@@ -1020,10 +1159,32 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.addEventListener('pointermove', (event) => {
+        if (touchPressState && (touchPressState.pointerId === event.pointerId)) {
+            const dx = Math.abs(event.clientX - touchPressState.startX);
+            const dy = Math.abs(event.clientY - touchPressState.startY);
+            if (dx > 8 || dy > 8) {
+                touchPressState.moved = true;
+            }
+            return;
+        }
+
         const element = document.elementFromPoint(event.clientX, event.clientY);
         const td = element && element.closest ? element.closest('td') : null;
         const coordinates = getCellCoordinates(td);
         if (!coordinates) return;
+        if (rangeMoveDrag) {
+            const deltaRow = coordinates.rowIndex - rangeMoveDrag.startCell.rowIndex;
+            const deltaCol = coordinates.colIndex - rangeMoveDrag.startCell.colIndex;
+            const targetRange = clampRangeToGrid({
+                rowStart: rangeMoveDrag.sourceRange.rowStart + deltaRow,
+                rowEnd: rangeMoveDrag.sourceRange.rowEnd + deltaRow,
+                colStart: rangeMoveDrag.sourceRange.colStart + deltaCol,
+                colEnd: rangeMoveDrag.sourceRange.colEnd + deltaCol
+            });
+            appData.selectedRange = targetRange;
+            updateRangeSelection(appData.selectedRange);
+            return;
+        }
         if (!fillDrag) {
             if (!isSelectingRange || !rangeAnchor) return;
             appData.selectedRange = normalizeRange(rangeAnchor, coordinates);
@@ -1462,6 +1623,23 @@ document.addEventListener('DOMContentLoaded', function() {
                         const oldCoordinates = getCellCoordinates(oldCell);
                         if (oldCoordinates) commitCellValue(oldCell, activeSheet, oldCoordinates.rowIndex, oldCoordinates.colIndex);
                     }
+
+                    if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+                        touchPressState = {
+                            pointerId: event.pointerId,
+                            cell,
+                            coordinates,
+                            startX: event.clientX,
+                            startY: event.clientY,
+                            moved: false
+                        };
+                        appData.selectedColumnIndex = null;
+                        appData.selectedRange = null;
+                        isSelectingRange = false;
+                        updateRangeSelection(null, false);
+                        return;
+                    }
+
                     if (!event.shiftKey) rangeAnchor = coordinates;
                     if (!rangeAnchor) rangeAnchor = coordinates;
                     appData.selectedColumnIndex = null;
