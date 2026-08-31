@@ -944,6 +944,18 @@ document.addEventListener('DOMContentLoaded', function() {
         sheet.data[rowIndex][colIndex] = '';
     }
 
+    function safeSetPointerCapture(element, pointerId) {
+        if (!element || typeof pointerId === 'undefined' || pointerId === null) return;
+        try {
+            if (typeof element.setPointerCapture === 'function') {
+                element.setPointerCapture(pointerId);
+            }
+        } catch (error) {
+            // Beberapa browser menolak capture pada elemen yang sudah tidak valid / belum siap.
+            // Ini aman diabaikan agar interaksi tetap berjalan.
+        }
+    }
+
     function moveSelectedRangeContents(sourceRange, targetRange) {
         const activeSheet = appData.sheets[appData.activeSheetIndex];
         if (!activeSheet || !sourceRange || !targetRange) return;
@@ -1010,7 +1022,7 @@ document.addEventListener('DOMContentLoaded', function() {
         handle.addEventListener('pointerdown', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (handle.setPointerCapture) handle.setPointerCapture(event.pointerId);
+            safeSetPointerCapture(handle, event.pointerId);
             fillDrag = { range: Object.assign({}, range), pointerId: event.pointerId };
         });
         cell.appendChild(handle);
@@ -1031,7 +1043,7 @@ document.addEventListener('DOMContentLoaded', function() {
         handle.addEventListener('pointerdown', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            if (handle.setPointerCapture) handle.setPointerCapture(event.pointerId);
+            safeSetPointerCapture(handle, event.pointerId);
             const sourceRange = normalizeRange(
                 { rowIndex: range.rowStart, colIndex: range.colStart },
                 { rowIndex: range.rowEnd, colIndex: range.colEnd }
@@ -1659,7 +1671,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 cell.addEventListener('pointerdown', (event) => {
                     if (event.button !== 0) return;
                     hideSelectionPopup();
-                    if (cell.setPointerCapture) cell.setPointerCapture(event.pointerId);
+                    safeSetPointerCapture(cell, event.pointerId);
                     const coordinates = getCellCoordinates(cell);
                     if (!coordinates) return;
                     const oldCell = editingCell || document.activeElement?.closest?.('td');
