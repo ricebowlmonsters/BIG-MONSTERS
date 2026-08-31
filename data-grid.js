@@ -163,9 +163,13 @@ document.addEventListener('DOMContentLoaded', function() {
             #data-grid th:hover .col-delete-handle, #data-grid th.selected .col-delete-handle { opacity: 1; }\n\
             #data-grid th.drag-over { outline: 2px dashed rgba(99,102,241,0.35); }\n\
             #data-grid th.selected, #data-grid td.column-selected { background-color: #e0e7ff; }\n\
-            #data-grid td.range-selected { background-color: #edf4ff; border-color: transparent; }\n\
-            #data-grid td.active-cell { position: relative; background-color: #ffffff; border-color: transparent; }\n\
-            #data-grid td.active-cell::after { content: ''; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; border-radius: 50%; background: #1a73e8; box-shadow: 0 0 0 2px #fff; }\n\
+            #data-grid td.range-selected { background-color: #edf4ff; border-color: transparent; box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.35); }\n\
+            #data-grid td.range-selected.range-top { box-shadow: inset 0 1px 0 0 rgba(59, 130, 246, 0.35), inset 0 0 0 1px rgba(59, 130, 246, 0.15); }\n\
+            #data-grid td.range-selected.range-bottom { box-shadow: inset 0 -1px 0 0 rgba(59, 130, 246, 0.35), inset 0 0 0 1px rgba(59, 130, 246, 0.15); }\n\
+            #data-grid td.range-selected.range-left { box-shadow: inset 1px 0 0 0 rgba(59, 130, 246, 0.35), inset 0 0 0 1px rgba(59, 130, 246, 0.15); }\n\
+            #data-grid td.range-selected.range-right { box-shadow: inset -1px 0 0 0 rgba(59, 130, 246, 0.35), inset 0 0 0 1px rgba(59, 130, 246, 0.15); }\n\
+            #data-grid td.active-cell, #data-grid td.range-end-cell { position: relative; background-color: #ffffff; border-color: transparent; overflow: visible; z-index: 1; }\n\
+            #data-grid td.active-cell::after, #data-grid td.range-end-cell::after { content: ''; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; border-radius: 50%; background: #1a73e8; box-shadow: 0 0 0 2px rgba(255,255,255,0.9); z-index: 3; }\n\
             #data-grid td { user-select: none; touch-action: pan-x pan-y; }\n\
             #data-grid td[contenteditable=true] { user-select: text; touch-action: auto; }\n\
             .grid-selection-popup { position: fixed; display: none; align-items: center; gap: 4px; padding: 6px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 5px 18px rgba(15,23,42,.18); z-index: 10000; flex-wrap: wrap; }\n\
@@ -1047,6 +1051,11 @@ document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('#data-grid td.range-selected').forEach(cell => cell.classList.remove('range-selected'));
         document.querySelectorAll('#data-grid td.column-selected').forEach(cell => cell.classList.remove('column-selected'));
         document.querySelectorAll('#data-grid td.active-cell').forEach(cell => cell.classList.remove('active-cell'));
+        document.querySelectorAll('#data-grid td.range-end-cell').forEach(cell => cell.classList.remove('range-end-cell'));
+        document.querySelectorAll('#data-grid td.range-top').forEach(cell => cell.classList.remove('range-top'));
+        document.querySelectorAll('#data-grid td.range-bottom').forEach(cell => cell.classList.remove('range-bottom'));
+        document.querySelectorAll('#data-grid td.range-left').forEach(cell => cell.classList.remove('range-left'));
+        document.querySelectorAll('#data-grid td.range-right').forEach(cell => cell.classList.remove('range-right'));
         if (!range) return;
         document.querySelectorAll('#data-grid tbody tr').forEach((row, rowIndex) => {
             if (rowIndex < range.rowStart || rowIndex > range.rowEnd) return;
@@ -1057,6 +1066,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     cell.classList.add('active-cell');
                 } else {
                     cell.classList.add('range-selected');
+                    if (rowIndex === range.rowStart) cell.classList.add('range-top');
+                    if (rowIndex === range.rowEnd) cell.classList.add('range-bottom');
+                    if (colIndex === range.colStart) cell.classList.add('range-left');
+                    if (colIndex === range.colEnd) cell.classList.add('range-right');
+                    if (rowIndex === range.rowEnd && colIndex === range.colEnd) {
+                        cell.classList.add('range-end-cell');
+                    }
                 }
             }
         });
