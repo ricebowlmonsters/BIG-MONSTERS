@@ -169,7 +169,9 @@
 
       // Isi Filter Outlet
       const activeOutlets = JSON.parse(localStorage.getItem('rbm_active_outlets') || '[]');
-      const allOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '["sidoarjo", "surabaya"]');
+      const publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '["sidoarjo", "surabaya"]');
+      const internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+      const allOutlets = [...new Set([...publicOutlets, ...internalOutlets])];
       const outletsToDisplay = activeOutlets.length > 0 ? activeOutlets : allOutlets;
       
       outletSel.innerHTML = '';

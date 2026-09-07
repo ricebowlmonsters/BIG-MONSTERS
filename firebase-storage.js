@@ -302,19 +302,69 @@
     });
   }
 
-  function writeGpsKioskFace(outletId, empId, empName, descriptorArr) {
+  function loadGpsKioskFacePhoto(outletId, empId) {
+    if (!init()) return Promise.resolve(null);
+    return db.ref(gpsKioskBase(outletId) + '/face_photos/' + String(empId)).once('value').then(function(snap) {
+      return snap.val();
+    });
+  }
+
+  function deleteGpsKioskFacePhoto(outletId, empId) {
+    if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    return Promise.all([
+      db.ref(gpsKioskBase(outletId) + '/face_photos/' + String(empId)).remove(),
+      db.ref(gpsKioskBase(outletId) + '/faces/' + String(empId) + '/photo').remove(),
+      db.ref(gpsKioskBase(outletId) + '/faces/' + String(empId) + '/hasPhoto').set(false)
+    ]);
+  }
+
+  function writeGpsKioskFace(outletId, empId, empName, descriptorArr, photoData) {
     if (!init()) return Promise.resolve();
-    return db.ref(gpsKioskBase(outletId) + '/faces/' + String(empId)).set({
+    var payload = {
       name: empName || '',
       descriptor: descriptorArr,
       updatedAt: firebase.database.ServerValue.TIMESTAMP
-    }).catch(function(e) { console.warn('writeGpsKioskFace failed', e); });
+    };
+    if (photoData) payload.hasPhoto = true;
+    var faceRef = db.ref(gpsKioskBase(outletId) + '/faces/' + String(empId));
+    var savePhoto = photoData
+      ? db.ref(gpsKioskBase(outletId) + '/face_photos/' + String(empId)).set(String(photoData))
+      : Promise.resolve();
+    return Promise.all([faceRef.set(payload), savePhoto])
+      .catch(function(e) { console.warn('writeGpsKioskFace failed', e); });
   }
 
   function deleteGpsKioskFace(outletId, empId) {
     if (!init()) return Promise.resolve();
-    return db.ref(gpsKioskBase(outletId) + '/faces/' + String(empId)).remove()
+    return Promise.all([
+      db.ref(gpsKioskBase(outletId) + '/faces/' + String(empId)).remove(),
+      db.ref(gpsKioskBase(outletId) + '/face_photos/' + String(empId)).remove()
+    ])
       .catch(function(e) { console.warn('deleteGpsKioskFace failed', e); });
+  }
+
+  function absensiPasswordKey(employeeId) {
+    return String(employeeId == null ? '' : employeeId).replace(/[.#$\[\]\/]/g, '_') || 'unknown';
+  }
+
+  function saveAbsensiPassword(outletId, employeeId, password) {
+    if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    return db.ref('rbm_pro/absensi_passwords/' + String(outletId || 'default') + '/' + absensiPasswordKey(employeeId)).set(String(password || ''));
+  }
+
+  function loadAbsensiPasswords(outletId) {
+    if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    return db.ref('rbm_pro/absensi_passwords/' + String(outletId || 'default')).once('value').then(function(snap) {
+      return snap.val() || {};
+    });
+  }
+
+  function loadAbsensiPassword(outletId, employeeId) {
+    if (!init()) return Promise.reject(new Error('Firebase tidak tersedia'));
+    return db.ref('rbm_pro/absensi_passwords/' + String(outletId || 'default') + '/' + absensiPasswordKey(employeeId)).once('value').then(function(snap) {
+      var value = snap.val();
+      return value == null ? '' : String(value);
+    });
   }
 
   /** Sinkron roster + snapshot hari ini (saja) untuk kiosk. */
@@ -2168,6 +2218,11 @@
     loadGpsKioskRoster: loadGpsKioskRoster,
     loadGpsKioskDayCells: loadGpsKioskDayCells,
     loadGpsKioskFace: loadGpsKioskFace,
+    loadGpsKioskFacePhoto: loadGpsKioskFacePhoto,
+    deleteGpsKioskFacePhoto: deleteGpsKioskFacePhoto,
+    saveAbsensiPassword: saveAbsensiPassword,
+    loadAbsensiPasswords: loadAbsensiPasswords,
+    loadAbsensiPassword: loadAbsensiPassword,
     writeGpsKioskFace: writeGpsKioskFace,
     deleteGpsKioskFace: deleteGpsKioskFace,
     syncGpsKioskAfterAbsensiSave: syncGpsKioskAfterAbsensiSave,

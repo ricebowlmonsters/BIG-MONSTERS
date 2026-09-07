@@ -252,7 +252,9 @@
               globalDataAdded = { PEMBUKUAN: false, PETTY_CASH: false }; // Reset status setiap kali muat
 
               // Get available outlets to aggregate
-              let outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '["sidoarjo", "surabaya"]');
+              let publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '["sidoarjo", "surabaya"]');
+              let internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+              let outlets = [...new Set([...publicOutlets, ...internalOutlets])];
               const outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
               
               if (!outlets || outlets.length === 0) {

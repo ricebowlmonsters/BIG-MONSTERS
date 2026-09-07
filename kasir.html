@@ -2143,7 +2143,9 @@
             // [BARU] Inisialisasi Outlet Selector
             function initOutletSelection() {
                 const user = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-                const allOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '["sidoarjo", "surabaya"]');
+                const publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '["sidoarjo", "surabaya"]');
+                const internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+                const allOutlets = [...new Set([...publicOutlets, ...internalOutlets])];
                 
                 outletSelect.innerHTML = '';
                 allOutlets.forEach(outlet => {

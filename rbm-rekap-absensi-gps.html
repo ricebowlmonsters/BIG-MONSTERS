@@ -22,7 +22,9 @@
 <script>
 (function(){
   var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-  var outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+  var publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+  var internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+  var outlets = Array.from(new Set(publicOutlets.concat(internalOutlets)));
   var names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
   var sel = document.getElementById('rbm-outlet-select');
   if (sel) {
@@ -83,7 +85,7 @@
     </div>
 
     <p id="rekap_gps_legend" style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px; display: none;">
-        <strong>Telat:</strong> Masuk melebihi batas jam atau Pulang lebih awal. <strong>Lupa Absen:</strong> Tidak ada catatan Masuk/Pulang (Manager & SPV bebas istirahat). Klik <strong>Ya</strong> atau teks <strong>Lupa...</strong> untuk lihat detail. Aturan: 10 menit telat = 1 jam. Multi-istirahat diakumulasi otomatis.
+        <strong>Telat:</strong> Masuk melebihi batas jam, istirahat melebihi jatah, atau Pulang lebih awal. <strong>Lupa Absen:</strong> Tidak ada catatan Masuk/Pulang (Manager & SPV bebas istirahat). Klik <strong>Ya</strong> atau teks <strong>Lupa...</strong> untuk lihat detail. Aturan: 10 menit telat = 1 jam. Multi-istirahat diakumulasi otomatis.
     </p>
 
     <div class="table-card">
@@ -93,6 +95,7 @@
                     <tr>
                         <th>Tanggal</th>
                         <th>Nama</th>
+                        <th>Jadwal</th>
                         <th>Masuk</th>
                         <th>Istirahat Keluar</th>
                         <th>Istirahat Kembali</th>
@@ -103,7 +106,7 @@
                     </tr>
                 </thead>
                 <tbody id="rekap_gps_tbody">
-                    <tr><td colspan="9" class="table-empty">Klik Tampilkan Data</td></tr>
+                    <tr><td colspan="10" class="table-empty">Klik Tampilkan Data</td></tr>
                 </tbody>
             </table>
         </div>

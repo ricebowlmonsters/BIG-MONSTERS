@@ -284,7 +284,9 @@
         const userOutlet = user.outlet;
         
         // Ambil daftar outlet dari localStorage (disimpan oleh settings.html)
-        let outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+        let publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+        let internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+        let outlets = [...new Set([...publicOutlets, ...internalOutlets])];
         if (!Array.isArray(outlets) || outlets.length === 0) outlets = ['sidoarjo', 'surabaya'];
         const outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
         
@@ -788,7 +790,9 @@
             const targetName = outletNames[targetId] || (targetId.charAt(0).toUpperCase() + targetId.slice(1));
             
             // Isi daftar pilihan outlet asal (semua outlet kecuali yang sedang dipilih saat ini)
-            let outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+            let publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+            let internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+            let outlets = [...new Set([...publicOutlets, ...internalOutlets])];
             copySourceOutlet.innerHTML = '<option value="">-- Pilih Outlet Sumber --</option>';
             outlets.forEach(outlet => {
                 const id = String(outlet.id || outlet);

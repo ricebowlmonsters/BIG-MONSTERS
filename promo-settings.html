@@ -254,7 +254,9 @@
         const loadOutletsToSelect = () => {
             const select = document.getElementById('posOutletSelect');
             select.innerHTML = '';
-            let allOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+            let publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+            let internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+            let allOutlets = [...new Set([...publicOutlets, ...internalOutlets])];
             let outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
             if (!Array.isArray(allOutlets) || allOutlets.length === 0) allOutlets = ['sidoarjo', 'surabaya']; // Fallback
             

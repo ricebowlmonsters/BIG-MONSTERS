@@ -127,7 +127,7 @@
         }
     </style>
     <script>
-        // Otomatis sembunyikan header ganda saat dibuka dari file:///
+        // Otomatis sembunyikan header ganda saat dibuka dari server.
         if (window.self !== window.top) {
             document.addEventListener('DOMContentLoaded', function() {
                 document.body.classList.add('in-iframe');
@@ -265,7 +265,9 @@
                 } else {
                     let activeOutlets = JSON.parse(localStorage.getItem(RBM_ACTIVE_OUTLETS) || '[]');
                     if (activeOutlets.length === 0) {
-                        activeOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+                        const publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+                        const internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+                        activeOutlets = [...new Set([...publicOutlets, ...internalOutlets])];
                     }
                     if (activeOutlets.length === 0) activeOutlets = ['sidoarjo', 'surabaya']; // Fallback
                     displayOutlets = activeOutlets;

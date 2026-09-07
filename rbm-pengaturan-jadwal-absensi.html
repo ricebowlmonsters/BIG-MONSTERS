@@ -28,7 +28,9 @@
 <script>
 (function(){
   var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-  var outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+    var publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+    var internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+    var outlets = Array.from(new Set(publicOutlets.concat(internalOutlets)));
   var names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
   var sel = document.getElementById('rbm-outlet-select');
   if (sel) {
@@ -137,10 +139,14 @@ async function loadFaceApiModels() {
     try {
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
         
-        let waitCount = 0;
-        while (typeof faceapi === 'undefined' && waitCount < 20) {
-            await new Promise(r => setTimeout(r, 250));
-            waitCount++;
+        if (typeof faceapi === 'undefined') {
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js';
+                script.onload = resolve;
+                script.onerror = () => reject(new Error('Library Face API tidak dapat dimuat.'));
+                document.head.appendChild(script);
+            });
         }
         if (typeof faceapi === 'undefined') throw new Error("Library Face API tidak ditemukan.");
 
@@ -270,7 +276,7 @@ async function captureAndSaveFace() {
           if (foundF && foundF.id != null) empIdF = foundF.id;
           else if (foundF) empIdF = empName;
           if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.writeGpsKioskFace && empIdF != null) {
-            FirebaseStorage.writeGpsKioskFace(outletF, empIdF, empName, cleanDescriptor);
+                        await FirebaseStorage.writeGpsKioskFace(outletF, empIdF, empName, cleanDescriptor);
           } else if (typeof firebase !== 'undefined' && firebase.database) {
             var sfxF = outletF ? '_' + outletF.toLowerCase().replace(/[^a-z0-9_]/g, '_') : '';
             firebase.database().ref('rbm_pro/employees' + sfxF).once('value').then(function(snapEm) {
@@ -279,7 +285,7 @@ async function captureAndSaveFace() {
                 var foundDb = arrDb.find(function(e) { return e && e.name === empName; });
                 var dbId = (foundDb && foundDb.id != null) ? foundDb.id : (foundDb ? arrDb.indexOf(foundDb) : null);
                 if (dbId != null && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.writeGpsKioskFace) {
-                     FirebaseStorage.writeGpsKioskFace(outletF, dbId, empName, cleanDescriptor);
+                     return FirebaseStorage.writeGpsKioskFace(outletF, dbId, empName, cleanDescriptor);
                 }
             }).catch(function(){});
           }
@@ -445,6 +451,7 @@ function deleteFaceData(empName) {
   function runLoad() { 
       if (typeof loadJamConfig === 'function') loadJamConfig(); 
       if (typeof renderOutletTunjanganConfig === 'function') renderOutletTunjanganConfig();
+    if (typeof loadEmployeesForFaceReg === 'function') loadEmployeesForFaceReg();
   }
   runLoad(); // [OPTIMASI] Langsung render dari cache lokal tanpa tunggu Firebase
   if (window.RBMStorage && typeof window.RBMStorage.ready === 'function') {

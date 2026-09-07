@@ -130,7 +130,9 @@
 
     document.addEventListener('DOMContentLoaded', () => {
       const outletSel = document.getElementById('outlet-select');
-      const allOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '["sidoarjo","surabaya"]');
+      const publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '["sidoarjo","surabaya"]');
+      const internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+      const allOutlets = [...new Set([...publicOutlets, ...internalOutlets])];
       allOutlets.forEach(o=>{ const opt=document.createElement('option'); opt.value=o; opt.textContent=o.toUpperCase(); outletSel.appendChild(opt); });
 
       const nameIn = document.getElementById('promo-name');

@@ -26,7 +26,9 @@
 <script>
 (function(){
   var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-  var outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+  var publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+  var internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+  var outlets = Array.from(new Set(publicOutlets.concat(internalOutlets)));
   var names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
   var sel = document.getElementById('rbm-outlet-select');
   if (sel) {

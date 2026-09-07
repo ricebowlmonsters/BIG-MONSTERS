@@ -195,7 +195,9 @@ const db = firebase.database();
 window.addEventListener('load', function() {
     // Setup Dropdown Outlet
     const u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-    const outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+    const publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+    const internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+    const outlets = [...new Set([...publicOutlets, ...internalOutlets])];
     const names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
     const sel = document.getElementById('rbm-outlet-select');
     

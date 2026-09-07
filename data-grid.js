@@ -10,6 +10,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const applyColumnColorBtn = document.getElementById('apply-column-color-btn');
     const textColorInput = document.getElementById('text-color-input');
     const applyTextColorBtn = document.getElementById('apply-text-color-btn');
+    const formatNumberBtn = document.getElementById('format-number-btn');
+    const formatTextBtn = document.getElementById('format-text-btn');
+    const formatDecimalBtn = document.getElementById('format-decimal-btn');
+    const autoNumberBtn = document.getElementById('auto-number-btn');
     const statusEl = document.getElementById('grid-status');
     const lockSettingsBtn = document.getElementById('lock-settings-btn'); // [BARU] Tombol pengaturan kunci
     const toggleDevModeBtn = document.getElementById('toggle-dev-mode-btn');
@@ -67,6 +71,65 @@ document.addEventListener('DOMContentLoaded', function() {
         saveGrid();
     }
 
+    function applyNumberDecimalFormat(decimals) {
+        const safeDecimals = Number.isInteger(decimals) && decimals >= 0 ? decimals : 0;
+        const sheet = appData.sheets[appData.activeSheetIndex];
+        const range = getSelectedRange();
+        if (!sheet || !range) return;
+        pushUndoState();
+        sheet.cellFormats = sheet.cellFormats && typeof sheet.cellFormats === 'object' ? sheet.cellFormats : {};
+        for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
+            for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
+                const key = `${rowIndex}:${colIndex}`;
+                sheet.cellFormats[key] = Object.assign({}, sheet.cellFormats[key], {
+                    type: 'number',
+                    decimals: safeDecimals
+                });
+            }
+        }
+        renderGrid();
+        saveGrid();
+    }
+
+    function applyAutoNumberToSelection() {
+        const sheet = appData.sheets[appData.activeSheetIndex];
+        const range = getSelectedRange();
+        if (!sheet || !range) {
+            showStatus('Pilih sel atau blok sel terlebih dahulu.', 'error');
+            return;
+        }
+        pushUndoState();
+        sheet.cellFormats = sheet.cellFormats && typeof sheet.cellFormats === 'object' ? sheet.cellFormats : {};
+        for (let rowIndex = range.rowStart; rowIndex <= range.rowEnd; rowIndex++) {
+            for (let colIndex = range.colStart; colIndex <= range.colEnd; colIndex++) {
+                const key = `${rowIndex}:${colIndex}`;
+                const value = sheet.data?.[rowIndex]?.[colIndex];
+                const inferredType = inferCellType(value);
+                if (inferredType === 'number') {
+                    sheet.cellFormats[key] = Object.assign({}, sheet.cellFormats[key], {
+                        type: 'number',
+                        decimals: 0
+                    });
+                }
+            }
+        }
+        renderGrid();
+        saveGrid();
+        showStatus('Format otomatis angka diterapkan ke sel yang dipilih.', 'success');
+    }
+
+    function promptNumberDecimalFormat() {
+        const currentValue = window.prompt('Jumlah angka di belakang koma. Contoh: 0 = 123, 2 = 123.00, 3 = 123.000', '2');
+        if (currentValue === null) return;
+        const decimals = Number(currentValue);
+        if (!Number.isFinite(decimals) || decimals < 0 || decimals > 10) {
+            showStatus('Jumlah desimal harus angka 0 sampai 10.', 'error');
+            return;
+        }
+        applyNumberDecimalFormat(Math.round(decimals));
+        showStatus(`Format angka diset ke ${Math.round(decimals)} digit di belakang koma.`, 'success');
+    }
+
     function createSelectionPopup() {
         if (document.getElementById('grid-selection-popup')) return document.getElementById('grid-selection-popup');
         const popup = document.createElement('div');
@@ -81,6 +144,8 @@ document.addEventListener('DOMContentLoaded', function() {
             <button type="button" data-format="align" data-value="left" title="Rata kiri">Kiri</button>
             <button type="button" data-format="align" data-value="center" title="Rata tengah">Tengah</button>
             <button type="button" data-format="align" data-value="right" title="Rata kanan">Kanan</button>
+            <button type="button" data-format="type" data-value="number" title="Format angka">123</button>
+            <button type="button" data-format="type" data-value="text" title="Format teks">Teks</button>
             <button type="button" class="popup-delete" title="Hapus isi sel">Hapus</button>
         `;
         popup.querySelector('.popup-cell-color').addEventListener('input', event => applyCellColor(event.target.value));
@@ -117,6 +182,14 @@ document.addEventListener('DOMContentLoaded', function() {
             popup.style.top = `${Math.max(8, rect.top - popup.offsetHeight - 6)}px`;
         }
         popup.querySelectorAll('[data-format="bold"], [data-format="italic"]').forEach(button => button.classList.toggle('active', !!firstFormat[button.dataset.format]));
+        popup.querySelectorAll('[data-format="type"]').forEach(button => {
+            const isActive = firstFormat.type === button.dataset.value;
+            button.classList.toggle('active', isActive);
+        });
+        popup.querySelectorAll('[data-format="align"]').forEach(button => {
+            const isActive = firstFormat.align === button.dataset.value;
+            button.classList.toggle('active', isActive);
+        });
     }
 
     function hideSelectionPopup() {
@@ -375,8 +448,176 @@ document.addEventListener('DOMContentLoaded', function() {
         return String(value || '').split(',').map(function(option) { return option.trim(); }).filter(function(option) { return option.length > 0; });
     }
 
+    function isLikelyTextCode(value) {
+        if (value === null || typeof value === 'undefined') return false;
+        const raw = String(value).trim();
+        if (!raw || raw.startsWith('=')) return false;
+        return /^(?:[A-Za-z]+[\-./]?)+[0-9][A-Za-z0-9\-./]*$/.test(raw) || /^[A-Za-z]+\d+[A-Za-z0-9\-./]*$/.test(raw);
+    }
+
+    function isNumericLikeString(value) {
+        if (value === null || typeof value === 'undefined') return false;
+        const raw = String(value).trim();
+        if (!raw || raw.startsWith('=')) return false;
+        if (isLikelyTextCode(raw)) return false;
+        if (/[A-Za-z]/.test(raw)) return false;
+        const normalized = raw
+            .replace(/Rp\s*/gi, '')
+            .replace(/\u00A0/g, '')
+            .replace(/\s+/g, '')
+            .replace(/\./g, '')
+            .replace(/,/g, '.');
+        if (!normalized || normalized === '-' || normalized === '.' || normalized === '-.') return false;
+        return /^[-+]?\d+(?:\.\d+)?$/.test(normalized) || /^[-+]?\d*\.\d+$/.test(normalized);
+    }
+
+    function parseNumericLikeValue(value) {
+        if (value === null || typeof value === 'undefined') return null;
+        const raw = String(value).trim();
+        if (!raw) return null;
+        if (isLikelyTextCode(raw)) return null;
+
+        const cleaned = raw
+            .replace(/Rp\s*/gi, '')
+            .replace(/\u00A0/g, '')
+            .replace(/\s+/g, '');
+
+        if (!cleaned || /[A-Za-z]/.test(cleaned)) return null;
+
+        const sanitized = cleaned.replace(/[^0-9,.-]/g, '');
+        if (!sanitized || sanitized === '-' || sanitized === '.' || sanitized === ',' || sanitized === '-.' || sanitized === '-,') return null;
+
+        const lastDot = sanitized.lastIndexOf('.');
+        const lastComma = sanitized.lastIndexOf(',');
+        let normalized = sanitized;
+        if (lastComma > lastDot) {
+            normalized = sanitized.replace(/\./g, '').replace(',', '.');
+        } else if (lastDot > lastComma) {
+            const dotGroups = sanitized.split('.');
+            if (dotGroups.length > 2 || (dotGroups.length === 2 && dotGroups[1].length === 3)) {
+                normalized = sanitized.replace(/\./g, '').replace(/,/g, '');
+            } else {
+                normalized = sanitized.replace(/,/g, '');
+            }
+        }
+
+        const numeric = Number(normalized);
+        return Number.isFinite(numeric) ? numeric : null;
+    }
+
+    function formatCellDisplayValue(value, formatType, formatConfig = {}) {
+        if (value === null || typeof value === 'undefined') return '';
+        const raw = String(value).trim();
+        if (!raw) return '';
+        if (formatType === 'number') {
+            const numeric = parseNumericLikeValue(value);
+            if (numeric !== null) {
+                const decimals = Number.isInteger(formatConfig.decimals) && formatConfig.decimals >= 0 ? formatConfig.decimals : null;
+                if (decimals !== null) {
+                    return new Intl.NumberFormat('id-ID', {
+                        minimumFractionDigits: decimals,
+                        maximumFractionDigits: decimals
+                    }).format(numeric);
+                }
+                return new Intl.NumberFormat('id-ID', {
+                    maximumFractionDigits: 20
+                }).format(numeric);
+            }
+            return raw;
+        }
+        if (formatType === 'text') return raw;
+        return raw;
+    }
+
+    function normalizeImportedCellValue(value) {
+        if (value === null || typeof value === 'undefined') return '';
+        if (typeof value === 'number') return Number.isFinite(value) ? value : '';
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'string') return value;
+        if (value instanceof Date) return value.toISOString();
+        if (typeof value === 'object') {
+            try {
+                return JSON.stringify(value);
+            } catch (error) {
+                return String(value);
+            }
+        }
+        return String(value);
+    }
+
+    function normalizeStoredCellValue(value, formatType, formatConfig = {}) {
+        if (value === null || typeof value === 'undefined') return '';
+        if (formatType === 'text') {
+            return String(value).trim();
+        }
+        if (formatType === 'number') {
+            const numeric = parseNumericLikeValue(value);
+            if (numeric !== null) return numeric;
+            return String(value).trim();
+        }
+
+        const raw = String(value).trim();
+        const numeric = parseNumericLikeValue(value);
+        if (numeric !== null && raw !== '' && !/[A-Za-z]/.test(raw)) {
+            return numeric;
+        }
+
+        return normalizeImportedCellValue(value);
+    }
+
+    function inferCellType(value) {
+        if (value === null || typeof value === 'undefined') return 'text';
+        if (typeof value === 'number') return Number.isFinite(value) ? 'number' : 'text';
+        const raw = String(value).trim();
+        if (!raw) return 'text';
+        if (raw.startsWith('=')) return 'text';
+        if (isLikelyTextCode(raw) || /[A-Za-z]/.test(raw)) return 'text';
+        return isNumericLikeString(raw) ? 'number' : 'text';
+    }
+
     function isFormulaValue(value) {
         return typeof value === 'string' && value.trim().startsWith('=');
+    }
+
+    function normalizeHeaderText(value) {
+        return String(value || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]/g, '');
+    }
+
+    function guessColumnTypeFromHeader(headerName) {
+        const normalized = normalizeHeaderText(headerName);
+        const numericKeywords = ['qty','quantity','jumlah','harga','price','total','amount','nominal','subtotal','discount','diskon','ppn','tax','cost','biaya','stok','stock','pcs','pack','unitprice','net','gross','nilai','saldo'];
+        const textKeywords = ['kode','code','sku','item','barang','nama','product','produk','deskripsi','detail','jenis','status','customer','outlet','tanggal','date','note','catatan','unit','satuan','alamat'];
+
+        if (!normalized) return null;
+        if (numericKeywords.some(keyword => normalized.includes(keyword))) return 'number';
+        if (textKeywords.some(keyword => normalized.includes(keyword))) return 'text';
+        return null;
+    }
+
+    function applyHeaderBasedAutoFormats() {
+        const activeSheet = appData.sheets[appData.activeSheetIndex];
+        if (!activeSheet || !Array.isArray(activeSheet.data) || !Array.isArray(activeSheet.headers)) return;
+
+        const rowCount = activeSheet.data.length;
+        const columnCount = Math.max(0, ...activeSheet.data.map(row => Array.isArray(row) ? row.length : 0), activeSheet.headers.length);
+        activeSheet.cellFormats = activeSheet.cellFormats && typeof activeSheet.cellFormats === 'object' ? activeSheet.cellFormats : {};
+
+        for (let colIndex = 0; colIndex < columnCount; colIndex++) {
+            const headerName = activeSheet.headers[colIndex] || '';
+            const guessedType = guessColumnTypeFromHeader(headerName);
+            if (!guessedType) continue;
+
+            for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+                const key = `${rowIndex}:${colIndex}`;
+                const existing = activeSheet.cellFormats[key] || {};
+                if (existing.type) continue;
+                activeSheet.cellFormats[key] = Object.assign({}, existing, { type: guessedType });
+            }
+        }
     }
 
     function columnIndexToLetters(index) {
@@ -501,15 +742,78 @@ document.addEventListener('DOMContentLoaded', function() {
         saveGrid();
     });
 
-    function getExportCellValue(cellValue, sheetData, rowIndex, colIndex) {
-        if (!isFormulaValue(cellValue)) return cellValue;
-        return evaluateFormula(cellValue, sheetData, rowIndex, colIndex);
+    function coerceExportNumber(value) {
+        if (typeof value === 'number') return Number.isFinite(value) ? value : value;
+        if (typeof value !== 'string') return value;
+
+        const trimmed = value.trim();
+        if (!trimmed) return '';
+        if (trimmed.startsWith('=')) return value;
+        if (isLikelyTextCode(trimmed) || /[A-Za-z]/.test(trimmed)) return value;
+
+        const normalized = trimmed.replace(/\u00A0/g, '').replace(/\s+/g, '');
+        if (!/^[-+]?((\d+([.,]\d+)+)|(\d+[.,]?\d*))$/.test(normalized)) {
+            return value;
+        }
+
+        let numericString = normalized;
+        const hasDot = numericString.includes('.');
+        const hasComma = numericString.includes(',');
+
+        if (hasDot && hasComma) {
+            const lastDot = numericString.lastIndexOf('.');
+            const lastComma = numericString.lastIndexOf(',');
+            if (lastDot > lastComma) {
+                numericString = numericString.replace(/,/g, '');
+            } else {
+                numericString = numericString.replace(/\./g, '').replace(',', '.');
+            }
+        } else if (hasComma) {
+            const groups = numericString.split(',');
+            if (groups.length > 2 || (groups.length === 2 && groups[1].length <= 2)) {
+                numericString = numericString.replace(/,/g, '.');
+            } else {
+                numericString = numericString.replace(/,/g, '');
+            }
+        } else if (hasDot) {
+            const groups = numericString.split('.');
+            if (groups.length > 2 || (groups.length === 2 && groups[1].length === 3)) {
+                numericString = numericString.replace(/\./g, '');
+            }
+        }
+
+        const parsed = Number(numericString);
+        return Number.isFinite(parsed) ? parsed : value;
+    }
+
+    function getExportCellValue(cellValue, sheetData, rowIndex, colIndex, sheet, blankNumericColumn) {
+        if (blankNumericColumn && rowIndex > 0 && (cellValue === null || typeof cellValue === 'undefined' || String(cellValue).trim() === '')) {
+            return 0;
+        }
+        if (isFormulaValue(cellValue)) return evaluateFormula(cellValue, sheetData, rowIndex, colIndex);
+
+        const cellFormat = sheet?.cellFormats?.[`${rowIndex}:${colIndex}`] || {};
+        const formatType = cellFormat.type || inferCellType(cellValue);
+        if (formatType === 'text') return String(cellValue ?? '').trim();
+        if (formatType === 'number') {
+            const numericValue = parseNumericLikeValue(cellValue);
+            return numericValue !== null ? numericValue : (String(cellValue ?? '').trim());
+        }
+
+        if (typeof cellValue === 'string' && (isLikelyTextCode(cellValue) || /[A-Za-z]/.test(cellValue.trim()))) {
+            return String(cellValue).trim();
+        }
+
+        const numericValue = coerceExportNumber(cellValue);
+        return numericValue === cellValue ? cellValue : numericValue;
     }
 
     function getExportData(sheet) {
+        const firstRow = Array.isArray(sheet.data?.[0]) ? sheet.data[0] : [];
+        const numericColumns = firstRow.map(header => guessColumnTypeFromHeader(header) === 'number');
         return (Array.isArray(sheet.data) ? sheet.data : []).map((row, rowIndex) =>
             (Array.isArray(row) ? row : []).map((cellValue, colIndex) =>
-                getExportCellValue(cellValue, sheet.data, rowIndex, colIndex)
+                getExportCellValue(cellValue, sheet.data, rowIndex, colIndex, sheet, numericColumns[colIndex])
             )
         );
     }
@@ -698,7 +1002,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!userIsOwner()) return;
         let outlets = [];
         try {
-            outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+            const publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+            const internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+            outlets = [...new Set([...publicOutlets, ...internalOutlets])];
         } catch (e) {
             outlets = [];
         }
@@ -1400,7 +1706,9 @@ document.addEventListener('DOMContentLoaded', function() {
      * [BARU] Mengisi dropdown outlet dan mengatur event listener.
      */
     function initializeOutletSelector() {
-        const outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+        const publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+        const internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+        const outlets = [...new Set([...publicOutlets, ...internalOutlets])];
         const outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
         const activeOutlet = getActiveOutletId();
 
@@ -1497,6 +1805,7 @@ document.addEventListener('DOMContentLoaded', function() {
      * Merender tabel berdasarkan data yang ada
      */
     function renderGrid() {
+        applyHeaderBasedAutoFormats();
         gridTable.innerHTML = ''; // Kosongkan tabel
         const activeSheet = appData.sheets[appData.activeSheetIndex];
         if (!activeSheet || activeSheet.data.length === 0) return;
@@ -1757,7 +2066,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 } else {
                     const isFormula = isFormulaValue(cellData);
                     const displayValue = isFormula ? evaluateFormula(cellData, activeSheet.data, rowIndex, cellIndex) : cellData;
-                    cell.textContent = typeof displayValue === 'undefined' || displayValue === null ? '' : displayValue;
+                    const formattedDisplayValue = formatCellDisplayValue(displayValue, cellFormat.type, cellFormat);
+                    cell.textContent = formattedDisplayValue;
                     cell.setAttribute('contenteditable', canEdit ? 'true' : 'false');
                     cell.draggable = false;
                     cell.addEventListener('dragstart', event => event.preventDefault());
@@ -1938,18 +2248,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const newData = [];
         const rows = gridTable.querySelectorAll('tbody tr');
-        rows.forEach(row => {
+        rows.forEach((row, rowIndex) => {
             const rowData = [];
             const cells = row.querySelectorAll('td');
-            cells.forEach(cell => {
+            cells.forEach((cell, cellIndex) => {
+                const activeSheet = appData.sheets[appData.activeSheetIndex];
+                const formatType = activeSheet?.cellFormats?.[`${rowIndex}:${cellIndex}`]?.type || null;
                 const select = cell.querySelector('select');
+                let cellValue = '';
+
                 if (select) {
-                    rowData.push(select.value);
+                    cellValue = select.value;
                 } else if (typeof cell.dataset.rawValue !== 'undefined' && cell.dataset.rawValue !== '') {
-                    rowData.push(cell.dataset.rawValue);
+                    cellValue = cell.dataset.rawValue;
                 } else {
-                    rowData.push(cell.textContent);
+                    cellValue = cell.textContent || '';
                 }
+
+                rowData.push(normalizeStoredCellValue(cellValue, formatType));
             });
             newData.push(rowData);
         });
@@ -1975,7 +2291,9 @@ document.addEventListener('DOMContentLoaded', function() {
     async function saveGlobalDataToAllOutlets(dataToSave) {
         let outlets = [];
         try {
-            outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+            const publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+            const internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+            outlets = [...new Set([...publicOutlets, ...internalOutlets])];
         } catch (e) {
             outlets = [];
         }
@@ -2116,10 +2434,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 const newSheets = [];
                 workbook.SheetNames.forEach(sheetName => {
                     const worksheet = workbook.Sheets[sheetName];
-                    const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }); // Ambil semua baris
+                    const sheetData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    const cleanedData = Array.isArray(sheetData) ? sheetData.map(row => (
+                        Array.isArray(row) ? row.map(cell => normalizeImportedCellValue(cell)) : []
+                    )) : [];
                     newSheets.push({
                         name: sheetName,
-                        data: sheetData,
+                        data: cleanedData,
                         headers: []
                     });
                 });
@@ -2389,6 +2710,16 @@ document.addEventListener('DOMContentLoaded', function() {
     addColBtn.addEventListener('click', addColumn);
     applyColumnColorBtn.addEventListener('click', applyColumnColor);
     applyTextColorBtn.addEventListener('click', applyTextColor);
+    if (formatNumberBtn) formatNumberBtn.addEventListener('click', () => {
+        applyCellFormat('type', 'number');
+        showStatus('Format angka diterapkan ke sel yang dipilih.', 'success');
+    });
+    if (formatTextBtn) formatTextBtn.addEventListener('click', () => {
+        applyCellFormat('type', 'text');
+        showStatus('Format teks diterapkan ke sel yang dipilih.', 'success');
+    });
+    if (formatDecimalBtn) formatDecimalBtn.addEventListener('click', promptNumberDecimalFormat);
+    if (autoNumberBtn) autoNumberBtn.addEventListener('click', applyAutoNumberToSelection);
     // delete column button
     const deleteColBtn = document.getElementById('delete-col-btn');
     if (deleteColBtn) deleteColBtn.addEventListener('click', deleteColumn);

@@ -5269,6 +5269,10 @@ function syncAbsensiPeriodAndRefresh() {
         // JANGAN memblokir proses render Tabel Absensi dan Jadwal!
         FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir).then(function(gpsData) {
             window._rbmParsedCache[gpsKey] = { data: gpsData };
+            // Perbarui laporan agar telat istirahat dan log GPS terbaru langsung masuk.
+            if (activeAbsensiMode === 'laporan' && typeof renderRekapAbsensiReport === 'function') {
+                renderRekapAbsensiReport();
+            }
             // Auto-update tabel Gaji jika kebetulan user sedang berada di Tab Gaji
             if (activeAbsensiMode === 'gaji' && typeof renderRekapGaji === 'function') {
                 renderRekapGaji();
@@ -5331,6 +5335,7 @@ function switchAbsensiTab(mode) {
     document.getElementById('tab-content-gaji').style.display = 'none';
     document.getElementById('tab-content-bonus').style.display = 'none';
     if (document.getElementById('tab-content-pencairan')) document.getElementById('tab-content-pencairan').style.display = 'none';
+    if (document.getElementById('tab-content-pengajuan-absensi')) document.getElementById('tab-content-pengajuan-absensi').style.display = 'none';
 
     if (mode === 'absensi' || mode === 'jadwal') {
         document.getElementById('tab-content-input').style.display = 'block';
@@ -5353,6 +5358,9 @@ function switchAbsensiTab(mode) {
     } else if (mode === 'pencairan') {
         if (document.getElementById('tab-content-pencairan')) document.getElementById('tab-content-pencairan').style.display = 'block';
         if (typeof renderPencairanTab === 'function') renderPencairanTab();
+    } else if (mode === 'pengajuan-absensi') {
+        if (document.getElementById('tab-content-pengajuan-absensi')) document.getElementById('tab-content-pengajuan-absensi').style.display = 'block';
+        loadAbsensiRequests();
     }
 }
 
@@ -5406,6 +5414,8 @@ function renderAbsensiTable(mode) {
             <th colspan="3" class="col-sisa-cuti" style="background: #1e40af;">Sisa Cuti</th>
             <th colspan="${dates.length}">Tanggal (${tglAwal} s/d ${tglAkhir}) - ${isJadwal ? 'JADWAL' : 'ABSENSI'}</th>
             <th colspan="${rekapHeaders.length}">Rekap ${isJadwal ? 'Jadwal' : 'Absensi'}</th>
+            <th rowspan="2" style="min-width:85px;">Total Telat</th>
+            <th rowspan="2" style="min-width:110px;">Total Gaji</th>
             <th rowspan="2">Aksi</th>
         </tr>
         <tr>`;
@@ -5436,6 +5446,16 @@ function renderAbsensiTable(mode) {
         window._absensiViewEmployees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     }
     const employees = window._absensiViewEmployees;
+    const gajiPeriodData = getCachedParsedStorage(getRbmStorageKey('RBM_GAJI_' + tglAwal + '_' + tglAkhir), {});
+    const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+    const jamConfig = typeof getGpsJamConfig === 'function' ? getGpsJamConfig() : {};
+    const enableParkir = jamConfig.enableParkir === true;
+    const enableTransport = jamConfig.enableTransport === true;
+    const getGajiEmpKey = function(emp, idx) {
+        if (emp && emp.id !== undefined && emp.id !== null && emp.id !== '') return 'id_' + String(emp.id);
+        if (emp && emp.name) return 'name_' + String(emp.name).replace(/[.#$\[\]]/g, '_');
+        return 'idx_' + String(idx);
+    };
 
     // Tombol Atur Urutan hanya untuk Developer
     try {
@@ -5445,15 +5465,23 @@ function renderAbsensiTable(mode) {
 
     // 3. Build Body
     let bodyHtml = '';
+    const currentApprovalUser = getAbsensiRequestUser();
+    const currentApprovalRole = absensiRequestRole(currentApprovalUser);
+    const approvalRank = { Supervisor: 1, 'Manager Outlet': 2, Admin: 3, 'Supervisor Regional': 4, 'Manager Regional': 5, 'Owner/Developer': 99 };
+    const actorRank = currentApprovalRole === 'Owner/Developer' ? 99 : (approvalRank[currentApprovalRole] || 0);
     const ordered = getOrderedAbsensiEmployeesWithIndex(employees);
     ordered.forEach((item, displayIndex) => {
         const emp = item.emp;
         const index = item.idx; // index asli (untuk key & update/remove)
         
         let jabOpts = '<option value="-">-</option>';
-        const jabatans = ['Manager Regional', 'Manager Outlet', 'Supervisor', 'Admin', 'Crew'];
+        const jabatans = ['Manager Regional', 'Supervisor Regional', 'Admin', 'Manager Outlet', 'Supervisor', 'Crew'];
+        const targetRank = approvalRank[emp.jabatan] || 0;
+        const canEditTarget = actorRank >= 4 ? true : actorRank > targetRank;
         let isMatched = false;
         jabatans.forEach(j => {
+            const optionRank = approvalRank[j] || 0;
+            if (actorRank < 4 && optionRank >= actorRank) return;
             if (emp.jabatan === j) {
                 jabOpts += `<option value="${j}" selected>${j}</option>`;
                 isMatched = true;
@@ -5472,7 +5500,7 @@ function renderAbsensiTable(mode) {
                 <input type="text" name="emp_name_${index}" aria-label="Nama Karyawan" value="${emp.name}" onchange="updateEmployee(${index}, 'name', this.value)" style="border:none; width:100%; padding:0;">
             </td>
             <td class="col-jabatan">
-                <select name="emp_jabatan_${index}" aria-label="Jabatan Karyawan" onchange="updateEmployee(${index}, 'jabatan', this.value)" style="border:1px solid #e2e8f0; border-radius:4px; width:115px; padding:2px; font-size:11px; background:white; color:#334155;">
+                <select name="emp_jabatan_${index}" aria-label="Jabatan Karyawan" onchange="updateEmployee(${index}, 'jabatan', this.value)" ${canEditTarget ? '' : 'disabled'} style="border:1px solid #e2e8f0; border-radius:4px; width:115px; padding:2px; font-size:11px; background:white; color:#334155;">
                     ${jabOpts}
                 </select>
             </td>
@@ -5519,6 +5547,37 @@ function renderAbsensiTable(mode) {
         rekapHeaders.forEach(h => {
             rowHtml += `<td class="rekap-${h}" style="text-align:center;">${counts[h]}</td>`;
         });
+        const totalMenitTelat = typeof getTotalMenitTelatFromGps === 'function'
+            ? getTotalMenitTelatFromGps(emp.id || index, emp.name, tglAwal, tglAkhir)
+            : 0;
+        const empKey = getGajiEmpKey(emp, index);
+        const pData = gajiPeriodData[empKey] || {};
+        const detailTelatGaji = typeof getDetailTelatGaji === 'function'
+            ? getDetailTelatGaji(emp.id || index, emp.name, tglAwal, tglAkhir)
+            : { totalMenit: 0 };
+        const totalMenitTelatGaji = detailTelatGaji.totalMenit || 0;
+        const calcGpsJam = totalMenitTelatGaji >= configTelat ? Math.round((totalMenitTelatGaji / configTelat) * 10) / 10 : 0;
+        const jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+        const gajiPokok = parseInt(emp.gajiPokok) || 0;
+        const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
+        const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
+        const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
+        const parkir = (enableParkir && counts.H > 0) ? 5000 * counts.H : 0;
+        const transport = enableTransport ? (pData.transport !== undefined ? parseInt(pData.transport) : 0) : 0;
+        let tunjangan = 0;
+        if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
+        else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
+        else if (emp.jabatan === 'Admin') tunjangan = 300000;
+        else if (emp.jabatan === 'Supervisor Regional') tunjangan = 350000;
+        else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
+        const gajiPerHari = Math.round(gajiPokok / 30);
+        const potTerlambatPerJam = Math.round(gajiPokok / 144.17);
+        const uangMakan = counts.H * 10000;
+        const totalPotKehadiran = Math.round(potHari * gajiPerHari);
+        const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
+        const totalGaji = gajiPokok - totalPotKehadiran - totalPotTerlambat - hutang - potonganBpjs + uangMakan + parkir + transport + tunjangan;
+        rowHtml += `<td style="text-align:center;" title="Total keterlambatan pada periode ini">${totalMenitTelat ? totalMenitTelat + ' mnt' : '-'}</td>`;
+        rowHtml += `<td style="text-align:right; font-weight:600;" title="Grand Total gaji periode ini">${formatRupiah(totalGaji)}</td>`;
         rowHtml += `<td>${window.rbmOnlyOwnerCanEditDelete && window.rbmOnlyOwnerCanEditDelete() ? '<button class="btn-small-danger" onclick="removeEmployee(' + index + ')">x</button>' : '-'}</td></tr>`;
 
         bodyHtml += rowHtml;
@@ -5576,6 +5635,17 @@ function updateEmployee(index, field, value) {
         window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
     }
     const employees = window._absensiViewEmployees;
+    if (field === 'jabatan') {
+        const actorRole = absensiRequestRole(getAbsensiRequestUser());
+        const rank = { Supervisor: 1, 'Manager Outlet': 2, Admin: 3, 'Supervisor Regional': 4, 'Manager Regional': 5, 'Owner/Developer': 99 };
+        const actorRank = rank[actorRole] || 0;
+        const targetRank = rank[employees[index] && employees[index].jabatan] || 0;
+        if (actorRank < 4 && actorRank <= targetRank) {
+            showCustomAlert('Anda hanya dapat mengubah jabatan di bawah kewenangan Anda.', 'Akses Ditolak', 'error');
+            renderAbsensiTable();
+            return;
+        }
+    }
     if (employees[index]) {
         employees[index][field] = value;
     }
@@ -5794,7 +5864,7 @@ function renderRekapAbsensiReport() {
         hRow1 += `<th style="border:1px solid black; padding:2px; min-width:25px;">${t}</th>`;
     });
     hRow1 += `<th style="border:1px solid black; padding:2px; min-width:35px;">HARI</th>`;
-    hRow1 += `<th style="border:1px solid black; padding:2px; min-width:40px;">TELAT (JAM)</th>`;
+    hRow1 += `<th style="border:1px solid black; padding:2px; min-width:55px;">TELAT (MENIT)</th>`;
     hRow1 += `</tr>`;
     thead.innerHTML = hRow1;
 
@@ -5851,11 +5921,10 @@ function renderRekapAbsensiReport() {
             const pData = gajiPeriodData[empKey] || {};
             const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
             const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
-        const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-            let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+            const jamTerlambat = totalMenitTelatGps;
 
             row += `<td style="border:1px solid black; padding:4px; text-align:center;">${potHari || '-'}</td>`;
-            row += `<td style="border:1px solid black; padding:4px; text-align:center;">${jamTerlambat || '-'}</td>`;
+            row += `<td style="border:1px solid black; padding:4px; text-align:center;" title="${totalMenitTelatGps} menit telat GPS">${jamTerlambat ? jamTerlambat + ' mnt' : '-'}</td>`;
 
             row += `</tr>`;
             bodyHtml += row;
@@ -6129,6 +6198,8 @@ function renderRekapGaji() {
         let tunjangan = 0;
         if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
         else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
+        else if (emp.jabatan === 'Admin') tunjangan = 300000;
+        else if (emp.jabatan === 'Supervisor Regional') tunjangan = 350000;
         else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
         const metodeBayar = pData.metodeBayar || 'TF';
 
@@ -6272,15 +6343,10 @@ async function saveRekapGajiData() {
         if (inpHkTarget) gajiData[empId].hkTarget = parseInt(inpHkTarget.value, 10) || 0;
         if (inpPotHari) gajiData[empId].potHari = parseFloat(inpPotHari.value) || 0;
         if (inpJamTerlambat) {
-            if (inpJamTerlambat.getAttribute('data-edited') === 'true') {
-                gajiData[empId].jamTerlambatManual = parseFloat(inpJamTerlambat.value) || 0;
-                var valStr = inpJamTerlambat.value.trim();
-                if (valStr === '') {
-                    delete gajiData[empId].jamTerlambatManual; // Lepas pengunci manual agar kembali otomatis (GPS)
-                } else {
-                    gajiData[empId].jamTerlambatManual = parseFloat(valStr) || 0;
-                }
-            }
+            // Simpan nilai hasil kalkulasi yang tampil sebagai satu sumber untuk semua slip.
+            var valStr = inpJamTerlambat.value.trim();
+            if (valStr === '') delete gajiData[empId].jamTerlambatManual;
+            else gajiData[empId].jamTerlambatManual = parseFloat(valStr) || 0;
             delete gajiData[empId].jamTerlambat; // Bersihkan data nyangkut lama
         }
         if (inpHutang) gajiData[empId].hutang = parseRp(inpHutang.value);
@@ -6480,6 +6546,8 @@ async function submitGajiPengajuan() {
                 let tunjangan = 0;
                 if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
                 else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
+                else if (emp.jabatan === 'Admin') tunjangan = 300000;
+                else if (emp.jabatan === 'Supervisor Regional') tunjangan = 350000;
                 else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
                 const metodeBayar = pData.metodeBayar || 'TF';
 
@@ -6834,6 +6902,8 @@ function generateAndShowSlip(idx) {
     let tunjangan = 0;
     if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
     else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
+    else if (emp.jabatan === 'Admin') tunjangan = 300000;
+    else if (emp.jabatan === 'Supervisor Regional') tunjangan = 350000;
     else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
 
     const gajiPerHari = Math.round(gajiPokok / 30); // Rumus: GP / 30
@@ -6877,6 +6947,27 @@ function generateAndShowSlip(idx) {
 
 function printSlipGaji() {
     window.print();
+}
+
+function downloadSlipGaji() {
+    const area = document.getElementById('printable-slip-area');
+    const name = (document.getElementById('slip_nama')?.innerText || 'karyawan').trim();
+    const periode = (document.getElementById('slip_periode_text')?.innerText || 'periode').trim();
+    if (!area) return;
+    if (typeof html2canvas === 'undefined') {
+        showCustomAlert('Library download slip belum siap. Muat ulang halaman lalu coba lagi.', 'Gagal Download', 'error');
+        return;
+    }
+    html2canvas(area, { scale: 2, backgroundColor: '#ffffff' }).then(function(canvas) {
+        const link = document.createElement('a');
+        link.download = 'Slip_Gaji_' + name.replace(/[^a-z0-9]/gi, '_') + '_' + periode.replace(/[^a-z0-9]/gi, '_') + '.jpg';
+        link.href = canvas.toDataURL('image/jpeg', 0.95);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }).catch(function(error) {
+        showCustomAlert('Gagal membuat file slip: ' + error.message, 'Gagal Download', 'error');
+    });
 }
 
 function sendCurrentSlipEmail() {
@@ -6927,6 +7018,8 @@ function sendSlipEmail(idx) {
     let tunjangan = 0;
     if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
     else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
+    else if (emp.jabatan === 'Admin') tunjangan = 300000;
+    else if (emp.jabatan === 'Supervisor Regional') tunjangan = 350000;
     else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
     const gajiPerHari = Math.round(gajiPokok / 30);
         const potTerlambatPerJam = Math.round(gajiPokok / 144.17);
@@ -7242,6 +7335,8 @@ function exportCompleteAbsensiExcel() {
         let tunjangan = 0;
         if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
         else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
+        else if (emp.jabatan === 'Admin') tunjangan = 300000;
+        else if (emp.jabatan === 'Supervisor Regional') tunjangan = 350000;
         else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
         const metodeBayar = pData.metodeBayar || 'TF';
 
@@ -7443,6 +7538,8 @@ function exportCompleteAbsensiPDF() {
         let tunjangan = 0;
         if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
         else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
+        else if (emp.jabatan === 'Admin') tunjangan = 300000;
+        else if (emp.jabatan === 'Supervisor Regional') tunjangan = 350000;
         else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
         const metodeBayar = pData.metodeBayar || 'TF';
         const gajiPerHari = Math.round(gajiPokok / 30);
@@ -7772,35 +7869,44 @@ async function downloadAllSlipsAsZip(event) {
             const emp = employees[i];
             btn.innerText = `Memproses... (${i+1}/${employees.length})`;
 
-            // Calculate Data (Logic same as renderRekapGaji)
-            let counts = { H:0 };
+            // Calculate Data (same as individual slip logic)
+            let counts = { H:0, A:0, I:0, S:0, OFF:0, DP:0, PH:0, AL:0 };
             dates.forEach(d => {
                 const key = `${getLocalDateKey(d)}_${emp.id || i}`;
-                if (absensiData[key] === 'H') counts.H++;
+                const status = absensiData[key];
+                if (status && (counts.hasOwnProperty(status) || status === 'H')) {
+                    if (counts.hasOwnProperty(status)) counts[status]++;
+                    else if (status === 'H') counts.H++;
+                }
             });
 
             const empKey = (emp && emp.id != null && emp.id !== '') ? ('id_' + String(emp.id)) : (emp && emp.name ? ('name_' + String(emp.name).replace(/[.#$\[\]]/g, '_')) : ('idx_' + String(i)));
             const pData = gajiPeriodData[empKey] || {};
             const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
             const gajiPokok = parseInt(emp.gajiPokok) || 0;
-            const potHari = parseFloat(pData.potHari) || 0;
+            const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
             const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || i, emp.name, tglAwal, tglAkhir) : 0;
             const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-        let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+            let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
-            const hutang = parseInt(pData.hutang) || 0;
+            const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
             const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
+            const parkir = enableParkir ? counts.H * 5000 : 0;
+            const transport = enableTransport ? (parseInt(pData.transport) || 0) : 0;
+            const lemburMinggu = parseInt(pData.lemburMinggu) || 0;
             let tunjangan = 0;
             if (emp.jabatan === 'Manager Regional') tunjangan = 500000;
             else if (emp.jabatan === 'Manager Outlet') tunjangan = 350000;
+            else if (emp.jabatan === 'Admin') tunjangan = 300000;
+            else if (emp.jabatan === 'Supervisor Regional') tunjangan = 350000;
             else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
 
             const gajiPerHari = Math.round(gajiPokok / 30);
-            const potTerlambatPerJam = Math.round(gajiPokok / 240);
+            const potTerlambatPerJam = Math.round(gajiPokok / 144.17);
             const uangMakan = counts.H * 10000;
             const totalPotKehadiran = Math.round(potHari * gajiPerHari);
             const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
-            const totalPendapatan = gajiPokok + tunjangan + uangMakan;
+            const totalPendapatan = gajiPokok + tunjangan + lemburMinggu + uangMakan + parkir + transport;
             const grandTotal = totalPendapatan - totalPotKehadiran - totalPotTerlambat - hutang - potonganBpjs;
             const pembulatan = Math.round(grandTotal / 1000) * 1000;
 
@@ -7813,7 +7919,7 @@ async function downloadAllSlipsAsZip(event) {
                         <p style="margin: 5px 0 0; font-size: 14px;">BULAN ${periodeText}</p>
                     </div>
                     <table style="width: 100%; margin-bottom: 20px; font-size: 14px; border-collapse: collapse;"><tr><td style="width: 120px; padding: 2px 0;">Nama</td><td style="width: 10px;">:</td><td style="font-weight: bold;">${emp.name}</td></tr><tr><td style="padding: 2px 0;">Jabatan</td><td>:</td><td>${emp.jabatan}</td></tr><tr><td style="padding: 2px 0;">Bagian</td><td>:</td><td>Rice Bowl Monsters</td></tr></table>
-                    <table style="width: 100%; font-size: 14px; border-collapse: collapse;"><tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pendapatan (+):</td></tr><tr><td style="padding-left: 15px;">Gaji Pokok</td><td>:</td><td style="text-align: right;">${formatRupiah(gajiPokok)}</td><td></td></tr><tr><td style="padding-left: 15px;">Tunjangan</td><td>:</td><td style="text-align: right;">${formatRupiah(tunjangan)}</td><td></td></tr><tr><td style="padding-left: 15px;">Lembur Minggu</td><td>:</td><td style="text-align: right;">Rp -</td><td></td></tr><tr style="border-bottom: 1px solid black;"><td style="padding-left: 15px; padding-bottom: 8px;">Uang Makan</td><td style="padding-bottom: 8px;">:</td><td style="text-align: right; padding-bottom: 8px;">${formatRupiah(uangMakan)}</td><td style="text-align: right; font-weight: bold; padding-bottom: 8px;">+</td></tr><tr><td style="font-weight: bold; padding-top: 8px;">Total</td><td style="font-weight: bold; padding-top: 8px;">:</td><td style="text-align: right; font-weight: bold; padding-top: 8px;">${formatRupiah(totalPendapatan)}</td><td></td></tr><tr><td colspan="4" style="height: 20px;"></td></tr><tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pengurangan (-):</td></tr><tr><td style="padding-left: 15px;">Potongan Absensi</td><td>:</td><td style="text-align: right;">${formatRupiah(totalPotKehadiran)}</td><td></td></tr><tr><td style="padding-left: 15px;">Potongan Terlambat</td><td>:</td><td style="text-align: right;">${formatRupiah(totalPotTerlambat)}</td><td></td></tr><tr><td style="padding-left: 15px;">Hutang Karyawan</td><td>:</td><td style="text-align: right;">${formatRupiah(hutang)}</td><td></td></tr><tr><td colspan="4" style="height: 20px;"></td></tr><tr style="background: #f0f0f0; border-top: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Grand Total Gaji</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px;">${formatRupiah(grandTotal)}</td><td></td></tr><tr style="background: #eef2ff; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px; color: #1e40af;">Pembulatan</td><td style="font-weight: bold; padding: 10px; color: #1e40af;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #1e40af;">${formatRupiah(pembulatan)}</td><td></td></tr></table>
+                    <table style="width: 100%; font-size: 14px; border-collapse: collapse;"><tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pendapatan (+):</td></tr><tr><td style="padding-left: 15px;">Gaji Pokok</td><td>:</td><td style="text-align: right;">${formatRupiah(gajiPokok)}</td><td></td></tr><tr><td style="padding-left: 15px;">Tunjangan</td><td>:</td><td style="text-align: right;">${formatRupiah(tunjangan)}</td><td></td></tr><tr><td style="padding-left: 15px;">Lembur Minggu</td><td>:</td><td style="text-align: right;">${formatRupiah(lemburMinggu)}</td><td></td></tr><tr><td style="padding-left: 15px;">Parkir</td><td>:</td><td style="text-align: right;">${formatRupiah(parkir)}</td><td></td></tr><tr><td style="padding-left: 15px;">Transport</td><td>:</td><td style="text-align: right;">${formatRupiah(transport)}</td><td></td></tr><tr style="border-bottom: 1px solid black;"><td style="padding-left: 15px; padding-bottom: 8px;">Uang Makan</td><td style="padding-bottom: 8px;">:</td><td style="text-align: right; padding-bottom: 8px;">${formatRupiah(uangMakan)}</td><td style="text-align: right; font-weight: bold; padding-bottom: 8px;">+</td></tr><tr><td style="font-weight: bold; padding-top: 8px;">Total</td><td style="font-weight: bold; padding-top: 8px;">:</td><td style="text-align: right; font-weight: bold; padding-top: 8px;">${formatRupiah(totalPendapatan)}</td><td></td></tr><tr><td colspan="4" style="height: 20px;"></td></tr><tr><td style="padding: 8px 0; font-weight: bold;" colspan="4">Pengurangan (-):</td></tr><tr><td style="padding-left: 15px;">Potongan Absensi</td><td>:</td><td style="text-align: right;">${formatRupiah(totalPotKehadiran)}</td><td></td></tr><tr><td style="padding-left: 15px;">Potongan Terlambat</td><td>:</td><td style="text-align: right;">${formatRupiah(totalPotTerlambat)}</td><td></td></tr><tr><td style="padding-left: 15px;">Hutang Karyawan</td><td>:</td><td style="text-align: right;">${formatRupiah(hutang)}</td><td></td></tr><tr><td style="padding-left: 15px;">BPJS</td><td>:</td><td style="text-align: right;">${formatRupiah(potonganBpjs)}</td><td></td></tr><tr><td colspan="4" style="height: 20px;"></td></tr><tr style="background: #f0f0f0; border-top: 2px solid black;"><td style="font-weight: bold; padding: 10px;">Grand Total Gaji</td><td style="font-weight: bold; padding: 10px;">:</td><td style="text-align: right; font-weight: bold; padding: 10px;">${formatRupiah(grandTotal)}</td><td></td></tr><tr style="background: #eef2ff; border-bottom: 2px solid black;"><td style="font-weight: bold; padding: 10px; color: #1e40af;">Pembulatan</td><td style="font-weight: bold; padding: 10px; color: #1e40af;">:</td><td style="text-align: right; font-weight: bold; padding: 10px; color: #1e40af;">${formatRupiah(pembulatan)}</td><td></td></tr></table>
                     <div style="margin-top: 50px; width: 200px; font-size: 14px;"><p style="margin-bottom: 70px;">Dibuat Oleh:</p><p style="font-weight: bold; text-decoration: underline; margin: 0;">Admin</p></div>
                 </div>`;
 
@@ -10897,6 +11003,80 @@ function normalizeGpsKioskDescriptor(raw) {
     return null;
 }
 
+var _gpsFaceApiPromise = null;
+var _gpsFaceModelsReady = false;
+var _gpsRegisteredFaceCache = {};
+var _gpsRegisteredFacePromiseCache = {};
+
+function loadGpsFaceApiModels() {
+    if (_gpsFaceModelsReady) return Promise.resolve();
+    if (_gpsFaceApiPromise) return _gpsFaceApiPromise;
+    _gpsFaceApiPromise = new Promise(function(resolve, reject) {
+        function loadModels() {
+            var modelUrl = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+            Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl),
+                faceapi.nets.faceLandmark68Net.loadFromUri(modelUrl),
+                faceapi.nets.faceRecognitionNet.loadFromUri(modelUrl)
+            ]).then(function() {
+                _gpsFaceModelsReady = true;
+                resolve();
+            }).catch(reject);
+        }
+        if (typeof faceapi !== 'undefined') {
+            loadModels();
+            return;
+        }
+        var script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js';
+        script.onload = function() {
+            if (typeof faceapi === 'undefined') reject(new Error('Library wajah tidak tersedia.'));
+            else loadModels();
+        };
+        script.onerror = function() { reject(new Error('Gagal memuat fitur wajah.')); };
+        document.head.appendChild(script);
+    });
+    return _gpsFaceApiPromise;
+}
+
+function loadOneGpsEmployeeFace(outlet, employeeId) {
+    var cacheKey = String(outlet || '') + '/' + String(employeeId == null ? '' : employeeId);
+    if (_gpsRegisteredFaceCache[cacheKey]) return Promise.resolve(_gpsRegisteredFaceCache[cacheKey]);
+    if (_gpsRegisteredFacePromiseCache[cacheKey]) return _gpsRegisteredFacePromiseCache[cacheKey];
+    _gpsRegisteredFacePromiseCache[cacheKey] = FirebaseStorage.loadGpsKioskFace(outlet, employeeId).then(function(face) {
+        if (face) _gpsRegisteredFaceCache[cacheKey] = face;
+        return face;
+    }).catch(function(error) {
+        delete _gpsRegisteredFacePromiseCache[cacheKey];
+        throw error;
+    });
+    return _gpsRegisteredFacePromiseCache[cacheKey];
+}
+
+async function verifyGpsEmployeeFace(employee) {
+    var video = document.getElementById('gps_video');
+    var outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+    if (!video || !video.srcObject || !outlet || !employee) {
+        throw new Error('Kamera belum siap.');
+    }
+    if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.loadGpsKioskFace) {
+        throw new Error('Data wajah Firebase tidak tersedia.');
+    }
+    var employeeFaceId = employee.id != null ? employee.id : employee.name;
+    var registeredFace = await loadOneGpsEmployeeFace(outlet, employeeFaceId);
+    var registeredDescriptor = normalizeGpsKioskDescriptor(registeredFace);
+    if (!registeredDescriptor || registeredDescriptor.length !== 128) {
+        throw new Error('Wajah karyawan belum didaftarkan.');
+    }
+    await loadGpsFaceApiModels();
+    var options = new faceapi.TinyFaceDetectorOptions({ inputSize: 128, scoreThreshold: 0.55 });
+    var detection = await faceapi.detectSingleFace(video, options).withFaceLandmarks().withFaceDescriptor();
+    if (!detection || !detection.descriptor) throw new Error('Wajah tidak terlihat jelas.');
+    var distance = faceapi.euclideanDistance(Array.from(detection.descriptor), registeredDescriptor);
+    if (!isFinite(distance) || distance > 0.5) throw new Error('Wajah tidak cocok dengan data pendaftaran.');
+    return distance;
+}
+
 function initAbsensiGPS() {
     // Fungsi ini dipanggil setelah DB siap, jadi kita panggil lagi untuk me-refresh data.
     // UI awal (nama karyawan) sudah di-load dari cache di bawah.
@@ -10933,7 +11113,12 @@ function populateGpsNames() {
     window._gpsKioskRosterEmployees = null;
 
     const employees = loadEmployeesFromStorage();
-    if (employees.length === 0) {
+    var tryKiosk = window.RBM_PAGE === 'absensi-gps-view' &&
+        typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
+        typeof FirebaseStorage !== 'undefined' &&
+        FirebaseStorage.loadGpsKioskRoster && FirebaseStorage.loadGpsKioskDayCells;
+
+    if (employees.length === 0 || tryKiosk) {
         select.innerHTML = '<option value="">-- Memuat Data Karyawan... --</option>';
         try {
             if (window._gpsNamesLoadTimer) clearTimeout(window._gpsNamesLoadTimer);
@@ -10994,11 +11179,6 @@ function populateGpsNames() {
                 window._gpsNamesSyncInFlight = false;
             });
         }
-
-        var tryKiosk = window.RBM_PAGE === 'absensi-gps-view' &&
-            typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
-            typeof FirebaseStorage !== 'undefined' &&
-            FirebaseStorage.loadGpsKioskRoster && FirebaseStorage.loadGpsKioskDayCells;
 
         if (tryKiosk) {
             window._gpsNamesSyncInFlight = true;
@@ -11066,7 +11246,8 @@ function initAbsensiHardware() {
     // Start Camera
     const video = document.getElementById('gps_video');
     if (video && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "user" }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false })
+        .catch(function() { return navigator.mediaDevices.getUserMedia({ video: true, audio: false }); })
         .then(stream => {
             gpsStream = stream;
             video.srcObject = stream;
@@ -11190,7 +11371,10 @@ function checkDistance() {
     var nameEl = document.getElementById('gps_absen_name');
     var name = nameEl ? nameEl.value : '';
     
-    var disableAll = !inRange || !name;
+    var passwordEl = document.getElementById('gps_absen_password');
+    var hasPassword = passwordEl && passwordEl.value.trim().length > 0;
+    var passwordVerified = window._gpsPasswordVerifiedName === name;
+    var disableAll = !inRange || !name || !hasPassword || !passwordVerified;
 
     var statusMsg = "";
 
@@ -11219,6 +11403,309 @@ function checkDistance() {
     if (btnBO) btnBO.disabled = disableAll;
     if (btnBI) btnBI.disabled = disableAll;
 }
+
+async function continueAbsensiWithPassword() {
+    const nameEl = document.getElementById('gps_absen_name');
+    const passwordEl = document.getElementById('gps_absen_password');
+    const featureEl = document.getElementById('gps_absensi_feature');
+    const name = nameEl ? nameEl.value : '';
+    const password = passwordEl ? passwordEl.value : '';
+    if (!name) { showCustomAlert('Pilih nama karyawan dulu!', 'Perhatian', 'error'); return; }
+    const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
+        ? window._gpsKioskRosterEmployees
+        : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    let employee = employees.find(e => e && e.name === name);
+    const outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+    let configuredPassword = '';
+    if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.loadAbsensiPassword || !outlet || !employee) {
+        showCustomAlert('Password absensi hanya dapat diperiksa saat terhubung ke Firebase.', 'Akses Ditolak', 'error');
+        return;
+    }
+    try {
+        configuredPassword = await FirebaseStorage.loadAbsensiPassword(outlet, employee.id != null ? employee.id : employee.name);
+    } catch (error) {
+        showCustomAlert('Gagal mengambil password dari Firebase. Periksa koneksi internet.', 'Akses Ditolak', 'error');
+        return;
+    }
+    if (!configuredPassword) {
+        showCustomAlert('Password absensi belum diatur untuk nama ini. Hubungi Owner.', 'Akses Ditolak', 'error');
+        return;
+    }
+    if (!password || password !== configuredPassword) {
+        window._gpsPasswordVerifiedName = null;
+        showCustomAlert('Password absensi salah.', 'Akses Ditolak', 'error');
+        if (passwordEl) { passwordEl.value = ''; passwordEl.focus(); }
+        checkDistance();
+        return;
+    }
+    try {
+        var faceId = employee.id != null ? employee.id : employee.name;
+        if (FirebaseStorage.loadGpsKioskFace) {
+            loadOneGpsEmployeeFace(outlet, faceId).catch(function() {});
+        }
+        loadGpsFaceApiModels().catch(function() {});
+    } catch (warmupError) {}
+    window._gpsPasswordVerifiedName = name;
+    try {
+        const outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+        if (window.RBMStorage && window.RBMStorage._db && outlet) {
+            const employeeSnapshot = await window.RBMStorage._db.ref('rbm_pro/employees/' + outlet).once('value');
+            const remoteEmployees = employeeSnapshot.val();
+            const remoteList = Array.isArray(remoteEmployees) ? remoteEmployees : Object.values(remoteEmployees || {});
+            const remoteEmployee = remoteList.find(e => e && e.name === name);
+            if (remoteEmployee) employee = remoteEmployee;
+        }
+    } catch (error) {
+        console.warn('Master karyawan online tidak dapat dimuat:', error);
+    }
+    if (featureEl) featureEl.style.display = 'block';
+    const salaryDisplay = document.getElementById('gps_gaji_pokok_display');
+    const salaryText = document.getElementById('gps_gaji_pokok_text');
+    const selectedEmployee = employee;
+    if (salaryDisplay && salaryText) {
+        const now = new Date();
+        const slipMonth = document.getElementById('gps_slip_month')?.value || '';
+        const slipParts = slipMonth.split('-');
+        const periodYear = Number(slipParts[0]) || now.getFullYear();
+        const periodMonth = Number(slipParts[1]) || now.getMonth() + 1;
+        const periodStart = new Date(periodYear, periodMonth - 2, 26);
+        const periodEnd = new Date(periodYear, periodMonth - 1, 25);
+        const formatPeriodDate = date => date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+        const periodStartText = formatPeriodDate(periodStart);
+        const periodEndText = formatPeriodDate(periodEnd);
+        const gajiKey = getRbmStorageKey('RBM_GAJI_' + periodStartText + '_' + periodEndText);
+        let gajiData = {};
+        let absensiData = {};
+        let jadwalData = {};
+        let gpsLogs = [];
+        try {
+            const outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+            if (window.RBMStorage && window.RBMStorage._db && outlet) {
+                const [gajiSnapshot, absensiRemote, jadwalRemote, gpsRemote] = await Promise.all([
+                    window.RBMStorage._db.ref('rbm_pro/gaji/' + gajiKey.slice(9)).once('value'),
+                    FirebaseStorage.loadAbsensiJadwal(outlet, 'absensi', periodStartText, periodEndText),
+                    FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', periodStartText, periodEndText),
+                    FirebaseStorage.loadGpsLogs(outlet, periodStartText, periodEndText)
+                ]);
+                gajiData = gajiSnapshot.val() && typeof gajiSnapshot.val() === 'object' ? gajiSnapshot.val() : {};
+                absensiData = absensiRemote && typeof absensiRemote === 'object' ? absensiRemote : {};
+                jadwalData = jadwalRemote && typeof jadwalRemote === 'object' ? jadwalRemote : {};
+                gpsLogs = Array.isArray(gpsRemote) ? gpsRemote : [];
+            }
+        } catch (error) {
+            console.warn('Data Rekap Gaji online tidak dapat dimuat:', error);
+        }
+        const empKey = selectedEmployee.id != null ? 'id_' + String(selectedEmployee.id) : 'name_' + String(selectedEmployee.name).replace(/[.#$\[\]]/g, '_');
+        const periodData = gajiData[empKey] || {};
+        const employeeId = selectedEmployee.id != null ? selectedEmployee.id : employees.indexOf(selectedEmployee);
+        let hadir = 0;
+        for (let cursor = new Date(periodStart); cursor <= periodEnd; cursor.setDate(cursor.getDate() + 1)) {
+            const dateKey = formatPeriodDate(cursor);
+            if (absensiData[dateKey + '_' + employeeId] === 'H') hadir++;
+        }
+        const gajiPokok = parseInt(selectedEmployee.gajiPokok, 10) || 0;
+        const tunjangan = selectedEmployee.jabatan === 'Manager Regional' ? 500000 : selectedEmployee.jabatan === 'Manager Outlet' ? 350000 : selectedEmployee.jabatan === 'Admin' ? 300000 : selectedEmployee.jabatan === 'Supervisor Regional' ? 350000 : selectedEmployee.jabatan === 'Supervisor' ? 250000 : 0;
+        const lemburMinggu = parseInt(periodData.lemburMinggu, 10) || 0;
+        const totalMenitTelat = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(employeeId, selectedEmployee.name, periodStartText, periodEndText, gpsLogs, jadwalData) : 0;
+        const menitPerJam = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+        const jamTerlambat = periodData.jamTerlambatManual !== undefined ? parseFloat(periodData.jamTerlambatManual) : (totalMenitTelat >= menitPerJam ? Math.round((totalMenitTelat / menitPerJam) * 10) / 10 : 0);
+        const gajiPerHari = Math.round(gajiPokok / 30);
+        const totalPotKehadiran = Math.round((periodData.potHari !== undefined ? parseFloat(periodData.potHari) : 0) * gajiPerHari);
+        const totalPotTerlambat = Math.round(jamTerlambat * Math.round(gajiPokok / 144.17));
+        const hutang = periodData.hutang !== undefined ? parseInt(periodData.hutang, 10) || 0 : 0;
+        const potonganBpjs = periodData.potonganBpjs !== undefined ? parseInt(periodData.potonganBpjs, 10) || 0 : (parseInt(periodData.bpjs, 10) || 0);
+        const uangMakan = hadir * 10000;
+        const parkir = getGpsJamConfig().enableParkir === true ? hadir * 5000 : 0;
+        const transport = getGpsJamConfig().enableTransport === true ? (periodData.transport !== undefined ? parseInt(periodData.transport, 10) || 0 : 0) : 0;
+        const totalGaji = gajiPokok + tunjangan + lemburMinggu + uangMakan + parkir + transport - totalPotKehadiran - totalPotTerlambat - hutang - potonganBpjs;
+        salaryText.textContent = 'Rp ' + Math.round(totalGaji).toLocaleString('id-ID');
+        salaryDisplay.style.display = 'block';
+    }
+    const slipButton = document.getElementById('gps_download_slip');
+    if (slipButton) slipButton.style.display = 'block';
+    const slipMonthLabel = document.querySelector('label[for="gps_slip_month"]');
+    const slipMonth = document.getElementById('gps_slip_month');
+    if (slipMonthLabel) slipMonthLabel.style.display = 'block';
+    if (slipMonth) {
+        slipMonth.style.display = 'block';
+        if (!slipMonth.value) slipMonth.value = new Date().toISOString().slice(0, 7);
+    }
+    const continueBtn = document.getElementById('gps_absen_continue');
+    if (continueBtn) { continueBtn.textContent = 'Password Benar'; continueBtn.disabled = true; }
+    if (typeof updateGpsJadwalDisplay === 'function') updateGpsJadwalDisplay();
+    loadEmployeeAbsensiRequests();
+    checkDistance();
+}
+
+function resetAbsensiPassword() {
+    window._gpsPasswordVerifiedName = null;
+    const featureEl = document.getElementById('gps_absensi_feature');
+    if (featureEl) featureEl.style.display = 'none';
+    const continueBtn = document.getElementById('gps_absen_continue');
+    if (continueBtn) { continueBtn.textContent = 'Lanjutkan'; continueBtn.disabled = false; }
+    const slipButton = document.getElementById('gps_download_slip');
+    if (slipButton) slipButton.style.display = 'none';
+    const slipMonthLabel = document.querySelector('label[for="gps_slip_month"]');
+    const slipMonth = document.getElementById('gps_slip_month');
+    if (slipMonthLabel) slipMonthLabel.style.display = 'none';
+    if (slipMonth) slipMonth.style.display = 'none';
+    const salaryDisplay = document.getElementById('gps_gaji_pokok_display');
+    if (salaryDisplay) salaryDisplay.style.display = 'none';
+}
+
+async function downloadEmployeeSlipGaji() {
+    const downloadButton = document.getElementById('gps_download_slip');
+    const name = document.getElementById('gps_absen_name')?.value || '';
+    if (!name || window._gpsPasswordVerifiedName !== name) {
+        showCustomAlert('Masukkan password lalu tekan Lanjutkan terlebih dahulu.', 'Akses Ditolak', 'error');
+        return;
+    }
+    if (downloadButton) { downloadButton.disabled = true; downloadButton.textContent = 'Membuat Slip...'; }
+    const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
+        ? window._gpsKioskRosterEmployees
+        : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    let employee = employees.find(e => e && e.name === name);
+    if (!employee) {
+        if (downloadButton) { downloadButton.disabled = false; downloadButton.textContent = '📄 Download Slip Gaji'; }
+        showCustomAlert('Data karyawan tidak ditemukan.', 'Gagal Download', 'error');
+        return;
+    }
+    try {
+        const outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+        if (window.RBMStorage && window.RBMStorage._db && outlet) {
+            const snapshot = await window.RBMStorage._db.ref('rbm_pro/employees/' + outlet).once('value');
+            const remoteEmployees = snapshot.val();
+            const remoteList = Array.isArray(remoteEmployees) ? remoteEmployees : Object.values(remoteEmployees || {});
+            const remoteEmployee = remoteList.find(e => e && e.name === name);
+            if (remoteEmployee) employee = remoteEmployee;
+        }
+    } catch (error) {
+        console.warn('Profil karyawan online tidak dapat dimuat:', error);
+    }
+    const selectedMonth = document.getElementById('gps_slip_month')?.value || new Date().toISOString().slice(0, 7);
+    const [yearText, monthText] = selectedMonth.split('-');
+    const year = Number(yearText);
+    const monthNumber = Number(monthText);
+    if (!year || !monthNumber) return;
+    const month = String(monthNumber).padStart(2, '0');
+    const periodStart = new Date(year, monthNumber - 2, 26);
+    const periodEnd = new Date(year, monthNumber - 1, 25);
+    const formatDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const start = formatDate(periodStart);
+    const endKey = formatDate(periodEnd);
+    const gajiKey = getRbmStorageKey('RBM_GAJI_' + start + '_' + endKey);
+    let gajiData = {};
+    try {
+        const outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+        if (window.RBMStorage && window.RBMStorage._db && outlet) {
+            const gajiSnapshot = await window.RBMStorage._db.ref('rbm_pro/gaji/' + gajiKey.slice(9)).once('value');
+            const remoteGaji = gajiSnapshot.val();
+            if (remoteGaji && typeof remoteGaji === 'object') gajiData = remoteGaji;
+        }
+    } catch (error) {
+        console.warn('Data Rekap Gaji online tidak dapat dimuat:', error);
+    }
+    const empKey = employee.id != null ? 'id_' + String(employee.id) : 'name_' + String(name).replace(/[.#$\[\]]/g, '_');
+    const data = gajiData[empKey] || {};
+    let absensiPeriod = {};
+    let jadwalData = {};
+    let gpsLogs = [];
+    try {
+        const outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+        if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadAbsensiJadwal && outlet) {
+            const remoteData = await Promise.all([
+                FirebaseStorage.loadAbsensiJadwal(outlet, 'absensi', start, endKey),
+                FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', start, endKey),
+                FirebaseStorage.loadGpsLogs(outlet, start, endKey)
+            ]);
+            if (remoteData[0] && typeof remoteData[0] === 'object') absensiPeriod = remoteData[0];
+            if (remoteData[1] && typeof remoteData[1] === 'object') jadwalData = remoteData[1];
+            if (Array.isArray(remoteData[2])) gpsLogs = remoteData[2];
+        }
+    } catch (error) {
+        console.warn('Data absensi online tidak dapat dimuat:', error);
+    }
+    const employeeId = employee.id != null ? employee.id : employees.indexOf(employee);
+    let hadir = 0;
+    for (let cursor = new Date(periodStart); cursor <= periodEnd; cursor.setDate(cursor.getDate() + 1)) {
+        const dateKey = formatDate(cursor);
+        if (absensiPeriod[`${dateKey}_${employeeId}`] === 'H') hadir++;
+    }
+    const gajiPokok = parseInt(employee.gajiPokok) || 0;
+    const tunjanganDefault = employee.jabatan === 'Manager Regional' ? 500000 : employee.jabatan === 'Manager Outlet' ? 350000 : employee.jabatan === 'Admin' ? 300000 : employee.jabatan === 'Supervisor Regional' ? 350000 : employee.jabatan === 'Supervisor' ? 250000 : 0;
+    const tunjangan = tunjanganDefault;
+    const lemburMinggu = parseInt(data.lemburMinggu, 10) || 0;
+    const uangMakan = hadir * 10000;
+    const jamConfig = getGpsJamConfig();
+    const parkir = jamConfig.enableParkir === true ? hadir * 5000 : 0;
+    const transport = jamConfig.enableTransport === true && data.transport != null ? Number(data.transport) : 0;
+    const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
+    const totalMenitTelat = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(employeeId, employee.name, start, endKey, gpsLogs, jadwalData) : 0;
+    const jamTerlambat = data.jamTerlambatManual !== undefined ? parseFloat(data.jamTerlambatManual) : (totalMenitTelat >= configTelat ? Math.round((totalMenitTelat / configTelat) * 10) / 10 : 0);
+    const gajiPerHari = Math.round(gajiPokok / 30);
+    const totalPotKehadiran = Math.round((data.potHari !== undefined ? parseFloat(data.potHari) : 0) * gajiPerHari);
+    const potonganTerlambat = Math.round(jamTerlambat * Math.round(gajiPokok / 144.17));
+    const hutang = data.hutang != null ? Number(data.hutang) : 0;
+    const potonganBpjs = data.potonganBpjs != null ? Number(data.potonganBpjs) : (parseInt(data.bpjs, 10) || 0);
+    const totalPendapatan = gajiPokok + tunjangan + lemburMinggu + uangMakan + parkir + transport;
+    const grandTotal = totalPendapatan - totalPotKehadiran - potonganTerlambat - hutang - potonganBpjs;
+    const formatMoney = value => 'Rp ' + Math.round(value || 0).toLocaleString('id-ID');
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
+    if (typeof html2canvas === 'undefined') {
+        if (downloadButton) { downloadButton.disabled = false; downloadButton.textContent = '📄 Download Slip Gaji'; }
+        showCustomAlert('Fitur download JPG belum siap. Muat ulang halaman lalu coba lagi.', 'Gagal Download', 'error');
+        return;
+    }
+    const slip = document.createElement('div');
+    slip.style.cssText = 'position:fixed; left:-10000px; top:0; width:620px; padding:30px; background:#fff; color:#000; font-family:"Courier New",Courier,monospace; font-size:13px; box-sizing:border-box;';
+    slip.innerHTML = `<div style="text-align:center; border-bottom:2px solid #000; padding-bottom:10px; margin-bottom:20px;"><div style="font-size:18px; font-weight:bold;">SLIP GAJI KARYAWAN</div><div style="font-size:16px; font-weight:bold; margin-top:5px;">RICE BOWL MONSTERS</div><div style="font-size:14px; margin-top:5px;">PERIODE ${month}/${year}</div></div><div style="margin-bottom:20px; line-height:1.6;">Nama <span style="margin-left:56px;">: ${escapeHtml(name)}</span><br>Jabatan <span style="margin-left:36px;">: ${escapeHtml(employee.jabatan || '-')}</span><br>Bagian <span style="margin-left:45px;">: Rice Bowl Monsters</span></div><div style="font-weight:bold; margin-bottom:8px;">Pendapatan (+):</div><table style="width:100%; border-collapse:collapse; margin-bottom:6px;"><tr><td>Gaji Pokok</td><td style="text-align:right;">${formatMoney(gajiPokok)}</td></tr><tr><td>Tunjangan</td><td style="text-align:right;">${formatMoney(tunjangan)}</td></tr><tr><td>Lembur Minggu</td><td style="text-align:right;">${formatMoney(lemburMinggu)}</td></tr><tr><td>Uang Makan</td><td style="text-align:right;">${formatMoney(uangMakan)}</td></tr><tr><td>Parkir</td><td style="text-align:right;">${formatMoney(parkir)}</td></tr><tr><td>Transport</td><td style="text-align:right;">${formatMoney(transport)} +</td></tr><tr style="border-top:1px solid #000;"><td style="font-weight:bold; padding-top:8px;">Total</td><td style="font-weight:bold; text-align:right; padding-top:8px;">${formatMoney(totalPendapatan)}</td></tr></table><div style="font-weight:bold; margin:20px 0 8px;">Pengurangan (-):</div><table style="width:100%; border-collapse:collapse;"><tr><td>Potongan Absensi</td><td style="text-align:right;">${formatMoney(totalPotKehadiran)}</td></tr><tr><td>Potongan Terlambat</td><td style="text-align:right;">${formatMoney(potonganTerlambat)}</td></tr><tr><td>Hutang Karyawan</td><td style="text-align:right;">${formatMoney(hutang)}</td></tr><tr><td>Potongan BPJS</td><td style="text-align:right;">${formatMoney(potonganBpjs)}</td></tr><tr style="border-top:2px solid #000; background:#f0f0f0;"><td style="font-weight:bold; padding-top:10px;">GRAND TOTAL</td><td style="font-weight:bold; text-align:right; padding-top:10px;">${formatMoney(grandTotal)}</td></tr><tr style="background:#eef2ff;"><td style="font-weight:bold; color:#1e40af; padding-top:8px;">PEMBULATAN</td><td style="font-weight:bold; color:#1e40af; text-align:right; padding-top:8px;">${formatMoney(Math.round(grandTotal / 1000) * 1000)}</td></tr></table><div style="margin-top:45px; font-size:11px;">Dibuat Oleh:<br><br><br><strong>Admin</strong></div>`;
+    document.body.appendChild(slip);
+    html2canvas(slip, { scale: 1, backgroundColor: '#fff', logging: false, useCORS: false }).then(function(canvas) {
+        const link = document.createElement('a');
+        link.download = 'Slip_Gaji_' + name.replace(/[^a-z0-9]/gi, '_') + '_' + month + '_' + year + '.jpg';
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.href = canvas.toDataURL('image/jpeg', 0.85);
+        document.body.appendChild(link);
+        link.click();
+        if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+            link.id = 'gps-slip-open-link';
+            link.textContent = 'Buka Slip JPG (tekan lama untuk simpan)';
+            link.style.cssText = 'display:block; margin:10px 0; padding:10px; text-align:center; background:#e0f2fe; color:#0369a1; border-radius:8px; font-size:12px; text-decoration:none;';
+            var parent = downloadButton && downloadButton.parentElement;
+            if (parent) {
+                var oldLink = document.getElementById('gps-slip-open-link');
+                if (oldLink && oldLink !== link) oldLink.remove();
+                parent.appendChild(link);
+            }
+        } else {
+            setTimeout(function() { link.remove(); }, 1000);
+        }
+        if (downloadButton) { downloadButton.disabled = false; downloadButton.textContent = '📄 Download Slip Gaji'; }
+        slip.remove();
+    }).catch(function(error) {
+        slip.remove();
+        if (downloadButton) { downloadButton.disabled = false; downloadButton.textContent = '📄 Download Slip Gaji'; }
+        showCustomAlert('Gagal membuat JPG slip: ' + error.message, 'Gagal Download', 'error');
+    });
+}
+
+function toggleAbsensiPasswordVisibility() {
+    const passwordEl = document.getElementById('gps_absen_password');
+    const toggleBtn = document.getElementById('gps_absen_password_toggle');
+    if (!passwordEl) return;
+    const visible = passwordEl.type === 'text';
+    passwordEl.type = visible ? 'password' : 'text';
+    if (toggleBtn) {
+        toggleBtn.innerHTML = visible ? '&#128065;' : '&#128584;';
+        toggleBtn.title = visible ? 'Tampilkan password' : 'Sembunyikan password';
+        toggleBtn.setAttribute('aria-label', toggleBtn.title);
+    }
+}
+
+window.continueAbsensiWithPassword = continueAbsensiWithPassword;
+window.resetAbsensiPassword = resetAbsensiPassword;
+window.toggleAbsensiPasswordVisibility = toggleAbsensiPasswordVisibility;
 
 function getDistanceFromLatLonInM(lat1, lon1, lat2, lon2) {
     var R = 6371000; // Radius of the earth in m
@@ -11256,7 +11743,7 @@ function getBreakStats(logs, name, date) {
         return { total: Math.round(total), lastOut }; // Total waktu dikunci ke angka bulat
 }
 
-async function loadRekapAbsensiGPS() {
+async function loadRekapAbsensiGPS(skipRemoteReload) {
     const tglAwal = document.getElementById("rekap_gps_start").value;
     const tglAkhir = document.getElementById("rekap_gps_end").value;
     const filterNama = document.getElementById("rekap_gps_filter_nama").value;
@@ -11318,12 +11805,26 @@ async function loadRekapAbsensiGPS() {
                     const name = emp && emp.name ? emp.name : '';
                     if (!name) return;
                     const key = `${d}_${name}`;
-                    if (!grouped[key]) grouped[key] = { date: d, name: name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: false };
+                    const empId = emp.id != null ? emp.id : employees.indexOf(emp);
+                    const shift = jadwalData[`${d}_${empId}`] || '';
+                    if (!grouped[key]) grouped[key] = { date: d, name: name, shift: shift, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: false };
                     keys.push(key);
                 });
             });
         } else {
             keys = Object.keys(grouped);
+            pageDates.forEach(function(d) {
+                employees.forEach(function(emp) {
+                    const name = emp && emp.name ? emp.name : '';
+                    if (!name) return;
+                    const empId = emp.id != null ? emp.id : employees.indexOf(emp);
+                    const shift = jadwalData[`${d}_${empId}`] || '';
+                    if (!['Off', 'PH', 'AL', 'DP'].includes(shift)) return;
+                    const key = `${d}_${name}`;
+                    if (!grouped[key]) grouped[key] = { date: d, name: name, shift: shift, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: false };
+                    if (keys.indexOf(key) < 0) keys.push(key);
+                });
+            });
         }
 
         if (filterNama) keys = keys.filter(k => grouped[k] && grouped[k].name === filterNama);
@@ -11359,7 +11860,14 @@ async function loadRekapAbsensiGPS() {
                 const item = grouped[k];
                 if (!item.hasLog) {
                     if (showEmpty) {
-                        html += `<tr style="background:#f8fafc; color:#94a3b8;"><td>${item.date}</td><td>${item.name}</td><td colspan="7" style="text-align:center; font-style:italic; font-size:12px;">Tidak ada data absensi (Belum Absen / Libur)</td></tr>`;
+                        const emptyShift = item.shift || '';
+                        const emptyLabel = emptyShift ? ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(emptyShift) : null) || emptyShift) : '';
+                        const emptyMessage = emptyShift && ['Off', 'PH', 'AL', 'DP'].includes(emptyShift) ? `Jadwal ${emptyLabel}` : 'Tidak ada data absensi (Belum Absen)';
+                        html += `<tr style="background:#f8fafc; color:#94a3b8;"><td>${item.date}</td><td>${item.name}</td><td>${emptyLabel || '-'}</td><td colspan="7" style="text-align:center; font-style:italic; font-size:12px;">${emptyMessage}</td></tr>`;
+                    }
+                    else if (item.shift && ['Off', 'PH', 'AL', 'DP'].includes(item.shift)) {
+                        const emptyLabel = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(item.shift) : null) || item.shift;
+                        html += `<tr style="background:#f8fafc; color:#64748b;"><td>${item.date}</td><td>${item.name}</td><td>${emptyLabel}</td><td colspan="7" style="text-align:center; font-style:italic; font-size:12px;">Jadwal ${emptyLabel}</td></tr>`;
                     }
                     return;
                 }
@@ -11381,7 +11889,7 @@ async function loadRekapAbsensiGPS() {
                             timeHtml = `<span title="Klik untuk lihat foto: ${captionEsc.replace(/&quot;/g,'"')}" style="color:#1d4ed8; cursor:pointer; font-weight:600; text-decoration:underline;" onclick="fetchAndShowGpsPhoto('${log.date}', '${log._firebaseKey || ''}', '${log.id}', '${log.type} - ${log.time}', this)">📷 ${log.time}</span>`;
                         }
                         
-                        const deleteHtml = canDelete ? ` <span style="cursor:pointer; color:#dc3545; font-size:14px; vertical-align:middle; margin-left:4px;" onclick="deleteSingleGpsLog(${log.id})" title="Hapus absensi ini">&#x2715;</span>` : '';
+                        const deleteHtml = canDelete ? ` <span style="cursor:pointer; color:#dc3545; font-size:14px; vertical-align:middle; margin-left:4px;" onclick="deleteSingleGpsLog(${log.id}, this)" title="Hapus absensi ini">&#x2715;</span>` : '';
                         return `<div style="white-space:nowrap; display:flex; align-items:center; justify-content:flex-start;">${timeHtml}${deleteHtml}</div>`;
                     };
                     if (!logOrArray) return renderSingleLog(null);
@@ -11406,9 +11914,14 @@ async function loadRekapAbsensiGPS() {
 
                 const breakStats = getBreakStats(filtered, item.name, item.date);
                 const totalIstirahat = breakStats.total > 0 ? breakStats.total + ' menit' : '-';
+                const empJadwal = empMap[item.name];
+                const empJadwalId = empJadwal ? (empJadwal.id != null ? empJadwal.id : employees.indexOf(empJadwal)) : null;
+                const shift = empJadwalId !== null ? jadwalData[`${item.date}_${empJadwalId}`] : '';
+                const jadwalLabel = shift ? ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || shift) : '-';
                 html += `<tr${isBenarBenarTelat || lupaAbsen !== '-' ? ' style="background:#fef2f2;"' : ''}>
                     <td>${item.date}</td>
                     <td>${item.name}</td>
+                    <td>${jadwalLabel}</td>
                     <td>${renderCell(item.masuk)}</td>
                     <td>${renderCell(item.breakOuts)}</td>
                     <td>${renderCell(item.breakIns)}</td>
@@ -11444,21 +11957,21 @@ async function loadRekapAbsensiGPS() {
         tbody.innerHTML = '<tr><td colspan="9" class="table-loading">Memuat data dari server... ⏳</td></tr>';
     }
 
-    if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsLogs) {
+    if (!skipRemoteReload && useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsLogs) {
         const outlet = getRbmOutlet() || 'default';
         try {
-            // [PERBAIKAN] Tarik juga Jadwal agar kalkulasi telat akurat di Rekap GPS
-            if (FirebaseStorage.loadAbsensiJadwal) {
-                let jadwalServer = await FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', tglAwal, tglAkhir);
-                if (jadwalServer) {
-                    window._rbmParsedCache[getRbmStorageKey('RBM_JADWAL_DATA')] = { data: jadwalServer };
-                }
-            }
-
-            let serverLogs = await Promise.race([
-                FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir),
+            const jadwalPromise = FirebaseStorage.loadAbsensiJadwal
+                ? FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', tglAwal, tglAkhir)
+                : Promise.resolve(null);
+            let results = await Promise.race([
+                Promise.all([jadwalPromise, FirebaseStorage.loadGpsLogs(outlet, tglAwal, tglAkhir)]),
                 new Promise((resolve, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
             ]);
+            let jadwalServer = results[0];
+            let serverLogs = results[1];
+            if (jadwalServer) {
+                window._rbmParsedCache[getRbmStorageKey('RBM_JADWAL_DATA')] = { data: jadwalServer };
+            }
             window._rbmParsedCache[getRbmStorageKey('RBM_GPS_LOGS')] = { data: serverLogs };
                 // Langsung render tanpa JSON.stringify untuk mencegah browser hang!
                 renderTable(serverLogs);
@@ -11472,7 +11985,7 @@ function toggleEmptyRows() {
     loadRekapAbsensiGPS();
 }
 
-function deleteSingleGpsLog(logId) {
+function deleteSingleGpsLog(logId, triggerEl) {
     var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
     var isDev = (u.username || '').toString().toLowerCase() === 'burhan';
     var isOwner = u.role === 'owner';
@@ -11489,28 +12002,40 @@ function deleteSingleGpsLog(logId) {
         var logToDelete = logs.find(l => l.id == logId);
         if (!logToDelete) { showCustomAlert('Data tidak ditemukan untuk dihapus.', 'Info', 'error'); return; }
 
+        if (triggerEl && triggerEl.parentElement) {
+            triggerEl.parentElement.innerHTML = '<span style="color:#64748b;">-</span>';
+        }
+
+        setTimeout(function() {
+        var newLogs = logs.filter(function(l) { return l.id != logId; });
+        try { localStorage.setItem(key, JSON.stringify(newLogs)); } catch(e) {}
+        window._rbmParsedCache[key] = { data: newLogs };
+        loadRekapAbsensiGPS(true);
+
+        function restoreDeletedLog(errorMessage) {
+            try { localStorage.setItem(key, JSON.stringify(logs)); } catch(e) {}
+            window._rbmParsedCache[key] = { data: logs };
+            loadRekapAbsensiGPS(true);
+            showCustomAlert(errorMessage, 'Gagal Menghapus', 'error');
+        }
+
         if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase() && logToDelete._firebaseKey) {
             var outlet = getRbmOutlet() || 'default';
             var ym = logToDelete.date.substring(0, 7);
             var refPath = 'rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym + '/' + logToDelete._firebaseKey;
             window.RBMStorage._db.ref(refPath).remove().then(function() {
-                var newLogs = logs.filter(function(l) { return l.id != logId; });
-                try { localStorage.setItem(key, JSON.stringify(newLogs)); } catch(e){}
-                window._rbmParsedCache[key] = { data: newLogs };
-                loadRekapAbsensiGPS();
                 showCustomAlert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.', 'Berhasil', 'success');
+            }).catch(function() {
+                restoreDeletedLog('Data absensi gagal dihapus dari server. Data dikembalikan.');
             });
         } else {
-            var newLogs = logs.filter(function(l) {
-                return l.id != logId;
-            });
-            
             RBMStorage.setItem(key, JSON.stringify(newLogs)).then(function() {
-                window._rbmParsedCache[key] = { data: newLogs };
-                loadRekapAbsensiGPS();
                 showCustomAlert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.', 'Berhasil', 'success');
+            }).catch(function() {
+                restoreDeletedLog('Data absensi gagal dihapus. Data dikembalikan.');
             });
         }
+        }, 0);
     });
 }
 
@@ -11624,9 +12149,14 @@ function getRekapAbsensiGpsDataForExport() {
         const lupaAbsen = lupa.length ? 'Lupa ' + lupa.join(' & ') : '-';
         const foto = [item.masuk, ...item.breakOuts, ...item.breakIns, item.pulang].filter(Boolean).length ? 'Ada' : '-';
         const breakStats = getBreakStats(filtered, item.name, item.date);
+        const empJadwal = empMap[item.name];
+        const empJadwalId = empJadwal ? (empJadwal.id != null ? empJadwal.id : employees.indexOf(empJadwal)) : null;
+        const shift = empJadwalId !== null ? jadwalData[`${item.date}_${empJadwalId}`] : '';
+        const jadwalLabel = shift ? ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || shift) : '-';
         rows.push({
             date: item.date,
             name: item.name,
+            jadwal: jadwalLabel,
             masuk: item.masuk ? item.masuk.time : '-',
             breakOut: item.breakOuts.length ? item.breakOuts.map(l => l.time).join(', ') : '-',
             breakIn: item.breakIns.length ? item.breakIns.map(l => l.time).join(', ') : '-',
@@ -11758,12 +12288,12 @@ function getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMa
     const empId = emp ? (emp.id != null ? emp.id : employees.indexOf(emp)) : null;
     if (empId === null) return { totalMenit: 0, lines: [], jamUntukGaji: 0 };
     const jadwalKey = `${date}_${empId}`;
-    const shift = jadwalData[jadwalKey];
+    const shift = jadwalData[jadwalKey] || item.shift || '';
     const batasMasuk = (typeof getBatasMasukFromConfig === 'function' ? getBatasMasukFromConfig(shift, emp.jabatan) : null) || JADWAL_BATAS_MASUK[shift];
     const batasPulang = (typeof getBatasPulangFromConfig === 'function' ? getBatasPulangFromConfig(shift, emp.jabatan) : null) || JADWAL_BATAS_PULANG[shift];
     const toleransi = typeof getToleransiTelatMenitFromConfig === 'function' ? getToleransiTelatMenitFromConfig() : 0;
     const lines = [];
-    let menitTelatMasuk = 0, menitPulangCepat = 0;
+    let menitTelatMasuk = 0, menitPulangCepat = 0, menitIstirahatLebih = 0;
     if (item.masuk && item.masuk.time && batasMasuk) {
         const menitBatas = parseTimeToMinutes(batasMasuk);
         const menitMasuk = parseTimeToMinutes(item.masuk.time);
@@ -11785,7 +12315,17 @@ function getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMa
             lines.push('Pulang Cepat: ' + menitPulangCepat + ' menit (Batas ' + batasPulang + ', Pulang ' + item.pulang.time + ')');
         }
     }
-    const totalMenit = menitTelatMasuk + menitPulangCepat;
+    const batasIstirahat = typeof getDurasiIstirahatMenitFromConfig === 'function' ? getDurasiIstirahatMenitFromConfig(shift) : 60;
+    if (batasIstirahat > 0) {
+        const breakLogs = [...(item.breakOuts || []), ...(item.breakIns || [])]
+            .sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time));
+        const totalIstirahat = getBreakStats(breakLogs, name, date).total;
+        menitIstirahatLebih = Math.max(0, totalIstirahat - batasIstirahat);
+        if (menitIstirahatLebih > 0) {
+            lines.push('Istirahat Lebih: ' + menitIstirahatLebih + ' menit (Jatah ' + batasIstirahat + ', Terpakai ' + totalIstirahat + ')');
+        }
+    }
+    const totalMenit = menitTelatMasuk + menitPulangCepat + menitIstirahatLebih;
     const menitPerJam = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : MENIT_TELAT_PER_JAM_GAJI;
     const jamUntukGaji = (menitPerJam > 0 && totalMenit >= menitPerJam) ? totalMenit / menitPerJam : 0;
     if (totalMenit > 0) {
@@ -11795,7 +12335,7 @@ function getDetailTelatUntukRekap(date, name, item, employees, jadwalData, empMa
             lines.push('Total durasi telat: ' + totalMenit + ' menit (= ' + jamUntukGaji.toFixed(1) + ' jam untuk Rekap Gaji)');
         }
     }
-    return { totalMenit, lines, jamUntukGaji, menitTelatMasuk, menitPulangCepat };
+    return { totalMenit, lines, jamUntukGaji, menitTelatMasuk, menitPulangCepat, menitIstirahatLebih };
 }
 
 function showDetailTelatModal(date, name, detailJson) {
@@ -11835,9 +12375,9 @@ function closeGpsDetailModal() {
 }
 
 // Total menit telat dari GPS untuk satu karyawan dalam periode (untuk Rekap Gaji)
-function getTotalMenitTelatFromGps(empId, empName, tglAwal, tglAkhir) {
-    const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
-    const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
+function getTotalMenitTelatFromGps(empId, empName, tglAwal, tglAkhir, providedLogs, providedJadwal) {
+    const logs = Array.isArray(providedLogs) ? providedLogs : getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
+    const jadwalData = providedJadwal && typeof providedJadwal === 'object' ? providedJadwal : getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
     const absensiData = getCachedParsedStorage(getRbmStorageKey('RBM_ABSENSI_DATA'), {});
     const empMap = {};
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
@@ -12091,6 +12631,12 @@ async function updateGpsJadwalDisplay() {
             </div>
         </div>`;
 
+        if (stats.total > batasMenit) {
+            info += `<div style="background:#fef2f2; border:1px solid #fecaca; border-left:4px solid #ef4444; color:#b91c1c; padding:10px 12px; border-radius:8px; margin-top:10px; font-size:13px; font-weight:700;">
+                🚨 Telat Istirahat: ${stats.total - batasMenit} menit (jatah ${batasMenit} menit, terpakai ${stats.total} menit)
+            </div>`;
+        }
+
         if (stats.lastOut !== null) {
             const currentMinutes = now.getHours() * 60 + now.getMinutes() + (now.getSeconds() / 60);
             let currentDur = Math.round(currentMinutes - stats.lastOut);
@@ -12140,10 +12686,25 @@ async function updateGpsJadwalDisplay() {
     if (typeof checkDistance === 'function') checkDistance();
 }
 
-function processAbsensiGPS(type) {
+async function processAbsensiGPS(type) {
     const name = document.getElementById('gps_absen_name').value;
     if (!name) { showCustomAlert("Pilih nama karyawan dulu!", "Perhatian", "error"); return; }
-    
+    if (window._gpsPasswordVerifiedName !== name) {
+        showCustomAlert("Masukkan password lalu tekan Lanjutkan terlebih dahulu.", "Akses Ditolak", "error");
+        return;
+    }
+    const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
+        ? window._gpsKioskRosterEmployees
+        : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const employee = employees.find(e => e && e.name === name);
+    if (!employee) { showCustomAlert("Data karyawan tidak ditemukan.", "Akses Ditolak", "error"); return; }
+
+    try {
+        await verifyGpsEmployeeFace(employee);
+    } catch (faceError) {
+        showCustomAlert(faceError && faceError.message ? faceError.message : 'Verifikasi wajah gagal.', 'Akses Ditolak', 'error');
+        return;
+    }
     // Gunakan log spesifik yang sudah di-fetch oleh updateGpsJadwalDisplay
     const todayLogs = window._cachedGpsMyLogs || [];
     
@@ -12183,6 +12744,230 @@ function processAbsensiGPS(type) {
     }
 }
 
+function getAbsensiRequestOutlet() {
+    return typeof getRbmOutlet === 'function' ? (getRbmOutlet() || 'default') : 'default';
+}
+
+function toggleLupaAbsenDetail(type) {
+    const detail = document.getElementById('gps_lupa_absen_detail');
+    if (!detail) return;
+    detail.style.display = type === 'Lupa Absen' ? 'block' : 'none';
+    if (type === 'Lupa Absen' && !document.querySelector('#gps_lupa_absen_rows .lupa-absen-row')) addLupaAbsenRow();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const requestType = document.getElementById('gps_request_type');
+    if (requestType) {
+        const detail = document.getElementById('gps_lupa_absen_detail');
+        if (detail) detail.style.display = requestType.value === 'Lupa Absen' ? 'block' : 'none';
+        toggleLupaAbsenDetail(requestType.value);
+    }
+});
+
+function addLupaAbsenRow() {
+    const rows = document.getElementById('gps_lupa_absen_rows');
+    if (!rows) return;
+    const row = document.createElement('div');
+    row.className = 'lupa-absen-row';
+    row.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin-top:8px; align-items:end;';
+    row.innerHTML = '<div><label style="font-size:11px;">Tipe Absen</label><select class="gps-request-absensi-type" style="width:100%; box-sizing:border-box;"><option value="Masuk">Masuk</option><option value="Pulang">Pulang</option><option value="Istirahat Keluar">Istirahat Keluar</option><option value="Istirahat Kembali">Istirahat Kembali</option></select></div>' +
+        '<div><label style="font-size:11px;">Jam (detik)</label><input type="time" step="1" class="gps-request-absensi-time" style="width:100%; box-sizing:border-box;"></div>' +
+        '<button type="button" class="btn btn-secondary lupa-absen-remove" style="display:none; width:auto; padding:6px 10px;">Hapus</button>';
+    row.querySelector('.lupa-absen-remove').onclick = function() { row.remove(); };
+    rows.appendChild(row);
+    rows.querySelectorAll('.lupa-absen-remove').forEach(function(button, index, buttons) { button.style.display = buttons.length > 1 ? 'block' : 'none'; });
+}
+
+window.addLupaAbsenRow = addLupaAbsenRow;
+window.toggleLupaAbsenDetail = toggleLupaAbsenDetail;
+
+function getAbsensiRequestUser() {
+    try { return JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch (e) { return {}; }
+}
+
+function absensiRequestRole(user) {
+    const registeredUser = (() => {
+        try { return JSON.parse(localStorage.getItem('rbm_users') || '[]').find(u => u.username && user.username && u.username.toLowerCase() === user.username.toLowerCase()) || {}; } catch (e) { return {}; }
+    })();
+    const value = String(registeredUser.jabatan || user.jabatan || user.role || '').toLowerCase();
+    if (value === 'owner' || value === 'developer' || value.includes('owner')) return 'Owner/Developer';
+    if (value.includes('supervisor regional') || value === 'regional supervisor') return 'Supervisor Regional';
+    if (value.includes('manager outlet') || value === 'manager') return 'Manager Outlet';
+    if (value === 'supervisor' || value === 'spv' || value.includes('supervisor')) return 'Supervisor';
+    return '';
+}
+
+const ABSENSI_REQUEST_STEPS = ['Supervisor', 'Manager Outlet', 'Supervisor Regional', 'Owner/Developer'];
+
+function requestStatusText(request) {
+    if (request.status === 'rejected') return 'Ditolak';
+    if (request.status === 'approved') return 'Disetujui';
+    return 'Menunggu ' + (request.currentStep || ABSENSI_REQUEST_STEPS[0]);
+}
+
+function requestApprovalSummary(request) {
+    const labels = [
+        ['Supervisor', request.approvedBy_Supervisor],
+        ['Manager Outlet', request.approvedBy_Manager_Outlet],
+        ['Supervisor Regional', request.approvedBy_Supervisor_Regional],
+        ['Owner/Developer', request.approvedBy_Owner_Developer || request.approvedBy_Manager_Regional]
+    ];
+    return labels.filter(item => item[1]).map(item => '&#10003; ' + item[0] + ': ' + item[1]).join('<br>');
+}
+
+async function applyApprovedAbsensiRequest(request) {
+    if (!request || !['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur'].includes(request.type)) return;
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const employee = employees.find(e => e && e.name === request.name);
+    if (!employee) throw new Error('Karyawan pengaju tidak ditemukan');
+    const empId = employee.id != null ? employee.id : employees.indexOf(employee);
+    if (request.type === 'Pengajuan Lembur') {
+        const requestDate = request.startDate || request.requestDate;
+        const date = new Date(requestDate + 'T00:00:00');
+        const periodStart = new Date(date.getFullYear(), date.getMonth() - 1, 26);
+        const periodEnd = new Date(date.getFullYear(), date.getMonth(), 25);
+        const formatDate = function(value) { return value.getFullYear() + '-' + String(value.getMonth() + 1).padStart(2, '0') + '-' + String(value.getDate()).padStart(2, '0'); };
+        const periodKey = getRbmStorageKey('RBM_PENCAIRAN_' + formatDate(periodStart) + '_' + formatDate(periodEnd));
+        const db = firebase.database();
+        const ref = db.ref('rbm_pro/pencairan/' + periodKey.slice(14));
+        const snapshot = await ref.once('value');
+        const data = snapshot.val() && typeof snapshot.val() === 'object' ? snapshot.val() : {};
+        const empKey = empId != null ? String(empId) : String(employees.indexOf(employee));
+        const employeeData = data[empKey] && typeof data[empKey] === 'object' ? data[empKey] : {};
+        const details = Array.isArray(employeeData.lemburDetails) ? employeeData.lemburDetails.slice() : [];
+        details.push({ hari: 0, jam: Number(request.lemburHours) || 0, tgl: requestDate, alasan: request.reason || '' });
+        employeeData.lemburDetails = details;
+        data[empKey] = employeeData;
+        await ref.set(data);
+        window._rbmParsedCache[getRbmStorageKey('RBM_PENCAIRAN_' + formatDate(periodStart) + '_' + formatDate(periodEnd))] = { data: data };
+        return;
+    }
+    const value = request.type === 'Lupa Absen' ? 'H' : request.type === 'Libur' ? 'Off' : request.type === 'Cuti' ? 'AL' : request.type;
+    const absensi = {};
+    const jadwal = {};
+    for (let date = new Date(request.startDate + 'T00:00:00'); date <= new Date(request.endDate + 'T00:00:00'); date.setDate(date.getDate() + 1)) {
+        const dateKey = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+        if (request.type !== 'Lupa Absen') jadwal[`${dateKey}_${empId}`] = value;
+        if (request.type === 'Lupa Absen' || ['Off', 'PH', 'AL', 'DP'].includes(value)) absensi[`${dateKey}_${empId}`] = value;
+    }
+    await FirebaseStorage.saveAbsensiJadwal(getAbsensiRequestOutlet(), 'absensi', absensi);
+    await FirebaseStorage.saveAbsensiJadwal(getAbsensiRequestOutlet(), 'jadwal', jadwal);
+    if (request.type === 'Lupa Absen' && typeof firebase !== 'undefined' && firebase.database) {
+        const dateKey = request.startDate;
+        const ym = dateKey.substring(0, 7);
+        const details = Array.isArray(request.attendanceDetails) && request.attendanceDetails.length
+            ? request.attendanceDetails
+            : [{ type: request.attendanceType, time: request.attendanceTime }];
+        for (const detail of details) {
+            if (!detail || !detail.type || !detail.time) continue;
+            await firebase.database().ref('rbm_pro/gps_logs_partitioned/' + getAbsensiRequestOutlet() + '/' + ym).push({
+                id: Date.now(),
+                timestamp: new Date(dateKey + 'T' + detail.time).toISOString(),
+                date: dateKey,
+                time: detail.time,
+                name: request.name,
+                type: detail.type,
+                approvedRequest: true,
+                requestReason: request.reason || ''
+            });
+        }
+    }
+}
+
+async function submitEmployeeAbsensiRequest() {
+    const name = document.getElementById('gps_absen_name')?.value || '';
+    const requestDate = document.getElementById('gps_request_date')?.value || '';
+    const type = document.getElementById('gps_request_type')?.value || '';
+    const lemburHours = document.getElementById('gps_request_lembur_jam')?.value || '';
+    const attendanceDetails = Array.from(document.querySelectorAll('#gps_lupa_absen_rows .lupa-absen-row')).map(function(row) {
+        return { type: row.querySelector('.gps-request-absensi-type')?.value || '', time: row.querySelector('.gps-request-absensi-time')?.value || '' };
+    });
+    const reason = document.getElementById('gps_request_reason')?.value.trim() || '';
+    const feedback = document.getElementById('gps_request_feedback');
+    if (!name || window._gpsPasswordVerifiedName !== name) { if (feedback) feedback.textContent = 'Masukkan password dan tekan Lanjutkan terlebih dahulu.'; return; }
+    if (!requestDate || !reason) { if (feedback) feedback.textContent = 'Tanggal dan alasan wajib diisi.'; return; }
+    if (type === 'Lupa Absen' && (!attendanceDetails.length || attendanceDetails.some(function(detail) { return !detail.type || !detail.time; }))) { if (feedback) feedback.textContent = 'Tipe dan jam semua detail absensi wajib diisi.'; return; }
+    if (type === 'Pengajuan Lembur' && (!(Number(lemburHours) > 0))) { if (feedback) feedback.textContent = 'Jumlah jam lembur wajib diisi.'; return; }
+    if (typeof firebase === 'undefined' || !firebase.database) { if (feedback) feedback.textContent = 'Koneksi Firebase diperlukan.'; return; }
+    const user = getAbsensiRequestUser();
+    const outlet = getAbsensiRequestOutlet();
+    const payload = { name, outlet, type, requestDate, startDate: requestDate, endDate: requestDate, reason, lemburHours: type === 'Pengajuan Lembur' ? Number(lemburHours) : 0, attendanceDetails: type === 'Lupa Absen' ? attendanceDetails : [], currentStep: ABSENSI_REQUEST_STEPS[0], status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP, createdBy: user.username || name };
+    try {
+        await firebase.database().ref('rbm_pro/pengajuan_absensi/' + outlet).push(payload);
+        document.getElementById('gps_request_reason').value = '';
+        document.getElementById('gps_request_date').value = '';
+        const lupaRows = document.getElementById('gps_lupa_absen_rows');
+        if (lupaRows) lupaRows.innerHTML = '';
+        const lemburHoursInput = document.getElementById('gps_request_lembur_jam');
+        if (lemburHoursInput) lemburHoursInput.value = '';
+        if (feedback) { feedback.textContent = 'Pengajuan berhasil dikirim. Menunggu persetujuan Supervisor.'; feedback.style.color = '#15803d'; }
+        loadEmployeeAbsensiRequests();
+    } catch (error) { if (feedback) { feedback.textContent = 'Gagal mengirim pengajuan: ' + error.message; feedback.style.color = '#b91c1c'; } }
+}
+
+async function loadEmployeeAbsensiRequests() {
+    const name = document.getElementById('gps_absen_name')?.value || '';
+    const container = document.getElementById('gps_request_history');
+    if (!name || !container || typeof firebase === 'undefined' || !firebase.database) return;
+    try {
+        const snap = await firebase.database().ref('rbm_pro/pengajuan_absensi/' + getAbsensiRequestOutlet()).once('value');
+        const requests = Object.values(snap.val() || {}).filter(r => r && r.name === name).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        container.innerHTML = requests.length ? '<strong style="font-size:12px;">Riwayat Pengajuan</strong>' + requests.slice(0, 10).map(r => `<div style="padding:8px 0; border-bottom:1px solid #e2e8f0; font-size:11px;">${r.type}: ${r.startDate} s/d ${r.endDate}<br>${requestStatusText(r)}</div>`).join('') : '';
+    } catch (error) { container.textContent = ''; }
+}
+
+async function loadAbsensiRequests() {
+    const tbody = document.getElementById('absensi-requests-tbody');
+    if (!tbody || typeof firebase === 'undefined' || !firebase.database) return;
+    try {
+        const snap = await firebase.database().ref('rbm_pro/pengajuan_absensi/' + getAbsensiRequestOutlet()).once('value');
+        const entries = Object.entries(snap.val() || {}).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+        const role = absensiRequestRole(getAbsensiRequestUser());
+        tbody.innerHTML = entries.length ? entries.map(([id, r]) => {
+            const canApprove = r.status === 'pending' && r.currentStep === role;
+            const user = getAbsensiRequestUser();
+            const canDelete = String(user.role || '').toLowerCase() === 'owner' || String(user.role || '').toLowerCase() === 'developer' || r.createdBy === user.username;
+            const deleteButton = canDelete ? `<button class="btn btn-secondary" style="padding:5px 8px; margin-left:4px; color:#b91c1c;" onclick="deleteAbsensiRequest('${id}')">Hapus</button>` : '';
+            const detailSummary = r.type === 'Lupa Absen' && Array.isArray(r.attendanceDetails) ? '<br><span style="font-size:11px;color:#475569;">' + r.attendanceDetails.map(function(detail) { return (detail.type || '-') + ': ' + (detail.time || '-'); }).join(' | ') + '</span>' : '';
+            const action = (canApprove ? `<button class="btn btn-primary" style="padding:5px 8px;" onclick="approveAbsensiRequest('${id}')">Setujui</button>` : (r.status === 'approved' ? '<strong style="color:#15803d;">Disetujui</strong>' : '-')) + deleteButton;
+            const summary = requestApprovalSummary(r);
+            return `<tr><td>${r.name || '-'}</td><td>${r.type || '-'}${detailSummary}</td><td>${r.startDate || '-'} s/d ${r.endDate || '-'}</td><td>${r.reason || '-'}</td><td>${requestStatusText(r)}${summary ? '<br><span style="font-size:11px;color:#64748b;">' + summary + '</span>' : ''}</td><td>${action}</td></tr>`;
+        }).join('') : '<tr><td colspan="6" class="table-empty">Belum ada pengajuan.</td></tr>';
+    } catch (error) { tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Gagal memuat pengajuan.</td></tr>'; }
+}
+
+async function approveAbsensiRequest(requestId) {
+    const role = absensiRequestRole(getAbsensiRequestUser());
+    if (!role || typeof firebase === 'undefined' || !firebase.database) return;
+    const ref = firebase.database().ref('rbm_pro/pengajuan_absensi/' + getAbsensiRequestOutlet() + '/' + requestId);
+    const snap = await ref.once('value');
+    const request = snap.val();
+    if (!request || request.status !== 'pending' || request.currentStep !== role) { alert('Pengajuan belum berada pada tahap persetujuan Anda.'); return; }
+    const stepIndex = ABSENSI_REQUEST_STEPS.indexOf(role);
+    const nextStep = ABSENSI_REQUEST_STEPS[stepIndex + 1];
+    const user = getAbsensiRequestUser();
+    if (role === 'Supervisor Regional' && ['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur'].includes(request.type)) {
+        await applyApprovedAbsensiRequest(request);
+        request.appliedToAttendance = true;
+    }
+    const approver = user.nama || user.username || role;
+    await ref.update(nextStep ? { currentStep: nextStep, ['approvedBy_' + role.replace(/\//g, '_').replace(/ /g, '_')]: approver } : { status: 'approved', currentStep: '', approvedBy_Owner_Developer: approver });
+    loadAbsensiRequests();
+}
+
+async function deleteAbsensiRequest(requestId) {
+    const user = getAbsensiRequestUser();
+    if (typeof firebase === 'undefined' || !firebase.database) return;
+    const ref = firebase.database().ref('rbm_pro/pengajuan_absensi/' + getAbsensiRequestOutlet() + '/' + requestId);
+    const snap = await ref.once('value');
+    const request = snap.val();
+    const allowed = String(user.role || '').toLowerCase() === 'owner' || String(user.role || '').toLowerCase() === 'developer' || (request && request.createdBy === user.username);
+    if (!allowed) { alert('Anda tidak memiliki izin menghapus pengajuan ini.'); return; }
+    if (!confirm('Hapus pengajuan ini?')) return;
+    await ref.remove();
+    loadAbsensiRequests();
+}
+
 async function _executeAbsensiGPS(type) {
     const name = document.getElementById('gps_absen_name').value;
     if (!currentPos) { showCustomAlert("Lokasi belum ditemukan! Pastikan GPS aktif.", "GPS Error", "error"); return; }
@@ -12202,7 +12987,7 @@ async function _executeAbsensiGPS(type) {
     const context = canvas.getContext('2d');
 
     // [OPTIMASI KILAT] Perkecil ukuran foto drastis agar HP tidak lemot/hang
-    const MAX_WIDTH = 100; // Turun ke 200 agar sangat ringan
+    const MAX_WIDTH = 80;
     let scale = 1;
     if (video.videoWidth > MAX_WIDTH) {
         scale = MAX_WIDTH / video.videoWidth;
@@ -12224,7 +13009,7 @@ async function _executeAbsensiGPS(type) {
     context.fillText(`${dateStr} ${timeStr} | ${locStr}`, 5, canvas.height - 8);
 
     // [OPTIMASI KILAT] Gunakan toDataURL langsung karena resolusi sudah sangat kecil (toBlob kadang lambat di HP jadul)
-    const photoData = canvas.toDataURL('image/jpeg', 0.3);
+    const photoData = canvas.toDataURL('image/jpeg', 0.25);
 
     const log = {
         id: Date.now(),
@@ -12262,7 +13047,7 @@ async function _executeAbsensiGPS(type) {
 
             if (batasMenit > 0) {
                 if (totalDurasi > batasMenit) {
-                    showCustomAlert("⚠️ Peringatan: Total durasi istirahat melebihi batas!<br><br>" + "Shift " + labelShift + ": batas " + batasMenit + " menit.<br>" + "Sudah diambil: " + stats.total + " menit.<br>" + "Istirahat ini: " + durasiIni + " menit.<br>" + "Total: " + totalDurasi + " menit.<br>" + "Over: " + (totalDurasi - batasMenit) + " menit.", "Over Istirahat", "warning");
+                    showCustomAlert("⚠️ Peringatan: Anda telat karena istirahat melebihi batas!<br><br>" + "Shift " + labelShift + ": batas " + batasMenit + " menit.<br>" + "Sudah diambil: " + stats.total + " menit.<br>" + "Istirahat ini: " + durasiIni + " menit.<br>" + "Total: " + totalDurasi + " menit.<br>" + "Telat dari istirahat: " + (totalDurasi - batasMenit) + " menit.", "Telat Istirahat", "warning");
                 } else {
                     showCustomAlert("✅ Selesai Istirahat.<br><br>" + "Istirahat ini: " + durasiIni + " menit.<br>" + "Total hari ini: " + totalDurasi + " menit.<br>" + "Sisa: " + (batasMenit - totalDurasi) + " menit.", "Info Istirahat", "success");
                 }
@@ -12550,6 +13335,16 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof loadPembukuanData !== 'undefined') window.loadPembukuanData = loadPembukuanData;
   if (typeof loadInventarisData !== 'undefined') window.loadInventarisData = loadInventarisData;
   if (typeof loadRekapAbsensiGPS !== 'undefined') window.loadRekapAbsensiGPS = loadRekapAbsensiGPS;
+    if (typeof checkDistance !== 'undefined') window.checkDistance = checkDistance;
+    if (typeof downloadEmployeeSlipGaji !== 'undefined') window.downloadEmployeeSlipGaji = downloadEmployeeSlipGaji;
+    if (typeof submitEmployeeAbsensiRequest !== 'undefined') window.submitEmployeeAbsensiRequest = submitEmployeeAbsensiRequest;
+    if (typeof loadEmployeeAbsensiRequests !== 'undefined') window.loadEmployeeAbsensiRequests = loadEmployeeAbsensiRequests;
+    if (typeof loadAbsensiRequests !== 'undefined') window.loadAbsensiRequests = loadAbsensiRequests;
+    if (typeof approveAbsensiRequest !== 'undefined') window.approveAbsensiRequest = approveAbsensiRequest;
+    if (typeof deleteAbsensiRequest !== 'undefined') window.deleteAbsensiRequest = deleteAbsensiRequest;
+    if (typeof continueAbsensiWithPassword !== 'undefined') window.continueAbsensiWithPassword = continueAbsensiWithPassword;
+    if (typeof resetAbsensiPassword !== 'undefined') window.resetAbsensiPassword = resetAbsensiPassword;
+    if (typeof toggleAbsensiPasswordVisibility !== 'undefined') window.toggleAbsensiPasswordVisibility = toggleAbsensiPasswordVisibility;
   if (typeof createPembukuanRows !== 'undefined') window.createPembukuanRows = createPembukuanRows;
   if (typeof saveAbsensiData !== 'undefined') window.saveAbsensiData = saveAbsensiData;
   if (typeof saveAbsensiToFirebase !== 'undefined') window.saveAbsensiToFirebase = saveAbsensiToFirebase;
@@ -12570,6 +13365,8 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
   if (typeof closeJadwalModal !== 'undefined') window.closeJadwalModal = closeJadwalModal;
   if (typeof printRekapAbsensiArea !== 'undefined') window.printRekapAbsensiArea = printRekapAbsensiArea;
   if (typeof printRekapGaji !== 'undefined') window.printRekapGaji = printRekapGaji;
+    if (typeof printSlipGaji !== 'undefined') window.printSlipGaji = printSlipGaji;
+    if (typeof downloadSlipGaji !== 'undefined') window.downloadSlipGaji = downloadSlipGaji;
   if (typeof saveRekapGajiToJpg !== 'undefined') window.saveRekapGajiToJpg = saveRekapGajiToJpg;
   if (typeof saveRekapGajiData !== 'undefined') window.saveRekapGajiData = saveRekapGajiData;
   if (typeof submitGajiPengajuan !== 'undefined') window.submitGajiPengajuan = submitGajiPengajuan;

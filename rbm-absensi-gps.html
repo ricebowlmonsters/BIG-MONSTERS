@@ -183,7 +183,9 @@
 <script>
 (function(){
   var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-  var outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+  var publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+  var internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+  var outlets = Array.from(new Set(publicOutlets.concat(internalOutlets)));
   var names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
   var sel = document.getElementById('rbm-outlet-select');
   var lockedMsg = document.getElementById('rbm-outlet-locked-msg');
@@ -316,20 +318,64 @@ function fallbackCopy(url, feedback) {
   <div class="form-container">
     <div class="form-section rbm-absen-name-section">
       <label>Nama Karyawan</label>
-      <select id="gps_absen_name" onchange="updateGpsJadwalDisplay();">
+      <select id="gps_absen_name" onchange="document.getElementById('gps_absen_password').value=''; resetAbsensiPassword(); updateGpsJadwalDisplay(); loadEmployeeAbsensiRequests(); checkDistance();">
         <option value="">-- Pilih Nama --</option>
         <!-- Populated by JS -->
       </select>
+      <label for="gps_absen_password" style="display:block; margin-top:12px;">Password Absensi</label>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <input type="password" id="gps_absen_password" autocomplete="off" placeholder="Masukkan password" oninput="resetAbsensiPassword(); checkDistance();" style="width:100%; box-sizing:border-box; text-align:center; font-size:16px; padding:12px; border:2px solid #bfdbfe; border-radius:12px;">
+        <button type="button" id="gps_absen_password_toggle" class="btn btn-secondary" onclick="toggleAbsensiPasswordVisibility()" title="Tampilkan password" aria-label="Tampilkan password" style="width:48px; min-width:48px; height:48px; padding:0;">&#128065;</button>
+      </div>
+      <p style="margin:8px 0 0; font-size:11px; color:#64748b; text-align:center;">Password diberikan oleh Owner.</p>
+      <button type="button" id="gps_absen_continue" class="btn btn-primary" onclick="continueAbsensiWithPassword()" style="width:100%; margin-top:12px;">Lanjutkan</button>
+      <button type="button" id="gps_download_slip" class="btn btn-secondary" onclick="downloadEmployeeSlipGaji()" style="display:none; width:100%; margin-top:8px;">&#128196; Download Slip Gaji</button>
+      <label for="gps_slip_month" style="display:none; margin-top:12px; font-size:12px; text-align:left;">Bulan Slip Gaji</label>
+      <input type="month" id="gps_slip_month" onchange="if(window._gpsPasswordVerifiedName && typeof continueAbsensiWithPassword === 'function') continueAbsensiWithPassword();" style="display:none; width:100%; box-sizing:border-box; padding:10px; border:1px solid #bfdbfe; border-radius:8px;">
     </div>
 
+    <div id="gps_absensi_feature" style="display:none;">
     <div id="gps_jadwal_display" class="form-section" style="display:none;">
         <div id="gps_jadwal_text">-</div>
+    </div>
+    <div id="gps_gaji_pokok_display" class="form-section" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; padding:12px 16px; border-radius:12px; margin-bottom:16px; text-align:center;">
+      <div>
+        <div style="font-size:11px; color:#166534; text-transform:uppercase; font-weight:700;">Total Gaji</div>
+        <div id="gps_gaji_pokok_text" style="font-size:20px; color:#15803d; font-weight:800; margin-top:4px;">Rp 0</div>
+      </div>
     </div>
 
     <!-- [BARU] Info HR Karyawan (Kontrak, Sanksi, Notes, Masa Kerja) -->
     <div id="gps_hr_display" class="form-section" style="display:none; background: #ffffff; border: 1px solid #e2e8f0; padding: 16px 20px; border-radius: 16px; margin-bottom: 24px; text-align: left; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
         <strong style="font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 12px; color: #475569; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;">👤 Info HR Karyawan</strong>
         <div id="gps_hr_text" style="font-size: 13px; line-height: 1.6; color: #334155;">-</div>
+    </div>
+
+    <div class="form-section" style="background:#fff; border:1px solid #e2e8f0; padding:16px 20px; border-radius:16px; margin-bottom:24px; text-align:left;">
+      <strong style="font-size:14px; display:block; margin-bottom:12px; color:#334155;">Pengajuan Absensi, Libur &amp; Cuti</strong>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px;">
+            <div><label for="gps_request_type" style="font-size:12px;">Jenis Pengajuan</label><select id="gps_request_type" onchange="var detail=document.getElementById('gps_lupa_absen_detail'); var lembur=document.getElementById('gps_lembur_detail'); if(detail) detail.style.display=this.value === 'Lupa Absen' ? 'block' : 'none'; if(lembur) lembur.style.display=this.value === 'Pengajuan Lembur' ? 'block' : 'none'; if(typeof toggleLupaAbsenDetail === 'function') toggleLupaAbsenDetail(this.value);" style="width:100%; box-sizing:border-box;"><option value="P">P: Pagi</option><option value="S">S: Siang</option><option value="M">M: Middle</option><option value="Off">Off: Libur</option><option value="PH">PH: Cuti</option><option value="AL">AL: Cuti</option><option value="DP">DP: Cuti</option><option value="Lupa Absen">Lupa Absen</option><option value="Pengajuan Lembur">Pengajuan Lembur</option></select></div>
+            <div><label for="gps_request_date" style="font-size:12px;">Tanggal</label><input type="date" id="gps_request_date" style="width:100%; box-sizing:border-box;"></div>
+      </div>
+      <div id="gps_lupa_absen_detail" style="display:none; margin-top:10px;">
+        <div style="font-size:12px; font-weight:600; margin-bottom:6px;">Detail Absen (outlet, tanggal, dan nama sama)</div>
+        <div id="gps_lupa_absen_rows">
+          <div class="lupa-absen-row" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin-top:8px; align-items:end;">
+            <div><label style="font-size:11px;">Tipe Absen</label><select class="gps-request-absensi-type" style="width:100%; box-sizing:border-box;"><option value="Masuk">Masuk</option><option value="Pulang">Pulang</option><option value="Istirahat Keluar">Istirahat Keluar</option><option value="Istirahat Kembali">Istirahat Kembali</option></select></div>
+            <div><label style="font-size:11px;">Jam (detik)</label><input type="time" step="1" class="gps-request-absensi-time" style="width:100%; box-sizing:border-box;"></div>
+            <button type="button" class="btn btn-secondary lupa-absen-remove" style="display:none; width:auto; padding:6px 10px;">Hapus</button>
+          </div>
+        </div>
+        <button type="button" class="btn btn-secondary" onclick="addLupaAbsenRow()" style="width:auto; margin-top:8px; padding:6px 10px;">+ Tambah Tipe Absen</button>
+      </div>
+      <div id="gps_lembur_detail" style="display:none; margin-top:10px;">
+        <div><label for="gps_request_lembur_jam" style="font-size:12px;">Jam Lembur</label><input type="number" id="gps_request_lembur_jam" min="0.5" step="0.5" placeholder="Contoh: 2" style="width:100%; box-sizing:border-box;"></div>
+      </div>
+      <label for="gps_request_reason" style="font-size:12px; display:block; margin-top:10px;">Alasan</label>
+      <textarea id="gps_request_reason" rows="3" placeholder="Tulis alasan pengajuan..." style="width:100%; box-sizing:border-box; resize:vertical;"></textarea>
+      <button type="button" class="btn btn-primary" onclick="submitEmployeeAbsensiRequest()" style="width:100%; margin-top:10px;">Kirim Pengajuan</button>
+      <p id="gps_request_feedback" style="font-size:12px; margin:8px 0 0; color:#64748b;"></p>
+      <div id="gps_request_history" style="margin-top:12px;"></div>
     </div>
 
     <div class="form-section" style="text-align: center;">
@@ -351,6 +397,7 @@ function fallbackCopy(url, feedback) {
         </div>
         <button class="btn btn-secondary" onclick="loadMyGpsHistory()" style="margin-top:12px; width:100%; background:#f8fafc; border:1px solid #cbd5e1; color:#334155;">📜 Lihat Riwayat Absensi Saya</button>
     </div>
+      </div>
   </div>
 </div>
 
@@ -435,7 +482,7 @@ function fallbackCopy(url, feedback) {
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 <script src="rbm-pro-storage.js"></script>
 <script src="firebase-storage.js"></script>
-<script src="rbm-pro.js"></script>
+<script src="rbm-pro.js?v=20260904-lupa-lembur-1"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <!-- [PERFORMA] jszip/xlsx tidak dibutuhkan untuk absensi karyawan. -->
 <script>

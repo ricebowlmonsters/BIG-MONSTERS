@@ -551,7 +551,9 @@
       // [BARU] Fungsi untuk mengisi filter outlet berdasarkan pengaturan
       function populateOutletFilter() {
         const activeOutlets = JSON.parse(localStorage.getItem('rbm_active_outlets') || '[]');
-        let allOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+        let publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+        let internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+        let allOutlets = [...new Set([...publicOutlets, ...internalOutlets])];
         if (!Array.isArray(allOutlets) || allOutlets.length === 0) allOutlets = ['sidoarjo', 'surabaya'];
         
         // Gunakan outlet aktif jika ada, jika tidak, gunakan semua outlet sebagai fallback

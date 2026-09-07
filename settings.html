@@ -79,9 +79,12 @@
 
       <section id="section-jadwal-absensi" class="card" style="margin-bottom: 20px;">
         <h3 class="card-title">Jadwal & Absensi (RBM Pro)</h3>
-        <p class="card-subtitle" style="margin-bottom: 16px; font-size: 12px;">Atur lokasi kantor per outlet, jam masuk/pulang per shift, durasi istirahat, dan perhitungan telat untuk Absensi GPS &amp; Rekap Gaji. <strong>Hanya Owner</strong> yang dapat mengubah pengaturan ini.</p>
-        <a href="rbm-pengaturan-jadwal-absensi.html" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: #fff;">
+        <p id="attendance-settings-help" class="card-subtitle" style="margin-bottom: 16px; font-size: 12px;">Atur lokasi kantor per outlet, jam masuk/pulang per shift, durasi istirahat, dan perhitungan telat untuk Absensi GPS &amp; Rekap Gaji. <strong>Pengaturan jadwal hanya dapat diubah Owner.</strong></p>
+        <a id="schedule-settings-link" href="rbm-pengaturan-jadwal-absensi.html" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none; color: #fff;">
           &#128197; Pengaturan Jadwal &amp; Absensi
+        </a>
+        <a id="password-settings-link" href="rbm-pengaturan-password-absensi.html" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 8px; text-decoration: none; margin-left: 8px;">
+          &#128274; Pengaturan Password Absensi
         </a>
       </section>
 
@@ -141,12 +144,26 @@
         <div id="add-user-form-container" style="border-top: 1px solid #e5e7eb; margin-top: 20px; padding-top: 20px;">
           <h4 style="margin-top:0; margin-bottom: 12px; font-size: 16px;">Tambah Pengguna Baru</h4>
           <div class="form-group">
+            <label class="form-label" for="new-user-name">Nama Lengkap</label>
+            <input type="text" id="new-user-name" class="form-input" placeholder="Nama lengkap">
+          </div>
+          <div class="form-group">
             <label class="form-label" for="new-user-username">Username</label>
             <input type="text" id="new-user-username" class="form-input" placeholder="Username">
           </div>
           <div class="form-group">
             <label class="form-label" for="new-user-password">Password</label>
             <input type="text" id="new-user-password" class="form-input" placeholder="Password">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="new-user-jabatan">Jabatan Approval</label>
+            <select id="new-user-jabatan" class="form-input">
+              <option value="">Tidak menjadi approver</option>
+              <option value="Supervisor">Supervisor</option>
+              <option value="Manager Outlet">Manager Outlet</option>
+              <option value="Admin">Admin</option>
+              <option value="Supervisor Regional">Supervisor Regional</option>
+            </select>
           </div>
           <div class="form-group">
             <label class="form-label" for="new-user-role">Role / Jabatan</label>
@@ -326,7 +343,9 @@
       
       const userListDiv = document.getElementById('user-list');
       const newUserUsernameInput = document.getElementById('new-user-username');
+      const newUserNameInput = document.getElementById('new-user-name');
       const newUserPasswordInput = document.getElementById('new-user-password');
+      const newUserJabatanSelect = document.getElementById('new-user-jabatan');
       const newUserRoleSelect = document.getElementById('new-user-role');
       const newUserOutletSelect = document.getElementById('new-user-outlet');
       const userOutletContainer = document.getElementById('user-outlet-container');
@@ -400,7 +419,13 @@
         const sectionJadwal = document.getElementById('section-jadwal-absensi');
         if (sectionJadwal) {
           const u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-          sectionJadwal.style.display = (u.role === 'owner') ? 'block' : 'none';
+          const role = String(u.role || '').toLowerCase();
+          const jabatan = String(u.jabatan || '').toLowerCase();
+          const isOwner = role === 'owner';
+          const canManagePassword = isOwner || role === 'manager' || jabatan === 'supervisor';
+          sectionJadwal.style.display = canManagePassword ? 'block' : 'none';
+          const scheduleLink = document.getElementById('schedule-settings-link');
+          if (scheduleLink) scheduleLink.style.display = isOwner ? 'inline-flex' : 'none';
         }
         renderCounterSettings(); // [BARU] Render pengaturan counter
         checkOfflineMode(); // [BARU] Cek mode offline
@@ -511,7 +536,7 @@
         }
         container.style.display = 'block';
         
-        const outlets = getOutlets();
+        const outlets = getAllOutlets();
         const listDiv = document.getElementById('counter-list');
         listDiv.innerHTML = '<p class="muted">Memuat data counter...</p>';
         
@@ -580,7 +605,7 @@
 
       // [BARU] Fungsi untuk menampilkan pilihan outlet yang bisa diaktifkan
       function renderActiveOutletsSelection() {
-        const allOutlets = getOutlets();
+        const allOutlets = getAllOutlets();
         const activeOutlets = JSON.parse(localStorage.getItem(RBM_ACTIVE_OUTLETS) || '[]');
         activeOutletsListDiv.innerHTML = '';
 
@@ -613,7 +638,7 @@
 
       // [BARU] Fungsi untuk render dropdown outlet di bagian konfigurasi (Payment & Memo)
       function renderConfigOutletSelectors() {
-        const outlets = getOutlets();
+        const outlets = getAllOutlets();
         const currentUser = JSON.parse(localStorage.getItem('rbm_user') || '{}');
         
         const populate = (selectElement) => {
@@ -661,6 +686,10 @@
         const stored = localStorage.getItem('rbm_internal_outlets');
         // Defaultnya selalu ada 'office'
         return stored ? JSON.parse(stored) : ['office'];
+      }
+
+      function getAllOutlets() {
+        return [...new Set([...getOutlets(), ...getInternalOutlets()])];
       }
 
       function saveOutlets(outlets) {
@@ -775,9 +804,10 @@
 
           item.innerHTML = `
             <div>
-              <div style="font-weight:600;">${user.username} ${roleBadge}</div>
-              <div style="font-size: 12px; color: #6b7280;">Pass: ${user.password} • ${outletInfo}</div>
+              <div style="font-weight:600;">${user.nama || user.username} ${roleBadge}</div>
+              <div style="font-size: 12px; color: #6b7280;">User: ${user.username} • Pass: ${user.password} • ${user.jabatan || outletInfo}</div>
             </div>
+            <button data-username="${user.username}" class="btn-edit-user" style="background:#2563eb; border:none; color:white; cursor:pointer; font-size:12px; padding:4px 8px; margin-left:auto; margin-right:6px;">Edit</button>
             <button data-username="${user.username}" class="btn-delete-user" style="background:none; border:none; color:red; cursor:pointer; font-size: 16px;">✕</button>
           `;
           userListDiv.appendChild(item);
@@ -809,7 +839,7 @@
       }
 
       function renderUserOutletOptions() {
-        const outlets = getOutlets();
+        const outlets = getAllOutlets();
         newUserOutletSelect.innerHTML = '';
         outlets.forEach(outlet => {
             const opt = document.createElement('option');
@@ -1067,8 +1097,10 @@
       if (addUserBtn) {
         addUserBtn.addEventListener('click', async () => {
             const currentUser = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+            const nama = newUserNameInput.value.trim();
             const username = newUserUsernameInput.value.trim();
             const password = newUserPasswordInput.value.trim();
+            const jabatan = newUserJabatanSelect.value;
             const role = newUserRoleSelect.value;
             
             let outlet = 'none';
@@ -1087,11 +1119,13 @@
             }
 
             const users = getUsers();
-            users.push({ username, password, role, outlet });
+            users.push({ username, nama, password, jabatan, role, outlet });
             saveUsers(users);
             
             newUserUsernameInput.value = '';
+            newUserNameInput.value = '';
             newUserPasswordInput.value = '';
+            newUserJabatanSelect.value = '';
             CustomUI.success('Pengguna berhasil ditambahkan.');
         });
       }
@@ -1142,6 +1176,30 @@
               renderActiveOutletsSelection();
             }
           }
+        } else if (e.target.classList.contains('btn-edit-user')) {
+          const usernameToEdit = e.target.dataset.username;
+          const users = getUsers();
+          const user = users.find(u => u.username === usernameToEdit);
+          if (!user) return;
+          const nama = prompt('Nama lengkap:', user.nama || '');
+          if (nama === null) return;
+          const password = prompt('Password:', user.password || '');
+          if (password === null) return;
+          const jabatan = prompt('Jabatan (Supervisor, Manager Outlet, Admin, Supervisor Regional, Manager Regional):', user.jabatan || '');
+          if (jabatan === null) return;
+          const outlet = prompt('Lokasi/outlet:', user.outlet || 'none');
+          if (outlet === null) return;
+          user.nama = nama.trim();
+          user.password = password.trim();
+          user.jabatan = jabatan.trim();
+          user.outlet = outlet.trim();
+          saveUsers(users);
+          const current = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+          if (current.username === usernameToEdit) {
+            Object.assign(current, user);
+            localStorage.setItem('rbm_user', JSON.stringify(current));
+          }
+          CustomUI.success('Pengguna berhasil diperbarui.');
         } else if (e.target.classList.contains('btn-delete-user')) {
             // [BARU] Hapus User
             const usernameToDelete = e.target.dataset.username;

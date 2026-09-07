@@ -147,7 +147,9 @@
              if (u && u.outlet) outlet = String(u.outlet);
          }
          if (!outlet) {
-             var outlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+             var publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
+             var internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+             var outlets = Array.from(new Set(publicOutlets.concat(internalOutlets)));
              if (outlets.length) outlet = outlets[0];
          }
       } catch(e) {}
