@@ -81,7 +81,7 @@
     <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
             <h3 style="margin: 0;">Daftar Pesan Komunitas</h3>
-            <button onclick="deleteAllChat()" class="btn btn-danger" style="background-color: #dc2626;">Hapus Semua</button>
+            <button id="deleteAllChatButton" onclick="deleteAllChat()" class="btn btn-danger" style="background-color: #dc2626;">Hapus Semua</button>
         </div>
         <div id="chatList" class="chat-list">
             <div class="empty-state">Memuat pesan...</div>
@@ -120,13 +120,15 @@
 
     // Cek Status Login
     const user = JSON.parse(localStorage.getItem('rbm_user'));
+    const isDeveloper = !!user && String(user.username || '').toLowerCase() === 'burhan';
     
     if (!user) {
         // Jika tidak login: Sembunyikan form input & tombol hapus semua
         document.getElementById('inputCard').style.display = 'none';
         document.getElementById('loginWarning').style.display = 'block';
-        document.querySelector('button[onclick="deleteAllChat()"]').style.display = 'none';
+        document.getElementById('deleteAllChatButton').style.display = 'none';
     }
+    if (!isDeveloper) document.getElementById('deleteAllChatButton').style.display = 'none';
 
     // Load Data (Ambil 100 pesan terakhir)
     chatRef.limitToLast(100).on('value', (snapshot) => {
@@ -164,7 +166,7 @@
                     <div style="display:flex; flex-direction:column; gap:4px; margin-left:8px;">
                         ${user ? `<button onclick="replyChat('${msg.key}')" class="btn" style="background-color:#3b82f6; color:white; padding:4px 8px; font-size:11px;">Balas</button>` : ''}
                         ${user ? `<button onclick="togglePin('${msg.key}', ${msg.isPinned || false})" class="btn" style="background-color:${msg.isPinned ? '#4b5563' : '#f59e0b'}; color:white; padding:4px 8px; font-size:11px;">${msg.isPinned ? 'Unpin' : 'Pin'}</button>` : ''}
-                        ${user ? `<button onclick="deleteChat('${msg.key}')" class="btn btn-danger" style="padding:4px 8px; font-size:11px;">Hapus</button>` : ''}
+                        ${isDeveloper ? `<button onclick="deleteChat('${msg.key}')" class="btn btn-danger" style="padding:4px 8px; font-size:11px;">Hapus</button>` : ''}
                     </div>
                 `;
                 list.appendChild(el);
@@ -225,12 +227,14 @@
     }
 
     function deleteChat(key) {
+        if (!isDeveloper) return alert('Hanya developer yang dapat menghapus chat.');
         if(confirm('Hapus pesan ini?')) {
             chatRef.child(key).remove();
         }
     }
 
     function deleteAllChat() {
+        if (!isDeveloper) return alert('Hanya developer yang dapat menghapus chat.');
         if(confirm('Yakin ingin menghapus SEMUA pesan? Tindakan ini tidak dapat dibatalkan.')) {
             chatRef.remove();
         }

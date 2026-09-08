@@ -114,6 +114,7 @@
           <div class="welcome-icon">👋</div>
           <h2>Selamat Datang, <span id="user-name">User</span>!</h2>
           <p>Pilih menu di sebelah kiri untuk memulai.</p>
+          <p class="welcome-quote">"Lakukan rutinitas pekerjaanmu dengan cinta. Jika kamu tidak bisa menjalani rutinitasmu dengan cinta, lebih baik tinggalkan saja."</p>
         </div>
       </main>
     </div>
@@ -125,6 +126,21 @@
   <script src="custom-ui.js"></script>
   <script src="firebase-storage.js"></script>
   <script src="app.js"></script>
+  <style>
+    .welcome-quote {
+      max-width: 620px;
+      margin: 18px auto 0;
+      color: #64748b;
+      font-style: italic;
+      line-height: 1.6;
+      animation: welcomeQuoteReveal 1.2s ease-out both;
+    }
+
+    @keyframes welcomeQuoteReveal {
+      from { opacity: 0; transform: translateY(12px); filter: blur(4px); }
+      to { opacity: 1; transform: translateY(0); filter: blur(0); }
+    }
+  </style>
   <script>
     // Load user data
     function loadUserData() {
@@ -505,13 +521,19 @@
           
           // [PERBAIKAN] Handle Logout agar tidak terbuka di dalam iframe
           if (this.getAttribute('href') === 'login.html') {
+            const logoutUser = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+            const clearPresence = (typeof FirebaseStorage !== 'undefined' && typeof FirebaseStorage.clearPresence === 'function')
+              ? FirebaseStorage.clearPresence(logoutUser.username)
+              : Promise.resolve();
             localStorage.removeItem('rbm_user');
             localStorage.removeItem('rbm_session_id');
-            if (window.self !== window.top && window.location.protocol !== 'file:') {
-              window.top.location.href = 'login.html'; // Redirect window utama
-            } else {
-              window.location.href = 'login.html';
-            }
+            clearPresence.finally(() => {
+              if (window.self !== window.top && window.location.protocol !== 'file:') {
+                window.top.location.href = 'login.html'; // Redirect window utama
+              } else {
+                window.location.href = 'login.html';
+              }
+            });
             return;
           }
 

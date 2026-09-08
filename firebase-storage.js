@@ -210,12 +210,15 @@
   }
 
   // ---------- Fitur Online / Presence ----------
-  function trackPresence(username, nama, role) {
+  function trackPresence(username, nama, role, sessionId) {
     if (!init() || !username) return;
     var uid = safeUsernameKey(username);
     var myConnectionsRef = db.ref('app_state/presence/' + uid + '/connections');
     var lastOnlineRef = db.ref('app_state/presence/' + uid + '/lastOnline');
     var infoRef = db.ref('app_state/presence/' + uid + '/info');
+    var heartbeatStarted = false;
+
+    myConnectionsRef.remove();
 
     db.ref('.info/connected').on('value', function(snap) {
       if (snap.val() === true) {
@@ -223,9 +226,21 @@
         con.onDisconnect().remove();
         lastOnlineRef.onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
         con.set(true);
-        infoRef.set({ username: username, nama: nama || username, role: role || 'user', onlineSince: firebase.database.ServerValue.TIMESTAMP });
+        infoRef.set({ username: username, nama: nama || username, role: role || 'user', sessionId: sessionId || '', onlineSince: firebase.database.ServerValue.TIMESTAMP, lastSeen: firebase.database.ServerValue.TIMESTAMP });
+        if (!heartbeatStarted) {
+          heartbeatStarted = true;
+          setInterval(function() {
+            infoRef.update({ lastSeen: firebase.database.ServerValue.TIMESTAMP });
+          }, 30000);
+        }
       }
     });
+  }
+
+  function clearPresence(username) {
+    if (!init() || !username) return Promise.resolve();
+    return db.ref('app_state/presence/' + safeUsernameKey(username)).remove()
+      .catch(function(err) { console.warn('firebase-storage clearPresence failed', err); });
   }
 
   // ---------- Absensi & Jadwal (Struktur Partisi Per Bulan) ----------
@@ -2211,6 +2226,7 @@
     removeAppState: removeAppState,
     getActiveSession: getActiveSession,
     setActiveSession: setActiveSession,
+    clearPresence: clearPresence,
     trackPresence: trackPresence,
     saveAbsensiJadwal: saveAbsensiJadwal,
     loadAbsensiJadwal: loadAbsensiJadwal,

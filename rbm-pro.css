@@ -28,6 +28,22 @@
       -webkit-font-smoothing: antialiased;
     }
 
+    body::after {
+      content: 'BRN.09';
+      position: fixed;
+      right: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 9999;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      opacity: 0.45;
+      pointer-events: none;
+      user-select: none;
+    }
+
     /* Header bar seperti Kelola Menu: ‹ Judul (biru) */
     .rbm-page-header {
       background: var(--surface);
@@ -519,13 +535,7 @@
     }
 
     .watermark {
-      position: fixed;
-      bottom: 12px;
-      right: 24px;
-      font-size: 11px;
-      color: var(--text-muted);
-      opacity: .6;
-      z-index: 50;
+      display: none;
     }
 
     @media (max-width: 768px) {

@@ -282,10 +282,17 @@ class UIHelper {
 class OnlineWidget {
   static init(user) {
     if (document.getElementById('rbm-online-widget')) return;
+
+    let registeredUsers = [];
+    try { registeredUsers = JSON.parse(localStorage.getItem('rbm_users') || '[]'); } catch (e) {}
+    const currentUsername = String(user.username || '').toLowerCase();
+    const isDeveloperUser = currentUsername === 'burhan';
+    const isRegisteredUser = isDeveloperUser || registeredUsers.some(item => String(item && item.username || '').toLowerCase() === currentUsername);
+    if (!isRegisteredUser) return;
     
     // Aktifkan tracking Firebase jika tersedia
-    if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.trackPresence) {
-      FirebaseStorage.trackPresence(user.username, user.nama, user.role);
+    if (localStorage.getItem('rbm_session_id') && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.trackPresence) {
+      FirebaseStorage.trackPresence(user.username, user.nama, user.role, localStorage.getItem('rbm_session_id'));
     }
 
     const style = document.createElement('style');
@@ -294,10 +301,23 @@ class OnlineWidget {
       .rbm-widget-box { background: white; border-radius: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 10px 16px; display: flex; align-items: center; gap: 8px; cursor: pointer; border: 1px solid #e5e7eb; transition: all 0.2s; position: relative; }
       .rbm-widget-box:hover { background: #f9fafb; transform: translateY(-2px); }
       .rbm-notif-badge { background: #ef4444; color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; position: absolute; top: -5px; right: -5px; display: none; }
+      .rbm-chat-badge { background: #ef4444; color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; position: absolute; top: -5px; right: -5px; display: none; }
       .rbm-online-dot { width: 10px; height: 10px; background: #10b981; border-radius: 50%; box-shadow: 0 0 4px #10b981; }
       #rbm-online-dropdown { position: absolute; bottom: 50px; right: 0; background: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 220px; padding: 12px; display: none; border: 1px solid #e5e7eb; flex-direction: column; gap: 5px; max-height: 300px; overflow-y: auto; cursor: default; }
       .rbm-online-user { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 8px 4px; border-bottom: 1px solid #f3f4f6; color: #374151; font-weight: 500; }
       .rbm-online-user:last-child { border-bottom: none; }
+      #rbm-chat-modal { position: fixed; right: 20px; bottom: 75px; width: min(340px, calc(100vw - 32px)); background: white; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.2); display: none; flex-direction: column; overflow: hidden; z-index: 10000; }
+      #rbm-chat-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #4C2A85; color: white; font-weight: 700; font-size: 13px; }
+      #rbm-chat-pinned { display: none; max-height: 96px; overflow-y: auto; padding: 8px 10px; background: #fffbeb; border-bottom: 1px solid #fcd34d; flex-direction: column; gap: 6px; }
+      #rbm-chat-users { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 11px; }
+      #rbm-chat-messages { height: 220px; overflow-y: auto; padding: 10px; background: #f8fafc; display: flex; flex-direction: column; gap: 6px; }
+      .rbm-chat-message-wrap { max-width: 88%; display: flex; flex-direction: column; gap: 2px; }
+      .rbm-chat-message { padding: 7px 9px; border-radius: 10px; font-size: 12px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .rbm-chat-message.mine { align-self: flex-end; background: #4C2A85; color: white; border-bottom-right-radius: 3px; }
+      .rbm-chat-message.theirs { align-self: flex-start; background: white; color: #374151; border: 1px solid #e5e7eb; border-bottom-left-radius: 3px; }
+      #rbm-chat-form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #e5e7eb; }
+      #rbm-chat-input { min-width: 0; flex: 1; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px; font: inherit; font-size: 12px; }
+      #rbm-chat-send { border: 0; border-radius: 8px; padding: 0 12px; background: #4C2A85; color: white; cursor: pointer; font-weight: 700; }
       
       #rbm-notif-dropdown { position: absolute; bottom: 50px; right: 120px; background: white; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 280px; padding: 12px; display: none; border: 1px solid #e5e7eb; flex-direction: column; gap: 5px; max-height: 350px; overflow-y: auto; cursor: default; }
       .rbm-notif-item { padding: 10px; border-radius: 6px; background: #f9fafb; border: 1px solid #e5e7eb; font-size: 12px; cursor: pointer; transition: background 0.2s; line-height: 1.4; }
@@ -324,6 +344,15 @@ class OnlineWidget {
           '<div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #6b7280; margin-bottom: 8px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Aktivitas Pengguna</div>' +
           '<div id="rbm-online-list">Memuat...</div>' +
         '</div>' +
+      '</div>' +
+      '<div class="rbm-widget-box" id="rbm-chat-btn">' +
+        '<span style="font-size: 16px;">💬</span><span style="font-size: 13px; font-weight: 600; color: #374151;">Chat</span><span class="rbm-chat-badge" id="rbm-chat-badge">0</span>' +
+      '</div>' +
+      '<div id="rbm-chat-modal">' +
+        '<div id="rbm-chat-header"><span id="rbm-chat-title">Chat Monsters</span><button id="rbm-chat-close" type="button" style="border:0;background:none;color:white;font-size:18px;cursor:pointer;">×</button></div>' +
+        '<div id="rbm-chat-pinned"></div>' +
+        '<div id="rbm-chat-messages"><div style="color:#9ca3af;text-align:center;font-size:12px;margin:auto;">Belum ada pesan.</div></div>' +
+        '<form id="rbm-chat-form"><input id="rbm-chat-input" autocomplete="off" placeholder="Tulis pesan..."><button id="rbm-chat-send" type="submit">Kirim</button></form>' +
       '</div>';
     document.body.appendChild(widget);
 
@@ -339,6 +368,94 @@ class OnlineWidget {
     if (typeof firebase !== 'undefined' && firebase.database) {
       setTimeout(() => {
         const db = firebase.database();
+        const currentUsername = String(user.username || '');
+        const isDeveloper = currentUsername.toLowerCase() === 'burhan';
+        const registeredUsernames = new Set(registeredUsers.map(item => String(item && item.username || '').toLowerCase()));
+        const globalChatRoot = db.ref('registered_user_chat');
+        const globalChatRef = globalChatRoot.limitToLast(100);
+        const chatModal = document.getElementById('rbm-chat-modal');
+        const chatPinned = document.getElementById('rbm-chat-pinned');
+        const chatMessages = document.getElementById('rbm-chat-messages');
+        const chatInput = document.getElementById('rbm-chat-input');
+        const chatBadge = document.getElementById('rbm-chat-badge');
+        const chatReadKey = 'rbm_chat_last_read_' + currentUsername.toLowerCase();
+        let lastChatReadAt = Number(localStorage.getItem(chatReadKey) || 0);
+        const updateChatBadge = count => {
+          if (!chatBadge) return;
+          chatBadge.textContent = count > 99 ? '99+' : String(count);
+          chatBadge.style.display = count > 0 ? 'inline-block' : 'none';
+        };
+        const markChatRead = () => {
+          lastChatReadAt = Date.now();
+          localStorage.setItem(chatReadKey, String(lastChatReadAt));
+          updateChatBadge(0);
+        };
+        const renderChatMessages = snapshot => {
+          chatMessages.innerHTML = '';
+          chatPinned.innerHTML = '';
+          chatPinned.style.display = 'none';
+          const messages = snapshot.val() || {};
+          let unreadCount = 0;
+          Object.entries(messages).sort((a, b) => {
+            if (!!b[1].pinned !== !!a[1].pinned) return b[1].pinned ? 1 : -1;
+            return (a[1].timestamp || 0) - (b[1].timestamp || 0);
+          }).forEach(([key, message]) => {
+            const senderUsername = String(message.username || '').toLowerCase();
+            const isAllowedChatSender = senderUsername === 'burhan' || registeredUsernames.has(senderUsername);
+            if (!isDeveloper && !isAllowedChatSender) return;
+            if (senderUsername !== currentUsername && Number(message.timestamp || 0) > lastChatReadAt) unreadCount++;
+            const wrap = document.createElement('div');
+            wrap.className = 'rbm-chat-message-wrap';
+            wrap.style.alignSelf = message.username === currentUsername ? 'flex-end' : 'flex-start';
+            const sender = document.createElement('small');
+            sender.textContent = message.senderName || message.sender || 'User';
+            sender.style.cssText = 'color:#6b7280;font-size:10px;';
+            const item = document.createElement('div');
+            item.className = 'rbm-chat-message ' + (message.username === currentUsername ? 'mine' : 'theirs');
+            item.textContent = message.text || '';
+            wrap.appendChild(sender);
+            wrap.appendChild(item);
+            if (isDeveloper) {
+              const actions = document.createElement('div');
+              actions.style.cssText = 'display:flex;gap:8px;align-self:flex-start;';
+              const pinButton = document.createElement('button');
+              pinButton.type = 'button';
+              pinButton.textContent = message.pinned ? 'Lepas Sematan' : 'Sematkan';
+              pinButton.style.cssText = 'border:0;background:none;color:#b45309;font-size:10px;cursor:pointer;padding:0;';
+              pinButton.addEventListener('click', () => globalChatRoot.child(key).update({ pinned: !message.pinned }));
+              const deleteButton = document.createElement('button');
+              deleteButton.type = 'button';
+              deleteButton.textContent = 'Hapus';
+              deleteButton.style.cssText = 'border:0;background:none;color:#dc2626;font-size:10px;cursor:pointer;padding:0;';
+              deleteButton.addEventListener('click', () => globalChatRoot.child(key).remove());
+              actions.appendChild(pinButton);
+              actions.appendChild(deleteButton);
+              wrap.appendChild(actions);
+            }
+            if (message.pinned) {
+              chatPinned.style.display = 'flex';
+              chatPinned.appendChild(wrap);
+            } else {
+              chatMessages.appendChild(wrap);
+            }
+          });
+          updateChatBadge(unreadCount);
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        };
+        document.getElementById('rbm-chat-btn').addEventListener('click', event => {
+          event.stopPropagation();
+          markChatRead();
+          chatModal.style.display = chatModal.style.display === 'flex' ? 'none' : 'flex';
+          chatInput.focus();
+        });
+        document.getElementById('rbm-chat-close').addEventListener('click', () => { chatModal.style.display = 'none'; });
+        document.getElementById('rbm-chat-form').addEventListener('submit', event => {
+          event.preventDefault();
+          const text = chatInput.value.trim();
+          if (!text) return;
+          globalChatRoot.push({ username: currentUsername, senderName: user.nama || currentUsername, text: text, timestamp: firebase.database.ServerValue.TIMESTAMP }).then(() => { chatInput.value = ''; });
+        });
+        globalChatRef.on('value', renderChatMessages);
         
         // --- Logika Notifikasi Cerdas ---
         const isOwner = user.role === 'owner' || (user.username || '').toLowerCase() === 'burhan';
@@ -400,13 +517,18 @@ class OnlineWidget {
 
         db.ref('app_state/presence').on('value', snap => {
           const val = snap.val() || {};
+          const now = Date.now();
           let count = 0; let html = '';
           Object.keys(val).forEach(uid => {
             const u = val[uid];
-            if (u.connections && Object.keys(u.connections).length > 0) {
+            const lastSeen = u.info && Number(u.info.lastSeen);
+            const isRecentlyActive = lastSeen && now - lastSeen <= 90000;
+            if (u.connections && Object.keys(u.connections).length > 0 && isRecentlyActive) {
               count++;
               const n = u.info ? (u.info.nama || u.info.username) : uid;
               html += '<div class="rbm-online-user"><div class="rbm-online-dot"></div> ' + n + '</div>';
+            } else if (u.connections || u.info) {
+              db.ref('app_state/presence/' + uid).remove();
             }
           });
           const cEl = document.getElementById('rbm-online-count');
@@ -446,12 +568,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return;
   }
+  if (!localStorage.getItem('rbm_session_id')) {
+    const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    localStorage.setItem('rbm_session_id', sessionId);
+    if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.setActiveSession) {
+      FirebaseStorage.setActiveSession(appState.user.username, sessionId);
+    }
+  }
   // Satu akun satu perangkat: jika akun yang sama login di perangkat lain, sesi ini tidak valid
   if (here !== 'login.html' && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getActiveSession) {
     FirebaseStorage.getActiveSession(appState.user.username).then(function(active) {
       if (!active || !active.sessionId) return;
       var mySessionId = localStorage.getItem('rbm_session_id');
       if (mySessionId && active.sessionId !== mySessionId) {
+        if (typeof FirebaseStorage.clearPresence === 'function') {
+          FirebaseStorage.clearPresence(appState.user.username);
+        }
         localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
         localStorage.removeItem('rbm_session_id');
         window.location.href = 'login.html';

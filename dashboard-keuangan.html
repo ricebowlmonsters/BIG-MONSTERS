@@ -41,6 +41,79 @@
     .stat-card.expense { border-top-color: #ef4444; }
     .stat-card.balance-book { border-top-color: #3b82f6; }
     .stat-card.balance-pc { border-top-color: #8b5cf6; }
+    .outlet-summary-card {
+      border-top-color: var(--primary);
+    }
+    .outlet-summary-title {
+      font-size: 16px;
+      margin: 0 0 14px;
+      color: #111827;
+    }
+    .outlet-summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      padding: 8px 0;
+      border-top: 1px solid #f3f4f6;
+    }
+    .outlet-summary-label {
+      font-size: 11px;
+      color: #6b7280;
+    }
+    .outlet-summary-value {
+      font-size: 14px;
+      font-weight: 700;
+      text-align: right;
+    }
+    .schedule-daily-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .schedule-day-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      background: #f9fafb;
+    }
+    .schedule-day-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 8px;
+    }
+    .schedule-line {
+      font-size: 12px;
+      line-height: 1.5;
+      margin-top: 4px;
+    }
+    .schedule-line strong {
+      display: inline-block;
+      min-width: 48px;
+    }
+    .schedule-employee-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .schedule-employee-count {
+      min-width: 24px;
+      text-align: right;
+      color: #6b7280;
+      font-weight: 700;
+    }
+    .schedule-total-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid #d1d5db;
+      font-size: 12px;
+      font-weight: 700;
+      color: #111827;
+    }
     
     .stat-label {
       font-size: 13px;
@@ -103,38 +176,18 @@
       </section>
 
       <!-- Ringkasan Kartu -->
-      <section class="stats-grid">
-        <div class="stat-card revenue">
-          <div class="stat-label">Total Pendapatan (Periode)</div>
-          <div class="stat-value" id="val-pendapatan" style="color: #059669;">Rp 0</div>
-          <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Dari total "Catatan" Pembukuan</div>
-        </div>
-        <div class="stat-card expense">
-          <div class="stat-label">Total Pengeluaran (Periode)</div>
-          <div class="stat-value" id="val-pengeluaran" style="color: #ef4444;">Rp 0</div>
-          <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Dari "Pengeluaran" Petty Cash</div>
-        </div>
-        <div class="stat-card balance-book">
-          <div class="stat-label">Sisa Saldo Pembukuan (Total)</div>
-          <div class="stat-value" id="val-saldo-pembukuan">Rp 0</div>
-          <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Fisik Cash - Total Setor Kas Keluar</div>
-        </div>
-        <div class="stat-card balance-pc">
-          <div class="stat-label">Sisa Saldo Petty Cash (Total)</div>
-          <div class="stat-value" id="val-saldo-pc">Rp 0</div>
-          <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">Pemasukan - Pengeluaran Petty Cash</div>
-        </div>
+      <section class="stats-grid" id="outlet-summary-grid">
       </section>
 
       <!-- Grafik Tren (Line Chart) -->
       <section class="card" style="margin-bottom: 24px;">
-        <h3 class="card-title">Tren Pendapatan vs Pengeluaran</h3>
+        <h3 class="card-title">Tren Pendapatan per Outlet</h3>
         <div class="chart-container">
           <canvas id="trendChart"></canvas>
         </div>
       </section>
 
-      <!-- Grafik Perbandingan & Breakdown -->
+      <!-- Grafik Breakdown -->
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 40px;">
         <section class="card">
           <h3 class="card-title">Pendapatan per Outlet (Bar Chart)</h3>
@@ -142,14 +195,12 @@
             <canvas id="outletTrendChart"></canvas>
           </div>
         </section>
-        
-        <section class="card">
-          <h3 class="card-title" id="pie-chart-title">Perbandingan Pendapatan Antar Outlet (Bulanan)</h3>
-          <div class="chart-container" style="height: 300px;">
-            <canvas id="outletComparisonChart"></canvas>
-          </div>
-        </section>
       </div>
+
+      <section class="card" style="margin-bottom: 40px;">
+        <h3 class="card-title">Jadwal Karyawan Hari Ini per Outlet</h3>
+        <div id="outlet-schedule-daily-grid" class="schedule-daily-grid"></div>
+      </section>
 
     </main>
   </div>
@@ -163,8 +214,10 @@
       // Cek Akses
       const user = JSON.parse(localStorage.getItem('rbm_user') || '{}');
       const usernameLower = (user.username || '').toLowerCase();
-      if (user.role !== 'owner' && usernameLower !== 'burhan') {
-          alert('Akses Ditolak. Halaman ini hanya untuk Developer dan Owner.');
+        const normalizedRole = String(user.role || '').toLowerCase().replace(/[_-]+/g, ' ').trim();
+        const dashboardRoles = ['owner', 'developer', 'manager regional', 'supervisor regional'];
+        if (!dashboardRoles.includes(normalizedRole) && usernameLower !== 'burhan') {
+          alert('Akses Ditolak. Halaman ini hanya untuk Owner, Developer, Manager Regional, dan Supervisor Regional.');
           window.location.href = 'index.html';
           return;
       }
@@ -180,7 +233,6 @@
 
       // Chart Instances
       let trendChartInstance = null;
-      let outletComparisonChartInstance = null;
       let outletTrendChartInstance = null;
 
       const formatRupiah = (angka) => {
@@ -267,17 +319,11 @@
               let saldoPettyCash = 0;
 
               let trendData = {}; // { groupKey: { pendapatan: 0, pengeluaran: 0, outlets: { out1: 0, out2: 0 } } }
-              let outletComparisonMonthly = {}; // { outletId: totalPendapatanBulanIni }
+              let outletSummary = {};
               let chronologicalKeys = new Set(); // To keep dates sorted
 
-              const endDtObj = new Date(endDate);
-              const targetMonth = endDtObj.getMonth();
-              const targetYear = endDtObj.getFullYear();
-              const pieTitle = document.getElementById('pie-chart-title');
-              if (pieTitle) pieTitle.textContent = `Perbandingan Pendapatan Antar Outlet (${endDtObj.toLocaleDateString('id-ID', {month: 'long', year: 'numeric'})})`;
-
               for (const outlet of outlets) {
-                  outletComparisonMonthly[outlet] = 0;
+                  outletSummary[outlet] = { pendapatan: 0, pengeluaran: 0, saldoPembukuan: 0, saldoPettyCash: 0 };
                   const displayOutletName = outletNames[outlet] || outlet.toUpperCase();
 
                   // === 1. FETCH & PROCESS PEMBUKUAN ===
@@ -321,9 +367,11 @@
                       });
 
                       saldoPembukuan += (fisikMasukHarian - setorKeluarHarian);
+                        outletSummary[outlet].saldoPembukuan += (fisikMasukHarian - setorKeluarHarian);
 
                       if (pDateMs >= startDateMs) {
                           totalPendapatan += pendapatanHarian;
+                          outletSummary[outlet].pendapatan += pendapatanHarian;
 
                           const gKey = getGroupKey(p.tanggal, granularity);
                           chronologicalKeys.add(p.tanggal); // keep raw date for sorting
@@ -332,11 +380,6 @@
                           trendData[gKey].outlets[displayOutletName] = (trendData[gKey].outlets[displayOutletName] || 0) + pendapatanHarian;
                       }
 
-                      // Hitung omset spesifik perbulanan untuk Grafik Lingkaran
-                      const pDateObj = new Date(p.tanggal);
-                      if (pDateObj.getMonth() === targetMonth && pDateObj.getFullYear() === targetYear) {
-                          outletComparisonMonthly[outlet] += pendapatanHarian;
-                      }
                   });
 
                   // === 2. FETCH & PROCESS PETTY CASH ===
@@ -379,9 +422,11 @@
                       });
 
                       saldoPettyCash += (pemasukanHarian - pengeluaranHarian);
+                        outletSummary[outlet].saldoPettyCash += (pemasukanHarian - pengeluaranHarian);
 
                       if (pDateMs >= startDateMs) {
                           totalPengeluaran += pengeluaranHarian;
+                          outletSummary[outlet].pengeluaran += pengeluaranHarian;
                           const gKey = getGroupKey(dateStr, granularity);
                           chronologicalKeys.add(dateStr);
                           if (!trendData[gKey]) trendData[gKey] = { pendapatan: 0, pengeluaran: 0, outlets: {}, rawDate: dateStr };
@@ -391,10 +436,32 @@
               }
 
               // --- UPDATE UI ---
-              document.getElementById('val-pendapatan').textContent = formatRupiah(totalPendapatan);
-              document.getElementById('val-pengeluaran').textContent = formatRupiah(totalPengeluaran);
-              document.getElementById('val-saldo-pembukuan').textContent = formatRupiah(saldoPembukuan);
-              document.getElementById('val-saldo-pc').textContent = formatRupiah(saldoPettyCash);
+              const summaryGrid = document.getElementById('outlet-summary-grid');
+              summaryGrid.innerHTML = outlets.map((outlet, index) => {
+                  const name = outletNames[outlet] || outlet.toUpperCase();
+                  const summary = outletSummary[outlet];
+                  const color = ['#4C2A85', '#059669', '#2563EB', '#D97706', '#DB2777', '#0891B2'][index % 6];
+                  return `
+                    <div class="stat-card outlet-summary-card" style="border-top-color: ${color};">
+                      <h3 class="outlet-summary-title">${name}</h3>
+                      <div class="outlet-summary-row">
+                        <span class="outlet-summary-label">Pendapatan periode</span>
+                        <span class="outlet-summary-value" style="color: #059669;">${formatRupiah(summary.pendapatan)}</span>
+                      </div>
+                      <div class="outlet-summary-row">
+                        <span class="outlet-summary-label">Saldo pembukuan</span>
+                        <span class="outlet-summary-value" style="color: #3b82f6;">${formatRupiah(summary.saldoPembukuan)}</span>
+                      </div>
+                      <div class="outlet-summary-row">
+                        <span class="outlet-summary-label">Pengeluaran periode</span>
+                        <span class="outlet-summary-value" style="color: #ef4444;">${formatRupiah(summary.pengeluaran)}</span>
+                      </div>
+                      <div class="outlet-summary-row">
+                        <span class="outlet-summary-label">Saldo petty cash</span>
+                        <span class="outlet-summary-value" style="color: #8b5cf6;">${formatRupiah(summary.saldoPettyCash)}</span>
+                      </div>
+                    </div>`;
+              }).join('');
 
               // Sort Trend Keys
               const sortedGroupKeys = Object.values(trendData)
@@ -404,11 +471,21 @@
 
               // Chart Arrays
               const chartLabels = uniqueSortedGroupKeys;
-              const chartPendapatan = chartLabels.map(k => trendData[k].pendapatan);
-              const chartPengeluaran = chartLabels.map(k => trendData[k].pengeluaran);
 
               // Outlet colors
               const colors = ['#4C2A85', '#059669', '#2563EB', '#D97706', '#DB2777', '#0891B2'];
+
+                const outletDatasets = outlets.map((outlet, i) => {
+                  const name = outletNames[outlet] || outlet.toUpperCase();
+                  return {
+                    label: name,
+                    data: chartLabels.map(k => (trendData[k].outlets[name] || 0)),
+                    borderColor: colors[i % colors.length],
+                    backgroundColor: colors[i % colors.length],
+                    fill: false,
+                    tension: 0.3
+                  };
+                });
 
               // 1. Trend Chart
               if (trendChartInstance) trendChartInstance.destroy();
@@ -416,24 +493,12 @@
                   type: 'line',
                   data: {
                       labels: chartLabels,
-                      datasets: [
-                          { label: 'Pendapatan', data: chartPendapatan, borderColor: '#059669', backgroundColor: 'rgba(5, 150, 105, 0.1)', fill: true, tension: 0.3 },
-                          { label: 'Pengeluaran', data: chartPengeluaran, borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', fill: true, tension: 0.3 }
-                      ]
+                      datasets: outletDatasets
                   },
                   options: { responsive: true, maintainAspectRatio: false }
               });
 
               // 2. Outlet Trend Chart (Bar Stacked or Grouped)
-              const outletDatasets = outlets.map((outlet, i) => {
-                  const name = outletNames[outlet] || outlet.toUpperCase();
-                  return {
-                      label: name,
-                      data: chartLabels.map(k => (trendData[k].outlets[name] || 0)),
-                      backgroundColor: colors[i % colors.length]
-                  };
-              });
-
               if (outletTrendChartInstance) outletTrendChartInstance.destroy();
               outletTrendChartInstance = new Chart(document.getElementById('outletTrendChart'), {
                   type: 'bar',
@@ -441,19 +506,72 @@
                   options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: false }, y: { stacked: false } } }
               });
 
-              // 3. Outlet Comparison Chart (Doughnut/Pie)
-              const compLabels = outlets.map(o => outletNames[o] || o.toUpperCase());
-              const compData = outlets.map(o => outletComparisonMonthly[o]);
-              
-              if (outletComparisonChartInstance) outletComparisonChartInstance.destroy();
-              outletComparisonChartInstance = new Chart(document.getElementById('outletComparisonChart'), {
-                  type: 'doughnut',
-                  data: {
-                      labels: compLabels,
-                      datasets: [{ data: compData, backgroundColor: colors.slice(0, outlets.length) }]
-                  },
-                  options: { responsive: true, maintainAspectRatio: false }
+              // 3. Jadwal Karyawan Hari Ini per Outlet
+              const scheduleGrid = document.getElementById('outlet-schedule-daily-grid');
+              scheduleGrid.innerHTML = '';
+              const today = new Date();
+              const todayYear = today.getFullYear();
+              const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
+              const todayDay = String(today.getDate()).padStart(2, '0');
+              const todayKey = `${todayYear}-${todayMonth}-${todayDay}`;
+              const todayLabel = today.toLocaleDateString('id-ID', {
+                  weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
               });
+                let totalEmployeesAllOutlets = 0;
+
+              for (const outlet of outlets) {
+                  let employees = [];
+                  let jadwalData = {};
+                  try {
+                    const schedulePromise = typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadAbsensiJadwal
+                        ? FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', todayKey, todayKey)
+                        : db.ref(`rbm_pro/jadwal/${outlet}/${todayKey.substring(0, 7)}`).once('value').then(snapshot => snapshot.val() || {});
+                    const [employeeSnap, loadedScheduleData] = await Promise.all([
+                      db.ref(`rbm_pro/employees/${outlet}`).once('value'),
+                      schedulePromise
+                    ]);
+                    const employeeValue = employeeSnap.val();
+                    const rawEmployees = Array.isArray(employeeValue) ? employeeValue : Object.values(employeeValue || {});
+                    employees = rawEmployees
+                      .map((employee, employeeIndex) => ({ employee, employeeIndex }))
+                      .filter(item => item.employee && String(item.employee.name || '').trim())
+                      .map(item => Object.assign({}, item.employee, { _scheduleIndex: item.employeeIndex }));
+                    jadwalData = loadedScheduleData || {};
+                  } catch (error) {
+                    console.warn(`Gagal memuat jadwal outlet ${outlet}:`, error);
+                  }
+
+                  const outletName = outletNames[outlet] || outlet.toUpperCase();
+                  let scheduleHtml = `<section class="card"><h4 class="card-title">${outletName}</h4>
+                    <div class="schedule-day-title">${todayLabel}</div>`;
+                  if (employees.length === 0) {
+                    scheduleHtml += '<div class="schedule-line">Belum ada data karyawan.</div>';
+                  } else {
+                    totalEmployeesAllOutlets += employees.length;
+                    employees.forEach((employee, employeeIndex) => {
+                      const employeeId = employee && employee.id != null ? employee.id : employee._scheduleIndex;
+                      const status = jadwalData[`${todayKey}_${employeeId}`] || '';
+                      const name = String(employee.name).trim();
+                      let statusLabel = 'Belum diatur';
+                      let statusColor = '#9ca3af';
+                      if (['P', 'M', 'S'].includes(status)) {
+                        statusLabel = `Masuk (${status})`;
+                        statusColor = '#059669';
+                      } else if (status === 'Off') {
+                        statusLabel = 'Libur';
+                        statusColor = '#64748b';
+                      } else if (['PH', 'AL', 'DP'].includes(status)) {
+                        statusLabel = `Cuti (${status})`;
+                        statusColor = '#2563eb';
+                      }
+                        scheduleHtml += `<div class="schedule-line schedule-employee-row"><span><strong>${name}</strong> <span style="color:${statusColor}; font-weight:600;">${statusLabel}</span></span><span class="schedule-employee-count">1</span></div>`;
+                    });
+                  }
+                scheduleHtml += `<div class="schedule-total-row"><span>Total Karyawan</span><span>${employees.length}</span></div>`;
+                  scheduleHtml += '</section>';
+                  scheduleGrid.insertAdjacentHTML('beforeend', scheduleHtml);
+                  }
+              scheduleGrid.insertAdjacentHTML('beforeend', `<div class="schedule-total-row" style="grid-column: 1 / -1; font-size: 13px;"><span>Total Karyawan Semua Outlet</span><span>${totalEmployeesAllOutlets}</span></div>`);
 
           } catch (error) {
               console.error(error);
