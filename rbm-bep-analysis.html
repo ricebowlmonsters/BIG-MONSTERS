@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <script>(function(){var b=document.createElement('base');b.target=location.protocol==='file:'?'_self':'_top';document.head.appendChild(b);}());</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sistem Analisis Laba Rugi Cabang & Simulasi BEP</title>
+  <link rel="stylesheet" href="rbm-pro.css">
+  <style>
+    :root { --bep-teal:#0f766e; --bep-ink:#102a43; --bep-muted:#64748b; --bep-line:#dbe5ec; --bep-soft:#f5f8fa; }
+    body { background:#edf3f5; color:var(--bep-ink); }
+    .bep-shell { max-width:1700px; margin:auto; padding:22px; }
+    .bep-hero { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; margin-bottom:20px; }
+    .bep-hero h2 { margin:0 0 5px; font-size:25px; letter-spacing:0; }
+    .bep-hero p { margin:0; color:var(--bep-muted); font-size:13px; }
+    .bep-action { display:flex; gap:9px; flex-wrap:wrap; }
+    .bep-action button,.bep-control button { width:auto; margin:0; }
+    #export-pdf { display:none; }
+    #export-pdf.is-authorized { display:inline-flex; }
+    .bep-control { background:#fff; border:1px solid var(--bep-line); border-radius:10px; box-shadow:0 3px 12px rgba(16,42,67,.05); padding:16px; margin-bottom:18px; }
+    .bep-control-title { color:var(--bep-teal); font-size:12px; font-weight:800; letter-spacing:.04em; margin-bottom:12px; }
+    .bep-control-grid { display:grid; grid-template-columns:repeat(5,minmax(150px,1fr)); gap:12px; align-items:end; }
+    .bep-control label { display:block; color:var(--bep-muted); font-size:11px; font-weight:700; margin-bottom:5px; }
+    .bep-control select { width:100%; min-height:38px; border:1px solid #cbd5e1; border-radius:7px; padding:8px; background:#fff; font:inherit; }
+    .bep-switch { display:flex; align-items:center; gap:8px; min-height:38px; font-size:12px; font-weight:700; }
+    .bep-switch input { width:18px; height:18px; accent-color:var(--bep-teal); }
+    .bep-kpis { display:grid; grid-template-columns:repeat(5,minmax(160px,1fr)); gap:12px; margin-bottom:18px; }
+    .bep-kpi { background:#fff; border:1px solid var(--bep-line); border-top:3px solid var(--bep-teal); border-radius:9px; padding:14px; min-height:83px; box-shadow:0 3px 12px rgba(16,42,67,.04); }
+    .bep-kpi span,.bep-summary-card span { display:block; color:var(--bep-muted); font-size:11px; margin-bottom:7px; }
+    .bep-kpi strong { font-size:16px; }
+    .bep-kpi.is-positive { border-top-color:#15803d; background:#f0fdf4; } .bep-kpi.is-negative { border-top-color:#dc2626; background:#fff5f5; }
+    .bep-panel { background:#fff; border:1px solid var(--bep-line); border-radius:10px; padding:17px; margin-bottom:18px; box-shadow:0 3px 12px rgba(16,42,67,.04); }
+    .bep-panel h3 { font-size:15px; margin:0 0 13px; }
+    .bep-empty-state { min-height:110px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; border:1px dashed #94a3b8; border-radius:9px; background:#f8fafc; color:var(--bep-muted); font-size:13px; text-align:center; padding:20px; }
+    .bep-empty-state strong { color:var(--bep-ink); font-size:15px; }
+    .bep-table-scroll,.bep-monitor-table { overflow:auto; border:1px solid var(--bep-line); border-radius:8px; }
+    .bep-main-table,.bep-simple-table { border-collapse:separate; border-spacing:0; width:100%; min-width:1500px; font-size:11px; }
+    .bep-main-table th,.bep-simple-table th { background:#164e63; color:#fff; padding:9px 10px; text-align:right; border-right:1px solid rgba(255,255,255,.2); white-space:nowrap; }
+    .bep-main-table th:first-child,.bep-simple-table th:first-child { text-align:left; }
+    .bep-main-table td,.bep-simple-table td { padding:10px; text-align:right; border-bottom:1px solid var(--bep-line); white-space:nowrap; vertical-align:middle; }
+    .bep-main-table td:first-child,.bep-simple-table td:first-child { text-align:left; position:sticky; left:0; background:#fff; z-index:1; }
+    .bep-main-table td small { display:block; color:var(--bep-muted); font-size:10px; margin-top:3px; }
+    .bep-main-table tr.is-total td,.bep-simple-table tr.is-total td { background:#e6f4f1; font-weight:800; border-top:2px solid var(--bep-teal); }
+    .bep-main-table th.col-real { background:#1d4ed8; }
+    .bep-main-table th.col-standard { background:#b45309; }
+    .bep-main-table td.col-real { background:#eff6ff; }
+    .bep-main-table td.col-standard { background:#fff7ed; }
+    .bep-main-table tr.is-total td.col-real { background:#dbeafe; }
+    .bep-main-table tr.is-total td.col-standard { background:#ffedd5; }
+    .is-negative { color:#b91c1c!important; background:#fff1f2!important; } .is-positive { color:#047857!important; } .is-warning { background:#fff1f2!important; color:#b91c1c; }
+    .bep-summary-grid { display:grid; grid-template-columns:repeat(6,minmax(145px,1fr)); gap:10px; }
+    .bep-summary-card { border:1px solid var(--bep-line); border-radius:8px; padding:12px; background:var(--bep-soft); }
+    .bep-summary-card strong { font-size:13px; }
+    .bep-settings-grid { display:grid; grid-template-columns:1.15fr 1fr; gap:16px; }
+    .bep-settings-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .bep-settings-table th,.bep-settings-table td { padding:8px; border-bottom:1px solid var(--bep-line); text-align:right; }
+    .bep-settings-table th:first-child,.bep-settings-table td:first-child { text-align:left; }
+    .bep-settings-table input { width:86px; padding:6px; border:1px solid #cbd5e1; border-radius:6px; text-align:right; }
+    .bep-settings-table .sub-label { padding-left:20px; color:var(--bep-muted); }
+    .bep-target-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .bep-target-table th,.bep-target-table td { padding:8px; border-bottom:1px solid var(--bep-line); text-align:right; white-space:nowrap; }
+    .bep-target-table th:first-child,.bep-target-table td:first-child { text-align:left; }
+    .bep-target-table input { width:125px; padding:6px; border:1px solid #cbd5e1; border-radius:6px; text-align:right; }
+    .target-source { display:block; color:var(--bep-muted); font-size:9px; margin-top:3px; }
+    .target-reset { margin-left:4px; padding:5px 6px; border:1px solid #99f6e4; border-radius:5px; background:#f0fdfa; color:var(--bep-teal); font-size:10px; cursor:pointer; }
+    .bep-drawer-backdrop { display:none; position:fixed; inset:0; background:rgba(15,23,42,.38); z-index:20; } .bep-drawer-backdrop.is-open { display:block; }
+    .bep-drawer { position:fixed; right:0; top:0; bottom:0; width:min(460px,100%); transform:translateX(100%); transition:transform .22s ease; z-index:21; background:#fff; box-shadow:-8px 0 30px rgba(15,23,42,.18); padding:22px; overflow:auto; }
+    .bep-drawer.is-open { transform:translateX(0); } .bep-drawer header { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; } .bep-drawer h3 { margin:0; }
+    .bep-settings-drawer { display:grid; gap:18px; margin:18px 0 8px; }
+    .bep-drawer-section { border-top:1px solid var(--bep-line); padding-top:15px; }
+    .bep-drawer-section h4 { margin:0 0 10px; color:var(--bep-teal); font-size:12px; }
+    .bep-settings-drawer .bep-settings-table,.bep-settings-drawer .bep-target-table { font-size:10px; }
+    .bep-settings-drawer .bep-settings-table th,.bep-settings-drawer .bep-settings-table td,.bep-settings-drawer .bep-target-table th,.bep-settings-drawer .bep-target-table td { padding:6px 4px; }
+    .bep-settings-drawer .bep-settings-table input { width:54px; padding:5px 3px; font-size:10px; }
+    .bep-settings-drawer .bep-target-table input { width:92px; padding:5px 3px; font-size:10px; }
+    .bep-drawer-close { border:0; background:transparent; font-size:24px; cursor:pointer; color:var(--bep-muted); }
+    .bep-sim-row { display:grid; grid-template-columns:1fr 145px; align-items:center; gap:12px; padding:13px 0; border-bottom:1px solid var(--bep-line); } .bep-sim-row label { font-weight:700; font-size:13px; } .bep-sim-row small { display:block; color:var(--bep-muted); margin-top:3px; } .bep-sim-row input { width:100%; padding:9px; border:1px solid #cbd5e1; border-radius:7px; text-align:right; font:inherit; }
+    .accurate-backdrop { display:none; position:fixed; inset:0; background:rgba(15,23,42,.42); z-index:30; padding:18px; overflow:auto; } .accurate-backdrop.is-open { display:flex; align-items:center; justify-content:center; }
+    .accurate-modal { width:min(1050px,100%); max-height:92vh; overflow:auto; background:#fff; border-radius:12px; padding:22px; box-shadow:0 16px 50px rgba(15,23,42,.24); }
+    .accurate-modal header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:16px; } .accurate-modal h3 { margin:0 0 5px; } .accurate-modal p { margin:0; color:var(--bep-muted); font-size:12px; }
+    .accurate-close { border:0; background:transparent; color:var(--bep-muted); font-size:24px; cursor:pointer; } .accurate-dropzone { border:1px dashed #94a3b8; border-radius:9px; padding:22px; text-align:center; background:#f8fafc; } .accurate-dropzone.is-dragging { border-color:var(--bep-teal); background:#f0fdfa; }
+    .accurate-dropzone input { max-width:100%; margin-top:10px; } .accurate-meta { display:flex; gap:18px; flex-wrap:wrap; color:#475569; font-size:12px; margin:16px 0; } .accurate-preview { overflow:auto; border:1px solid var(--bep-line); border-radius:8px; } .accurate-preview table { border-collapse:collapse; width:100%; min-width:850px; font-size:12px; } .accurate-preview th,.accurate-preview td { padding:9px 10px; border-bottom:1px solid var(--bep-line); white-space:nowrap; text-align:right; } .accurate-preview th { background:#164e63; color:#fff; } .accurate-preview th:first-child,.accurate-preview td:first-child { text-align:left; } .accurate-warning { color:#b91c1c; background:#fff1f2; } .accurate-actions { display:flex; justify-content:flex-end; gap:9px; margin-top:16px; } .accurate-actions button { width:auto; margin:0; }
+    .accurate-history { margin-top:20px; border-top:1px solid var(--bep-line); padding-top:16px; } .accurate-history h4 { margin:0 0 10px; color:var(--bep-teal); font-size:13px; } .accurate-history-list { display:grid; gap:8px; } .accurate-history-item { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; padding:10px; border:1px solid var(--bep-line); border-radius:8px; background:#f8fafc; font-size:12px; } .accurate-history-item.is-active { border-color:#5eead4; background:#f0fdfa; } .accurate-history-item strong { display:block; } .accurate-history-item small { display:block; color:var(--bep-muted); margin-top:3px; } .accurate-history-actions { display:flex; gap:5px; } .accurate-history-actions button { border:1px solid #cbd5e1; border-radius:5px; background:#fff; padding:5px 7px; font-size:11px; cursor:pointer; } .accurate-history-actions .delete { color:#b91c1c; }
+    .accurate-history-actions .use { color:var(--bep-teal); border-color:#99f6e4; } .accurate-history-actions button:disabled { color:#64748b; cursor:default; }
+    @media(max-width:1000px){.bep-control-grid,.bep-kpis{grid-template-columns:repeat(2,minmax(160px,1fr));}.bep-summary-grid{grid-template-columns:repeat(3,minmax(145px,1fr));}.bep-settings-grid{grid-template-columns:1fr;}}
+    @media(max-width:600px){.bep-shell{padding:12px}.bep-hero{display:block}.bep-action{margin-top:15px}.bep-control-grid,.bep-kpis,.bep-summary-grid{grid-template-columns:1fr}.bep-hero h2{font-size:21px}}
+  </style>
+</head>
+<body>
+  <header class="rbm-page-header"><a href="index.html" class="rbm-back-btn">&#8249;</a><h1 class="rbm-page-title">Analisis Laba Rugi & BEP</h1></header>
+  <main class="bep-shell">
+    <section class="bep-hero"><div><h2>Sistem Analisis Laba Rugi Cabang & Simulasi BEP</h2><p>Dashboard konsolidasi F&B multi-outlet untuk membaca profitabilitas dan titik impas.</p></div><div class="bep-action"><button id="open-accurate-import" class="btn btn-primary">📥 Import Accurate</button><button id="open-simulation" class="btn btn-secondary">⚙️ Atur Simulasi</button><button id="bep-mode-simulation" class="btn btn-secondary">▶ Jalankan Simulasi</button><button id="export-pdf" class="btn btn-secondary">📄 Simpan PDF</button></div></section>
+    <section class="bep-control"><div class="bep-control-title">⚙️ PANEL KONTROL & FILTER</div><div class="bep-control-grid"><div><label>Skenario Pendapatan</label><select data-control="skenarioPendapatan"><option>Real</option><option>Target</option><option>Simulasi</option></select></div><div><label>Standar Acuan Biaya</label><select data-control="standarAcuanBiaya"><option>Standar</option><option selected>Non Standart</option></select></div><div><label>Metode Laba Bersih</label><select data-control="metodeLabaBersih"><option selected>Sistem</option><option>Otomatis</option></select></div><div><label>Filter Tampilan</label><select data-control="filterTampilan"><option selected>Semua</option><option>Hanya Real</option><option>Hanya Standar</option></select></div><div><label>Simulasi Mode</label><label class="bep-switch"><input type="checkbox" data-control="simulasiMode"> ON / OFF</label></div></div></section>
+    <section id="bep-kpi-output"></section>
+    <section class="bep-panel"><h3>📋 Rekapitulasi Laba Rugi Cabang</h3><div id="bep-table-output"></div></section>
+    <section class="bep-panel"><h3>🎯 Ringkasan Monitoring BEP & Target</h3><div id="bep-monitor-output"></div></section>
+  </main>
+  <div id="simulation-backdrop" class="bep-drawer-backdrop"></div><aside id="simulation-drawer" class="bep-drawer"><header><h3>⚙️ Atur Simulasi</h3><button id="close-simulation" class="bep-drawer-close" aria-label="Tutup">×</button></header><p style="color:#64748b;font-size:13px;line-height:1.5;">Atur rasio biaya, target, dan simulasi omset. Perubahan diterapkan langsung ke KPI dan tabel.</p><div class="bep-settings-drawer"><div class="bep-drawer-section"><h4>📋 STANDAR RASIO BIAYA (% OMSET)</h4><div id="bep-ratio-settings"></div></div><div class="bep-drawer-section"><h4>🎯 TARGET & SIMULASI OMSET OUTLET</h4><div id="bep-target-settings"></div></div></div></aside>
+  <div id="accurate-backdrop" class="accurate-backdrop"><section class="accurate-modal" role="dialog" aria-modal="true" aria-labelledby="accurate-title"><header><div><h3 id="accurate-title">Import Laporan Accurate Excel</h3><p>Upload laporan resmi “Laba atau Rugi Cabang” untuk meninjau data sebelum diterapkan.</p></div><button id="close-accurate-import" class="accurate-close" aria-label="Tutup">×</button></header><div id="accurate-dropzone" class="accurate-dropzone"><strong>Pilih atau tarik file laporan Accurate</strong><br><input id="accurate-file" type="file" accept=".xlsx,.xls"><div id="accurate-file-status" style="margin-top:8px;color:#64748b;font-size:12px;">File .xlsx atau .xls</div></div><div id="accurate-meta" class="accurate-meta"></div><div id="accurate-preview" class="accurate-preview"><div style="padding:28px;text-align:center;color:#64748b;font-size:13px;">Preview akan muncul setelah file diproses.</div></div><div class="accurate-history"><h4>🗂️ Riwayat Data Upload</h4><div id="accurate-history-list" class="accurate-history-list"></div></div><div class="accurate-actions"><button id="accurate-cancel" class="btn btn-secondary">Batal / Upload Ulang</button><button id="accurate-save" class="btn btn-primary" disabled>Simpan & Terapkan ke Dashboard</button></div></section></div>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script><script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script><script src="custom-ui.js"></script><script src="firebase-storage.js"></script><script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script><script src="rbm-bep-calculations.js"></script><script src="accurate-parser.js"></script><script src="rbm-bep-analysis.js"></script>
+</body>
+</html>
