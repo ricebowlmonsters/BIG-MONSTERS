@@ -116,14 +116,21 @@
     var showStandard = controls.filterTampilan !== 'Hanya Real';
     var columns = [{ key: 'revenue', label: 'Pendapatan', standard: false }];
     if (showReal) columns.push({ key: 'hpp', label: 'HPP Real', standard: false });
-    if (showStandard) { columns.push({ key: 'hppStandard', label: 'HPP Std', standard: false }); columns.push({ key: 'hppHealthy', label: 'HPP Sehat', standard: false }); }
+    if (showStandard) columns.push({ key: 'hppStandard', label: 'HPP Std', standard: true });
     var costColumns = [{ key: 'salary', standardKey: 'standardSalary', label: 'Gaji' }, { key: 'electricity', standardKey: 'standardElectricity', label: 'Listrik' }, { key: 'other', standardKey: 'standardOther', label: 'Ops Lain' }, { key: 'opex', standardKey: 'standardOpex', label: 'Total Opex' }, { key: 'nonOperating', standardKey: 'standardNonOperating', label: 'Non-Opex' }];
     costColumns.forEach(function (column) { if (showReal) columns.push({ key: column.key, label: column.label + ' Real', standard: false }); if (showStandard) columns.push({ key: column.standardKey, label: column.label + ' Std', standard: true }); });
-    columns.push({ key: 'grossProfit', label: 'Laba Kotor', standard: false }, { key: 'netProfit', label: 'Laba Bersih', standard: false }, { key: 'bep', label: 'Target BEP', standard: false }, { key: 'gap', label: 'Selisih BEP', standard: false }, { key: 'bepPlusTen', label: 'BEP + 10%', standard: false });
+    if (showReal) columns.push({ key: 'grossProfitReal', label: 'Laba Kotor Real', standard: false });
+    if (showStandard) columns.push({ key: 'grossProfitStandard', label: 'Laba Kotor Std', standard: true });
+    if (showReal) columns.push({ key: 'netProfitReal', label: 'Laba Bersih Real', standard: false });
+    if (showStandard) columns.push({ key: 'netProfitStandard', label: 'Laba Bersih Std', standard: true });
+    if (showReal) columns.push({ key: 'gapReal', label: 'Selisih BEP Real', standard: false });
+    if (showStandard) columns.push({ key: 'gapStandard', label: 'Selisih BEP Std', standard: true });
+    var selectedStandard = !showReal && showStandard;
+    columns.push({ key: 'bep', label: 'Target BEP', standard: selectedStandard }, { key: 'bepPlusTen', label: 'BEP + 10%', standard: selectedStandard });
     var html = '<div class="bep-table-scroll"><table class="bep-main-table"><thead><tr><th>Outlet</th>' + columns.map(function (column) { return '<th class="' + (column.standard ? 'col-standard' : (column.key !== 'revenue' && column.key !== 'bep' && column.key !== 'bepPlusTen' ? 'col-real' : '')) + '">' + column.label + '<br><small>' + (column.key === 'revenue' || column.key === 'bep' || column.key === 'bepPlusTen' ? 'Nominal' : '% Omset') + '</small></th>'; }).join('') + '</tr></thead><tbody>';
     rows.concat([total]).forEach(function (row) {
       var hppAlert = row.hppRealPercent > 0.38 ? 'is-warning' : '';
-      var cell = function (column) { var amount = row[column.key] || 0, isPercentOnly = column.key !== 'revenue' && column.key !== 'bep' && column.key !== 'bepPlusTen'; var className = (column.standard ? 'col-standard ' : (column.key !== 'revenue' && column.key !== 'bep' && column.key !== 'bepPlusTen' ? 'col-real ' : '')) + (column.key === 'hpp' && hppAlert ? 'is-warning ' : '') + (column.key === 'netProfit' && row.netProfit < 0 ? 'is-negative ' : '') + (column.key === 'gap' ? (row.gap < 0 ? 'is-negative' : 'is-positive') : ''); return '<td class="' + className.trim() + '">' + money(amount) + (isPercentOnly ? '<br><small>' + pct(window.RbmBepCalculations.ratio(amount, row.revenue) * 100) + '</small>' : '') + '</td>'; };
+      var cell = function (column) { var amount = row[column.key] || 0, isPercentOnly = column.key !== 'revenue' && column.key !== 'bep' && column.key !== 'bepPlusTen'; var className = (column.standard ? 'col-standard ' : (column.key !== 'revenue' && column.key !== 'bep' && column.key !== 'bepPlusTen' ? 'col-real ' : '')) + (column.key === 'hpp' && hppAlert ? 'is-warning ' : '') + (amount < 0 ? 'is-negative ' : '') + ((column.key === 'gapReal' || column.key === 'gapStandard' || column.key === 'gap') && amount >= 0 ? 'is-positive' : ''); return '<td class="' + className.trim() + '">' + money(amount) + (isPercentOnly ? '<br><small>' + pct(window.RbmBepCalculations.ratio(amount, row.revenue) * 100) + '</small>' : '') + '</td>'; };
       html += '<tr class="' + (row.id === 'total' ? 'is-total' : '') + '"><td><strong>' + escapeHtml(row.name) + '</strong>' + (row.costCenter ? '<small>Cost center</small>' : '') + '</td>' + columns.map(cell).join('') + '</tr>';
     });
     return html + '</tbody></table></div>';
