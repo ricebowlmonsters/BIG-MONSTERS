@@ -22,7 +22,7 @@
     var revenue = controls.skenarioPendapatan === 'Target' ? value(outlet.targetRevenue) : controls.skenarioPendapatan === 'Simulasi' ? value(outlet.simulationRevenue) : realRevenue;
     var projected = controls.simulasiMode === 'ON' && controls.skenarioPendapatan !== 'Real';
     var scale = realRevenue > 0 && projected ? revenue / realRevenue : 1;
-    var hpp = controls.skenarioPendapatan === 'Real' ? value(outlet.hpp) : projected ? value(outlet.hpp) * scale : revenue * selectedRatio.hpp;
+    var hpp = projected ? value(outlet.hpp) * scale : value(outlet.hpp);
     var salary = controls.skenarioPendapatan === 'Real' ? value(outlet.salary) : projected ? value(outlet.salary) : revenue * selectedRatio.salary;
     var electricity = controls.skenarioPendapatan === 'Real' ? value(outlet.electricity) : projected ? value(outlet.electricity) : revenue * selectedRatio.electricity;
     var other = controls.skenarioPendapatan === 'Real' ? value(outlet.other) : projected ? value(outlet.other) : revenue * selectedRatio.other;
