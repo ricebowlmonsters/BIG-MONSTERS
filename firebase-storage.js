@@ -29,6 +29,7 @@
     rbm_active_outlets: 'app_state/active_outlets',
     rbm_outlet_locations: 'app_state/outlet_locations',
     rbm_quick_memos: 'app_state/quick_memos'
+    ,rbm_hpp_monitor: 'rbm_pro/hpp_monitor_v2'
   };
 
   function getConnections() {
@@ -162,6 +163,12 @@
     if (!path) return Promise.resolve(localStorage.getItem(key));
     var localVal = localStorage.getItem(key);
     if (!init()) return Promise.resolve(localVal);
+    if (key === 'rbm_hpp_monitor') {
+      return db.ref(path).once('value').then(function(snap) {
+        var cloudValue = snap.val();
+        return cloudValue === undefined || cloudValue === null ? localVal : (typeof cloudValue === 'object' ? JSON.stringify(cloudValue) : String(cloudValue));
+      });
+    }
     return db.ref(path).once('value').then(function(snap) {
       var v = snap.val();
       if (v !== undefined && v !== null) return typeof v === 'object' ? JSON.stringify(v) : String(v);
@@ -177,6 +184,7 @@
     try {
       if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) toSet = JSON.parse(value);
     } catch (e) {}
+    if (key === 'rbm_hpp_monitor') return db.ref(path).set(toSet);
     return db.ref(path).set(toSet).catch(function(err) { console.warn('firebase-storage setAppState failed', key, err); });
   }
 

@@ -26,6 +26,16 @@
       <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" title="Buka/Tutup Menu">&#10094;</button>
       <h1 class="page-title" id="main-page-title">Selamat Datang</h1>
 
+      <label class="language-switcher" for="language-select">
+        <span aria-hidden="true">🌐</span>
+        <span class="sr-only">Pilih bahasa</span>
+        <select id="language-select" aria-label="Pilih bahasa">
+          <option value="id">Indonesia</option>
+          <option value="en">English</option>
+          <option value="zh-TW">繁體中文</option>
+        </select>
+      </label>
+
       <!-- [BARU] Info User & Lokasi di Kanan Header -->
       <div style="margin-left: auto; display: flex; align-items: center; gap: 16px;">
         
@@ -39,11 +49,11 @@
             <!-- Dropdown -->
             <div id="notification-dropdown" style="display: none; position: absolute; top: 120%; right: -10px; width: 340px; background: white; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); z-index: 9999;">
                 <div style="padding: 14px 16px; border-bottom: 1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center; background: #f8fafc; border-radius: 12px 12px 0 0;">
-                   <span style="font-weight: 700; font-size: 14px; color: #1f2937;">Pemberitahuan</span>
+                   <span id="notification-title" style="font-weight: 700; font-size: 14px; color: #1f2937;">Pemberitahuan</span>
                    <span id="notif-count-text" style="color: #ef4444; font-size:11px; font-weight:bold; background:#fee2e2; padding:3px 8px; border-radius:12px; display: none;">0 Baru</span>
                 </div>
                 <div id="notification-list" style="max-height: 350px; overflow-y: auto; padding: 0;">
-                    <div style="text-align: center; padding: 40px 20px; color: #6b7280; font-size: 13px;">Tidak ada notifikasi</div>
+                    <div id="empty-notification-text" style="text-align: center; padding: 40px 20px; color: #6b7280; font-size: 13px;">Tidak ada notifikasi</div>
                 </div>
                 <div style="padding: 12px; border-top: 1px solid #e5e7eb; text-align: center; background: #f8fafc; border-radius: 0 0 12px 12px;">
                    <a href="#" class="menu-link-override" style="color: #4C2A85; font-size: 13px; font-weight: 600; text-decoration: none; display:block;">Lihat Semua Pengajuan &rarr;</a>
@@ -62,11 +72,12 @@
     <div class="main-wrapper">
       <aside class="left-sidebar">
         <nav class="main-menu">
-          <div class="menu-header">Menu Utama</div>
+          <div class="menu-header" id="main-menu-label">Menu Utama</div>
           <ul>
             <li><a href="kasir.html" class="menu-link"><span style="font-size: 16px;">🖥️</span><span class="menu-text">Kasir / Menu</span></a></li>
             <li><a href="orders.html" class="menu-link"><span style="font-size: 16px;">🧾</span><span class="menu-text">Pesanan Masuk</span></a></li>
             <li><a href="manage-menu.html" class="menu-link"><span style="font-size: 16px;">🍔</span><span class="menu-text">Kelola Menu</span></a></li>
+            <li><a href="admin/menu-monitor/index.html" class="menu-link"><span style="font-size: 16px;">🧮</span><span class="menu-text">HPP Resto & Kitchen</span></a></li>
             <li><a href="input-point.html" class="menu-link"><span style="font-size: 16px;">💰</span><span class="menu-text">Input Point</span></a></li>
             <li><a href="revenue-report.html" class="menu-link"><span style="font-size: 16px;">📈</span><span class="menu-text">Laporan Pendapatan</span></a></li>
             <li><a href="dashboard-keuangan.html" class="menu-link"><span style="font-size: 16px;">📊</span><span class="menu-text">Dashboard Keuangan</span></a></li>
@@ -113,8 +124,8 @@
         <iframe name="content-iframe" id="content-iframe" src="about:blank" frameborder="0"></iframe>
         <div id="welcome-message">
           <div class="welcome-icon">👋</div>
-          <h2>Selamat Datang, <span id="user-name">User</span>!</h2>
-          <p>Pilih menu di sebelah kiri untuk memulai.</p>
+          <h2 class="welcome-message-title">Selamat Datang, <span id="user-name">User</span>!</h2>
+          <p class="welcome-message-description">Pilih menu di sebelah kiri untuk memulai.</p>
           <p class="welcome-quote">"Lakukan rutinitas pekerjaanmu dengan cinta. Jika kamu tidak bisa menjalani rutinitasmu dengan cinta, lebih baik tinggalkan saja."</p>
         </div>
       </main>
@@ -128,6 +139,46 @@
   <script src="firebase-storage.js"></script>
   <script src="app.js"></script>
   <style>
+    .language-switcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: 16px;
+      padding: 5px 8px;
+      border: 1px solid #dbe3ee;
+      border-radius: 8px;
+      background: #fff;
+      color: #475569;
+      font-size: 13px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+    }
+
+    .language-switcher select {
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: #334155;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 700px) {
+      .language-switcher { margin-left: 8px; }
+      .language-switcher select { max-width: 92px; }
+    }
+
     .welcome-quote {
       max-width: 620px;
       margin: 18px auto 0;
@@ -143,6 +194,75 @@
     }
   </style>
   <script>
+    const LANGUAGE_STORAGE_KEY = 'rbm_language';
+    const LANGUAGE_TEXT = {
+      id: {
+        pageTitle: 'Selamat Datang', mainMenu: 'Menu Utama', notifications: 'Pemberitahuan', noNotifications: 'Tidak ada notifikasi',
+        viewRequests: 'Lihat Semua Pengajuan', welcome: 'Selamat Datang,', chooseMenu: 'Pilih menu di sebelah kiri untuk memulai.',
+        logout: 'Logout', menu: {
+          'Kasir / Menu': 'Kasir / Menu', 'Pesanan Masuk': 'Pesanan Masuk', 'Kelola Menu': 'Kelola Menu', 'HPP Resto & Kitchen': 'HPP Resto & Kitchen', 'Input Point': 'Input Point',
+          'Laporan Pendapatan': 'Laporan Pendapatan', 'Dashboard Keuangan': 'Dashboard Keuangan', 'Validasi Voucher': 'Validasi Voucher', 'QR Meja': 'QR Meja',
+          'Promo & Diskon': 'Promo & Diskon', 'Kelola Hadiah': 'Kelola Hadiah', 'Web Customer': 'Web Customer', 'Data & Penyimpanan': 'Data & Penyimpanan',
+          'Pengaturan': 'Pengaturan', 'Absensi & Jadwal': 'Absensi & Jadwal', 'Data Karyawan (HR)': 'Data Karyawan (HR)', 'Reservasi': 'Reservasi', 'Stok Barang': 'Stok Barang',
+          'Absensi GPS': 'Absensi GPS', 'Pengajuan Dana': 'Pengajuan Dana', 'Lihat Petty Cash': 'Lihat Petty Cash', 'Pembukuan': 'Pembukuan', 'Lihat Inventaris': 'Lihat Inventaris',
+          'Rekap Absensi GPS': 'Rekap Absensi GPS', 'Input Absensi Manual (Dev)': 'Input Absensi Manual (Dev)', 'Arsip Dokumen & Meeting': 'Arsip Dokumen & Meeting',
+          'Data Grid Editor': 'Data Grid Editor', 'Form Kebersihan': 'Form Kebersihan', 'Modul Keuangan Baru': 'Modul Keuangan Baru', 'Setting Keuangan': 'Setting Keuangan',
+          'Input Transaksi': 'Input Transaksi', 'Laba Rugi & Stok': 'Laba Rugi & Stok', 'Analisis BEP Cabang': 'Analisis BEP Cabang'
+        }
+      },
+      en: {
+        pageTitle: 'Welcome', mainMenu: 'Main Menu', notifications: 'Notifications', noNotifications: 'No notifications',
+        viewRequests: 'View All Requests', welcome: 'Welcome,', chooseMenu: 'Choose a menu on the left to get started.', logout: 'Logout', menu: {
+          'Kasir / Menu': 'Cashier / Menu', 'Pesanan Masuk': 'Incoming Orders', 'Kelola Menu': 'Manage Menu', 'HPP Resto & Kitchen': 'Resto & Kitchen COGS', 'Input Point': 'Add Points',
+          'Laporan Pendapatan': 'Revenue Report', 'Dashboard Keuangan': 'Finance Dashboard', 'Validasi Voucher': 'Validate Voucher', 'QR Meja': 'Table QR',
+          'Promo & Diskon': 'Promos & Discounts', 'Kelola Hadiah': 'Manage Rewards', 'Web Customer': 'Customer Web', 'Data & Penyimpanan': 'Data & Storage',
+          'Pengaturan': 'Settings', 'Absensi & Jadwal': 'Attendance & Schedule', 'Data Karyawan (HR)': 'Employee Data (HR)', 'Reservasi': 'Reservations', 'Stok Barang': 'Inventory',
+          'Absensi GPS': 'GPS Attendance', 'Pengajuan Dana': 'Fund Requests', 'Lihat Petty Cash': 'View Petty Cash', 'Pembukuan': 'Bookkeeping', 'Lihat Inventaris': 'View Assets',
+          'Rekap Absensi GPS': 'GPS Attendance Recap', 'Input Absensi Manual (Dev)': 'Manual Attendance Input (Dev)', 'Arsip Dokumen & Meeting': 'Documents & Meetings',
+          'Data Grid Editor': 'Data Grid Editor', 'Form Kebersihan': 'Cleaning Form', 'Modul Keuangan Baru': 'New Finance Module', 'Setting Keuangan': 'Finance Settings',
+          'Input Transaksi': 'Enter Transactions', 'Laba Rugi & Stok': 'Profit, Loss & Inventory', 'Analisis BEP Cabang': 'Branch BEP Analysis'
+        }
+      },
+      'zh-TW': {
+        pageTitle: '歡迎', mainMenu: '主選單', notifications: '通知', noNotifications: '沒有通知', viewRequests: '查看所有申請', welcome: '歡迎，',
+        chooseMenu: '請從左側選單開始。', logout: '登出', menu: {
+          'Kasir / Menu': '收銀台／選單', 'Pesanan Masuk': '進來的訂單', 'Kelola Menu': '管理選單', 'Input Point': '輸入點數', 'Laporan Pendapatan': '收入報表',
+          'Dashboard Keuangan': '財務儀表板', 'Validasi Voucher': '驗證優惠券', 'QR Meja': '桌號 QR', 'Promo & Diskon': '促銷與折扣', 'Kelola Hadiah': '管理獎勵',
+          'Web Customer': '顧客網站', 'Data & Penyimpanan': '資料與儲存', 'Pengaturan': '設定', 'Absensi & Jadwal': '出勤與排班', 'Data Karyawan (HR)': '員工資料（人資）',
+          'Reservasi': '預約', 'Stok Barang': '庫存', 'Absensi GPS': 'GPS 出勤', 'Pengajuan Dana': '資金申請', 'Lihat Petty Cash': '查看零用金', 'Pembukuan': '記帳',
+          'Lihat Inventaris': '查看資產', 'Rekap Absensi GPS': 'GPS 出勤彙總', 'Input Absensi Manual (Dev)': '手動輸入出勤（開發）', 'Arsip Dokumen & Meeting': '文件與會議檔案',
+          'Data Grid Editor': '資料表編輯器', 'Form Kebersihan': '清潔表單', 'Modul Keuangan Baru': '新財務模組', 'Setting Keuangan': '財務設定', 'Input Transaksi': '輸入交易',
+          'Laba Rugi & Stok': '損益與庫存', 'Analisis BEP Cabang': '分店損益平衡分析'
+        }
+      }
+    };
+
+    function applyLanguage(language) {
+      const selectedLanguage = LANGUAGE_TEXT[language] ? language : 'id';
+      const text = LANGUAGE_TEXT[selectedLanguage];
+      document.documentElement.lang = selectedLanguage;
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, selectedLanguage);
+      document.getElementById('language-select').value = selectedLanguage;
+      document.getElementById('main-page-title').textContent = text.pageTitle;
+      document.getElementById('main-menu-label').textContent = text.mainMenu;
+      document.getElementById('notification-title').textContent = text.notifications;
+      document.getElementById('empty-notification-text').textContent = text.noNotifications;
+      document.querySelector('.menu-link-override').innerHTML = `${text.viewRequests} &rarr;`;
+      const welcomeTitle = document.querySelector('.welcome-message-title');
+      welcomeTitle.firstChild.textContent = `${text.welcome} `;
+      document.querySelector('.welcome-message-description').textContent = text.chooseMenu;
+      document.querySelector('.sidebar-footer .menu-text').textContent = text.logout;
+      document.querySelectorAll('.menu-text').forEach(element => {
+        const original = element.dataset.languageKey || element.textContent.trim();
+        element.dataset.languageKey = original;
+        if (text.menu[original]) element.textContent = text.menu[original];
+      });
+      const activeIframe = document.getElementById('content-iframe');
+      if (activeIframe && activeIframe.contentWindow) {
+        activeIframe.contentWindow.postMessage({ type: 'RBM_SET_LANGUAGE', language: selectedLanguage }, '*');
+      }
+    }
+
     // Load user data
     function loadUserData() {
       const userData = JSON.parse(localStorage.getItem('rbm_user') || '{}');
@@ -158,6 +278,12 @@
 
     // Initialize when page loads
     document.addEventListener('DOMContentLoaded', () => {
+      const languageSelect = document.getElementById('language-select');
+      if (languageSelect) {
+        languageSelect.addEventListener('change', () => applyLanguage(languageSelect.value));
+        applyLanguage(localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'id');
+      }
+
       // Check if user is logged in
       const userData = JSON.parse(localStorage.getItem('rbm_user') || '{}');
       if (!userData || !userData.username) {
@@ -557,7 +683,7 @@
         });
       });
 
-      // [BARU] Listener saat halaman di dalam iframe selesai dimuat
+      // Sinkronkan bahasa ke halaman yang dibuka di dalam iframe.
       iframe.addEventListener('load', () => {
         if (window.location.protocol !== 'file:') {
             try {
@@ -567,6 +693,23 @@
               if (childTitle) pageTitle.textContent = childTitle.textContent;
             } catch (e) {}
         }
+        try {
+          const doc = iframe.contentDocument || iframe.contentWindow.document;
+          if (doc && doc.head && !doc.querySelector('script[data-rbm-language-manager]')) {
+            const languageScript = doc.createElement('script');
+            languageScript.src = new URL('language-manager.js', doc.baseURI).href;
+            languageScript.dataset.rbmLanguageManager = 'true';
+            languageScript.onload = () => iframe.contentWindow.postMessage({
+              type: 'RBM_SET_LANGUAGE',
+              language: localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'id'
+            }, '*');
+            doc.head.appendChild(languageScript);
+          }
+          iframe.contentWindow.postMessage({
+            type: 'RBM_SET_LANGUAGE',
+            language: localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'id'
+          }, '*');
+        } catch (e) {}
       });
 
       window.addEventListener('message', (event) => {

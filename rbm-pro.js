@@ -1,4 +1,12 @@
 (function() {
+    // Load the shared language manager on every RBM Pro page, including direct page visits.
+    if (!document.querySelector('script[data-rbm-language-manager]')) {
+        var languageScript = document.createElement('script');
+        languageScript.src = new URL('language-manager.js', document.baseURI).href;
+        languageScript.dataset.rbmLanguageManager = 'true';
+        document.head.appendChild(languageScript);
+    }
+
   // --- GLOBAL LOADING SCREEN ---
   (function injectLoader() {
       if (typeof document === 'undefined') return;

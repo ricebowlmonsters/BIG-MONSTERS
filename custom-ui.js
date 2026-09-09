@@ -1,3 +1,10 @@
+if (!document.querySelector('script[data-rbm-language-manager]')) {
+    const languageScript = document.createElement('script');
+    languageScript.src = new URL('language-manager.js', document.baseURI).href;
+    languageScript.dataset.rbmLanguageManager = 'true';
+    document.head.appendChild(languageScript);
+}
+
 const CustomUI = {
     init: function() {
         if (document.getElementById('custom-ui-modal')) return;
