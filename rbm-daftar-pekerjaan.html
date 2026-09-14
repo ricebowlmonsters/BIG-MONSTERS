@@ -151,10 +151,6 @@
             <textarea class="form-input" id="job-description" rows="2" placeholder="Ringkas hasil kesepakatan atau target pekerjaan"></textarea>
           </div>
           <div class="form-section">
-            <label for="job-outlet">Outlet <span class="required">*</span></label>
-            <select class="form-input" id="job-outlet" required></select>
-          </div>
-          <div class="form-section">
             <label for="job-owner">Penanggung jawab <span class="required">*</span></label>
             <input class="form-input" id="job-owner" required readonly placeholder="Nama user yang login">
           </div>
@@ -212,7 +208,7 @@
       <div class="work-table-wrap">
         <table class="work-table">
           <thead>
-            <tr><th>Pekerjaan</th><th>Dibuat</th><th>Penanggung jawab</th><th>Batas waktu</th><th>Status</th><th>Progres</th><th>Alasan / langkah berikutnya</th><th>Aksi</th></tr>
+            <tr><th>Pekerjaan</th><th>Dibuat</th><th>Penanggung jawab</th><th>Outlet</th><th>Batas waktu</th><th>Status</th><th>Progres</th><th>Alasan / langkah berikutnya</th><th>Aksi</th></tr>
           </thead>
           <tbody id="job-list"></tbody>
         </table>
@@ -268,18 +264,24 @@
       const outlets = getOutlets();
       const user = JSON.parse(localStorage.getItem('rbm_user') || '{}');
       const savedOutlet = localStorage.getItem('rbm_last_selected_outlet');
-      const allowedOutlet = user.role === 'manager' && user.outlet ? user.outlet : null;
+      const userOutlet = String(user.outlet || '').trim().toLowerCase();
+      const allowedOutlet = userOutlet && userOutlet !== 'all' && userOutlet !== 'global' ? user.outlet : null;
+      const availableOutlets = allowedOutlet ? [allowedOutlet] : outlets;
       selectedOutlet = allowedOutlet || (savedOutlet === 'global' || outlets.includes(savedOutlet) ? savedOutlet : 'global');
       const filter = document.getElementById('outlet-filter');
-      const formOutlet = document.getElementById('job-outlet');
       filter.innerHTML = '';
       if (!allowedOutlet) filter.add(new Option(outletName('global'), 'global'));
-      outlets.forEach(id => filter.add(new Option(outletName(id), id)));
+      availableOutlets.forEach(id => filter.add(new Option(outletName(id), id)));
       filter.value = selectedOutlet;
       if (!filter.value) { selectedOutlet = allowedOutlet || 'global'; filter.value = selectedOutlet; }
-      formOutlet.innerHTML = outlets.map(id => `<option value="${escapeHtml(id)}">${escapeHtml(outletName(id))}</option>`).join('');
-      if (allowedOutlet) { formOutlet.value = allowedOutlet; formOutlet.disabled = true; }
-      filter.addEventListener('change', event => { selectedOutlet = event.target.value; localStorage.setItem('rbm_last_selected_outlet', selectedOutlet); renderJobs(); });
+      if (allowedOutlet) {
+        filter.disabled = true;
+      }
+      filter.addEventListener('change', event => {
+        selectedOutlet = allowedOutlet || event.target.value;
+        localStorage.setItem('rbm_last_selected_outlet', selectedOutlet);
+        renderJobs();
+      });
     }
 
     function legacyJobs() {
@@ -336,6 +338,7 @@
           <td><div class="job-title">${escapeHtml(job.title)}</div><div class="job-description">${escapeHtml(job.description)}</div></td>
           <td><span class="meta-label">Tanggal dibuat</span>${formatDate(createdDate(job))}</td>
           <td><span class="meta-label">PIC</span>${escapeHtml(job.owner)}</td>
+          <td><span class="meta-label">Outlet</span>${escapeHtml(outletName(job.outlet || selectedOutlet))}</td>
           <td class="${isLate(job) ? 'overdue' : ''}"><span class="meta-label">Deadline</span>${formatDate(job.deadline)}${isLate(job) ? '<br><small>Lewat batas waktu</small>' : ''}</td>
           <td><span class="status-badge status-${statusClass}">${label}</span></td>
           <td><div class="progress-wrap"><div class="progress-line"><span>Progres</span><strong>${job.progress}%</strong></div><div class="progress-track"><div class="progress-fill ${job.status === 'selesai' ? 'done' : ''}" style="width:${job.progress}%"></div></div></div></td>
@@ -357,7 +360,7 @@
       document.getElementById('form-panel').style.display = 'block';
       if (!job) { resetForm(); } else {
         document.getElementById('form-title').textContent = 'Edit Pekerjaan';
-        Object.entries({ 'job-id':job.id, 'job-outlet':job.outlet || selectedOutlet, 'job-title':job.title, 'job-description':job.description, 'job-owner':loggedInUserName(), 'job-deadline':job.deadline, 'job-status':job.status, 'job-progress':job.progress, 'job-reason':job.reason, 'job-next-step':job.nextStep }).forEach(([id, value]) => { document.getElementById(id).value = value || ''; });
+        Object.entries({ 'job-id':job.id, 'job-title':job.title, 'job-description':job.description, 'job-owner':loggedInUserName(), 'job-deadline':job.deadline, 'job-status':job.status, 'job-progress':job.progress, 'job-reason':job.reason, 'job-next-step':job.nextStep }).forEach(([id, value]) => { document.getElementById(id).value = value || ''; });
         document.getElementById('progress-value').textContent = `${job.progress}%`;
       }
       document.getElementById('form-panel').scrollIntoView({ behavior:'smooth', block:'start' });
@@ -370,7 +373,7 @@
       event.preventDefault();
       const id = document.getElementById('job-id').value || `job-${Date.now()}`;
       const existingJob = jobs.find(item => item.id === id);
-      const job = { id, outlet:document.getElementById('job-outlet').value, createdAt:existingJob ? createdDate(existingJob) : new Date().toISOString().slice(0, 10), title:document.getElementById('job-title').value.trim(), description:document.getElementById('job-description').value.trim(), owner:loggedInUserName(), deadline:document.getElementById('job-deadline').value, status:document.getElementById('job-status').value, progress:Number(document.getElementById('job-progress').value), reason:document.getElementById('job-reason').value.trim(), nextStep:document.getElementById('job-next-step').value.trim() };
+      const job = { id, outlet:existingJob ? (existingJob.outlet || selectedOutlet) : selectedOutlet, createdAt:existingJob ? createdDate(existingJob) : new Date().toISOString().slice(0, 10), title:document.getElementById('job-title').value.trim(), description:document.getElementById('job-description').value.trim(), owner:loggedInUserName(), deadline:document.getElementById('job-deadline').value, status:document.getElementById('job-status').value, progress:Number(document.getElementById('job-progress').value), reason:document.getElementById('job-reason').value.trim(), nextStep:document.getElementById('job-next-step').value.trim() };
       if (job.status === 'selesai') job.progress = 100;
       const existingIndex = jobs.findIndex(item => item.id === id);
       saveJob(job).then(() => {
@@ -433,7 +436,7 @@
         setupOutletFilters();
         renderJobs();
       } catch (error) {
-        document.getElementById('job-list').innerHTML = `<tr><td colspan="8" class="table-empty" style="text-align:center;color:#b91c1c;">Gagal memuat data Firebase: ${escapeHtml(error.message)}</td></tr>`;
+        document.getElementById('job-list').innerHTML = `<tr><td colspan="9" class="table-empty" style="text-align:center;color:#b91c1c;">Gagal memuat data Firebase: ${escapeHtml(error.message)}</td></tr>`;
         document.getElementById('empty-state').style.display = 'none';
       }
     }

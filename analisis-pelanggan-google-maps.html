@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analisis Pelanggan Google Maps</title>
+  <style>
+    :root { --ink:#172033; --muted:#667085; --line:#e5e7eb; --paper:#f7f8fb; --brand:#2563eb; --brand-soft:#eff6ff; --danger:#b42318; --warn:#b54708; --good:#027a48; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:var(--paper); }
+    .page { max-width:1400px; margin:0 auto; padding:28px 32px 48px; }
+    .topbar { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; margin-bottom:24px; }
+    h1,h2,h3,p { margin-top:0; } h1 { margin-bottom:7px; font-size:28px; letter-spacing:-.02em; } h2 { font-size:17px; margin-bottom:5px; } h3 { font-size:14px; margin-bottom:4px; }
+    .muted { color:var(--muted); font-size:13px; line-height:1.5; }
+    .button { border:0; border-radius:7px; padding:10px 15px; background:var(--brand); color:#fff; font-weight:700; cursor:pointer; }
+    .button.secondary { background:#fff; border:1px solid #cbd5e1; color:#334155; } .button:disabled { opacity:.55; cursor:wait; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:9px; padding:20px; box-shadow:0 4px 14px rgba(16,24,40,.04); }
+    .connector { display:grid; grid-template-columns:minmax(240px,1.2fr) minmax(250px,1fr) auto; gap:13px; align-items:end; margin-bottom:20px; }
+    label { display:block; color:#344054; font-size:12px; font-weight:700; margin-bottom:6px; } input, select, textarea { width:100%; border:1px solid #cbd5e1; border-radius:6px; padding:10px 11px; color:var(--ink); background:#fff; font:inherit; font-size:13px; } textarea { min-height:76px; resize:vertical; }
+    .status { grid-column:1/-1; padding:9px 11px; border-radius:6px; background:#f8fafc; color:var(--muted); font-size:12px; } .status.good { background:#ecfdf3; color:var(--good); } .status.error { background:#fef3f2; color:var(--danger); }
+    .sync-guide { grid-column:1/-1; border-top:1px solid var(--line); padding-top:11px; color:#475467; font-size:12px; line-height:1.55; } .sync-guide summary { color:#1d4ed8; cursor:pointer; font-weight:700; } .sync-guide ol { margin:10px 0 8px; padding-left:20px; } .sync-guide li { margin-bottom:5px; } .sync-guide p { margin:0; color:var(--muted); } .sync-guide code { background:#f1f5f9; border-radius:4px; padding:2px 4px; font-size:11px; }
+    .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; } .metric-label { color:var(--muted); font-size:12px; } .metric-value { font-size:25px; font-weight:800; margin-top:7px; } .metric-note { font-size:11px; color:var(--muted); margin-top:5px; }
+    .layout { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(330px,.75fr); gap:20px; align-items:start; } .stack { display:grid; gap:20px; }
+    .section-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:15px; } .section-head h2 { margin-bottom:0; }
+    .filters { display:flex; gap:8px; margin-bottom:13px; } .filters input { flex:1; } .filters select { max-width:150px; }
+    .table-wrap { overflow:auto; border:1px solid var(--line); border-radius:7px; } table { width:100%; border-collapse:collapse; font-size:12px; min-width:650px; } th,td { padding:11px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; } th { background:#f8fafc; color:#475467; font-size:11px; white-space:nowrap; } tr:last-child td { border-bottom:0; } .review-text { min-width:240px; line-height:1.45; } .stars { color:#f79009; white-space:nowrap; letter-spacing:1px; }
+    .badge { display:inline-flex; padding:4px 7px; border-radius:99px; font-size:11px; font-weight:700; white-space:nowrap; } .badge.high { background:#fef3f2; color:var(--danger); } .badge.medium { background:#fffaeb; color:var(--warn); } .badge.low { background:#ecfdf3; color:var(--good); }
+    .issue-list { display:grid; gap:10px; } .issue { display:grid; grid-template-columns:1fr auto; gap:8px 12px; padding:12px 0; border-bottom:1px solid var(--line); } .issue:last-child { border-bottom:0; } .issue-name { font-weight:700; font-size:13px; } .issue-count { color:var(--danger); font-weight:800; } .issue-action { grid-column:1/-1; font-size:12px; color:var(--muted); }
+    .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; } .full { grid-column:1/-1; } .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+    .empty { padding:28px 15px; text-align:center; color:var(--muted); font-size:13px; } .footnote { margin-top:15px; color:var(--muted); font-size:11px; line-height:1.5; }
+    @media (max-width:850px) { .page { padding:20px 15px 35px; } .topbar, .connector { display:block; } .topbar .button { margin-top:13px; } .connector > div, .connector > button { margin-top:11px; } .metrics { grid-template-columns:repeat(2,1fr); } .layout { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div><h1>Analisis Pelanggan Google Maps</h1><p class="muted">Pantau suara pelanggan, temukan masalah yang berulang, dan ubah temuan menjadi tindakan perbaikan.</p></div>
+      <button class="button secondary" id="export-btn" type="button">Unduh Laporan CSV</button>
+    </header>
+
+    <section class="card connector" aria-label="Koneksi Google Maps">
+      <div><label for="place-url">Link profil Google Maps</label><input id="place-url" placeholder="https://maps.google.com/..." /></div>
+      <div><label for="sync-endpoint">Endpoint sinkronisasi backend</label><input id="sync-endpoint" placeholder="https://domain-anda/api/google-reviews" /></div>
+      <button class="button" id="sync-btn" type="button">Sinkronkan Ulasan</button>
+      <div class="status" id="sync-status">Belum ada sinkronisasi. API Google Business Profile harus dipanggil dari backend agar kredensial tidak tersimpan di browser.</div>
+      <details class="sync-guide">
+        <summary>Cara mengisi dan menggunakan sinkronisasi</summary>
+        <ol>
+          <li>Buka profil bisnis di Google Maps, pilih <strong>Bagikan</strong>, lalu salin link profil dan tempel ke kolom <strong>Link profil Google Maps</strong>.</li>
+          <li>Kolom <strong>Endpoint sinkronisasi backend</strong> diisi URL server milik aplikasi yang sudah terhubung ke Google Business Profile API, misalnya <code>https://domain-anda/api/google-reviews</code>.</li>
+          <li>Buat project Google Apps Script baru, tempel file backend khusus Google Maps, lalu buka <strong>Project Settings → Script Properties</strong> dan tambahkan <code>GBP_ACCOUNT_ID</code> serta <code>GBP_LOCATION_ID</code>.</li>
+          <li>Deploy sebagai <strong>Web app</strong>, salin URL deployment, lalu tambahkan <code>?action=getGoogleReviews</code> di belakangnya untuk diisi pada kolom endpoint.</li>
+          <li>Pastikan endpoint mengembalikan JSON berupa array ulasan atau format <code>{"reviews": []}</code>, kemudian klik <strong>Sinkronkan Ulasan</strong>.</li>
+          <li>Jika belum memiliki backend Google Business Profile API, kosongkan endpoint dan gunakan <strong>Impor CSV</strong> untuk memasukkan data ulasan secara manual.</li>
+        </ol>
+        <p>Link Google Maps berfungsi sebagai identitas profil. Link tersebut tidak dapat mengambil ulasan secara langsung dari browser tanpa backend dan kredensial Google yang sah.</p>
+      </details>
+    </section>
+
+    <section class="metrics" aria-label="Ringkasan ulasan">
+      <article class="card"><div class="metric-label">Total ulasan</div><div class="metric-value" id="total-reviews">0</div><div class="metric-note" id="period-note">Data tersimpan di perangkat ini</div></article>
+      <article class="card"><div class="metric-label">Rating rata-rata</div><div class="metric-value" id="average-rating">0.0</div><div class="metric-note">Dari seluruh ulasan</div></article>
+      <article class="card"><div class="metric-label">Ulasan negatif</div><div class="metric-value" id="negative-reviews">0</div><div class="metric-note">Rating 1-2 bintang</div></article>
+      <article class="card"><div class="metric-label">Masalah berulang</div><div class="metric-value" id="issue-count">0</div><div class="metric-note">Topik dengan 2+ laporan</div></article>
+    </section>
+
+    <div class="layout">
+      <section class="card">
+        <div class="section-head"><div><h2>Daftar ulasan pelanggan</h2><p class="muted">Review yang sudah masuk dari sinkronisasi atau impor CSV.</p></div><label class="button secondary" style="cursor:pointer;margin:0">Impor CSV<input id="csv-input" type="file" accept=".csv,text/csv" hidden></label></div>
+        <div class="filters"><input id="search-input" placeholder="Cari isi ulasan atau nama pelanggan..." /><select id="rating-filter"><option value="all">Semua rating</option><option value="5">5 bintang</option><option value="4">4 bintang</option><option value="3">3 bintang</option><option value="2">2 bintang</option><option value="1">1 bintang</option></select></div>
+        <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Pelanggan</th><th>Rating</th><th>Ulasan</th><th>Topik</th></tr></thead><tbody id="reviews-body"></tbody></table></div>
+        <p class="footnote">Format CSV: <strong>date,name,rating,text</strong>. Ulasan dari Google tetap mengikuti kebijakan dan batas penggunaan API Google.</p>
+      </section>
+
+      <div class="stack">
+        <section class="card"><div class="section-head"><div><h2>Masalah yang sering berulang</h2><p class="muted">Topik otomatis dari kata kunci ulasan.</p></div></div><div class="issue-list" id="issue-list"></div></section>
+        <section class="card"><h2>Catat tindakan perbaikan</h2><p class="muted">Simpan pemilik dan target penyelesaian setiap masalah prioritas.</p><div class="form-grid"><div class="full"><label for="action-issue">Masalah</label><input id="action-issue" placeholder="Contoh: Waktu tunggu lama" /></div><div><label for="action-owner">Penanggung jawab</label><input id="action-owner" placeholder="Nama / tim" /></div><div><label for="action-due">Target selesai</label><input id="action-due" type="date" /></div><div class="full"><label for="action-note">Tindakan perbaikan</label><textarea id="action-note" placeholder="Contoh: Tambah satu petugas saat jam makan siang"></textarea></div></div><div class="actions"><button class="button" id="save-action" type="button">Simpan Tindakan</button></div></section>
+        <section class="card"><div class="section-head"><div><h2>Daftar tindak lanjut</h2><p class="muted">Status perbaikan yang sedang berjalan.</p></div></div><div class="table-wrap"><table style="min-width:420px"><thead><tr><th>Masalah</th><th>Tindakan / PIC</th><th>Status</th></tr></thead><tbody id="actions-body"></tbody></table></div></section>
+      </div>
+    </div>
+  </main>
+  <script>
+    const REVIEW_KEY = 'rbm_google_maps_reviews';
+    const ACTION_KEY = 'rbm_google_maps_actions';
+    const CONFIG_KEY = 'rbm_google_maps_config';
+    const issueRules = [
+      { name: 'Waktu tunggu lama', words: ['lama', 'menunggu', 'nunggu', 'antri', 'antre'], action: 'Ukur waktu penyajian per shift dan tambah petugas saat jam sibuk.' },
+      { name: 'Rasa / kualitas makanan', words: ['rasa', 'asin', 'hambar', 'dingin', 'matang', 'porsi'], action: 'Audit resep, suhu, porsi, dan checklist QC sebelum makanan keluar.' },
+      { name: 'Pelayanan staf', words: ['pelayan', 'kasir', 'staff', 'staf', 'ramah', 'sopan'], action: 'Lakukan briefing layanan dan observasi standar pelayanan mingguan.' },
+      { name: 'Kebersihan tempat', words: ['bersih', 'kotor', 'toilet', 'bau', 'meja'], action: 'Perketat checklist kebersihan dan verifikasi oleh kepala shift.' },
+      { name: 'Harga / nilai', words: ['mahal', 'harga', 'worth', 'murah'], action: 'Tinjau harga, ukuran porsi, dan komunikasi nilai produk.' }
+    ];
+    let reviews = JSON.parse(localStorage.getItem(REVIEW_KEY) || '[]');
+    let actions = JSON.parse(localStorage.getItem(ACTION_KEY) || '[]');
+    const $ = id => document.getElementById(id);
+    const save = () => localStorage.setItem(REVIEW_KEY, JSON.stringify(reviews));
+    const topicsFor = text => issueRules.filter(rule => rule.words.some(word => text.toLowerCase().includes(word))).map(rule => rule.name);
+    function render() {
+      const query = $('search-input').value.toLowerCase(); const rating = $('rating-filter').value;
+      const filtered = reviews.filter(item => (rating === 'all' || String(item.rating) === rating) && `${item.name} ${item.text}`.toLowerCase().includes(query));
+      $('reviews-body').innerHTML = filtered.length ? filtered.map(item => `<tr><td>${item.date || '-'}</td><td>${escapeHtml(item.name || 'Anonim')}</td><td><span class="stars">${'★'.repeat(Number(item.rating))}${'☆'.repeat(5 - Number(item.rating))}</span><br>${item.rating}/5</td><td class="review-text">${escapeHtml(item.text)}</td><td>${topicsFor(item.text).map(topic => `<span class="badge ${item.rating <= 2 ? 'high' : 'medium'}">${topic}</span>`).join(' ') || '<span class="muted">-</span>'}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">Belum ada ulasan yang cocok.</td></tr>';
+      const average = reviews.length ? reviews.reduce((sum, item) => sum + Number(item.rating || 0), 0) / reviews.length : 0;
+      $('total-reviews').textContent = reviews.length; $('average-rating').textContent = average.toFixed(1); $('negative-reviews').textContent = reviews.filter(item => Number(item.rating) <= 2).length;
+      const counts = issueRules.map(rule => ({ rule, count: reviews.filter(item => rule.words.some(word => item.text.toLowerCase().includes(word))).length })).filter(item => item.count >= 2).sort((a,b) => b.count - a.count);
+      $('issue-count').textContent = counts.length; $('issue-list').innerHTML = counts.length ? counts.map(item => `<div class="issue"><div class="issue-name">${item.rule.name}</div><div class="issue-count">${item.count} laporan</div><div class="issue-action">Tindakan: ${item.rule.action}</div></div>`).join('') : '<div class="empty">Belum ada masalah berulang.</div>';
+      $('actions-body').innerHTML = actions.length ? actions.map((item, index) => `<tr><td><strong>${escapeHtml(item.issue)}</strong><br><span class="muted">Target: ${item.due || '-'}</span></td><td>${escapeHtml(item.note)}<br><span class="muted">PIC: ${escapeHtml(item.owner || '-')}</span></td><td><select data-action-index="${index}" aria-label="Status tindakan"><option ${item.status === 'Rencana' ? 'selected' : ''}>Rencana</option><option ${item.status === 'Berjalan' ? 'selected' : ''}>Berjalan</option><option ${item.status === 'Selesai' ? 'selected' : ''}>Selesai</option></select></td></tr>`).join('') : '<tr><td colspan="3" class="empty">Belum ada tindakan perbaikan.</td></tr>';
+      document.querySelectorAll('[data-action-index]').forEach(select => select.addEventListener('change', event => { actions[Number(event.target.dataset.actionIndex)].status = event.target.value; localStorage.setItem(ACTION_KEY, JSON.stringify(actions)); }));
+    }
+    function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character])); }
+    function parseCsv(value) { const lines = value.trim().split(/\r?\n/); const header = lines.shift().split(',').map(item => item.trim().toLowerCase()); return lines.map(line => { const values = line.split(',').map(item => item.trim().replace(/^"|"$/g, '')); const row = Object.fromEntries(header.map((key, index) => [key, values[index] || ''])); return { date:row.date || row.tanggal || '', name:row.name || row.nama || 'Anonim', rating:Number(row.rating || 0), text:row.text || row.ulasan || '' }; }).filter(item => item.rating >= 1 && item.rating <= 5 && item.text); }
+    $('csv-input').addEventListener('change', event => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { const imported = parseCsv(reader.result); reviews = reviews.filter(item => !item.imported); reviews = imported.map(item => ({ ...item, imported:true })).concat(reviews); save(); render(); $('sync-status').textContent = `${imported.length} ulasan berhasil diimpor.`; $('sync-status').className = 'status good'; }; reader.readAsText(file); });
+    $('sync-btn').addEventListener('click', async () => { const endpoint = $('sync-endpoint').value.trim(); if (!endpoint) { $('sync-status').textContent = 'Isi endpoint backend terlebih dahulu. Backend harus menggunakan Google Business Profile API dan mengembalikan JSON array ulasan.'; $('sync-status').className = 'status error'; return; } $('sync-btn').disabled = true; $('sync-status').textContent = 'Sedang mengambil ulasan dari backend...'; try { const response = await fetch(endpoint); if (!response.ok) throw new Error(`HTTP ${response.status}`); const data = await response.json(); const incoming = Array.isArray(data) ? data : data.reviews; if (!Array.isArray(incoming)) throw new Error('Format respons harus berupa array ulasan atau { reviews: [] }.'); reviews = incoming.map(item => ({ date:item.date || item.createTime?.slice(0,10) || '', name:item.name || item.reviewer?.displayName || 'Anonim', rating:Number(item.rating || item.starRating || 0), text:item.text || item.comment || '' })).filter(item => item.rating >= 1 && item.rating <= 5 && item.text); save(); render(); $('sync-status').textContent = `${reviews.length} ulasan berhasil disinkronkan.`; $('sync-status').className = 'status good'; } catch (error) { $('sync-status').textContent = `Sinkronisasi gagal: ${error.message}. Periksa endpoint dan CORS backend.`; $('sync-status').className = 'status error'; } finally { $('sync-btn').disabled = false; } });
+    $('save-action').addEventListener('click', () => { const issue = $('action-issue').value.trim(); const note = $('action-note').value.trim(); if (!issue || !note) return; actions.unshift({ issue, owner:$('action-owner').value.trim(), due:$('action-due').value, note, status:'Rencana' }); localStorage.setItem(ACTION_KEY, JSON.stringify(actions)); ['action-issue','action-owner','action-due','action-note'].forEach(id => $(id).value = ''); render(); });
+    ['search-input','rating-filter'].forEach(id => $(id).addEventListener('input', render));
+    $('export-btn').addEventListener('click', () => { const rows = [['tanggal','nama','rating','ulasan','topik']].concat(reviews.map(item => [item.date,item.name,item.rating,item.text,topicsFor(item.text).join('; ')])); const blob = new Blob([rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n')], { type:'text/csv;charset=utf-8' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'analisis-ulasan-google-maps.csv'; link.click(); URL.revokeObjectURL(link.href); });
+    const DEFAULT_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzhhEssVNQBCRip4OVNh2rIOB9ToRiTad7tmZgjUTsmxgN4gT9x2LCINvvD2YD4tK5K/exec?action=getGoogleReviews';
+    const config = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}'); $('place-url').value = config.placeUrl || ''; $('sync-endpoint').value = config.endpoint || ''; ['place-url','sync-endpoint'].forEach(id => $(id).addEventListener('change', () => localStorage.setItem(CONFIG_KEY, JSON.stringify({ placeUrl:$('place-url').value, endpoint:$('sync-endpoint').value })))); render();
+  </script>
+</body>
+</html>
