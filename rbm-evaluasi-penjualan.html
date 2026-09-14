@@ -44,6 +44,17 @@
     .monthly-plan-table { margin-top: 20px; }
     .period-note { color: var(--text-muted); font-size: 12px; margin: -8px 0 16px; }
     .empty-state { color: var(--text-muted); padding: 24px 0; text-align: center; font-size: 13px; }
+    .pdf-export-mode { padding: 10px 14px 18px !important; }
+    .pdf-export-mode .evaluation-hero { padding: 14px 18px; margin-bottom: 12px; }
+    .pdf-export-mode .evaluation-hero .evaluation-toolbar, .pdf-export-mode .upload-box, .pdf-export-mode #save-analysis-button, .pdf-export-mode #analysis-save-status { display: none !important; }
+    .pdf-export-mode .period-columns, .pdf-export-mode .chart-panels, .pdf-export-mode .evaluation-panels { gap: 12px; margin-bottom: 12px; }
+    .pdf-export-mode .period-column, .pdf-export-mode .evaluation-panel { padding: 12px; }
+    .pdf-export-mode .period-stat-grid { gap: 8px; }
+    .pdf-export-mode .evaluation-stat { min-height: 70px; padding: 10px 12px; }
+    .pdf-export-mode .evaluation-stat .value { font-size: 18px; }
+    .pdf-export-mode .chart-wrap { height: 250px; }
+    .pdf-export-mode .analysis-table th, .pdf-export-mode .analysis-table td { padding: 6px 5px; }
+    .pdf-export-mode .analysis-table textarea { min-height: 28px; }
     @media (max-width: 900px) { .evaluation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .period-columns { grid-template-columns: 1fr; } .evaluation-panels, .chart-panels { grid-template-columns: 1fr; } }
     @media (max-width: 560px) { .evaluation-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .period-column { padding: 12px; } .period-column.current { padding: 11px; } .period-column-title { display: block; } .period-column-title span { display: block; margin-top: 5px; text-align: left; white-space: normal; } .period-stat-grid { gap: 8px; } .evaluation-stat { min-height: 82px; padding: 12px; } .evaluation-stat .value { font-size: 17px; } .evaluation-hero { padding: 18px; } }
   </style>
@@ -136,7 +147,7 @@
       function firebaseOutletKey(outlet) { return String(outlet || 'default').replace(/[.#$\[\]]/g, '_'); }
       function firebaseDb() { return window.FirebaseStorage && typeof FirebaseStorage.db === 'function' ? FirebaseStorage.db() : null; }
       function saveUploadedSalesToFirebase(outlet, records) { var db = firebaseDb(); if (!db) return Promise.resolve(false); return db.ref('rbm_pro/weekly_sales_transactions/' + firebaseOutletKey(outlet)).set({ records: records, updatedAt: firebase.database.ServerValue.TIMESTAMP }).then(function () { return true; }); }
-      function loadUploadedSalesFromFirebase(outlet) { var db = firebaseDb(); if (!db) return Promise.resolve(false); return db.ref('rbm_pro/weekly_sales_transactions/' + firebaseOutletKey(outlet)).once('value').then(function (snap) { var data = snap.val(); uploadedSalesCache[outlet] = data && Array.isArray(data.records) ? data.records : []; return true; }); }
+      function loadUploadedSalesFromFirebase(outlet) { var db = firebaseDb(); if (!db) return Promise.resolve(false); return db.ref('rbm_pro/weekly_sales_transactions/' + firebaseOutletKey(outlet)).once('value').then(function (snap) { var data = snap.val(); if (data && Array.isArray(data.records)) { uploadedSalesCache[outlet] = data.records; return true; } var legacyKey = 'rbm_weekly_sales_transactions_' + String(outlet || 'default').replace(/[^a-zA-Z0-9_-]/g, '_'); var legacy = []; try { legacy = JSON.parse(localStorage.getItem(legacyKey) || '[]'); } catch (e) {} if (Array.isArray(legacy) && legacy.length) { uploadedSalesCache[outlet] = legacy; return saveUploadedSalesToFirebase(outlet, legacy); } uploadedSalesCache[outlet] = []; return false; }); }
       function updateUploadStatus() { var data = uploadedSales(selectedOutlet()); var status = document.getElementById('upload-status'); status.textContent = data.length ? data.length.toLocaleString('id-ID') + ' transaksi tersimpan untuk ' + outletName(selectedOutlet()) + '.' : 'Belum ada file transaksi untuk outlet ini.'; }
       function setupOutlets() {
         var select = document.getElementById('outlet-select'); var user = JSON.parse(localStorage.getItem('rbm_user') || '{}');
@@ -178,10 +189,11 @@
         var button = document.getElementById('save-pdf-button'); if (!button || typeof html2canvas !== 'function' || !window.jspdf) { alert('Fitur PDF belum siap. Periksa koneksi internet lalu coba lagi.'); return; }
         var originalText = button.textContent; button.disabled = true; button.textContent = 'Membuat PDF...';
         var target = document.querySelector('.rbm-content-wrap') || document.body; var waitFonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+        target.classList.add('pdf-export-mode');
         waitFonts.then(function () { var captureWidth = Math.max(target.scrollWidth, target.clientWidth); var captureHeight = Math.max(target.scrollHeight, target.clientHeight); return html2canvas(target, { scale: 2, width: captureWidth, height: captureHeight, windowWidth: captureWidth, windowHeight: captureHeight, scrollX: 0, scrollY: 0, useCORS: true, backgroundColor: '#f8fafc', logging: false }); }).then(function (canvas) {
           var jsPDF = window.jspdf.jsPDF; var sideMargin = 8; var pageWidth = 297; var imageWidth = pageWidth - (sideMargin * 2); var imageHeight = canvas.height * imageWidth / canvas.width; var pageHeight = imageHeight + 16; var pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pageWidth, pageHeight] }); var imageData = canvas.toDataURL('image/jpeg', 0.92); pdf.addImage(imageData, 'JPEG', sideMargin, 8, imageWidth, imageHeight, undefined, 'FAST');
           var month = document.getElementById('monthly-chart-month').value || 'evaluasi'; var outlet = (selectedOutlet() || 'outlet').replace(/[^a-zA-Z0-9_-]/g, '_'); pdf.save('Evaluasi_Penjualan_' + outlet + '_' + month + '.pdf');
-        }).catch(function (error) { alert('Gagal membuat PDF: ' + (error && error.message ? error.message : error)); }).finally(function () { button.disabled = false; button.textContent = originalText; });
+        }).catch(function (error) { alert('Gagal membuat PDF: ' + (error && error.message ? error.message : error)); }).finally(function () { target.classList.remove('pdf-export-mode'); button.disabled = false; button.textContent = originalText; });
       }
       function summarizeUploaded(start, end, outlet) { var byDate = {}; var ids = {}; for (var i = 0; i < 7; i++) byDate[iso(addDays(start, i))] = { revenue: 0, ids: {} }; uploadedSales(outlet).forEach(function (row) { if (byDate[row.date]) { var id = String(row.id || row.date); byDate[row.date].revenue += number(row.value); byDate[row.date].ids[id] = true; ids[id] = true; } }); return { days: Object.keys(byDate).sort().map(function (date) { return { date: date, revenue: byDate[date].revenue, count: Object.keys(byDate[date].ids).length }; }), revenue: Object.keys(byDate).reduce(function (sum, date) { return sum + byDate[date].revenue; }, 0), count: Object.keys(ids).length }; }
       function summarize(rows, start, end) {
