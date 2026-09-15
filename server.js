@@ -9,6 +9,7 @@ const crypto = require('crypto');
 
 const app = express();
 const PORT = 3001; // Port diubah ke 3001
+const GOOGLE_REVIEWS_ENDPOINT = process.env.GOOGLE_REVIEWS_ENDPOINT || '';
 
 // [KONFIGURASI] Ganti null dengan path lengkap jika ingin lokasi khusus
 // Contoh Windows: "D:\\Data Kasir\\database.json" (Gunakan double backslash)
@@ -233,6 +234,26 @@ app.get('/info', (req, res) => {
         port: PORT, 
         dbFile: currentDbFile 
     });
+});
+
+app.get('/api/google-reviews', async (req, res) => {
+    if (!GOOGLE_REVIEWS_ENDPOINT) {
+        return res.status(503).json({
+            status: 'error',
+            message: 'GOOGLE_REVIEWS_ENDPOINT belum dikonfigurasi di server.'
+        });
+    }
+
+    try {
+        const target = new URL(GOOGLE_REVIEWS_ENDPOINT);
+        target.searchParams.set('action', 'getGoogleReviews');
+        if (req.query.placeUrl) target.searchParams.set('placeUrl', req.query.placeUrl);
+        const response = await fetch(target);
+        const body = await response.text();
+        res.status(response.status).type('application/json').send(body);
+    } catch (error) {
+        res.status(502).json({ status: 'error', message: `Backend Google Maps tidak dapat dihubungi: ${error.message}` });
+    }
 });
 
 // ---------- API JSON: Server-side Pagination & Filtering ----------

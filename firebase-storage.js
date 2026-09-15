@@ -30,6 +30,9 @@
     rbm_outlet_locations: 'app_state/outlet_locations',
     rbm_quick_memos: 'app_state/quick_memos'
     ,rbm_hpp_monitor: 'rbm_pro/hpp_monitor_v2'
+    ,rbm_google_maps_daily_stats: 'rbm_pro/google_maps_analysis/daily_stats'
+    ,rbm_google_maps_manual_issues: 'rbm_pro/google_maps_analysis/manual_issues'
+    ,rbm_google_maps_actions: 'rbm_pro/google_maps_analysis/actions'
   };
 
   function getConnections() {
