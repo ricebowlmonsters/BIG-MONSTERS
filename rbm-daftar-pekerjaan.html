@@ -65,6 +65,52 @@
     .single-report-field { border:1px solid var(--border); border-radius:8px; padding:12px; }
     .single-report-field.full { grid-column:1 / -1; }
     .single-report-field strong { display:block; color:var(--work-ink); margin-top:4px; white-space:pre-wrap; }
+    .report-export-shell { position:relative; width:100%; background:#ffffff; color:#0f172a; padding:30px 32px; box-sizing:border-box; font-family:Arial, Helvetica, sans-serif; }
+    .report-export-shell.export-hidden { position:fixed; left:-9999px; top:0; width:1180px; }
+    .report-export-shell * { box-sizing:border-box; }
+    .report-export-header { border-bottom:2px solid #cbd5e1; padding-bottom:18px; margin-bottom:20px; }
+    .report-export-header h1 { margin:0; font-size:30px; color:#0f172a; }
+    .report-export-header p { margin:8px 0 0; color:#475569; font-size:13px; }
+    .report-meta { display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:14px; font-size:12px; color:#334155; }
+    .report-summary { display:grid; grid-template-columns:repeat(5, minmax(120px, 1fr)); gap:12px; margin-bottom:20px; }
+    .report-summary-card { border:1px solid #dfe7f1; border-left:5px solid #2563eb; background:#f8fafc; border-radius:10px; padding:14px 12px; }
+    .report-summary-card.green { border-left-color:#16a34a; }
+    .report-summary-card.amber { border-left-color:#d97706; }
+    .report-summary-card.red { border-left-color:#dc2626; }
+    .report-summary-card span { display:block; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#64748b; }
+    .report-summary-card strong { display:block; margin-top:8px; font-size:26px; color:#0f172a; }
+    .report-table-wrap { border:1px solid #dfe7f1; border-radius:10px; overflow:hidden; }
+    .report-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .report-table th { background:#eff6ff; color:#1e3a8a; font-weight:700; text-align:left; padding:10px 8px; border-bottom:1px solid #dfe7f1; }
+    .report-table td { padding:10px 8px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
+    .report-table tr:last-child td { border-bottom:none; }
+    .report-status { display:inline-block; padding:4px 8px; border-radius:999px; font-size:11px; font-weight:700; }
+    .report-status.belum { background:#fef3c7; color:#92400e; }
+    .report-status.proses { background:#dbeafe; color:#1d4ed8; }
+    .report-status.selesai { background:#d1fae5; color:#166534; }
+    .report-status.terlambat { background:#fee2e2; color:#991b1b; }
+    .report-progress { min-width:110px; }
+    .report-progress-bar { height:10px; background:#e2e8f0; border-radius:999px; overflow:hidden; margin-top:6px; }
+    .report-progress-fill { height:100%; border-radius:999px; background:#2563eb; }
+    .report-progress-fill.done { background:#16a34a; }
+    .report-note { line-height:1.5; color:#334155; }
+    .report-note-block { display:block; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; margin-top:4px; }
+    .report-note-label { display:block; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:#64748b; font-weight:700; margin-bottom:4px; }
+    .report-note-value { display:block; color:#334155; line-height:1.5; }
+    .report-task-row { vertical-align:top; }
+    .report-task-main { display:block; }
+    .report-task-notes { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin-top:10px; }
+    .report-task-notes-row td { padding-top:0; border-bottom:1px solid #e2e8f0; }
+    .report-task-notes-row td:first-child { padding-left:58px; }
+    .report-task-notes-row td:last-child { padding-right:8px; }
+    .report-preview-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.5); display:none; align-items:center; justify-content:center; padding:24px; z-index:1200; }
+    .report-preview-backdrop.show { display:flex; }
+    .report-preview-modal { width:min(1180px, 100%); max-height:92vh; overflow:auto; background:#ffffff; border-radius:16px; box-shadow:0 30px 80px rgba(15,23,42,.25); border:1px solid #dfe7f1; }
+    .report-preview-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:18px 20px; border-bottom:1px solid #e2e8f0; background:#f8fafc; }
+    .report-preview-header h3 { margin:0; font-size:20px; color:#0f172a; }
+    .report-preview-header small { display:block; color:#64748b; margin-top:4px; }
+    .preview-report-body { padding:0; }
+    .report-preview-actions { display:flex; justify-content:flex-end; gap:8px; padding:16px 20px; border-top:1px solid #e2e8f0; background:#ffffff; }
     .form-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px; }
     .form-grid .full { grid-column:1 / -1; }
     .form-section { margin:0; }
@@ -116,9 +162,10 @@
         <p>Pantau pekerjaan yang sudah disepakati, penanggung jawab, progres, dan batas waktunya.</p>
       </div>
       <div class="work-actions">
+        <button type="button" class="btn btn-primary" id="new-job-btn">+ Tambah Pekerjaan</button>
+        <button type="button" class="btn btn-secondary" id="jpg-btn">&#128247; Simpan JPG</button>
         <button type="button" class="btn btn-secondary" id="pdf-btn">&#128438; Simpan PDF</button>
         <button type="button" class="btn btn-secondary" id="export-btn">&#8681; Export CSV</button>
-        <button type="button" class="btn btn-primary" id="new-job-btn">+ Tambah Pekerjaan</button>
       </div>
     </section>
 
@@ -217,8 +264,28 @@
     </section>
   </main>
 
+  <div class="report-preview-backdrop" id="report-preview-backdrop" aria-hidden="true">
+    <div class="report-preview-modal" role="dialog" aria-modal="true" aria-labelledby="report-preview-title">
+      <div class="report-preview-header">
+        <div>
+          <h3 id="report-preview-title">Preview Laporan</h3>
+          <small>Periksa isi laporan sebelum diunduh.</small>
+        </div>
+        <button type="button" class="btn btn-secondary" id="close-preview-btn">Tutup</button>
+      </div>
+      <div class="preview-report-body" id="preview-report-body"></div>
+      <div class="report-preview-actions">
+        <button type="button" class="btn btn-secondary" id="preview-cancel-btn">Batal</button>
+        <button type="button" class="btn btn-primary" id="preview-download-jpg-btn">Simpan JPG</button>
+        <button type="button" class="btn btn-secondary" id="preview-download-pdf-btn">Simpan PDF</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script>
     const STORAGE_KEY = 'rbm_agreed_work_items';
     const FIREBASE_PATH = 'rbm_pro/agreed_work_items';
@@ -343,7 +410,7 @@
           <td><span class="status-badge status-${statusClass}">${label}</span></td>
           <td><div class="progress-wrap"><div class="progress-line"><span>Progres</span><strong>${job.progress}%</strong></div><div class="progress-track"><div class="progress-fill ${job.status === 'selesai' ? 'done' : ''}" style="width:${job.progress}%"></div></div></div></td>
           <td><div class="job-description"><strong>Alasan:</strong> ${escapeHtml(reason)}<br><strong>Berikutnya:</strong> ${escapeHtml(job.nextStep || '-')}</div></td>
-          <td><div class="table-actions"><button class="icon-btn single-pdf-btn" data-id="${escapeHtml(job.id)}" title="Simpan tugas ini sebagai PDF">&#128438;</button><button class="icon-btn edit-btn" data-id="${escapeHtml(job.id)}" title="Edit pekerjaan">&#9998;</button><button class="icon-btn delete-btn" data-id="${escapeHtml(job.id)}" title="Hapus pekerjaan">&#128465;</button></div></td>
+          <td><div class="table-actions"><button class="icon-btn single-jpg-btn" data-id="${escapeHtml(job.id)}" title="Simpan tugas ini sebagai JPG">&#128247;</button><button class="icon-btn edit-btn" data-id="${escapeHtml(job.id)}" title="Edit pekerjaan">&#9998;</button><button class="icon-btn delete-btn" data-id="${escapeHtml(job.id)}" title="Hapus pekerjaan">&#128465;</button></div></td>
         </tr>`;
       }).join('');
       document.getElementById('empty-state').style.display = list.length ? 'none' : 'block';
@@ -385,7 +452,7 @@
       const id = event.target.dataset.id;
       if (!id) return;
       const job = jobs.find(item => item.id === id);
-      if (event.target.classList.contains('single-pdf-btn')) printSingleJob(job);
+      if (event.target.classList.contains('single-jpg-btn')) showSingleJobPreview(job);
       if (event.target.classList.contains('edit-btn')) showForm(job);
       if (event.target.classList.contains('delete-btn') && job && confirm(`Hapus pekerjaan "${job.title}"?`)) {
         deleteJob(id).then(() => { jobs = jobs.filter(item => item.id !== id); renderJobs(); }).catch(error => alert(`Gagal menghapus dari Firebase: ${error.message}`));
@@ -395,32 +462,228 @@
     document.getElementById('status-filter').addEventListener('change', renderJobs);
     document.getElementById('date-from').addEventListener('change', renderJobs);
     document.getElementById('date-to').addEventListener('change', renderJobs);
-    document.getElementById('pdf-btn').addEventListener('click', () => {
-      const selectedStatus = document.getElementById('status-filter').selectedOptions[0].textContent;
-      document.getElementById('print-heading').textContent = `Laporan Daftar Pekerjaan - ${outletName(selectedOutlet)} - ${selectedStatus} - ${new Intl.DateTimeFormat('id-ID', { dateStyle:'long' }).format(new Date())}`;
-      window.print();
-    });
-    function printSingleJob(job) {
-      if (!job) return;
-      document.getElementById('single-print-report').innerHTML = `
-        <h2>Laporan Satu Pekerjaan</h2>
-        <p class="report-subtitle">${escapeHtml(outletName(job.outlet || 'global'))} - ${formatDate(new Date().toISOString().slice(0, 10))}</p>
-        <div class="single-report-grid">
-          <div class="single-report-field full"><span class="meta-label">Nama pekerjaan</span><strong>${escapeHtml(job.title)}</strong></div>
-          <div class="single-report-field"><span class="meta-label">Outlet</span><strong>${escapeHtml(outletName(job.outlet || 'global'))}</strong></div>
-          <div class="single-report-field"><span class="meta-label">Tanggal dibuat</span><strong>${formatDate(createdDate(job))}</strong></div>
-          <div class="single-report-field"><span class="meta-label">Penanggung jawab</span><strong>${escapeHtml(job.owner)}</strong></div>
-          <div class="single-report-field"><span class="meta-label">Batas waktu</span><strong>${formatDate(job.deadline)}</strong></div>
-          <div class="single-report-field"><span class="meta-label">Status</span><strong>${escapeHtml(statusLabel(job)[0])}</strong></div>
-          <div class="single-report-field"><span class="meta-label">Progres</span><strong>${job.progress}%</strong></div>
-          <div class="single-report-field full"><span class="meta-label">Detail kesepakatan</span><strong>${escapeHtml(job.description || '-')}</strong></div>
-          <div class="single-report-field full"><span class="meta-label">Alasan belum selesai</span><strong>${escapeHtml(job.reason || '-')}</strong></div>
-          <div class="single-report-field full"><span class="meta-label">Langkah berikutnya</span><strong>${escapeHtml(job.nextStep || '-')}</strong></div>
-        </div>`;
-      document.body.classList.add('printing-single');
-      window.print();
-      window.setTimeout(() => document.body.classList.remove('printing-single'), 500);
+    let previewReportJobs = null;
+    function getCurrentReportJobs() {
+      const search = document.getElementById('search-input').value.toLowerCase().trim();
+      const filter = document.getElementById('status-filter').value;
+      const dateFrom = document.getElementById('date-from').value;
+      const dateTo = document.getElementById('date-to').value;
+      const outletJobs = selectedOutlet === 'global' ? jobs : jobs.filter(job => (job.outlet || 'global') === selectedOutlet);
+      return outletJobs.filter(job => {
+        const haystack = `${job.title} ${job.description} ${job.owner}`.toLowerCase();
+        const matchesSearch = !search || haystack.includes(search);
+        const matchesFilter = filter === 'semua' || (filter === 'terlambat' ? isLate(job) : job.status === filter);
+        const matchesDate = (!dateFrom || createdDate(job) >= dateFrom) && (!dateTo || createdDate(job) <= dateTo);
+        return matchesSearch && matchesFilter && matchesDate;
+      });
     }
+    function buildBossReportMarkup(previewMode = false, reportJobs = getCurrentReportJobs()) {
+      const visibleJobs = reportJobs;
+      const total = visibleJobs.length;
+      const selesai = visibleJobs.filter(job => job.status === 'selesai').length;
+      const proses = visibleJobs.filter(job => job.status === 'proses').length;
+      const belum = visibleJobs.filter(job => job.status === 'belum').length;
+      const terlambat = visibleJobs.filter(isLate).length;
+      const rows = visibleJobs.length ? visibleJobs.map((job, index) => {
+        const [label, className] = statusLabel(job);
+        const progressClass = job.status === 'selesai' ? 'done' : '';
+        return `<tr>
+          <td>${index + 1}</td>
+          <td class="report-task-row">
+            <div class="report-task-main">
+              <strong>${escapeHtml(job.title)}</strong>
+              <div class="report-note">${escapeHtml(job.description || '-')}</div>
+            </div>
+          </td>
+          <td>${escapeHtml(job.owner)}</td>
+          <td>${escapeHtml(outletName(job.outlet || selectedOutlet))}</td>
+          <td>${formatDate(job.deadline)}</td>
+          <td><span class="report-status ${className}">${label}</span></td>
+          <td class="report-progress"><div>${job.progress}%</div><div class="report-progress-bar"><div class="report-progress-fill ${progressClass}" style="width:${job.progress}%"></div></div></td>
+        </tr>
+        <tr class="report-task-notes-row">
+          <td colspan="7">
+            <div class="report-task-notes">
+              <div class="report-note-block">
+                <span class="report-note-label">Alasan</span>
+                <span class="report-note-value">${escapeHtml(job.reason || 'Tidak ada alasan yang dicatat.')}</span>
+              </div>
+              <div class="report-note-block">
+                <span class="report-note-label">Langkah berikutnya</span>
+                <span class="report-note-value">${escapeHtml(job.nextStep || 'Belum ada langkah lanjutan yang ditentukan.')}</span>
+              </div>
+            </div>
+          </td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="7" style="padding:18px; text-align:center; color:#64748b;">Belum ada tugas yang sesuai filter.</td></tr>';
+      const shellClass = previewMode ? 'report-export-shell' : 'report-export-shell export-hidden';
+      const shellId = previewMode ? 'preview-report-surface' : 'boss-report-export';
+      return `
+        <div class="${shellClass}" id="${shellId}">
+          <div class="report-export-header">
+            <h1>Laporan Progress Pekerjaan</h1>
+            <p>Ringkasan tugas, progres, dan target penyelesaian untuk kebutuhan monitoring atasan.</p>
+            <div class="report-meta">
+              <span>Outlet: ${escapeHtml(outletName(selectedOutlet))}</span>
+              <span>Periode: ${new Intl.DateTimeFormat('id-ID', { dateStyle: 'long' }).format(new Date())}</span>
+              <span>Dibuat: ${new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}</span>
+            </div>
+          </div>
+          <div class="report-summary">
+            <div class="report-summary-card"><span>Total tugas</span><strong>${total}</strong></div>
+            <div class="report-summary-card green"><span>Selesai</span><strong>${selesai}</strong></div>
+            <div class="report-summary-card"><span>Proses</span><strong>${proses}</strong></div>
+            <div class="report-summary-card amber"><span>Belum mulai</span><strong>${belum}</strong></div>
+            <div class="report-summary-card red"><span>Terlambat</span><strong>${terlambat}</strong></div>
+          </div>
+          <div class="report-table-wrap">
+            <table class="report-table">
+              <thead>
+                <tr>
+                  <th style="width:42px;">No</th>
+                  <th style="width:24%;">Nama tugas</th>
+                  <th style="width:16%;">PIC</th>
+                  <th style="width:14%;">Outlet</th>
+                  <th style="width:12%;">Deadline</th>
+                  <th style="width:12%;">Status</th>
+                  <th style="width:12%;">Progres</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+    function showReportPreview() {
+      const previewBody = document.getElementById('preview-report-body');
+      const backdrop = document.getElementById('report-preview-backdrop');
+      previewReportJobs = null;
+      document.getElementById('report-preview-title').textContent = 'Preview Laporan';
+      document.getElementById('preview-download-pdf-btn').style.display = '';
+      previewBody.innerHTML = buildBossReportMarkup(true);
+      const previewSurface = previewBody.querySelector('.report-export-shell');
+      if (previewSurface) {
+        previewSurface.style.width = '100%';
+        previewSurface.style.maxWidth = '100%';
+        previewSurface.style.display = 'block';
+      }
+      backdrop.classList.add('show');
+      backdrop.setAttribute('aria-hidden', 'false');
+    }
+    function showSingleJobPreview(job) {
+      if (!job) return;
+      const previewBody = document.getElementById('preview-report-body');
+      const backdrop = document.getElementById('report-preview-backdrop');
+      previewReportJobs = [job];
+      previewBody.innerHTML = buildBossReportMarkup(true, previewReportJobs);
+      const previewSurface = previewBody.querySelector('.report-export-shell');
+      if (previewSurface) {
+        previewSurface.style.width = '100%';
+        previewSurface.style.maxWidth = '100%';
+        previewSurface.style.display = 'block';
+      }
+      document.getElementById('report-preview-title').textContent = 'Preview Laporan Tugas';
+      document.getElementById('preview-download-pdf-btn').style.display = 'none';
+      backdrop.classList.add('show');
+      backdrop.setAttribute('aria-hidden', 'false');
+    }
+    function closeReportPreview() {
+      const backdrop = document.getElementById('report-preview-backdrop');
+      backdrop.classList.remove('show');
+      backdrop.setAttribute('aria-hidden', 'true');
+    }
+    async function exportBossReportAsJpg(reportJobs = getCurrentReportJobs()) {
+      if (typeof html2canvas !== 'function') {
+        alert('Library JPG belum siap. Periksa koneksi internet lalu coba lagi.');
+        return;
+      }
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = buildBossReportMarkup(false, reportJobs);
+      document.body.appendChild(wrapper.firstElementChild);
+      const captureTarget = document.getElementById('boss-report-export');
+      try {
+        const canvas = await html2canvas(captureTarget, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          useCORS: true,
+          logging: false
+        });
+        const link = document.createElement('a');
+        const outletKey = selectedOutlet === 'global' ? 'global' : String(selectedOutlet || 'all');
+        const filePrefix = reportJobs.length === 1 ? 'laporan-tugas' : 'laporan-progress-pekerjaan';
+        link.download = `${filePrefix}-${outletKey}-${new Date().toISOString().slice(0, 10)}.jpg`;
+        link.href = canvas.toDataURL('image/jpeg', 0.92);
+        link.click();
+      } catch (error) {
+        alert(`Gagal menyimpan JPG: ${error.message}`);
+      } finally {
+        if (captureTarget) captureTarget.remove();
+      }
+    }
+    async function exportBossReportAsPdf() {
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+        alert('Library PDF belum siap. Periksa koneksi internet lalu coba lagi.');
+        return;
+      }
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = buildBossReportMarkup();
+      document.body.appendChild(wrapper.firstElementChild);
+      const captureTarget = document.getElementById('boss-report-export');
+      try {
+        if (typeof html2canvas !== 'function') {
+          throw new Error('Library HTML to Canvas belum siap.');
+        }
+        const canvas = await html2canvas(captureTarget, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          useCORS: true,
+          logging: false
+        });
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const margin = 28;
+        const imageWidth = pageWidth - margin * 2;
+        const imageHeight = (canvas.height * imageWidth) / canvas.width;
+        const totalPages = Math.ceil(imageHeight / (pageHeight - margin * 2));
+        for (let pageIndex = 0; pageIndex < totalPages; pageIndex += 1) {
+          if (pageIndex > 0) pdf.addPage();
+          const sourceY = pageIndex * ((canvas.height - (pageHeight - margin * 2) * canvas.width / imageWidth) / 1);
+          const pageCanvas = document.createElement('canvas');
+          pageCanvas.width = canvas.width;
+          pageCanvas.height = Math.min(canvas.height - sourceY, (pageHeight - margin * 2) * canvas.width / imageWidth);
+          const context = pageCanvas.getContext('2d');
+          context.drawImage(canvas, 0, sourceY, canvas.width, pageCanvas.height, 0, 0, canvas.width, pageCanvas.height);
+          const imgData = pageCanvas.toDataURL('image/jpeg', 0.92);
+          const pageImageHeight = (pageCanvas.height * imageWidth) / pageCanvas.width;
+          pdf.addImage(imgData, 'JPEG', margin, margin, imageWidth, pageImageHeight, undefined, 'FAST');
+        }
+        const outletKey = selectedOutlet === 'global' ? 'global' : String(selectedOutlet || 'all');
+        pdf.save(`laporan-progress-pekerjaan-${outletKey}-${new Date().toISOString().slice(0, 10)}.pdf`);
+      } catch (error) {
+        alert(`Gagal menyimpan PDF: ${error.message}`);
+      } finally {
+        if (captureTarget) captureTarget.remove();
+      }
+    }
+    document.getElementById('jpg-btn').addEventListener('click', showReportPreview);
+    document.getElementById('pdf-btn').addEventListener('click', showReportPreview);
+    document.getElementById('close-preview-btn').addEventListener('click', closeReportPreview);
+    document.getElementById('preview-cancel-btn').addEventListener('click', closeReportPreview);
+    document.getElementById('preview-download-jpg-btn').addEventListener('click', () => {
+      const reportJobs = previewReportJobs || getCurrentReportJobs();
+      closeReportPreview();
+      exportBossReportAsJpg(reportJobs);
+      previewReportJobs = null;
+    });
+    document.getElementById('preview-download-pdf-btn').addEventListener('click', () => {
+      closeReportPreview();
+      exportBossReportAsPdf();
+    });
+    document.getElementById('report-preview-backdrop').addEventListener('click', event => {
+      if (event.target === document.getElementById('report-preview-backdrop')) closeReportPreview();
+    });
     document.getElementById('export-btn').addEventListener('click', () => {
       const headers = ['Outlet','Pekerjaan','Dibuat','Detail','Penanggung Jawab','Batas Waktu','Status','Progres','Alasan Belum Selesai','Langkah Berikutnya'];
       const exportJobs = selectedOutlet === 'global' ? jobs : jobs.filter(job => (job.outlet || 'global') === selectedOutlet);

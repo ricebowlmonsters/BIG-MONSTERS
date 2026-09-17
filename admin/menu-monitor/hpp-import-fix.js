@@ -97,7 +97,8 @@
         downloadInvalidRows(invalidRows);
         throw new Error('Ditemukan ' + invalidRows.length + ' baris bermasalah. File baris-gagal-import-hpp.xlsx otomatis diunduh.');
       }
-      materials.splice(0, materials.length, ...imported); saveImportedData(); renderStats(); renderResto(); renderKitchen(); renderDatabase(); closeImport(); window.__hppWorkbook = null;
+      var restoMaterials = materials.filter(function (item) { return !/^BB\.DAPUR\./i.test(String(item.code || '')); });
+      materials.splice(0, materials.length, ...restoMaterials, ...imported); saveImportedData(); renderStats(); renderResto(); renderKitchen(); renderDatabase(); closeImport(); window.__hppWorkbook = null;
     } catch (error) { importError.textContent = error.message; }
   }, true);
 })();

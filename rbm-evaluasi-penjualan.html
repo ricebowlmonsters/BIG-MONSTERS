@@ -53,12 +53,16 @@
     .analysis-table th, .analysis-table td { border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; vertical-align: top; }
     .analysis-table th { color: var(--text-muted); font-size: 11px; text-transform: uppercase; }
     .analysis-table input, .analysis-table textarea { width: 100%; min-width: 180px; min-height: 38px; border: 1px solid var(--border); border-radius: 7px; padding: 8px; font: inherit; resize: vertical; }
+    .analysis-notes-row td { padding-top: 8px; background: #f8fafc; }
+    .analysis-notes-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .analysis-note-field { min-width: 0; }
+    .analysis-note-field strong { display: block; margin-bottom: 5px; color: #172554; font-size: 11px; }
     .monthly-plan-table { margin-top: 20px; }
     .period-note { color: var(--text-muted); font-size: 12px; margin: -8px 0 16px; }
     .empty-state { color: var(--text-muted); padding: 24px 0; text-align: center; font-size: 13px; }
     .pdf-export-mode { padding: 10px 14px 18px !important; }
     .pdf-export-mode .evaluation-hero { padding: 14px 18px; margin-bottom: 12px; }
-    .pdf-export-mode .evaluation-hero .evaluation-toolbar, .pdf-export-mode .upload-box, .pdf-export-mode #save-analysis-button, .pdf-export-mode #analysis-save-status { display: none !important; }
+    .pdf-export-mode .evaluation-hero .evaluation-toolbar, .pdf-export-mode .upload-box, .pdf-export-mode .upload-history, .pdf-export-mode #save-analysis-button, .pdf-export-mode #analysis-save-status { display: none !important; }
     .pdf-export-mode .period-columns, .pdf-export-mode .chart-panels, .pdf-export-mode .evaluation-panels { gap: 12px; margin-bottom: 12px; }
     .pdf-export-mode .period-column, .pdf-export-mode .evaluation-panel { padding: 12px; }
     .pdf-export-mode .period-stat-grid { gap: 8px; }
@@ -67,6 +71,16 @@
     .pdf-export-mode .chart-wrap { height: 250px; }
     .pdf-export-mode .analysis-table th, .pdf-export-mode .analysis-table td { padding: 6px 5px; }
     .pdf-export-mode .analysis-table textarea { min-height: 28px; }
+    .evaluation-preview-backdrop { position: fixed; inset: 0; z-index: 1200; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(15,23,42,.55); }
+    .evaluation-preview-backdrop.show { display: flex; }
+    .evaluation-preview-modal { width: min(1180px, 100%); max-height: 92vh; overflow: auto; background: #fff; border: 1px solid #dbe3ee; border-radius: 14px; box-shadow: 0 30px 80px rgba(15,23,42,.25); }
+    .evaluation-preview-header, .evaluation-preview-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; }
+    .evaluation-preview-header { border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+    .evaluation-preview-header h3 { margin: 0; color: #172554; font-size: 18px; }
+    .evaluation-preview-header small { display: block; color: #64748b; margin-top: 4px; }
+    .evaluation-preview-body { padding: 12px; overflow: auto; background: #e2e8f0; }
+    .evaluation-preview-body img { display: block; width: 100%; height: auto; background: #f8fafc; }
+    .evaluation-preview-actions { justify-content: flex-end; border-top: 1px solid #e2e8f0; }
     @media (max-width: 900px) { .evaluation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .period-columns { grid-template-columns: 1fr; } .evaluation-panels, .chart-panels { grid-template-columns: 1fr; } }
     @media (max-width: 560px) { .evaluation-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .period-column { padding: 12px; } .period-column.current { padding: 11px; } .period-column-title { display: block; } .period-column-title span { display: block; margin-top: 5px; text-align: left; white-space: normal; } .period-stat-grid { gap: 8px; } .evaluation-stat { min-height: 82px; padding: 12px; } .evaluation-stat .value { font-size: 17px; } .evaluation-hero { padding: 18px; } }
   </style>
@@ -82,6 +96,7 @@
         <div><label for="week-date">Pilih tanggal minggu</label><input type="date" id="week-date"></div>
         <div><label for="monthly-chart-month">Bulan grafik mingguan</label><input type="month" id="monthly-chart-month"></div>
         <button type="button" class="btn" id="load-button">Muat Evaluasi</button>
+        <button type="button" class="btn" id="save-jpg-button">Simpan JPG</button>
         <button type="button" class="btn" id="save-pdf-button">Simpan PDF</button>
       </div>
       <div class="upload-box">
@@ -98,6 +113,7 @@
     </section>
 
     <p id="period-label" class="period-note"></p>
+    <div data-export-section="period-summary">
     <section class="period-columns">
       <div class="period-column">
         <h3 class="period-column-title">Minggu lalu <span id="previous-period-label">Belum dipilih</span></h3>
@@ -118,23 +134,46 @@
         </div>
       </div>
     </section>
+    </div>
 
+    <div data-export-section="charts">
     <section class="chart-panels">
       <article class="evaluation-panel"><h3 id="weekly-chart-title">Tren omset harian</h3><div class="chart-wrap"><canvas id="weekly-chart"></canvas></div></article>
       <article class="evaluation-panel"><h3 id="weekly-total-chart-title">Omset mingguan dalam 1 bulan</h3><div class="chart-wrap"><canvas id="weekly-total-chart"></canvas></div></article>
     </section>
+    </div>
+    <div data-export-section="insights">
     <section class="evaluation-panels">
       <article class="evaluation-panel"><h3>Analisis otomatis</h3><ul class="insight-list" id="insight-list"><li>Data akan dianalisis setelah evaluasi dimuat.</li></ul></article>
     </section>
+    </div>
 
-    <section class="evaluation-panel">
+    <div data-export-section="analysis">
+    <section class="evaluation-panel" id="weekly-analysis-section">
       <h3>Analisis 1 minggu dan rencana minggu depan</h3>
       <p class="period-note" id="analysis-period-note">Catat penyebab perubahan penjualan dan tindakan yang akan dilakukan pada minggu berikutnya. Catatan tersimpan sesuai outlet dan periode minggu.</p>
-      <div style="overflow-x:auto"><table class="analysis-table"><thead><tr><th>Periode</th><th>Omset</th><th>Pelanggan</th><th>Rata-rata transaksi</th><th>Perubahan vs minggu lalu</th><th>Analisis penyebab</th><th>Rencana minggu depan</th></tr></thead><tbody id="analysis-body"><tr><td colspan="7" class="empty-state">Belum ada data.</td></tr></tbody></table></div>
+      <div style="overflow-x:auto"><table class="analysis-table"><thead><tr><th>Periode</th><th>Omset</th><th>Pelanggan</th><th>Rata-rata transaksi</th><th>Perubahan vs minggu lalu</th></tr></thead><tbody id="analysis-body"><tr><td colspan="5" class="empty-state">Belum ada data.</td></tr></tbody></table></div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap"><button type="button" class="btn btn-primary" id="save-analysis-button">Simpan Analisis ke Firebase</button><span id="analysis-save-status" class="period-note" style="margin:0">Belum ada perubahan yang disimpan.</span></div>
     </section>
+    </div>
+    <div data-export-section="footnote">
     <p style="font-size:11px;color:#64748b;margin:12px 2px">* Jumlah pelanggan dihitung dari nomor transaksi unik pada file Excel outlet. Upload ulang akan mengganti data Excel untuk outlet yang sedang dipilih.</p>
+    </div>
   </main>
+
+  <div class="evaluation-preview-backdrop" id="evaluation-preview-backdrop" aria-hidden="true">
+    <div class="evaluation-preview-modal" role="dialog" aria-modal="true" aria-labelledby="evaluation-preview-title">
+      <div class="evaluation-preview-header">
+        <div><h3 id="evaluation-preview-title">Preview Evaluasi Penjualan</h3><small>Periksa laporan sebelum menyimpan sebagai JPG.</small></div>
+        <button type="button" class="btn" id="close-evaluation-preview">Tutup</button>
+      </div>
+      <div class="evaluation-preview-body" id="evaluation-preview-body"></div>
+      <div class="evaluation-preview-actions">
+        <button type="button" class="btn" id="cancel-evaluation-preview">Batal</button>
+        <button type="button" class="btn btn-primary" id="download-evaluation-jpg">Simpan JPG</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
@@ -145,6 +184,7 @@
   <script>
     (function () {
       var chart;
+      var evaluationPeriodMode = 'week';
       var analysisCache = {};
       var uploadedSalesCache = {};
       var uploadedSalesHistoryCache = {};
@@ -234,6 +274,35 @@
       }
       function uploadSalesFile(file) {
         var reader = new FileReader(); reader.onload = function (event) { try { var records = parseUploadedWorkbook(event.target.result); if (!records.length) throw new Error('Tidak ada transaksi valid pada file.'); var outlet = selectedOutlet(); uploadedSalesCache[outlet] = records; var savePromise = saveUploadedSalesToFirebase(outlet, records); savePromise.then(function () { return saveUploadedSalesHistory(outlet, file.name, records); }).then(function () { document.getElementById('upload-status').textContent = records.length.toLocaleString('id-ID') + ' transaksi tersimpan di Firebase untuk ' + outletName(outlet) + '.'; updateUploadStatus(); loadEvaluation(); }).catch(function () { uploadedSalesCache[outlet] = []; document.getElementById('upload-status').textContent = 'Gagal menyimpan ke Firebase. Data upload dibatalkan.'; }); } catch (error) { document.getElementById('upload-status').textContent = 'Upload gagal: ' + error.message; } }; reader.readAsArrayBuffer(file); }
+      var evaluationPreviewCanvas = null;
+      function captureEvaluationReport() {
+        if (typeof html2canvas !== 'function') return Promise.reject(new Error('Library JPG belum siap.'));
+        var target = document.querySelector('.rbm-content-wrap') || document.body;
+        var waitFonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+        target.classList.add('pdf-export-mode');
+        return waitFonts.then(function () { var captureWidth = Math.max(target.scrollWidth, target.clientWidth); var captureHeight = Math.max(target.scrollHeight, target.clientHeight); return html2canvas(target, { scale: 2, width: captureWidth, height: captureHeight, windowWidth: captureWidth, windowHeight: captureHeight, scrollX: 0, scrollY: 0, useCORS: true, backgroundColor: '#f8fafc', logging: false }); }).finally(function () { target.classList.remove('pdf-export-mode'); });
+      }
+      function closeEvaluationPreview() {
+        var backdrop = document.getElementById('evaluation-preview-backdrop');
+        backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden', 'true');
+      }
+      function showEvaluationPreview() {
+        var button = document.getElementById('save-jpg-button');
+        if (!button) return;
+        button.disabled = true; button.textContent = 'Membuat preview...';
+        captureEvaluationReport().then(function (canvas) {
+          evaluationPreviewCanvas = canvas;
+          document.getElementById('evaluation-preview-body').innerHTML = '<img alt="Preview laporan evaluasi penjualan" src="' + canvas.toDataURL('image/jpeg', 0.92) + '">';
+          var backdrop = document.getElementById('evaluation-preview-backdrop');
+          backdrop.classList.add('show'); backdrop.setAttribute('aria-hidden', 'false');
+        }).catch(function (error) { alert('Gagal membuat preview: ' + error.message); }).finally(function () { button.disabled = false; button.textContent = 'Simpan JPG'; });
+      }
+      function saveEvaluationJpg() {
+        if (!evaluationPreviewCanvas) return;
+        var month = document.getElementById('monthly-chart-month').value || 'evaluasi'; var outlet = (selectedOutlet() || 'outlet').replace(/[^a-zA-Z0-9_-]/g, '_');
+        var link = document.createElement('a'); link.download = 'Evaluasi_Penjualan_' + outlet + '_' + month + '.jpg'; link.href = evaluationPreviewCanvas.toDataURL('image/jpeg', 0.92); link.click();
+        closeEvaluationPreview(); evaluationPreviewCanvas = null;
+      }
       function saveEvaluationPdf() {
         var button = document.getElementById('save-pdf-button'); if (!button || typeof html2canvas !== 'function' || !window.jspdf) { alert('Fitur PDF belum siap. Periksa koneksi internet lalu coba lagi.'); return; }
         var originalText = button.textContent; button.disabled = true; button.textContent = 'Membuat PDF...';
@@ -244,9 +313,10 @@
           var month = document.getElementById('monthly-chart-month').value || 'evaluasi'; var outlet = (selectedOutlet() || 'outlet').replace(/[^a-zA-Z0-9_-]/g, '_'); pdf.save('Evaluasi_Penjualan_' + outlet + '_' + month + '.pdf');
         }).catch(function (error) { alert('Gagal membuat PDF: ' + (error && error.message ? error.message : error)); }).finally(function () { target.classList.remove('pdf-export-mode'); button.disabled = false; button.textContent = originalText; });
       }
-      function summarizeUploaded(start, end, outlet) { var byDate = {}; var ids = {}; for (var i = 0; i < 7; i++) byDate[iso(addDays(start, i))] = { revenue: 0, ids: {} }; uploadedSales(outlet).forEach(function (row) { if (byDate[row.date]) { var id = String(row.id || row.date); byDate[row.date].revenue += number(row.value); byDate[row.date].ids[id] = true; ids[id] = true; } }); return { days: Object.keys(byDate).sort().map(function (date) { return { date: date, revenue: byDate[date].revenue, count: Object.keys(byDate[date].ids).length }; }), revenue: Object.keys(byDate).reduce(function (sum, date) { return sum + byDate[date].revenue; }, 0), count: Object.keys(ids).length }; }
+      function periodDayCount(start, end) { return Math.max(1, Math.round((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000) + 1); }
+      function summarizeUploaded(start, end, outlet) { var byDate = {}; var ids = {}; for (var i = 0; i < periodDayCount(iso(start), iso(end)); i++) byDate[iso(addDays(start, i))] = { revenue: 0, ids: {} }; uploadedSales(outlet).forEach(function (row) { if (byDate[row.date]) { var id = String(row.id || row.date); byDate[row.date].revenue += number(row.value); byDate[row.date].ids[id] = true; ids[id] = true; } }); return { days: Object.keys(byDate).sort().map(function (date) { return { date: date, revenue: byDate[date].revenue, count: Object.keys(byDate[date].ids).length }; }), revenue: Object.keys(byDate).reduce(function (sum, date) { return sum + byDate[date].revenue; }, 0), count: Object.keys(ids).length }; }
       function summarize(rows, start, end) {
-        var byDate = {}; for (var i = 0; i < 7; i++) byDate[iso(addDays(start, i))] = { revenue: 0, count: 0, categories: {} };
+        var byDate = {}; for (var i = 0; i < periodDayCount(start, end); i++) byDate[iso(addDays(new Date(start + 'T00:00:00'), i))] = { revenue: 0, count: 0, categories: {} };
         normalize(rows).forEach(function (p) { if (!byDate[p.tanggal] || p.tanggal < start || p.tanggal > end) return; (p.kasMasuk || []).forEach(function (entry) { var value = number(entry.catatan); if (value <= 0) value = number(entry.fisik); if (String(entry.keterangan || '').toUpperCase() === 'VCR') value = number(entry.vcr) * 20000 || value; if (value > 0) { byDate[p.tanggal].revenue += value; byDate[p.tanggal].count++; var key = String(entry.keterangan || 'Lainnya').trim() || 'Lainnya'; byDate[p.tanggal].categories[key] = (byDate[p.tanggal].categories[key] || 0) + value; } }); });
         return Object.keys(byDate).sort().map(function (date) { return { date: date, revenue: byDate[date].revenue, count: byDate[date].count, categories: byDate[date].categories }; });
       }
@@ -293,9 +363,9 @@
       function saveAnalysisNote(startDate, date, field, value) { var notes = readAnalysis(startDate); if (!notes[date]) notes[date] = {}; notes[date][field] = value; analysisCache[startDate] = notes; }
       function saveAnalysisForm() { var fields = document.querySelectorAll('#analysis-body [data-analysis-date]'); var grouped = {}; fields.forEach(function (field) { var date = field.getAttribute('data-analysis-date'); var target = date; if (!grouped[target]) grouped[target] = {}; grouped[target][field.getAttribute('data-analysis-field')] = field.value; }); var db = firebaseDb(); var status = document.getElementById('analysis-save-status'); if (!db) { status.textContent = 'Gagal: Firebase tidak tersedia. Analisis tidak disimpan lokal.'; status.className = 'down'; return; } var writes = Object.keys(grouped).map(function (date) { analysisCache[date] = {}; analysisCache[date][date] = grouped[date]; return db.ref(analysisFirebasePath(date)).set(analysisCache[date]); }); status.textContent = 'Menyimpan ke Firebase...'; Promise.all(writes).then(function () { status.textContent = 'Analisis berhasil disimpan ke Firebase.'; status.className = 'up'; }).catch(function () { status.textContent = 'Gagal menyimpan ke Firebase. Coba lagi.'; status.className = 'down'; }); }
       function renderAnalysis(current, previous) {
-        var body = document.getElementById('analysis-body'); if (!current.length || !previous.length) { body.innerHTML = '<tr><td colspan="7" class="empty-state">Belum ada data.</td></tr>'; return; }
+        var body = document.getElementById('analysis-body'); if (!current.length || !previous.length) { body.innerHTML = '<tr><td colspan="5" class="empty-state">Belum ada data.</td></tr>'; return; }
         var currentStart = current[0].date; var previousStart = previous[0].date; var currentUploaded = summarizeUploaded(new Date(current[0].date + 'T00:00:00'), new Date(current[current.length - 1].date + 'T00:00:00'), selectedOutlet()); var previousUploaded = summarizeUploaded(new Date(previous[0].date + 'T00:00:00'), new Date(previous[previous.length - 1].date + 'T00:00:00'), selectedOutlet()); var currentRevenue = current.reduce(function (sum, row) { return sum + row.revenue; }, 0); var previousRevenue = previous.reduce(function (sum, row) { return sum + row.revenue; }, 0); var currentAverage = currentUploaded.count ? currentUploaded.revenue / currentUploaded.count : 0; var previousAverage = previousUploaded.count ? previousUploaded.revenue / previousUploaded.count : 0; var notes = readAnalysis(currentStart); var previousNotes = readAnalysis(previousStart);
-        body.innerHTML = '<tr><td><strong>Minggu lalu</strong><br><small>' + dateFmt.format(new Date(previous[0].date + 'T00:00:00')) + ' - ' + dateFmt.format(new Date(previous[previous.length - 1].date + 'T00:00:00')) + '</small></td><td>' + money(previousRevenue) + '</td><td>' + previousUploaded.count.toLocaleString('id-ID') + '</td><td>' + money(previousAverage) + '</td><td class="neutral">Pembanding</td><td><textarea placeholder="Catatan minggu lalu..." data-analysis-date="' + previousStart + '" data-analysis-field="cause"></textarea></td><td>-</td></tr><tr><td><strong>Minggu ini</strong><br><small>' + dateFmt.format(new Date(current[0].date + 'T00:00:00')) + ' - ' + dateFmt.format(new Date(current[current.length - 1].date + 'T00:00:00')) + '</small></td><td>' + money(currentRevenue) + '</td><td>' + currentUploaded.count.toLocaleString('id-ID') + '</td><td>' + money(currentAverage) + '</td><td class="' + (currentRevenue >= previousRevenue ? 'up' : 'down') + '">' + changeText(pct(currentRevenue, previousRevenue)) + '</td><td><textarea placeholder="Contoh: promo, hujan, stok kosong..." data-analysis-date="' + currentStart + '" data-analysis-field="cause"></textarea></td><td><textarea placeholder="Contoh: tambah promo, cek stok..." data-analysis-date="' + currentStart + '" data-analysis-field="plan"></textarea></td></tr>';
+        body.innerHTML = '<tr><td><strong>Minggu ini</strong><br><small>' + dateFmt.format(new Date(current[0].date + 'T00:00:00')) + ' - ' + dateFmt.format(new Date(current[current.length - 1].date + 'T00:00:00')) + '</small></td><td>' + money(currentRevenue) + '</td><td>' + currentUploaded.count.toLocaleString('id-ID') + '</td><td>' + money(currentAverage) + '</td><td class="' + (currentRevenue >= previousRevenue ? 'up' : 'down') + '">' + changeText(pct(currentRevenue, previousRevenue)) + '</td></tr><tr class="analysis-notes-row"><td colspan="5"><div class="analysis-notes-grid"><div class="analysis-note-field"><strong>Analisis penyebab</strong><textarea placeholder="Contoh: promo, hujan, stok kosong..." data-analysis-date="' + currentStart + '" data-analysis-field="cause"></textarea></div><div class="analysis-note-field"><strong>Rencana minggu depan</strong><textarea placeholder="Contoh: tambah promo, cek stok..." data-analysis-date="' + currentStart + '" data-analysis-field="plan"></textarea></div></div></td></tr><tr><td><strong>Minggu lalu</strong><br><small>' + dateFmt.format(new Date(previous[0].date + 'T00:00:00')) + ' - ' + dateFmt.format(new Date(previous[previous.length - 1].date + 'T00:00:00')) + '</small></td><td>' + money(previousRevenue) + '</td><td>' + previousUploaded.count.toLocaleString('id-ID') + '</td><td>' + money(previousAverage) + '</td><td class="neutral">Pembanding</td></tr><tr class="analysis-notes-row"><td colspan="5"><div class="analysis-notes-grid"><div class="analysis-note-field"><strong>Analisis penyebab</strong><textarea placeholder="Catatan minggu lalu..." data-analysis-date="' + previousStart + '" data-analysis-field="cause"></textarea></div><div class="analysis-note-field"><strong>Rencana minggu depan</strong><textarea placeholder="Tidak ada rencana untuk periode pembanding" disabled></textarea></div></div></td></tr>';
         body.querySelectorAll('[data-analysis-date]').forEach(function (field) { var date = field.getAttribute('data-analysis-date'); var source = date === currentStart ? notes : previousNotes; var note = source[date] || {}; field.value = note[field.getAttribute('data-analysis-field')] || ''; field.addEventListener('input', function () { saveAnalysisNote(date, date, field.getAttribute('data-analysis-field'), field.value); document.getElementById('analysis-save-status').textContent = 'Ada perubahan yang belum disimpan.'; document.getElementById('analysis-save-status').className = 'down'; }); });
         loadAnalysisFromFirebase(currentStart).then(function (cloudNotes) { body.querySelectorAll('[data-analysis-date="' + currentStart + '"]').forEach(function (field) { var note = cloudNotes[currentStart] || {}; field.value = note[field.getAttribute('data-analysis-field')] || ''; }); }).catch(function () {});
         loadAnalysisFromFirebase(previousStart).then(function (cloudNotes) { body.querySelectorAll('[data-analysis-date="' + previousStart + '"]').forEach(function (field) { var note = cloudNotes[previousStart] || {}; field.value = note[field.getAttribute('data-analysis-field')] || ''; }); }).catch(function () {});
@@ -304,7 +374,16 @@
         var selected = document.getElementById('week-date').value; if (!selected) return; var selectedDate = new Date(selected + 'T00:00:00'); var start = mondayOf(selectedDate); var previousStart = addDays(start, -7); var previousEnd = addDays(start, -1); var end = addDays(start, 6); var nextStart = addDays(start, 7); var nextEnd = addDays(start, 13); var monthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0); var currentPeriod = fullDateFmt.format(start) + ' - ' + fullDateFmt.format(end); var previousPeriod = fullDateFmt.format(previousStart) + ' - ' + fullDateFmt.format(previousEnd); var nextPeriod = fullDateFmt.format(nextStart) + ' - ' + fullDateFmt.format(nextEnd); document.getElementById('period-label').textContent = outletName(selectedOutlet()) + ' | Periode evaluasi: ' + currentPeriod + ' | Pembanding: ' + previousPeriod; document.getElementById('weekly-chart-title').textContent = 'Tren omset harian: ' + currentPeriod; document.getElementById('current-period-label').textContent = currentPeriod; document.getElementById('previous-period-label').textContent = previousPeriod; document.getElementById('analysis-period-note').textContent = 'Periode analisis: ' + currentPeriod + '. Rencana diterapkan untuk minggu depan: ' + nextPeriod + '. Catatan tersimpan sesuai outlet dan periode minggu.';
         Promise.all([getRows(iso(end), selectedOutlet()), getRows(iso(previousEnd), selectedOutlet())]).then(function (results) { var current = summarize(results[0], iso(start), iso(end)); var previous = summarize(results[1], iso(previousStart), iso(previousEnd)); var uploadedCurrent = summarizeUploaded(start, end, selectedOutlet()); var uploadedPrevious = summarizeUploaded(previousStart, previousEnd, selectedOutlet()); currentRows = current; var revenue = current.reduce(function (s, r) { return s + r.revenue; }, 0); var oldRevenue = previous.reduce(function (s, r) { return s + r.revenue; }, 0); var customers = uploadedCurrent.count; var oldCustomers = uploadedPrevious.count; var average = customers ? uploadedCurrent.revenue / customers : 0; var oldAverage = oldCustomers ? uploadedPrevious.revenue / oldCustomers : 0; document.getElementById('current-revenue').textContent = money(revenue); document.getElementById('current-customers').textContent = customers.toLocaleString('id-ID'); document.getElementById('current-average').textContent = money(average); document.getElementById('active-days').textContent = current.filter(function (r) { return r.revenue > 0; }).length + ' / 7'; document.getElementById('revenue-change').textContent = changeText(pct(revenue, oldRevenue)); document.getElementById('customer-change').textContent = customers ? changeText(pct(customers, oldCustomers)) : 'Upload file transaksi terlebih dahulu'; document.getElementById('average-change').textContent = customers ? changeText(pct(average, oldAverage)) : 'Upload file transaksi terlebih dahulu'; document.getElementById('data-status').textContent = customers ? 'Data Excel tersedia' : 'Menunggu upload Excel'; ['revenue-change', 'customer-change', 'average-change'].forEach(function (id) { var el = document.getElementById(id); el.className = 'change ' + (el.textContent.indexOf('+') === 0 ? 'up' : el.textContent.indexOf('-') === 0 ? 'down' : 'neutral'); }); renderChart(current, previous); renderWeeklyTotalChart(current, previous); renderInsights(current, previous); renderAnalysis(current, previous); }).catch(function (error) { document.getElementById('insight-list').innerHTML = '<li>Gagal memuat data: ' + error.message + '</li>'; });
       }
-      document.addEventListener('DOMContentLoaded', function () { var today = new Date(); document.getElementById('week-date').value = iso(today); setupOutlets(); Promise.all([loadUploadedSalesFromFirebase(selectedOutlet()), loadUploadedSalesHistory(selectedOutlet())]).finally(function () { updateUploadStatus(); loadEvaluation(); }); document.getElementById('load-button').addEventListener('click', loadEvaluation); document.getElementById('save-analysis-button').addEventListener('click', saveAnalysisForm); document.getElementById('save-pdf-button').addEventListener('click', saveEvaluationPdf); document.getElementById('use-upload-history-button').addEventListener('click', useSelectedUploadHistory); document.getElementById('upload-button').addEventListener('click', function () { document.getElementById('sales-file').click(); }); document.getElementById('sales-file').addEventListener('change', function () { if (this.files[0]) uploadSalesFile(this.files[0]); this.value = ''; }); });
+      function loadEvaluation() {
+        var selected = document.getElementById('week-date').value; if (!selected) return;
+        var selectedDate = new Date(selected + 'T00:00:00'); var isMonth = false; evaluationPeriodMode = 'week'; window.rbmEvaluationPeriodMode = evaluationPeriodMode;
+        var start; var end; var previousStart; var previousEnd; var nextStart; var nextEnd;
+        if (isMonth) { start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1); end = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0); previousStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1); previousEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 0); nextStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1); nextEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 2, 0); } else { start = mondayOf(selectedDate); end = addDays(start, 6); previousStart = addDays(start, -7); previousEnd = addDays(start, -1); nextStart = addDays(start, 7); nextEnd = addDays(start, 13); }
+        var currentPeriod = fullDateFmt.format(start) + ' - ' + fullDateFmt.format(end); var previousPeriod = fullDateFmt.format(previousStart) + ' - ' + fullDateFmt.format(previousEnd); var nextPeriod = fullDateFmt.format(nextStart) + ' - ' + fullDateFmt.format(nextEnd); var currentLabel = isMonth ? 'Bulan ini' : 'Minggu ini'; var previousLabel = isMonth ? 'Bulan lalu' : 'Minggu lalu'; var comparisonLabel = isMonth ? 'vs bulan lalu' : 'vs minggu lalu';
+        document.getElementById('period-label').textContent = outletName(selectedOutlet()) + ' | Periode evaluasi: ' + currentPeriod + ' | Pembanding: ' + previousPeriod; document.getElementById('weekly-chart-title').textContent = 'Tren omset harian: ' + currentPeriod; document.getElementById('current-period-label').textContent = currentPeriod; document.getElementById('previous-period-label').textContent = previousPeriod; document.querySelector('.period-column.current .period-column-title').firstChild.textContent = currentLabel + ' '; document.querySelector('.period-column:not(.current) .period-column-title').firstChild.textContent = previousLabel + ' '; document.getElementById('analysis-period-note').textContent = 'Periode analisis: ' + currentPeriod + '. Rencana diterapkan untuk periode berikutnya: ' + nextPeriod + '. Catatan tersimpan sesuai outlet dan periode.';
+        Promise.all([getRows(iso(end), selectedOutlet()), getRows(iso(previousEnd), selectedOutlet())]).then(function (results) { var current = summarize(results[0], iso(start), iso(end)); var previous = summarize(results[1], iso(previousStart), iso(previousEnd)); var uploadedCurrent = summarizeUploaded(start, end, selectedOutlet()); var uploadedPrevious = summarizeUploaded(previousStart, previousEnd, selectedOutlet()); currentRows = current; var revenue = current.reduce(function (s, r) { return s + r.revenue; }, 0); var oldRevenue = previous.reduce(function (s, r) { return s + r.revenue; }, 0); var customers = uploadedCurrent.count; var oldCustomers = uploadedPrevious.count; var average = customers ? uploadedCurrent.revenue / customers : 0; var oldAverage = oldCustomers ? uploadedPrevious.revenue / oldCustomers : 0; document.getElementById('current-revenue').textContent = money(revenue); document.getElementById('current-customers').textContent = customers.toLocaleString('id-ID'); document.getElementById('current-average').textContent = money(average); document.getElementById('active-days').textContent = current.filter(function (r) { return r.revenue > 0; }).length + ' / ' + periodDayCount(iso(start), iso(end)); document.getElementById('revenue-change').textContent = (changeText(pct(revenue, oldRevenue))).replace('vs minggu lalu', comparisonLabel); document.getElementById('customer-change').textContent = customers ? (changeText(pct(customers, oldCustomers))).replace('vs minggu lalu', comparisonLabel) : 'Upload file transaksi terlebih dahulu'; document.getElementById('average-change').textContent = customers ? (changeText(pct(average, oldAverage))).replace('vs minggu lalu', comparisonLabel) : 'Upload file transaksi terlebih dahulu'; document.getElementById('data-status').textContent = customers ? 'Data Excel tersedia' : 'Menunggu upload Excel'; ['revenue-change', 'customer-change', 'average-change'].forEach(function (id) { var el = document.getElementById(id); el.className = 'change ' + (el.textContent.indexOf('+') === 0 ? 'up' : el.textContent.indexOf('-') === 0 ? 'down' : 'neutral'); }); renderChart(current, previous); renderWeeklyTotalChart(current, previous); renderInsights(current, previous); renderAnalysis(current, previous); var analysisRows = document.querySelectorAll('#analysis-body tr:not(.analysis-notes-row) td:first-child strong'); if (analysisRows[0]) analysisRows[0].textContent = currentLabel; if (analysisRows[1]) analysisRows[1].textContent = previousLabel; }).catch(function (error) { document.getElementById('insight-list').innerHTML = '<li>Gagal memuat data: ' + error.message + '</li>'; });
+      }
+      document.addEventListener('DOMContentLoaded', function () { var today = new Date(); document.getElementById('week-date').value = iso(today); setupOutlets(); Promise.all([loadUploadedSalesFromFirebase(selectedOutlet()), loadUploadedSalesHistory(selectedOutlet())]).finally(function () { updateUploadStatus(); loadEvaluation(); }); document.querySelectorAll('.export-visibility-toggle').forEach(function (button) { button.addEventListener('click', function () { var section = document.querySelector('[data-export-section="' + button.getAttribute('data-export-target') + '"]'); if (!section) return; var hidden = section.classList.toggle('export-hidden-section'); button.innerHTML = hidden ? '&#128065;&#65039;' : '&#128065;'; button.setAttribute('aria-label', hidden ? 'Tampilkan kembali bagian ini' : 'Sembunyikan bagian ini'); button.title = hidden ? 'Tampilkan kembali di JPG' : 'Sembunyikan dari JPG'; }); }); document.getElementById('load-button').addEventListener('click', loadEvaluation); document.getElementById('save-analysis-button').addEventListener('click', saveAnalysisForm); document.getElementById('save-jpg-button').addEventListener('click', showEvaluationPreview); document.getElementById('save-pdf-button').addEventListener('click', saveEvaluationPdf); document.getElementById('close-evaluation-preview').addEventListener('click', closeEvaluationPreview); document.getElementById('cancel-evaluation-preview').addEventListener('click', closeEvaluationPreview); document.getElementById('download-evaluation-jpg').addEventListener('click', saveEvaluationJpg); document.getElementById('evaluation-preview-backdrop').addEventListener('click', function (event) { if (event.target === document.getElementById('evaluation-preview-backdrop')) closeEvaluationPreview(); }); document.getElementById('use-upload-history-button').addEventListener('click', useSelectedUploadHistory); document.getElementById('upload-button').addEventListener('click', function () { document.getElementById('sales-file').click(); }); document.getElementById('sales-file').addEventListener('change', function () { if (this.files[0]) uploadSalesFile(this.files[0]); this.value = ''; }); });
     }());
   </script>
   <script>
@@ -318,7 +397,7 @@
       function previousSales(outlet) { return window.getRbmUploadedSales ? window.getRbmUploadedSales(outlet) : []; }
       function previousLocalBook(outlet) { try { var key = 'RBM_PENDING_PEMBUKUAN_' + outlet; var data = JSON.parse(localStorage.getItem(key) || localStorage.getItem('RBM_PENDING_PEMBUKUAN') || '[]'); return data.map(function (item) { return item.payload || item; }); } catch (e) { return []; } }
       function updatePreviousColumn() {
-        var input = document.getElementById('monthly-chart-month'); var weekInput = document.getElementById('week-date'); if (!input || !input.value || !weekInput || !weekInput.value) return;
+        var input = document.getElementById('monthly-chart-month'); var weekInput = document.getElementById('week-date'); if (window.rbmEvaluationPeriodMode === 'month' || !input || !input.value || !weekInput || !weekInput.value) return;
         var monthDate = new Date(input.value + '-01T00:00:00'); var monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0); var monthEndIso = previousIso(monthEnd); var selectedWeek = previousMonday(new Date(weekInput.value + 'T00:00:00')); var previousWeekStart = previousAddDays(selectedWeek, -7); var previousWeekEnd = previousAddDays(selectedWeek, -1); var previousStartIso = previousIso(previousWeekStart); var endIso = previousIso(previousWeekEnd); var key = input.value + ':' + previousStartIso + ':' + endIso + ':' + previousOutlet(); if (key === loadedKey) return; loadedKey = key;
         if (window.FirebaseStorage && typeof FirebaseStorage.getPembukuan === 'function' && FirebaseStorage.db() && window.renderMonthlyWeeklyChart) FirebaseStorage.getPembukuan('', monthEndIso, previousOutlet()).then(function (rows) { window.renderMonthlyWeeklyChart(rows, input.value + '-01'); if (window.renderMonthlyPlanTable) window.renderMonthlyPlanTable(rows, input.value + '-01'); }); else if (window.renderMonthlyWeeklyChart) { var monthlyRows = previousLocalBook(previousOutlet()); window.renderMonthlyWeeklyChart(monthlyRows, input.value + '-01'); if (window.renderMonthlyPlanTable) window.renderMonthlyPlanTable(monthlyRows, input.value + '-01'); }
         var apply = function (bookRows) {
@@ -330,6 +409,22 @@
       }
       document.addEventListener('DOMContentLoaded', function () { var monthInput = document.getElementById('monthly-chart-month'); var weekInput = document.getElementById('week-date'); if (monthInput && weekInput) monthInput.value = weekInput.value.slice(0, 7); if (monthInput) monthInput.addEventListener('change', function () { loadedKey = ''; updatePreviousColumn(); }); var loadButton = document.getElementById('load-button'); if (loadButton) loadButton.addEventListener('click', function () { loadedKey = ''; updatePreviousColumn(); }); setInterval(updatePreviousColumn, 500); });
     }());
+  </script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var monthInput = document.getElementById('monthly-chart-month');
+      var weekInput = document.getElementById('week-date');
+      var analysisSection = document.getElementById('weekly-analysis-section');
+      function syncWeeklyAnalysisVisibility() {
+        if (!monthInput || !weekInput || !analysisSection) return;
+        analysisSection.style.display = !monthInput.value || !weekInput.value || monthInput.value === weekInput.value.slice(0, 7) ? '' : 'none';
+      }
+      if (monthInput) monthInput.addEventListener('change', syncWeeklyAnalysisVisibility);
+      if (weekInput) weekInput.addEventListener('change', syncWeeklyAnalysisVisibility);
+      var loadButton = document.getElementById('load-button');
+      if (loadButton) loadButton.addEventListener('click', syncWeeklyAnalysisVisibility);
+      syncWeeklyAnalysisVisibility();
+    });
   </script>
 </body>
 </html>
