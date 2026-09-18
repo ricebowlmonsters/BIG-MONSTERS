@@ -202,6 +202,11 @@
             <input class="form-input" id="job-owner" required readonly placeholder="Nama user yang login">
           </div>
           <div class="form-section">
+            <label for="job-owner-phone">Nomor WhatsApp PIC</label>
+            <input class="form-input" id="job-owner-phone" type="tel" inputmode="numeric" placeholder="Contoh: 628123456789">
+            <small>Gunakan kode negara, misalnya 628123456789.</small>
+          </div>
+          <div class="form-section">
             <label for="job-deadline">Batas waktu penyelesaian <span class="required">*</span></label>
             <input class="form-input" id="job-deadline" type="date" required>
           </div>
@@ -327,6 +332,41 @@
         return 'User Login';
       }
     }
+    function loggedInUserPhone() {
+      try {
+        const user = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+        return user.phone || user.whatsapp || user.hp || user.no_hp || '';
+      } catch (error) {
+        return '';
+      }
+    }
+    function normalizePhone(value) {
+      const digits = String(value || '').replace(/\D/g, '');
+      if (digits.startsWith('0')) return `62${digits.slice(1)}`;
+      return digits;
+    }
+    function buildWhatsAppMessage(job) {
+      const status = statusLabel(job)[0];
+      return `📋 FORMAT KONFIRMASI
+Setelah menerima tugas, mohon langsung balas:
+Konfirmasi Tugas
+👤 Nama: ${job.owner || '-'}
+🔧 Pekerjaan: ${job.title || '-'}
+👤 PIC: ${job.owner || '-'}
+📅 Tenggat: ${formatDate(job.deadline)}
+📌 Status: ${status === 'Selesai' ? 'Siap dikerjakan' : 'Perlu bantuan'}
+📝 Rencana tindakan: ${job.nextStep || '-'}`;
+    }
+    function sendJobToWhatsApp(job) {
+      if (!job) return;
+      const phone = normalizePhone(job.ownerPhone);
+      if (!phone) {
+        alert('Nomor WhatsApp PIC belum diisi. Silakan edit tugas ini terlebih dahulu.');
+        return;
+      }
+      const url = `https://wa.me/${phone}?text=${encodeURIComponent(buildWhatsAppMessage(job))}`;
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
     function setupOutletFilters() {
       const outlets = getOutlets();
       const user = JSON.parse(localStorage.getItem('rbm_user') || '{}');
@@ -410,7 +450,7 @@
           <td><span class="status-badge status-${statusClass}">${label}</span></td>
           <td><div class="progress-wrap"><div class="progress-line"><span>Progres</span><strong>${job.progress}%</strong></div><div class="progress-track"><div class="progress-fill ${job.status === 'selesai' ? 'done' : ''}" style="width:${job.progress}%"></div></div></div></td>
           <td><div class="job-description"><strong>Alasan:</strong> ${escapeHtml(reason)}<br><strong>Berikutnya:</strong> ${escapeHtml(job.nextStep || '-')}</div></td>
-          <td><div class="table-actions"><button class="icon-btn single-jpg-btn" data-id="${escapeHtml(job.id)}" title="Simpan tugas ini sebagai JPG">&#128247;</button><button class="icon-btn edit-btn" data-id="${escapeHtml(job.id)}" title="Edit pekerjaan">&#9998;</button><button class="icon-btn delete-btn" data-id="${escapeHtml(job.id)}" title="Hapus pekerjaan">&#128465;</button></div></td>
+          <td><div class="table-actions"><button class="icon-btn whatsapp-btn" data-id="${escapeHtml(job.id)}" title="Kirim konfirmasi tugas melalui WhatsApp" aria-label="Kirim konfirmasi tugas melalui WhatsApp">&#128172;</button><button class="icon-btn single-jpg-btn" data-id="${escapeHtml(job.id)}" title="Simpan tugas ini sebagai JPG">&#128247;</button><button class="icon-btn edit-btn" data-id="${escapeHtml(job.id)}" title="Edit pekerjaan">&#9998;</button><button class="icon-btn delete-btn" data-id="${escapeHtml(job.id)}" title="Hapus pekerjaan">&#128465;</button></div></td>
         </tr>`;
       }).join('');
       document.getElementById('empty-state').style.display = list.length ? 'none' : 'block';
@@ -420,6 +460,7 @@
       document.getElementById('job-form').reset();
       document.getElementById('job-id').value = '';
       document.getElementById('job-owner').value = loggedInUserName();
+      document.getElementById('job-owner-phone').value = loggedInUserPhone();
       document.getElementById('progress-value').textContent = '0%';
       document.getElementById('form-title').textContent = 'Tambah Pekerjaan';
     }
@@ -427,7 +468,7 @@
       document.getElementById('form-panel').style.display = 'block';
       if (!job) { resetForm(); } else {
         document.getElementById('form-title').textContent = 'Edit Pekerjaan';
-        Object.entries({ 'job-id':job.id, 'job-title':job.title, 'job-description':job.description, 'job-owner':loggedInUserName(), 'job-deadline':job.deadline, 'job-status':job.status, 'job-progress':job.progress, 'job-reason':job.reason, 'job-next-step':job.nextStep }).forEach(([id, value]) => { document.getElementById(id).value = value || ''; });
+        Object.entries({ 'job-id':job.id, 'job-title':job.title, 'job-description':job.description, 'job-owner':loggedInUserName(), 'job-owner-phone':job.ownerPhone, 'job-deadline':job.deadline, 'job-status':job.status, 'job-progress':job.progress, 'job-reason':job.reason, 'job-next-step':job.nextStep }).forEach(([id, value]) => { document.getElementById(id).value = value || ''; });
         document.getElementById('progress-value').textContent = `${job.progress}%`;
       }
       document.getElementById('form-panel').scrollIntoView({ behavior:'smooth', block:'start' });
@@ -440,7 +481,7 @@
       event.preventDefault();
       const id = document.getElementById('job-id').value || `job-${Date.now()}`;
       const existingJob = jobs.find(item => item.id === id);
-      const job = { id, outlet:existingJob ? (existingJob.outlet || selectedOutlet) : selectedOutlet, createdAt:existingJob ? createdDate(existingJob) : new Date().toISOString().slice(0, 10), title:document.getElementById('job-title').value.trim(), description:document.getElementById('job-description').value.trim(), owner:loggedInUserName(), deadline:document.getElementById('job-deadline').value, status:document.getElementById('job-status').value, progress:Number(document.getElementById('job-progress').value), reason:document.getElementById('job-reason').value.trim(), nextStep:document.getElementById('job-next-step').value.trim() };
+      const job = { id, outlet:existingJob ? (existingJob.outlet || selectedOutlet) : selectedOutlet, createdAt:existingJob ? createdDate(existingJob) : new Date().toISOString().slice(0, 10), title:document.getElementById('job-title').value.trim(), description:document.getElementById('job-description').value.trim(), owner:loggedInUserName(), ownerPhone:document.getElementById('job-owner-phone').value.trim(), deadline:document.getElementById('job-deadline').value, status:document.getElementById('job-status').value, progress:Number(document.getElementById('job-progress').value), reason:document.getElementById('job-reason').value.trim(), nextStep:document.getElementById('job-next-step').value.trim() };
       if (job.status === 'selesai') job.progress = 100;
       const existingIndex = jobs.findIndex(item => item.id === id);
       saveJob(job).then(() => {
@@ -452,6 +493,7 @@
       const id = event.target.dataset.id;
       if (!id) return;
       const job = jobs.find(item => item.id === id);
+      if (event.target.classList.contains('whatsapp-btn')) sendJobToWhatsApp(job);
       if (event.target.classList.contains('single-jpg-btn')) showSingleJobPreview(job);
       if (event.target.classList.contains('edit-btn')) showForm(job);
       if (event.target.classList.contains('delete-btn') && job && confirm(`Hapus pekerjaan "${job.title}"?`)) {

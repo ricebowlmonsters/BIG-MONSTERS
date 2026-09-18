@@ -32,8 +32,16 @@
     var rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }).filter(function (row) { return row.some(function (cell) { return String(cell).trim(); }); });
     if (rows.length < 2) throw new Error('Sheet Resep Menu kosong.');
     var headers = rows.shift().map(normalizeHeader), index = function (name) { return headers.indexOf(name); };
+    if (headers.indexOf('nama_produk') >= 0 || headers.indexOf('batch_yield') >= 0) {
+      downloadInvalidRows([{ baris_excel: 1, alasan: 'File berisi Resep Dapur, bukan Resep Resto', kolom_terdeteksi: headers.join(', '), tindakan: 'Pilih jenis import Resep dapur' }]);
+      throw new Error('File gagal diimport. Koreksi gagal diunduh sebagai baris-gagal-import-hpp.xlsx. File ini berisi Resep Dapur; pilih jenis import "Resep dapur".');
+    }
     var required = ['kode_menu', 'nama_menu', 'kategori', 'harga_jual', 'kode_bahan', 'nama_bahan', 'qty', 'satuan'];
-    required.forEach(function (name) { if (index(name) < 0) throw new Error('Kolom ' + name + ' tidak ditemukan di sheet Resep Menu.'); });
+    var missingColumns = required.filter(function (name) { return index(name) < 0; });
+    if (missingColumns.length) {
+      downloadInvalidRows([{ baris_excel: 1, alasan: 'Kolom wajib tidak ditemukan', kolom_kurang: missingColumns.join(', '), kolom_terdeteksi: headers.join(', '), tindakan: 'Perbaiki header lalu import ulang' }]);
+      throw new Error('File gagal diimport. Koreksi gagal diunduh sebagai baris-gagal-import-hpp.xlsx. Kolom kurang: ' + missingColumns.join(', ') + '.');
+    }
     var output = [required];
     var invalidRows = [];
     rows.forEach(function (row, rowIndex) {
@@ -63,6 +71,48 @@
     var reader = new FileReader();
     reader.onload = function () { window.__hppWorkbook = XLSX.read(reader.result, { type: 'array' }); };
     reader.readAsArrayBuffer(file);
+  }, true);
+  document.addEventListener('click', function (event) {
+    if (event.target.id !== 'apply-import' || !window.__hppWorkbook || document.querySelector('#import-type').value !== 'kitchen') return;
+    try {
+      event.preventDefault(); event.stopImmediatePropagation();
+      var sheetName = window.__hppWorkbook.SheetNames.find(function (name) { return /resep\s*(menu\s*)?dapur|resep\s*kitchen/i.test(name); });
+      var rows = sheetName ? XLSX.utils.sheet_to_json(window.__hppWorkbook.Sheets[sheetName], { header: 1, defval: '' }).filter(function (row) { return row.some(function (cell) { return String(cell).trim(); }); }) : [];
+      if (!rows.length || rows[0].map(function (value) { return String(value).trim().toLowerCase().replace(/[\s-]+/g, '_'); }).indexOf('nama_produk') < 0) {
+        window.__hppWorkbook.SheetNames.some(function (name) {
+          var candidate = XLSX.utils.sheet_to_json(window.__hppWorkbook.Sheets[name], { header: 1, defval: '' }).filter(function (row) { return row.some(function (cell) { return String(cell).trim(); }); });
+          var candidateHeaders = candidate.length ? candidate[0].map(function (value) { return String(value).trim().toLowerCase().replace(/[\s-]+/g, '_'); }) : [];
+          if (candidateHeaders.indexOf('nama_produk') >= 0 || candidateHeaders.indexOf('nama_product') >= 0) { rows = candidate; return true; }
+          return false;
+        });
+      }
+      var firstHeaders = rows.length ? rows[0].map(function (value) { return String(value).trim().toLowerCase().replace(/[\s-]+/g, '_'); }) : [];
+      if (firstHeaders.indexOf('nama_produk') < 0 && firstHeaders.indexOf('nama_product') < 0) {
+        var textRows = parseCsv(document.querySelector('#csv-text').value);
+        if (textRows.length > 1) rows = textRows;
+      }
+      if (rows.length < 2) throw new Error('Sheet Resep Dapur kosong.');
+      var headers = rows.shift().map(function (value) { return String(value).replace(/^\uFEFF/, '').trim().toLowerCase().replace(/[\s-]+/g, '_'); });
+      if (headers.indexOf('nama_produk') < 0 && headers.indexOf('nama_product') < 0 && headers.indexOf('nama_bahan') >= 0 && (headers.indexOf('harga') >= 0 || headers.indexOf('harga_baru') >= 0)) {
+        throw new Error('File yang dipilih adalah Bahan Baku Dapur, bukan Resep Dapur. Pilih file Resep Dapur dengan kolom nama_produk, qty_barang_jadi, satuan_barang_jadi, harga_jual_satuan, satuan_harga_jual, nama_bahan_baku, qty_bahan, satuan_bahan.');
+      }
+      var valueAt = function (row, names) { var position = names.map(function (name) { return headers.indexOf(name); }).find(function (index) { return index >= 0; }); return position >= 0 ? String(row[position] == null ? '' : row[position]).trim() : ''; };
+      var grouped = {};
+      rows.forEach(function (row, rowIndex) {
+        var product = valueAt(row, ['nama_produk', 'nama_product', 'nama produk']), batch = numberValue(valueAt(row, ['batch_yield', 'yield', 'qty_barang_jadi', 'qty barang jadi'])), yieldUnit = valueAt(row, ['satuan_yield', 'satuan_hasil', 'unit_yield', 'satuan_barang_jadi', 'satuan barang jadi']) || 'gr', saleUnit = valueAt(row, ['satuan_harga_jual', 'satuan harga jual', 'satuan_penjualan', 'satuan_jual', 'unit_penjualan', 'satuan_sales']) || yieldUnit, cost = numberValue(valueAt(row, ['hpp_per_gram', 'hpp', 'cost'])), transfer = numberValue(valueAt(row, ['harga_transfer', 'harga_transfer_baru', 'harga_jual_satuan', 'harga jual satuan'])), ingredientName = valueAt(row, ['nama_bahan', 'bahan', 'ingredient', 'nama_bahan_baku', 'nama bahan baku']), qty = numberValue(valueAt(row, ['qty', 'jumlah', 'quantity', 'qty_bahan', 'qty bahan'])), unit = valueAt(row, ['satuan_bahan', 'satuan bahan', 'unit_bahan', 'satuan', 'unit']) || 'gr';
+        if (!Number.isFinite(qty) && row.length >= 9 && Number.isFinite(numberValue(row[4])) && Number.isFinite(numberValue(row[7]))) {
+          cost = numberValue(row[3]); transfer = numberValue(row[4]); saleUnit = String(row[5] || yieldUnit).trim(); ingredientName = String(row[6] || '').trim(); qty = numberValue(row[7]); unit = String(row[8] || 'gr').trim();
+        }
+        if (!product || !Number.isFinite(batch) || !ingredientName || ingredientName.toLowerCase() === 'kg' || ingredientName.toLowerCase() === 'gram' || !Number.isFinite(qty) || !Number.isFinite(transfer)) throw new Error('Baris ' + (rowIndex + 2) + ' wajib memiliki nama produk, qty barang jadi, satuan barang jadi, harga jual satuan, nama bahan baku, qty, dan satuan bahan. Pastikan kolom tidak bergeser.');
+        var kitchenMaterial = materials.find(function (item) { return /^BB\.DAPUR\./i.test(String(item.code || '')) && String(item.name).trim().toLowerCase() === ingredientName.toLowerCase(); });
+        var item = grouped[product] || (grouped[product] = { name: product.toUpperCase(), yield: batch, yieldUnit: yieldUnit, saleUnit: saleUnit, cost: Number.isFinite(cost) ? cost : 0, oldTransfer: transfer, newTransfer: transfer, items: [] });
+        item.items.push([kitchenMaterial ? kitchenMaterial.code : '', ingredientName, qty, unit]);
+      });
+      var importedNames = Object.keys(grouped).map(function (name) { return name.toUpperCase(); });
+      kitchen.splice(0, kitchen.length, ...kitchen.filter(function (entry) { return importedNames.indexOf(String(entry.name).toUpperCase()) < 0; }));
+      Object.values(grouped).forEach(function (item) { kitchen.push(item); });
+      saveImportedData(); renderStats(); renderResto(); renderKitchen(); renderDatabase(); closeImport(); window.__hppWorkbook = null;
+    } catch (error) { importError.textContent = error.message; }
   }, true);
   document.addEventListener('click', function (event) {
     if (event.target.id !== 'apply-import' || !window.__hppWorkbook || document.querySelector('#import-type').value !== 'menus') return;
