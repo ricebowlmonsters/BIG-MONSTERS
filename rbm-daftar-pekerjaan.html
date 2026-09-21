@@ -354,7 +354,8 @@ Konfirmasi Tugas
 🔧 Pekerjaan: ${job.title || '-'}
 👤 PIC: ${job.owner || '-'}
 📅 Tenggat: ${formatDate(job.deadline)}
-📌 Status: ${status === 'Selesai' ? 'Siap dikerjakan' : 'Perlu bantuan'}
+📌 Status: ${status}
+📝 Alasan belum selesai: ${job.reason || '-'}
 📝 Rencana tindakan: ${job.nextStep || '-'}`;
     }
     function sendJobToWhatsApp(job) {
