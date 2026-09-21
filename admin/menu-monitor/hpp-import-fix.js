@@ -93,6 +93,9 @@
       }
       if (rows.length < 2) throw new Error('Sheet Resep Dapur kosong.');
       var headers = rows.shift().map(function (value) { return String(value).replace(/^\uFEFF/, '').trim().toLowerCase().replace(/[\s-]+/g, '_'); });
+      if (rows.some(function (row) { return row.length > headers.length; }) && headers.indexOf('hpp_per_gram') < 0 && headers.indexOf('harga_jual_satuan') >= 0 && headers.indexOf('satuan_harga_jual') >= 0 && headers.indexOf('nama_bahan_baku') >= 0) {
+        headers.splice(headers.indexOf('harga_jual_satuan'), 0, 'hpp_per_gram');
+      }
       if (headers.indexOf('nama_produk') < 0 && headers.indexOf('nama_product') < 0 && headers.indexOf('nama_bahan') >= 0 && (headers.indexOf('harga') >= 0 || headers.indexOf('harga_baru') >= 0)) {
         throw new Error('File yang dipilih adalah Bahan Baku Dapur, bukan Resep Dapur. Pilih file Resep Dapur dengan kolom nama_produk, qty_barang_jadi, satuan_barang_jadi, harga_jual_satuan, satuan_harga_jual, nama_bahan_baku, qty_bahan, satuan_bahan.');
       }

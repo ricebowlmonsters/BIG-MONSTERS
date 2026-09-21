@@ -22,6 +22,7 @@
     .upload-history-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
     .upload-history-toolbar span { color: #64748b; font-size: 11px; }
     .upload-history-toolbar button { min-height: 30px; margin: 0; padding: 6px 10px; font-size: 11px; }
+    .upload-history-item button { flex: 0 0 auto; min-height: 30px; margin: 0; padding: 6px 10px; font-size: 11px; }
     .upload-history-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
     .upload-history-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #334155; font-size: 12px; }
     .upload-history-item input { flex: 0 0 auto; width: 16px; height: 16px; }
@@ -222,6 +223,13 @@
         return records;
       }
       function updateUploadHistoryButton() { var button = document.getElementById('use-upload-history-button'); if (!button) return; var selectedCount = document.querySelectorAll('#upload-history-list [data-history-index]:checked').length; button.disabled = selectedCount === 0; button.textContent = selectedCount ? 'Gunakan ' + selectedCount + ' file terpilih' : 'Gunakan file terpilih'; }
+      function deleteUploadHistory(index) {
+        var outlet = selectedOutlet(); var history = uploadedSalesHistory(outlet); var item = history[index]; if (!item) return;
+        if (!window.confirm('Hapus file "' + String(item.fileName || 'File Excel') + '" dari histori upload?')) return;
+        history.splice(index, 1); uploadedSalesHistoryCache[outlet] = history;
+        var db = firebaseDb(); var operation = db ? db.ref(uploadHistoryPath(outlet) + '/' + item.id).remove() : Promise.resolve();
+        operation.then(function () { if (!db) { try { localStorage.setItem('rbm_weekly_sales_transaction_history_' + firebaseOutletKey(outlet), JSON.stringify(history)); } catch (e) {} } renderUploadHistory(); }).catch(function () { uploadedSalesHistoryCache[outlet] = [item].concat(history); alert('Gagal menghapus file dari histori.'); renderUploadHistory(); });
+      }
       function useSelectedUploadHistory() {
         var history = uploadedSalesHistory(selectedOutlet()); var selected = Array.from(document.querySelectorAll('#upload-history-list [data-history-index]:checked')).map(function (checkbox) { return history[Number(checkbox.getAttribute('data-history-index'))]; }).filter(function (item) { return item && Array.isArray(item.records); });
         if (!selected.length) return;
@@ -232,8 +240,8 @@
         var list = document.getElementById('upload-history-list'); if (!list) return;
         var history = uploadedSalesHistory(selectedOutlet());
         if (!history.length) { list.innerHTML = '<li class="upload-history-empty">Belum ada histori upload.</li>'; return; }
-        list.innerHTML = history.map(function (item, index) { var uploadedAt = item.uploadedAt ? new Date(item.uploadedAt) : null; var dateText = uploadedAt && !isNaN(uploadedAt.getTime()) ? fullDateFmt.format(uploadedAt) + ' ' + uploadedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : 'Waktu tidak tersedia'; return '<li class="upload-history-item"><input type="checkbox" data-history-index="' + index + '" aria-label="Pilih ' + String(item.fileName || 'File Excel').replace(/"/g, '&quot;') + '"><div><strong>' + String(item.fileName || 'File Excel').replace(/[&<>"']/g, function (value) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[value]; }) + '</strong><small>' + dateText + ' | ' + Number(item.transactionCount || (item.records || []).length).toLocaleString('id-ID') + ' transaksi | ' + String(item.dateRange || 'Tanggal tidak tersedia') + '</small></div></li>'; }).join('');
-        list.querySelectorAll('[data-history-index]').forEach(function (checkbox) { checkbox.addEventListener('change', updateUploadHistoryButton); }); updateUploadHistoryButton();
+        list.innerHTML = history.map(function (item, index) { var uploadedAt = item.uploadedAt ? new Date(item.uploadedAt) : null; var dateText = uploadedAt && !isNaN(uploadedAt.getTime()) ? fullDateFmt.format(uploadedAt) + ' ' + uploadedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : 'Waktu tidak tersedia'; return '<li class="upload-history-item"><input type="checkbox" data-history-index="' + index + '" aria-label="Pilih ' + String(item.fileName || 'File Excel').replace(/"/g, '&quot;') + '"><div><strong>' + String(item.fileName || 'File Excel').replace(/[&<>"']/g, function (value) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[value]; }) + '</strong><small>' + dateText + ' | ' + Number(item.transactionCount || (item.records || []).length).toLocaleString('id-ID') + ' transaksi | ' + String(item.dateRange || 'Tanggal tidak tersedia') + '</small></div><button type="button" class="btn" data-delete-history-index="' + index + '">Hapus</button></li>'; }).join('');
+        list.querySelectorAll('[data-history-index]').forEach(function (checkbox) { checkbox.addEventListener('change', updateUploadHistoryButton); }); list.querySelectorAll('[data-delete-history-index]').forEach(function (button) { button.addEventListener('click', function () { deleteUploadHistory(Number(button.getAttribute('data-delete-history-index'))); }); }); updateUploadHistoryButton();
       }
       function loadUploadedSalesHistory(outlet) { var db = firebaseDb(); if (!db) { var local = []; try { local = JSON.parse(localStorage.getItem('rbm_weekly_sales_transaction_history_' + firebaseOutletKey(outlet)) || '[]'); } catch (e) {} uploadedSalesHistoryCache[outlet] = Array.isArray(local) ? local : []; return Promise.resolve(false); } return db.ref(uploadHistoryPath(outlet)).once('value').then(function (snap) { var data = snap.val() || {}; uploadedSalesHistoryCache[outlet] = Object.keys(data).map(function (key) { return data[key]; }).sort(function (a, b) { return String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')); }).slice(0, 20); return true; }); }
       function loadUploadedSalesFromFirebase(outlet) { var db = firebaseDb(); if (!db) return Promise.resolve(false); return db.ref('rbm_pro/weekly_sales_transactions/' + firebaseOutletKey(outlet)).once('value').then(function (snap) { var data = snap.val(); if (data && Array.isArray(data.records)) { uploadedSalesCache[outlet] = data.records; return true; } var legacyKey = 'rbm_weekly_sales_transactions_' + String(outlet || 'default').replace(/[^a-zA-Z0-9_-]/g, '_'); var legacy = []; try { legacy = JSON.parse(localStorage.getItem(legacyKey) || '[]'); } catch (e) {} if (Array.isArray(legacy) && legacy.length) { uploadedSalesCache[outlet] = legacy; return saveUploadedSalesToFirebase(outlet, legacy); } uploadedSalesCache[outlet] = []; return false; }); }
@@ -267,10 +275,13 @@
       }
       function parseUploadedWorkbook(buffer) {
         var workbook = XLSX.read(buffer, { type: 'array', cellDates: true }); var sheet = workbook.Sheets[workbook.SheetNames[0]]; var rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-        var isTransactionIdHeader = function (cell) { return /no\.?\s*transaksi|no\s*bukti\s*#?/i.test(String(cell).trim()); }; var isValueHeader = function (cell) { return /^(nilai|kredit)$/i.test(String(cell).trim()); };
-        var headerIndex = rows.findIndex(function (row) { return row.some(isTransactionIdHeader) && row.some(function (cell) { return /^tanggal$/i.test(String(cell).trim()); }) && row.some(isValueHeader); });
-        if (headerIndex < 0) throw new Error('Kolom No. Transaksi atau No Bukti #, Tanggal, dan Nilai atau Kredit tidak ditemukan.');
-        var header = rows[headerIndex].map(function (cell) { return String(cell).trim().toLowerCase(); }); var idIndex = header.findIndex(isTransactionIdHeader); var dateIndex = header.findIndex(function (cell) { return cell === 'tanggal'; }); var valueIndex = header.findIndex(isValueHeader); var currentId = '';
+        var normalizeHeader = function (cell) { return String(cell == null ? '' : cell).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+        var isTransactionIdHeader = function (cell) { var header = normalizeHeader(cell); return /^(no|nomor) transaksi$/.test(header) || /^no bukti/.test(header) || /^nomor( transaksi)?$/.test(header); };
+        var isDateHeader = function (cell) { return /^tanggal( transaksi| penjualan| jual)?$/.test(normalizeHeader(cell)); };
+        var isValueHeader = function (cell) { var header = normalizeHeader(cell); return /^(nilai|kredit|nominal|jumlah|total)( transaksi| penjualan| jual| rp| idr| rupiah)?$/.test(header); };
+        var headerIndex = rows.findIndex(function (row) { return row.some(isTransactionIdHeader) && row.some(isDateHeader) && row.some(isValueHeader); });
+        if (headerIndex < 0) throw new Error('Kolom nomor transaksi, tanggal, dan nilai/kredit tidak ditemukan. Pastikan baris header berisi Nomor #, Tanggal, serta Nilai atau Kredit.');
+        var header = rows[headerIndex].map(normalizeHeader); var idIndex = header.findIndex(isTransactionIdHeader); var dateIndex = header.findIndex(isDateHeader); var valueIndex = header.findIndex(isValueHeader); var currentId = '';
         return rows.slice(headerIndex + 1).map(function (row, index) { var id = String(row[idIndex] || '').trim(); var dateText = String(row[dateIndex] || '').trim(); if (id && !/total/i.test(id)) currentId = id; if (/total/i.test(dateText) || /total/i.test(id)) return null; var date = excelDate(row[dateIndex]); var value = number(row[valueIndex]); if (!date || value <= 0) return null; return { id: currentId || 'ROW-' + date + '-' + index, date: date, value: value }; }).filter(Boolean);
       }
       function uploadSalesFile(file) {
