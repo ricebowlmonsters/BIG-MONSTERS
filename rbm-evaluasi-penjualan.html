@@ -62,7 +62,7 @@
     .empty-state { color: var(--text-muted); padding: 24px 0; text-align: center; font-size: 13px; }
     .pdf-export-mode { padding: 10px 14px 18px !important; }
     .pdf-export-mode .evaluation-hero { padding: 14px 18px; margin-bottom: 12px; }
-    .pdf-export-mode .evaluation-hero .evaluation-toolbar, .pdf-export-mode .upload-box, .pdf-export-mode .upload-history, .pdf-export-mode #save-analysis-button, .pdf-export-mode #analysis-save-status { display: none !important; }
+    .pdf-export-mode .evaluation-hero .evaluation-toolbar, .pdf-export-mode .upload-box, .pdf-export-mode .upload-history, .pdf-export-mode #save-analysis-button, .pdf-export-mode #send-analysis-whatsapp-button, .pdf-export-mode #analysis-whatsapp-phone, .pdf-export-mode #analysis-save-status { display: none !important; }
     .pdf-export-mode .period-columns, .pdf-export-mode .chart-panels, .pdf-export-mode .evaluation-panels { gap: 12px; margin-bottom: 12px; }
     .pdf-export-mode .period-column, .pdf-export-mode .evaluation-panel { padding: 12px; }
     .pdf-export-mode .period-stat-grid { gap: 8px; }
@@ -153,7 +153,7 @@
       <h3>Analisis 1 minggu dan rencana minggu depan</h3>
       <p class="period-note" id="analysis-period-note">Catat penyebab perubahan penjualan dan tindakan yang akan dilakukan pada minggu berikutnya. Catatan tersimpan sesuai outlet dan periode minggu.</p>
       <div style="overflow-x:auto"><table class="analysis-table"><thead><tr><th>Periode</th><th>Omset</th><th>Pelanggan</th><th>Rata-rata transaksi</th><th>Perubahan vs minggu lalu</th></tr></thead><tbody id="analysis-body"><tr><td colspan="5" class="empty-state">Belum ada data.</td></tr></tbody></table></div>
-      <div style="display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap"><button type="button" class="btn btn-primary" id="save-analysis-button">Simpan Analisis ke Firebase</button><span id="analysis-save-status" class="period-note" style="margin:0">Belum ada perubahan yang disimpan.</span></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap"><button type="button" class="btn btn-primary" id="save-analysis-button">Simpan Analisis ke Firebase</button><input class="form-input" id="analysis-whatsapp-phone" type="tel" inputmode="numeric" placeholder="Nomor WA tujuan (628...)" aria-label="Nomor WhatsApp tujuan"><button type="button" class="btn" id="send-analysis-whatsapp-button">&#128172; Kirim ke WhatsApp</button><span id="analysis-save-status" class="period-note" style="margin:0">Belum ada perubahan yang disimpan.</span></div>
     </section>
     </div>
     <div data-export-section="footnote">
@@ -361,6 +361,20 @@
       function analysisFirebasePath(startDate) { return 'rbm_pro/weekly_sales_analysis/' + firebaseOutletKey(selectedOutlet()) + '/' + startDate; }
       function loadAnalysisFromFirebase(startDate) { var db = firebaseDb(); if (!db) return Promise.reject(new Error('Firebase tidak tersedia.')); return db.ref(analysisFirebasePath(startDate)).once('value').then(function (snap) { var data = snap.val() || {}; analysisCache[startDate] = data; return data; }); }
       function saveAnalysisNote(startDate, date, field, value) { var notes = readAnalysis(startDate); if (!notes[date]) notes[date] = {}; notes[date][field] = value; analysisCache[startDate] = notes; }
+      function loggedInUserPhone() { try { var user = JSON.parse(localStorage.getItem('rbm_user') || '{}'); return user.phone || user.whatsapp || user.hp || user.no_hp || ''; } catch (e) { return ''; } }
+      function normalizePhone(value) { var digits = String(value || '').replace(/\D/g, ''); return digits.charAt(0) === '0' ? '62' + digits.slice(1) : digits; }
+      function sendAnalysisToWhatsApp() {
+        var fields = document.querySelectorAll('#analysis-body [data-analysis-date]'); var currentCause = ''; var currentPlan = ''; var currentDate = '';
+        fields.forEach(function (field) { var date = field.getAttribute('data-analysis-date'); if (!currentDate || date > currentDate) currentDate = date; });
+        fields.forEach(function (field) { if (field.getAttribute('data-analysis-date') !== currentDate) return; if (field.getAttribute('data-analysis-field') === 'cause') currentCause = field.value.trim(); if (field.getAttribute('data-analysis-field') === 'plan') currentPlan = field.value.trim(); });
+        var phoneInput = document.getElementById('analysis-whatsapp-phone'); var phone = normalizePhone(phoneInput.value || loggedInUserPhone());
+        if (!phone) { alert('Nomor WhatsApp tujuan belum diisi.'); phoneInput.focus(); return; }
+        if (!currentDate) { alert('Data analisis belum tersedia. Silakan muat evaluasi terlebih dahulu.'); return; }
+        var period = document.getElementById('period-label').textContent || '-';
+        var message = '📊 EVALUASI PENJUALAN\n' + '🏪 Outlet: ' + outletName(selectedOutlet()) + '\n' + '📅 Periode: ' + period + '\n' + '📝 Analisis penyebab: ' + (currentCause || '-') + '\n' + '📌 Rencana minggu depan: ' + (currentPlan || '-');
+        window.open('https://wa.me/' + phone + '?text=' + encodeURIComponent(message), '_blank', 'noopener,noreferrer');
+      }
+      window.sendRbmAnalysisToWhatsApp = sendAnalysisToWhatsApp;
       function saveAnalysisForm() { var fields = document.querySelectorAll('#analysis-body [data-analysis-date]'); var grouped = {}; fields.forEach(function (field) { var date = field.getAttribute('data-analysis-date'); var target = date; if (!grouped[target]) grouped[target] = {}; grouped[target][field.getAttribute('data-analysis-field')] = field.value; }); var db = firebaseDb(); var status = document.getElementById('analysis-save-status'); if (!db) { status.textContent = 'Gagal: Firebase tidak tersedia. Analisis tidak disimpan lokal.'; status.className = 'down'; return; } var writes = Object.keys(grouped).map(function (date) { analysisCache[date] = {}; analysisCache[date][date] = grouped[date]; return db.ref(analysisFirebasePath(date)).set(analysisCache[date]); }); status.textContent = 'Menyimpan ke Firebase...'; Promise.all(writes).then(function () { status.textContent = 'Analisis berhasil disimpan ke Firebase.'; status.className = 'up'; }).catch(function () { status.textContent = 'Gagal menyimpan ke Firebase. Coba lagi.'; status.className = 'down'; }); }
       function renderAnalysis(current, previous) {
         var body = document.getElementById('analysis-body'); if (!current.length || !previous.length) { body.innerHTML = '<tr><td colspan="5" class="empty-state">Belum ada data.</td></tr>'; return; }
@@ -424,6 +438,17 @@
       var loadButton = document.getElementById('load-button');
       if (loadButton) loadButton.addEventListener('click', syncWeeklyAnalysisVisibility);
       syncWeeklyAnalysisVisibility();
+    });
+  </script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var phoneInput = document.getElementById('analysis-whatsapp-phone');
+      var sendButton = document.getElementById('send-analysis-whatsapp-button');
+      try {
+        var user = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+        if (phoneInput) phoneInput.value = user.phone || user.whatsapp || user.hp || user.no_hp || '';
+      } catch (error) {}
+      if (sendButton) sendButton.addEventListener('click', function () { if (window.sendRbmAnalysisToWhatsApp) window.sendRbmAnalysisToWhatsApp(); });
     });
   </script>
 </body>

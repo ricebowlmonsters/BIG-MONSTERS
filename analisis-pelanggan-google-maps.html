@@ -121,5 +121,16 @@
     function initOutletPicker() { const select = $('analysis-outlet-select'); const outlets = readOutletList(); let user = {}; try { user = JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch (error) {} select.innerHTML = outlets.map(id => `<option value="${escapeHtml(id)}">${escapeHtml(outletLabel(id))}</option>`).join(''); const fixedOutlet = user.role === 'manager' || user.role === 'staff' ? user.outlet : ''; const saved = localStorage.getItem('rbm_google_maps_analysis_outlet'); selectedOutlet = fixedOutlet && outlets.includes(fixedOutlet) ? fixedOutlet : (saved && outlets.includes(saved) ? saved : outlets[0]); select.value = selectedOutlet; select.disabled = Boolean(fixedOutlet); select.addEventListener('change', () => { selectedOutlet = select.value; localStorage.setItem('rbm_google_maps_analysis_outlet', selectedOutlet); loadOutletData(); }); }
     Promise.resolve().then(() => FirebaseStorage.init()).then(() => { initOutletPicker(); return loadOutletData(); });
   </script>
+  <script>
+    const latestReviewLabel = document.querySelector('#review-total')?.previousElementSibling;
+    if (latestReviewLabel) latestReviewLabel.textContent = 'Ulasan terakhir';
+    function syncLatestReviewTotal() {
+      const latest = Array.isArray(dailyStats) ? dailyStats.slice().sort((a, b) => a.date.localeCompare(b.date)).pop() : null;
+      const total = document.getElementById('review-total');
+      if (total) total.textContent = latest ? Number(latest.reviews || 0).toLocaleString('id-ID') : '0';
+    }
+    new MutationObserver(syncLatestReviewTotal).observe(document.getElementById('daily-body'), { childList: true });
+    syncLatestReviewTotal();
+  </script>
 </body>
 </html>
