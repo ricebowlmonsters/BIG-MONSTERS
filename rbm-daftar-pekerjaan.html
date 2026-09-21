@@ -31,6 +31,8 @@
     .summary-card.red { border-top:3px solid var(--work-red); }
     .work-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
     .work-toolbar h3 { margin:0; color:var(--work-ink); }
+    .work-title-wrap { display:flex; flex-direction:column; gap:4px; }
+    .updated-note { color:var(--text-muted); font-size:11px; }
     .work-filters { display:flex; gap:8px; flex-wrap:wrap; }
     .work-filters .form-input { min-width:170px; padding:9px 11px; }
     .date-filter { display:flex; align-items:center; gap:5px; color:var(--text-muted); font-size:11px; font-weight:700; }
@@ -243,7 +245,7 @@
       <div class="print-heading" id="print-heading">Laporan Daftar Pekerjaan</div>
       <div class="single-print-report" id="single-print-report"></div>
       <div class="work-toolbar">
-        <h3>Daftar Pekerjaan</h3>
+        <div class="work-title-wrap"><span class="updated-note" id="jobs-updated-at">Belum ada pembaruan</span><h3>Daftar Pekerjaan</h3></div>
         <div class="work-filters">
           <input class="form-input" id="search-input" placeholder="Cari pekerjaan / PIC..." aria-label="Cari pekerjaan atau penanggung jawab">
           <select class="form-input" id="status-filter" aria-label="Filter status">
@@ -414,7 +416,14 @@
     function deleteJob(id) { return database.ref(`${FIREBASE_PATH}/${id}`).remove(); }
     function escapeHtml(value) { return String(value || '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char])); }
     function formatDate(value) { if (!value) return '-'; return new Intl.DateTimeFormat('id-ID', { day:'2-digit', month:'short', year:'numeric' }).format(new Date(`${value}T00:00:00`)); }
+    function formatUpdatedDate(value) { if (!value) return '-'; const date = new Date(value); return Number.isNaN(date.getTime()) ? formatDate(value) : new Intl.DateTimeFormat('id-ID', { dateStyle:'medium', timeStyle:'short' }).format(date); }
     function createdDate(job) { return job.createdAt || new Date().toISOString().slice(0, 10); }
+    function updatedDate(job) { return job.updatedAt || createdDate(job); }
+    function renderUpdatedDate() {
+      const visibleJobs = selectedOutlet === 'global' ? jobs : jobs.filter(job => (job.outlet || 'global') === selectedOutlet);
+      const latest = visibleJobs.map(updatedDate).sort().pop();
+      document.getElementById('jobs-updated-at').textContent = latest ? `Terakhir diperbarui: ${formatUpdatedDate(latest)}` : 'Belum ada pembaruan';
+    }
     function isLate(job) { return job.status !== 'selesai' && job.deadline < new Date().toISOString().slice(0, 10); }
     function statusLabel(job) { if (isLate(job)) return ['Terlambat', 'terlambat']; return ({ belum:['Belum mulai','belum'], proses:['Sedang berjalan','proses'], selesai:['Selesai','selesai'] }[job.status] || ['Belum mulai','belum']); }
     function renderSummary() {
@@ -436,7 +445,7 @@
         const matchesFilter = filter === 'semua' || (filter === 'terlambat' ? isLate(job) : job.status === filter);
         const matchesDate = (!dateFrom || createdDate(job) >= dateFrom) && (!dateTo || createdDate(job) <= dateTo);
         return matchesSearch && matchesFilter && matchesDate;
-      });
+      }).sort((a, b) => new Date(updatedDate(b)).getTime() - new Date(updatedDate(a)).getTime());
       const tbody = document.getElementById('job-list');
       tbody.innerHTML = list.map(job => {
         const [label, statusClass] = statusLabel(job);
@@ -454,6 +463,7 @@
         </tr>`;
       }).join('');
       document.getElementById('empty-state').style.display = list.length ? 'none' : 'block';
+      renderUpdatedDate();
       renderSummary();
     }
     function resetForm() {
@@ -481,7 +491,7 @@
       event.preventDefault();
       const id = document.getElementById('job-id').value || `job-${Date.now()}`;
       const existingJob = jobs.find(item => item.id === id);
-      const job = { id, outlet:existingJob ? (existingJob.outlet || selectedOutlet) : selectedOutlet, createdAt:existingJob ? createdDate(existingJob) : new Date().toISOString().slice(0, 10), title:document.getElementById('job-title').value.trim(), description:document.getElementById('job-description').value.trim(), owner:loggedInUserName(), ownerPhone:document.getElementById('job-owner-phone').value.trim(), deadline:document.getElementById('job-deadline').value, status:document.getElementById('job-status').value, progress:Number(document.getElementById('job-progress').value), reason:document.getElementById('job-reason').value.trim(), nextStep:document.getElementById('job-next-step').value.trim() };
+      const job = { id, outlet:existingJob ? (existingJob.outlet || selectedOutlet) : selectedOutlet, createdAt:existingJob ? createdDate(existingJob) : new Date().toISOString().slice(0, 10), updatedAt:new Date().toISOString(), title:document.getElementById('job-title').value.trim(), description:document.getElementById('job-description').value.trim(), owner:loggedInUserName(), ownerPhone:document.getElementById('job-owner-phone').value.trim(), deadline:document.getElementById('job-deadline').value, status:document.getElementById('job-status').value, progress:Number(document.getElementById('job-progress').value), reason:document.getElementById('job-reason').value.trim(), nextStep:document.getElementById('job-next-step').value.trim() };
       if (job.status === 'selesai') job.progress = 100;
       const existingIndex = jobs.findIndex(item => item.id === id);
       saveJob(job).then(() => {

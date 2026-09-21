@@ -57,6 +57,7 @@
     .analysis-notes-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     .analysis-note-field { min-width: 0; }
     .analysis-note-field strong { display: block; margin-bottom: 5px; color: #172554; font-size: 11px; }
+    .export-note-text { width: 100%; min-height: 38px; box-sizing: border-box; border: 1px solid var(--border); border-radius: 7px; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.4; background: #fff; color: #1e293b; }
     .monthly-plan-table { margin-top: 20px; }
     .period-note { color: var(--text-muted); font-size: 12px; margin: -8px 0 16px; }
     .empty-state { color: var(--text-muted); padding: 24px 0; text-align: center; font-size: 13px; }
@@ -275,12 +276,26 @@
       function uploadSalesFile(file) {
         var reader = new FileReader(); reader.onload = function (event) { try { var records = parseUploadedWorkbook(event.target.result); if (!records.length) throw new Error('Tidak ada transaksi valid pada file.'); var outlet = selectedOutlet(); uploadedSalesCache[outlet] = records; var savePromise = saveUploadedSalesToFirebase(outlet, records); savePromise.then(function () { return saveUploadedSalesHistory(outlet, file.name, records); }).then(function () { document.getElementById('upload-status').textContent = records.length.toLocaleString('id-ID') + ' transaksi tersimpan di Firebase untuk ' + outletName(outlet) + '.'; updateUploadStatus(); loadEvaluation(); }).catch(function () { uploadedSalesCache[outlet] = []; document.getElementById('upload-status').textContent = 'Gagal menyimpan ke Firebase. Data upload dibatalkan.'; }); } catch (error) { document.getElementById('upload-status').textContent = 'Upload gagal: ' + error.message; } }; reader.readAsArrayBuffer(file); }
       var evaluationPreviewCanvas = null;
+      function prepareExportNoteFields(target) {
+        var replacements = [];
+        target.querySelectorAll('.analysis-note-field textarea').forEach(function (textarea) {
+          var replacement = document.createElement('div');
+          replacement.className = 'export-note-text';
+          replacement.textContent = textarea.value || '-';
+          textarea.replaceWith(replacement);
+          replacements.push({ textarea: textarea, replacement: replacement });
+        });
+        return function restoreExportNoteFields() {
+          replacements.forEach(function (item) { item.replacement.replaceWith(item.textarea); });
+        };
+      }
       function captureEvaluationReport() {
         if (typeof html2canvas !== 'function') return Promise.reject(new Error('Library JPG belum siap.'));
         var target = document.querySelector('.rbm-content-wrap') || document.body;
         var waitFonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
         target.classList.add('pdf-export-mode');
-        return waitFonts.then(function () { var captureWidth = Math.max(target.scrollWidth, target.clientWidth); var captureHeight = Math.max(target.scrollHeight, target.clientHeight); return html2canvas(target, { scale: 2, width: captureWidth, height: captureHeight, windowWidth: captureWidth, windowHeight: captureHeight, scrollX: 0, scrollY: 0, useCORS: true, backgroundColor: '#f8fafc', logging: false }); }).finally(function () { target.classList.remove('pdf-export-mode'); });
+        var restoreExportNoteFields = prepareExportNoteFields(target);
+        return waitFonts.then(function () { var captureWidth = Math.max(target.scrollWidth, target.clientWidth); var captureHeight = Math.max(target.scrollHeight, target.clientHeight); return html2canvas(target, { scale: 2, width: captureWidth, height: captureHeight, windowWidth: captureWidth, windowHeight: captureHeight, scrollX: 0, scrollY: 0, useCORS: true, backgroundColor: '#f8fafc', logging: false }); }).finally(function () { restoreExportNoteFields(); target.classList.remove('pdf-export-mode'); });
       }
       function closeEvaluationPreview() {
         var backdrop = document.getElementById('evaluation-preview-backdrop');
@@ -308,10 +323,11 @@
         var originalText = button.textContent; button.disabled = true; button.textContent = 'Membuat PDF...';
         var target = document.querySelector('.rbm-content-wrap') || document.body; var waitFonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
         target.classList.add('pdf-export-mode');
+        var restoreExportNoteFields = prepareExportNoteFields(target);
         waitFonts.then(function () { var captureWidth = Math.max(target.scrollWidth, target.clientWidth); var captureHeight = Math.max(target.scrollHeight, target.clientHeight); return html2canvas(target, { scale: 2, width: captureWidth, height: captureHeight, windowWidth: captureWidth, windowHeight: captureHeight, scrollX: 0, scrollY: 0, useCORS: true, backgroundColor: '#f8fafc', logging: false }); }).then(function (canvas) {
           var jsPDF = window.jspdf.jsPDF; var sideMargin = 8; var pageWidth = 297; var imageWidth = pageWidth - (sideMargin * 2); var imageHeight = canvas.height * imageWidth / canvas.width; var pageHeight = imageHeight + 16; var pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [pageWidth, pageHeight] }); var imageData = canvas.toDataURL('image/jpeg', 0.92); pdf.addImage(imageData, 'JPEG', sideMargin, 8, imageWidth, imageHeight, undefined, 'FAST');
           var month = document.getElementById('monthly-chart-month').value || 'evaluasi'; var outlet = (selectedOutlet() || 'outlet').replace(/[^a-zA-Z0-9_-]/g, '_'); pdf.save('Evaluasi_Penjualan_' + outlet + '_' + month + '.pdf');
-        }).catch(function (error) { alert('Gagal membuat PDF: ' + (error && error.message ? error.message : error)); }).finally(function () { target.classList.remove('pdf-export-mode'); button.disabled = false; button.textContent = originalText; });
+        }).catch(function (error) { alert('Gagal membuat PDF: ' + (error && error.message ? error.message : error)); }).finally(function () { restoreExportNoteFields(); target.classList.remove('pdf-export-mode'); button.disabled = false; button.textContent = originalText; });
       }
       function periodDayCount(start, end) { return Math.max(1, Math.round((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000) + 1); }
       function summarizeUploaded(start, end, outlet) { var byDate = {}; var ids = {}; for (var i = 0; i < periodDayCount(iso(start), iso(end)); i++) byDate[iso(addDays(start, i))] = { revenue: 0, ids: {} }; uploadedSales(outlet).forEach(function (row) { if (byDate[row.date]) { var id = String(row.id || row.date); byDate[row.date].revenue += number(row.value); byDate[row.date].ids[id] = true; ids[id] = true; } }); return { days: Object.keys(byDate).sort().map(function (date) { return { date: date, revenue: byDate[date].revenue, count: Object.keys(byDate[date].ids).length }; }), revenue: Object.keys(byDate).reduce(function (sum, date) { return sum + byDate[date].revenue; }, 0), count: Object.keys(ids).length }; }
