@@ -5579,7 +5579,7 @@ function renderAbsensiTable(mode) {
         else if (emp.jabatan === 'Supervisor Regional') tunjangan = 350000;
         else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
         const gajiPerHari = Math.round(gajiPokok / 30);
-        const potTerlambatPerJam = Math.round(gajiPokok / 144.17);
+        const potTerlambatPerJam = Math.round(gajiPokok / 240);
         const uangMakan = counts.H * 10000;
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
@@ -6213,7 +6213,7 @@ function renderRekapGaji() {
 
         // 3. Rumus Perhitungan
         const gajiPerHari = Math.round(gajiPokok / 30);
-        const potTerlambatPerJam = Math.round(gajiPokok / 144.17); // Rumus: GP / 144.17
+        const potTerlambatPerJam = Math.round(gajiPokok / 240); // Rumus potongan telat: GP / 240
         const uangMakan = counts.H * 10000; // Rumus: HK Aktual * 10.000
         
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
@@ -6560,7 +6560,7 @@ async function submitGajiPengajuan() {
                 const metodeBayar = pData.metodeBayar || 'TF';
 
                 const gajiPerHari = Math.round(gajiPokok / 30);
-                const potTerlambatPerJam = Math.round(gajiPokok / 144.17); // [FIX] Samakan rumus Rate/Jam dengan tampilan rekap gaji
+                const potTerlambatPerJam = Math.round(gajiPokok / 240); // Rate potongan telat: GP / 240
                 const uangMakan = jumlahH * 10000;
 
                 const totalPotKehadiran = Math.round(potHari * gajiPerHari);
@@ -6915,7 +6915,7 @@ function generateAndShowSlip(idx) {
     else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
 
     const gajiPerHari = Math.round(gajiPokok / 30); // Rumus: GP / 30
-    const potTerlambatPerJam = Math.round(gajiPokok / 144.17); // Rumus: GP / 144.17
+    const potTerlambatPerJam = Math.round(gajiPokok / 240); // Rumus potongan telat: GP / 240
     const uangMakan = counts.H * 10000;
     
     const totalPotKehadiran = Math.round(potHari * gajiPerHari);
@@ -7030,7 +7030,7 @@ function sendSlipEmail(idx) {
     else if (emp.jabatan === 'Supervisor Regional') tunjangan = 350000;
     else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
     const gajiPerHari = Math.round(gajiPokok / 30);
-        const potTerlambatPerJam = Math.round(gajiPokok / 144.17);
+        const potTerlambatPerJam = Math.round(gajiPokok / 240);
     const uangMakan = counts.H * 10000;
     const totalPotKehadiran = Math.round(potHari * gajiPerHari);
     const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
@@ -7349,7 +7349,7 @@ function exportCompleteAbsensiExcel() {
         const metodeBayar = pData.metodeBayar || 'TF';
 
         const gajiPerHari = Math.round(gajiPokok / 30);
-        const potTerlambatPerJam = Math.round(gajiPokok / 173);
+        const potTerlambatPerJam = Math.round(gajiPokok / 240);
         const uangMakan = counts.H * 10000;
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
@@ -7551,7 +7551,7 @@ function exportCompleteAbsensiPDF() {
         else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
         const metodeBayar = pData.metodeBayar || 'TF';
         const gajiPerHari = Math.round(gajiPokok / 30);
-        const potTerlambatPerJam = Math.round(gajiPokok / 173);
+        const potTerlambatPerJam = Math.round(gajiPokok / 240);
         const uangMakan = hkAktual * 10000;
         const totalPotKehadiran = Math.round(potHari * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
@@ -7910,7 +7910,7 @@ async function downloadAllSlipsAsZip(event) {
             else if (emp.jabatan === 'Supervisor') tunjangan = 250000;
 
             const gajiPerHari = Math.round(gajiPokok / 30);
-            const potTerlambatPerJam = Math.round(gajiPokok / 144.17);
+            const potTerlambatPerJam = Math.round(gajiPokok / 240);
             const uangMakan = counts.H * 10000;
             const totalPotKehadiran = Math.round(potHari * gajiPerHari);
             const totalPotTerlambat = Math.round(jamTerlambat * potTerlambatPerJam);
@@ -11519,7 +11519,7 @@ async function continueAbsensiWithPassword() {
         const jamTerlambat = periodData.jamTerlambatManual !== undefined ? parseFloat(periodData.jamTerlambatManual) : (totalMenitTelat >= menitPerJam ? Math.round((totalMenitTelat / menitPerJam) * 10) / 10 : 0);
         const gajiPerHari = Math.round(gajiPokok / 30);
         const totalPotKehadiran = Math.round((periodData.potHari !== undefined ? parseFloat(periodData.potHari) : 0) * gajiPerHari);
-        const totalPotTerlambat = Math.round(jamTerlambat * Math.round(gajiPokok / 144.17));
+        const totalPotTerlambat = Math.round(jamTerlambat * Math.round(gajiPokok / 240));
         const hutang = periodData.hutang !== undefined ? parseInt(periodData.hutang, 10) || 0 : 0;
         const potonganBpjs = periodData.potonganBpjs !== undefined ? parseInt(periodData.potonganBpjs, 10) || 0 : (parseInt(periodData.bpjs, 10) || 0);
         const uangMakan = hadir * 10000;
@@ -11652,7 +11652,7 @@ async function downloadEmployeeSlipGaji() {
     const jamTerlambat = data.jamTerlambatManual !== undefined ? parseFloat(data.jamTerlambatManual) : (totalMenitTelat >= configTelat ? Math.round((totalMenitTelat / configTelat) * 10) / 10 : 0);
     const gajiPerHari = Math.round(gajiPokok / 30);
     const totalPotKehadiran = Math.round((data.potHari !== undefined ? parseFloat(data.potHari) : 0) * gajiPerHari);
-    const potonganTerlambat = Math.round(jamTerlambat * Math.round(gajiPokok / 144.17));
+    const potonganTerlambat = Math.round(jamTerlambat * Math.round(gajiPokok / 240));
     const hutang = data.hutang != null ? Number(data.hutang) : 0;
     const potonganBpjs = data.potonganBpjs != null ? Number(data.potonganBpjs) : (parseInt(data.bpjs, 10) || 0);
     const totalPendapatan = gajiPokok + tunjangan + lemburMinggu + uangMakan + parkir + transport;
