@@ -10662,8 +10662,8 @@ let gpsStream = null;
 let gpsWatchId = null;
 let currentPos = null;
 
-function getOfficeConfigFromStorage() {
-    var outletId = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+function getOfficeConfigFromStorage(outletId) {
+    if (arguments.length === 0) outletId = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
     if (outletId) {
         try {
             var locs = JSON.parse(localStorage.getItem('rbm_outlet_locations') || '{}');
@@ -10677,7 +10677,9 @@ function getOfficeConfigFromStorage() {
             }
         } catch (e) {}
     }
-    var key = typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_GPS_CONFIG') : 'RBM_GPS_CONFIG';
+    var key = outletId
+        ? 'RBM_GPS_CONFIG_' + String(outletId).toLowerCase().replace(/[^a-z0-9]/g, '_')
+        : (typeof getRbmStorageKey === 'function' ? getRbmStorageKey('RBM_GPS_CONFIG') : 'RBM_GPS_CONFIG');
     return getCachedParsedStorage(key, { lat: '', lng: '', radius: 50 });
 }
 
@@ -11111,11 +11113,53 @@ function populateGpsNames() {
         var key = getRbmStorageKey('RBM_EMPLOYEES');
         var employees = normalizeEmployees(safeParse(RBMStorage.getItem(key), []));
         if (employees.length) return employees;
+        if (isOfficeInternal()) return [];
         // Fallback key untuk beberapa format data lama / cache awal
         employees = normalizeEmployees(safeParse(RBMStorage.getItem('RBM_EMPLOYEES'), []));
         if (employees.length) return employees;
         employees = normalizeEmployees(safeParse(localStorage.getItem('RBM_EMPLOYEES_ALL'), []));
         return employees;
+    }
+
+    function isOfficeInternal() {
+        var outlet = document.getElementById('rbm-outlet-select');
+        return !!(outlet && outlet.value === 'office');
+    }
+
+    function loadOfficeInternalGpsConfigs() {
+        var outletIds = [];
+        try { outletIds = JSON.parse(localStorage.getItem('rbm_outlets') || '[]'); } catch (e) {}
+        try { outletIds = outletIds.concat(JSON.parse(localStorage.getItem('rbm_internal_outlets') || '[]')); } catch (e2) {}
+        outletIds = Array.from(new Set(outletIds)).filter(function(id) { return id && id !== 'office'; });
+        if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.db || !FirebaseStorage.db()) {
+            return Promise.resolve();
+        }
+        var db = FirebaseStorage.db();
+        var outletIdsPromise = outletIds.length
+            ? Promise.resolve(outletIds)
+            : db.ref('app_state/outlet_ids').once('value').then(function(snapshot) {
+                var value = snapshot.val();
+                if (Array.isArray(value)) return value;
+                return value && typeof value === 'object' ? Object.keys(value).filter(function(key) { return value[key]; }) : [];
+            });
+        return outletIdsPromise.then(function(ids) {
+            ids = Array.from(new Set(ids)).filter(function(id) { return id && id !== 'office'; });
+            try { localStorage.setItem('rbm_outlets', JSON.stringify(ids)); } catch (e) {}
+            return Promise.all(ids.map(function(outletId) {
+                var suffix = String(outletId).toLowerCase().replace(/[^a-z0-9]/g, '_');
+                return db.ref('rbm_pro/gps_config_' + suffix).once('value').then(function(snapshot) {
+                    var config = snapshot.val();
+                    if (config && typeof config === 'object') {
+                        var key = 'RBM_GPS_CONFIG_' + suffix;
+                        localStorage.setItem(key, JSON.stringify(config));
+                        if (window._rbmParsedCache) delete window._rbmParsedCache[key];
+                    }
+                }).catch(function() {});
+            }));
+        }).then(function(groups) {
+            window._cachedOfficeConfig = null;
+            if (typeof checkDistance === 'function') checkDistance();
+        });
     }
 
     window._gpsKioskRosterEmployees = null;
@@ -11125,6 +11169,8 @@ function populateGpsNames() {
         typeof useFirebaseBackend === 'function' && useFirebaseBackend() &&
         typeof FirebaseStorage !== 'undefined' &&
         FirebaseStorage.loadGpsKioskRoster && FirebaseStorage.loadGpsKioskDayCells;
+
+    if (isOfficeInternal()) loadOfficeInternalGpsConfigs();
 
     if (employees.length === 0 || tryKiosk) {
         select.innerHTML = '<option value="">-- Memuat Data Karyawan... --</option>';
@@ -11336,6 +11382,7 @@ function checkDistance() {
     var lngEl = document.getElementById('gps_office_lng');
     var radEl = document.getElementById('gps_office_radius');
     var officeLat, officeLng, maxRadius;
+    var officeInternalMatch = null;
     if (latEl && lngEl && radEl) {
         officeLat = parseFloat(latEl.value);
         officeLng = parseFloat(lngEl.value);
@@ -11348,6 +11395,30 @@ function checkDistance() {
         officeLat = parseFloat(window._cachedOfficeConfig.lat);
         officeLng = parseFloat(window._cachedOfficeConfig.lng);
         maxRadius = parseFloat(window._cachedOfficeConfig.radius) || 50;
+        var selectedOutlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
+        if (selectedOutlet === 'office' && currentPos) {
+            var outletIds = [];
+            try { outletIds = JSON.parse(localStorage.getItem('rbm_outlets') || '[]'); } catch (e) {}
+            try { outletIds = outletIds.concat(JSON.parse(localStorage.getItem('rbm_internal_outlets') || '[]')); } catch (e2) {}
+            outletIds = Array.from(new Set(outletIds)).filter(function(id) { return id && id !== 'office'; });
+            var nearestDistance = Infinity;
+            officeInternalMatch = false;
+            outletIds.forEach(function(outletId) {
+                var config = getOfficeConfigFromStorage(outletId);
+                var lat = parseFloat(config.lat);
+                var lng = parseFloat(config.lng);
+                if (isNaN(lat) || isNaN(lng)) return;
+                var distance = getDistanceFromLatLonInM(currentPos.latitude, currentPos.longitude, lat, lng);
+                var outletRadius = parseFloat(config.radius) || 50;
+                if (distance <= outletRadius) officeInternalMatch = true;
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    officeLat = lat;
+                    officeLng = lng;
+                    maxRadius = outletRadius;
+                }
+            });
+        }
     }
 
     var statusEl = document.getElementById('gps_status_overlay');
@@ -11365,7 +11436,7 @@ function checkDistance() {
     var infoText = "Jarak ke titik: " + distStr + " Meter (Max: " + maxRadius + "m)";
     infoEl.innerText = infoText;
 
-    var inRange = dist <= maxRadius;
+    var inRange = officeInternalMatch === null ? dist <= maxRadius : officeInternalMatch;
 
     if (inRange) {
         statusEl.innerText = "✅ Dalam Area Absensi";
@@ -12010,40 +12081,67 @@ function deleteSingleGpsLog(logId, triggerEl) {
         var logToDelete = logs.find(l => l.id == logId);
         if (!logToDelete) { showCustomAlert('Data tidak ditemukan untuk dihapus.', 'Info', 'error'); return; }
 
-        if (triggerEl && triggerEl.parentElement) {
-            triggerEl.parentElement.innerHTML = '<span style="color:#64748b;">-</span>';
-        }
+        var logIndex = logs.indexOf(logToDelete);
+        var cell = triggerEl && triggerEl.parentElement;
+        var originalCellHtml = cell ? cell.innerHTML : '';
+        if (cell) cell.innerHTML = '<span style="color:#64748b;">Menghapus...</span>';
 
-        setTimeout(function() {
-        var newLogs = logs.filter(function(l) { return l.id != logId; });
-        try { localStorage.setItem(key, JSON.stringify(newLogs)); } catch(e) {}
-        window._rbmParsedCache[key] = { data: newLogs };
-        loadRekapAbsensiGPS(true);
-
-        function restoreDeletedLog(errorMessage) {
-            try { localStorage.setItem(key, JSON.stringify(logs)); } catch(e) {}
+        var isFirebase = window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase();
+        var restoreUiAndCache = function(errorMessage) {
+            if (logIndex >= 0 && logs.indexOf(logToDelete) === -1) logs.splice(logIndex, 0, logToDelete);
             window._rbmParsedCache[key] = { data: logs };
-            loadRekapAbsensiGPS(true);
+            if (cell) cell.innerHTML = originalCellHtml;
             showCustomAlert(errorMessage, 'Gagal Menghapus', 'error');
+        };
+
+        if (isFirebase) {
+            var db = window.RBMStorage._db;
+            if (!db) {
+                if (cell) cell.innerHTML = originalCellHtml;
+                showCustomAlert('Koneksi Firebase belum siap. Coba lagi.', 'Gagal Menghapus', 'error');
+                return;
+            }
+
+            var outlet = getRbmOutlet() || 'default';
+            var ym = (logToDelete.date || '').substring(0, 7);
+            var monthRef = db.ref('rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym);
+            var findAndRemoveLog = logToDelete._firebaseKey
+                ? Promise.resolve(logToDelete._firebaseKey)
+                : monthRef.orderByChild('id').equalTo(Number(logId)).once('value').then(function(snapshot) {
+                    var matches = snapshot.val() || {};
+                    var matchKey = Object.keys(matches).find(function(firebaseKey) {
+                        var candidate = matches[firebaseKey];
+                        return candidate && candidate.id == logId && candidate.date === logToDelete.date && candidate.type === logToDelete.type && candidate.time === logToDelete.time;
+                    });
+                    if (!matchKey) throw new Error('Log Firebase tidak ditemukan');
+                    return matchKey;
+                });
+
+            findAndRemoveLog.then(function(firebaseKey) {
+                return monthRef.child(firebaseKey).remove().then(function() {
+                    if (logIndex >= 0) logs.splice(logIndex, 1);
+                    window._rbmParsedCache[key] = { data: logs };
+                    if (cell) cell.innerHTML = '<span style="color:#64748b;">-</span>';
+                    var photoPath = 'rbm_pro/gps_logs_photos/' + outlet + '/' + ym + '/' + firebaseKey;
+                    db.ref(photoPath).remove().catch(function(error) { console.warn('Foto absensi lama tidak terhapus:', error); });
+                    showCustomAlert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.', 'Berhasil', 'success');
+                });
+            }).catch(function(error) {
+                console.error('Gagal menghapus log absensi GPS:', error);
+                restoreUiAndCache('Data absensi gagal dihapus dari server. Periksa koneksi lalu coba lagi.');
+            });
+            return;
         }
 
-        if (window.RBMStorage && window.RBMStorage.isUsingFirebase && window.RBMStorage.isUsingFirebase() && logToDelete._firebaseKey) {
-            var outlet = getRbmOutlet() || 'default';
-            var ym = logToDelete.date.substring(0, 7);
-            var refPath = 'rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym + '/' + logToDelete._firebaseKey;
-            window.RBMStorage._db.ref(refPath).remove().then(function() {
-                showCustomAlert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.', 'Berhasil', 'success');
-            }).catch(function() {
-                restoreDeletedLog('Data absensi gagal dihapus dari server. Data dikembalikan.');
-            });
-        } else {
-            RBMStorage.setItem(key, JSON.stringify(newLogs)).then(function() {
-                showCustomAlert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.', 'Berhasil', 'success');
-            }).catch(function() {
-                restoreDeletedLog('Data absensi gagal dihapus. Data dikembalikan.');
-            });
-        }
-        }, 0);
+        var newLogs = logs.filter(function(l) { return l.id != logId; });
+        RBMStorage.setItem(key, JSON.stringify(newLogs)).then(function() {
+            window._rbmParsedCache[key] = { data: newLogs };
+            if (logIndex >= 0) logs.splice(logIndex, 1);
+            showCustomAlert('Data absensi untuk ' + logToDelete.name + ' (' + logToDelete.type + ' ' + logToDelete.time + ') berhasil dihapus.', 'Berhasil', 'success');
+        }).catch(function(error) {
+            console.error('Gagal menghapus log absensi lokal:', error);
+            restoreUiAndCache('Data absensi gagal dihapus. Data dikembalikan.');
+        });
     });
 }
 

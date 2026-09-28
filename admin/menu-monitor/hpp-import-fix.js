@@ -163,19 +163,22 @@
       if (rows.length < 2) throw new Error('Sheet Kemasan kosong.');
       var headers = rows.shift().map(function (value) { return String(value).replace(/^\uFEFF/, '').trim().toLowerCase().replace(/[\s-]+/g, '_'); });
       var position = function (names) { return names.map(function (name) { return headers.indexOf(name); }).find(function (index) { return index >= 0; }); };
-      var typeIndex = position(['jenis', 'type', 'kategori']), codeIndex = position(['kode_kemasan', 'kode', 'code']), nameIndex = position(['nama', 'nama_kemasan', 'name']), unitIndex = position(['satuan', 'unit']), qtyIndex = position(['qty', 'jumlah', 'quantity']);
+      var typeIndex = position(['jenis', 'type', 'kategori']), codeIndex = position(['kode_kemasan', 'kode', 'code']), nameIndex = Math.max(headers.lastIndexOf('nama'), headers.lastIndexOf('nama_kemasan'), headers.lastIndexOf('name')), unitIndex = position(['satuan', 'unit']), qtyIndex = position(['qty', 'jumlah', 'quantity']);
+      if (typeIndex < 0 && headers[0] === 'nama' && headers.lastIndexOf('nama') > 0) typeIndex = 0;
       if (typeIndex < 0 || (codeIndex < 0 && nameIndex < 0) || qtyIndex < 0) throw new Error('Kemasan wajib memiliki jenis, kode_kemasan atau nama, dan qty.');
       var items = [];
       rows.forEach(function (row, rowIndex) {
         var type = String(row[typeIndex] || '').trim(), code = String(codeIndex >= 0 ? row[codeIndex] || '' : '').trim(), name = String(nameIndex >= 0 ? row[nameIndex] || '' : '').trim(), qty = numberValue(row[qtyIndex]);
         if (!type || (!code && !name) || !Number.isFinite(qty) || qty <= 0) throw new Error('Baris ' + (rowIndex + 2) + ' kemasan wajib memiliki jenis, kode/nama, dan qty lebih besar dari 0.');
-        var material = materials.find(function (item) { return (code && String(item.code || '').trim().toLowerCase() === code.toLowerCase()) || (name && String(item.name || '').trim().toLowerCase() === name.toLowerCase()); });
-        if (!material) throw new Error('Kemasan ' + (code || name) + ' belum ditemukan di Bahan Baku Resto. Import bahan terlebih dahulu.');
-        items.push({ type: type, code: material.code || code, name: material.name || name, unit: String(unitIndex >= 0 ? row[unitIndex] || material.unit || 'pcs' : material.unit || 'pcs').trim(), qty: qty, unitCost: Number(material.new || material.old || 0), cost: qty * Number(material.new || material.old || 0) });
+        var material = materials.find(function (item) { return /^BB\.DAPUR\./i.test(String(item.code || '')) && ((code && String(item.code || '').trim().toLowerCase() === code.toLowerCase()) || (name && String(item.name || '').trim().toLowerCase() === name.toLowerCase())); });
+        var unit = String(unitIndex >= 0 ? row[unitIndex] || material && material.unit || 'pcs' : material && material.unit || 'pcs').trim();
+        var hasPrice = material && [material.new, material.old, material.price].some(function (value) { return value !== undefined && value !== null && Number.isFinite(numberValue(value)); });
+        var unitCost = hasPrice ? priceUnit(material.code, name, unit, 'dapur') : null;
+        items.push({ type: type, code: code || material && material.code || '', name: name || material && material.name || code, unit: unit, qty: qty, unitCost: unitCost, cost: unitCost === null ? null : qty * unitCost });
       });
       packaging.items = items;
-      packaging.ice = items.filter(function (item) { return /ice|es|campur/i.test(item.type); }).reduce(function (sum, item) { return sum + item.cost; }, 0);
-      packaging.pack = items.filter(function (item) { return !/ice|es|campur/i.test(item.type); }).reduce(function (sum, item) { return sum + item.cost; }, 0);
+      packaging.ice = items.filter(function (item) { return /ice|es|campur/i.test(item.type); }).reduce(function (sum, item) { return sum + (Number(item.cost) || 0); }, 0);
+      packaging.pack = items.filter(function (item) { return !/ice|es|campur/i.test(item.type); }).reduce(function (sum, item) { return sum + (Number(item.cost) || 0); }, 0);
       saveImportedData(); renderStats(); renderResto(); renderKitchen(); renderDatabase(); closeImport(); window.__hppWorkbook = null;
     } catch (error) { importError.textContent = error.message; }
   }, true);

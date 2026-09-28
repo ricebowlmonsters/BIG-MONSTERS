@@ -454,7 +454,17 @@
             months.push(curr.getFullYear() + '-' + ('0'+(curr.getMonth()+1)).slice(-2));
             curr.setMonth(curr.getMonth() + 1);
         }
-        var promises = months.map(function(ym) { return db.ref('rbm_pro/gps_logs_partitioned/' + (outlet || 'default') + '/' + ym).once('value'); });
+        var promises = months.map(function(ym) {
+          var monthStart = ym + '-01';
+          var monthEnd = ym + '-31';
+          var rangeStart = tglAwal > monthStart ? tglAwal : monthStart;
+          var rangeEnd = tglAkhir < monthEnd ? tglAkhir : monthEnd;
+          return db.ref('rbm_pro/gps_logs_partitioned/' + (outlet || 'default') + '/' + ym)
+            .orderByChild('date')
+            .startAt(rangeStart)
+            .endAt(rangeEnd)
+            .once('value');
+        });
         return Promise.all(promises).then(function(snaps) {
                 var safeOutlet = (outlet || 'default').replace(/[^a-zA-Z0-9_-]/g, '');
                 var merged = [];

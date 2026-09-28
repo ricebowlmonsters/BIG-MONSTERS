@@ -245,7 +245,16 @@
         var last = localStorage.getItem('rbm_last_selected_outlet');
         if (last && outlets.indexOf(last) >= 0) sel.value = last;
         else if (outlets.length) sel.value = outlets[0];
-        sel.addEventListener('change', function() { localStorage.setItem('rbm_last_selected_outlet', sel.value); });
+        sel.addEventListener('change', function() {
+          localStorage.setItem('rbm_last_selected_outlet', sel.value);
+          window._gpsKioskRosterEmployees = null;
+          var employeeSelect = document.getElementById('gps_absen_name');
+          if (employeeSelect) employeeSelect.value = '';
+          if (typeof resetAbsensiPassword === 'function') resetAbsensiPassword();
+          if (typeof populateGpsNames === 'function') populateGpsNames();
+          if (typeof loadOfficeConfig === 'function') loadOfficeConfig();
+          if (typeof loadJamConfig === 'function') loadJamConfig();
+        });
       }
       var shareCard = document.getElementById('rbm-share-link-card');
       var shareSel = document.getElementById('rbm-share-outlet-select');

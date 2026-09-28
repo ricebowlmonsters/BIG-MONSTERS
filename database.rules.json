@@ -1,6 +1,13 @@
 {
   "rules": {
     "rbm_pro": {
+      "gps_logs_partitioned": {
+        "$outlet": {
+          "$month": {
+            ".indexOn": ["date"]
+          }
+        }
+      },
       "pengajuan_tf": {
         ".indexOn": ["outlet"],
         ".read": "auth != null",
