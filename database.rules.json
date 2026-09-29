@@ -3,7 +3,7 @@
     "rbm_pro": {
       "central_kitchen": {
         "orders": {
-          ".indexOn": ["outletId", "status"]
+          ".indexOn": ["outletId", "status", "createdAt", "shippedAt"]
         }
       },
       "gps_logs_partitioned": {

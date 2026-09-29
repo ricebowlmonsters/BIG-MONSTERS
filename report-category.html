@@ -43,6 +43,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script src="central-kitchen-reports.js"></script>
   <!-- <script src="menu.js"></script> --> <!-- [DIHAPUS] Tidak lagi menggunakan data statis -->
   <script>
     function formatRupiah(n) { return 'Rp ' + Math.round(n).toLocaleString('id-ID'); }
@@ -54,12 +55,23 @@
       const iso = (d) => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
       const todayStr = iso(new Date());
       const outlet = params.get('outlet') || 'sidoarjo';
-      const dateFrom = params.get('dateFrom') || todayStr;
-      const dateTo = params.get('dateTo') || todayStr;
+      const requestedFrom = params.get('dateFrom') || '';
+      const requestedTo = params.get('dateTo') || '';
+      const isCentralKitchen = outlet === CentralKitchenReports.outletId;
+      const monthStartStr = iso(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+      const useMonthToDate = isCentralKitchen && ((!requestedFrom && !requestedTo) || (requestedFrom === todayStr && requestedTo === todayStr));
+      const dateFrom = useMonthToDate ? monthStartStr : (requestedFrom || todayStr);
+      const dateTo = requestedTo || todayStr;
 
       document.getElementById('filter-info').innerHTML = `\n        <strong>Outlet:</strong> ${outlet.toUpperCase()} &nbsp;|&nbsp; \n        <strong>Tanggal:</strong> ${dateFrom} s/d ${dateTo}\n      `;
 
       const tbody = document.querySelector('#category-sales-table tbody');
+      const tableHead = document.querySelector('#category-sales-table thead');
+      if (isCentralKitchen) {
+        document.querySelector('.page-title').textContent = 'Laporan Pembelian Central Kitchen per Kategori';
+        document.getElementById('filter-info').innerHTML = `<strong>Sumber:</strong> Central Kitchen &nbsp;|&nbsp; <strong>Tujuan:</strong> Dipisahkan per outlet &nbsp;|&nbsp; <strong>Tanggal kirim:</strong> ${dateFrom} s/d ${dateTo}`;
+        tableHead.innerHTML = '<tr><th>Outlet Tujuan</th><th>Kategori</th><th style="text-align:center;">Dikirim (Qty)</th><th>Nilai Barang</th><th>Nilai Nota</th></tr>';
+      }
 
       const firebaseConfig = {
         apiKey: "AIzaSyDWQG53tP2zKILTwPSJQpiVzFNyvYLxLqw",
@@ -100,16 +112,22 @@
         const start = toStartOfDay(dateFrom);
         const end = toEndOfDay(dateTo);
 
-        tbody.innerHTML = '<tr><td colspan="4" class="muted">Memuat data...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + (isCentralKitchen ? '5' : '4') + '" class="muted">Memuat data...</td></tr>';
 
         try {
           // [BARU] Bangun lookup kategori dari data produk live di Firebase
-          const nameToCategory = await buildCategoryLookup(outlet);
-
-          const snap = await db.ref('orders/' + outlet).orderByChild('date').startAt(start).endAt(end).once('value');
-          const val = snap.val() || {};
-          const validStatuses = ['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai'];
-          const orders = Object.values(val).filter(o => validStatuses.includes(o.status));
+          const nameToCategory = outlet === CentralKitchenReports.outletId
+            ? await CentralKitchenReports.readCatalogCategories(db)
+            : await buildCategoryLookup(outlet);
+          let orders;
+          if (outlet === CentralKitchenReports.outletId) {
+            orders = await CentralKitchenReports.readFulfilled(db, start, end);
+          } else {
+            const snap = await db.ref('orders/' + outlet).orderByChild('date').startAt(start).endAt(end).once('value');
+            const val = snap.val() || {};
+            const validStatuses = ['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai'];
+            orders = Object.values(val).filter(o => validStatuses.includes(o.status));
+          }
 
           const categories = {};
 
@@ -130,12 +148,20 @@
               const gross = parseNumber(i.price) * qty;
               const after = distributionRatio ? (gross * distributionRatio) : gross;
 
-              const cat = nameToCategory[keyName] || 'Lainnya'; // [DIUBAH] Fallback ke 'Lainnya'
-              if (!categories[cat]) categories[cat] = { qty: 0, totalBefore: 0, totalAfter: 0 };
+              const category = nameToCategory[keyName] || 'Lainnya';
+              const groupKey = isCentralKitchen ? String(o.outletId || '') + '|' + category : category;
+              if (!categories[groupKey]) categories[groupKey] = {
+                outletId: o.outletId || '',
+                outletName: o.outletName || o.outletId || 'Outlet tidak diketahui',
+                category: category,
+                qty: 0,
+                totalBefore: 0,
+                totalAfter: 0
+              };
 
-              categories[cat].qty += qty;
-              categories[cat].totalBefore += gross;
-              categories[cat].totalAfter += after;
+              categories[groupKey].qty += qty;
+              categories[groupKey].totalBefore += gross;
+              categories[groupKey].totalAfter += after;
             });
           });
 
@@ -151,42 +177,36 @@
           const sorted = Object.keys(categories).sort((a,b) => categories[b].qty - categories[a].qty);
 
           if (sorted.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center;">Tidak ada data penjualan pada rentang tanggal ini.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="' + (isCentralKitchen ? '5' : '4') + '" class="muted" style="text-align:center;">Tidak ada data pada rentang tanggal ini.</td></tr>';
             return;
           }
 
           let totalQty = 0, totalBefore = 0, totalAfter = 0;
-          sorted.forEach(cat => {
-            const d = categories[cat];
+          sorted.forEach(groupKey => {
+            const d = categories[groupKey];
             totalQty += d.qty;
             totalBefore += d.totalBefore;
             totalAfter += d.totalAfter;
 
-            const categoryDisplayName = categoryMap[cat] || cat;
+            const categoryDisplayName = categoryMap[d.category] || d.category;
 
             const tr = document.createElement('tr');
-            tr.innerHTML = `
-              <td>${categoryDisplayName}</td>
-              <td style="text-align:center;">${d.qty}</td>
-              <td>${formatRupiah(d.totalBefore)}</td>
-              <td>${formatRupiah(d.totalAfter)}</td>
-            `;
+            tr.innerHTML = isCentralKitchen
+              ? `<td>${d.outletName}</td><td>${categoryDisplayName}</td><td style="text-align:center;">${d.qty}</td><td>${formatRupiah(d.totalBefore)}</td><td>${formatRupiah(d.totalAfter)}</td>`
+              : `<td>${categoryDisplayName}</td><td style="text-align:center;">${d.qty}</td><td>${formatRupiah(d.totalBefore)}</td><td>${formatRupiah(d.totalAfter)}</td>`;
             tbody.appendChild(tr);
           });
 
           const trTotal = document.createElement('tr');
           trTotal.style.cssText = 'font-weight:bold; background-color:#f3f4f6; border-top:2px solid #e5e7eb;';
-          trTotal.innerHTML = `
-            <td>TOTAL KESELURUHAN</td>
-            <td style="text-align:center;">${totalQty}</td>
-            <td>${formatRupiah(totalBefore)}</td>
-            <td>${formatRupiah(totalAfter)}</td>
-          `;
+          trTotal.innerHTML = isCentralKitchen
+            ? `<td colspan="2">TOTAL KESELURUHAN</td><td style="text-align:center;">${totalQty}</td><td>${formatRupiah(totalBefore)}</td><td>${formatRupiah(totalAfter)}</td>`
+            : `<td>TOTAL KESELURUHAN</td><td style="text-align:center;">${totalQty}</td><td>${formatRupiah(totalBefore)}</td><td>${formatRupiah(totalAfter)}</td>`;
           tbody.appendChild(trTotal);
 
         } catch (err) {
           console.error(err);
-          tbody.innerHTML = `<tr><td colspan="4" style="color:red;">Error: ${err.message}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="${isCentralKitchen ? 5 : 4}" style="color:red;">Error: ${err.message}</td></tr>`;
         }
       }
 

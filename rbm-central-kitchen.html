@@ -10,7 +10,7 @@
     body { background: #f3f6f4; color: var(--ck-ink); }
     .rbm-page-header { background: #173f36; color: #fff; }
     .rbm-page-title { color: inherit; }
-    .ck-wrap { max-width: 1180px; margin: 22px auto; padding: 0 18px 36px; }
+    .ck-wrap { width: 100%; max-width: none; margin: 0 auto; padding: 18px 24px 24px; box-sizing: border-box; }
     .ck-toolbar, .ck-panel { background: #fff; border: 1px solid var(--ck-border); border-radius: 8px; box-shadow: 0 2px 10px rgba(23, 43, 58, .035); }
     .ck-toolbar { display: flex; align-items: end; gap: 14px; justify-content: space-between; padding: 16px; margin-bottom: 16px; }
     .ck-toolbar label, .ck-field label { display: block; margin-bottom: 5px; font-size: 12px; font-weight: 700; color: #52665f; }
@@ -19,8 +19,8 @@
     .ck-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--ck-border); margin: 0 18px; }
     .ck-tab { border: 0; background: transparent; padding: 13px 15px; color: #52665f; font: inherit; font-weight: 700; cursor: pointer; border-bottom: 3px solid transparent; }
     .ck-tab.active { color: var(--ck-green); border-color: var(--ck-green); }
-    .ck-panel { overflow: hidden; }
-    .ck-view { padding: 18px; }
+    .ck-panel { min-height: calc(100vh - 185px); overflow: hidden; box-sizing: border-box; }
+    .ck-view { min-height: calc(100vh - 270px); padding: 18px; box-sizing: border-box; }
     .ck-title-row { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 16px; }
     .ck-title-row h2 { margin: 0 0 5px; font-size: 20px; }
     .ck-title-row p, .ck-muted { margin: 0; color: var(--ck-muted); font-size: 13px; }
@@ -28,6 +28,42 @@
     .ck-lines { display: grid; gap: 8px; margin: 12px 0; }
     .ck-line { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(100px, 1fr) minmax(110px, 1fr) 38px; gap: 8px; align-items: center; }
     .ck-total { text-align: right; font-weight: 800; font-size: 18px; margin: 14px 0; }
+    .ck-order-view.cashier-mode #ck-order-form { display: grid; grid-template-columns: minmax(290px, 24%) minmax(0, 1fr); gap: 16px; align-items: stretch; min-height: calc(100vh - 350px); }
+    .ck-order-items, .ck-order-summary { min-width: 0; }
+    .ck-order-items { display: none; }
+    .ck-order-view.cashier-mode .ck-order-summary { grid-column: 1; grid-row: 1; position: sticky; top: 14px; padding: 16px; border: 1px solid var(--ck-border); border-radius: 6px; background: var(--ck-soft); }
+    .ck-order-view.cashier-mode .ck-order-items { display: block; grid-column: 2; grid-row: 1; min-height: max(520px, calc(100vh - 350px)); padding: 16px; border: 1px solid var(--ck-border); border-radius: 6px; background: #fff; }
+    .ck-order-view.cashier-mode .ck-order-lines { max-height: 300px; overflow-y: auto; }
+    .ck-order-view.cashier-mode .ck-line { grid-template-columns: minmax(0, 1fr) 62px 32px; gap: 5px; padding: 8px; border: 1px solid var(--ck-border); border-radius: 5px; background: #fff; }
+    .ck-order-view.cashier-mode .ck-line select { grid-column: 1; grid-row: 1; min-width: 0; }
+    .ck-order-view.cashier-mode .ck-line input { grid-column: 2; grid-row: 1; min-width: 0; text-align: right; }
+    .ck-order-view.cashier-mode .ck-line .ck-line-price { grid-column: 1 / 3; grid-row: 2; font-size: 11px; }
+    .ck-order-view.cashier-mode .ck-line > .ck-button { grid-column: 3; grid-row: 1 / 3; padding: 4px; }
+    .ck-order-view.cashier-mode .ck-line.is-empty { display: none; }
+    .ck-order-view.cashier-mode .ck-total { padding-top: 14px; border-top: 1px solid var(--ck-border); text-align: left; }
+    .ck-order-view.cashier-mode #ck-submit-order { width: 100%; min-height: 42px; }
+    .ck-cart-heading { display: flex; justify-content: space-between; gap: 10px; align-items: start; margin-bottom: 12px; }
+    .ck-cart-heading h3 { margin: 0 0 3px; font-size: 16px; }
+    .ck-cart-count { color: var(--ck-muted); font-size: 11px; }
+    .ck-pos-catalog-toolbar { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: 12px; align-items: end; margin-bottom: 16px; }
+    .ck-pos-categories { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ck-pos-category { min-height: 36px; padding: 7px 11px; border: 1px solid var(--ck-border); border-radius: 5px; background: #fff; color: #52665f; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .ck-pos-category.active { border-color: var(--ck-green); background: var(--ck-green); color: #fff; }
+    .ck-pos-product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: 10px; }
+    .ck-pos-product { display: flex; flex-direction: column; justify-content: space-between; min-height: 102px; padding: 12px; border: 0; border-radius: 6px; color: #fff; text-align: left; font: inherit; cursor: pointer; box-shadow: 0 2px 5px rgba(23, 43, 58, .12); transition: filter .15s ease, transform .15s ease; }
+    .ck-pos-product:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    .ck-pos-product:focus-visible { outline: 3px solid rgba(23, 107, 86, .3); outline-offset: 2px; }
+    .ck-pos-product:nth-child(8n + 1) { background: #176b56; }
+    .ck-pos-product:nth-child(8n + 2) { background: #197c91; }
+    .ck-pos-product:nth-child(8n + 3) { background: #4b7b36; }
+    .ck-pos-product:nth-child(8n + 4) { background: #b85c16; }
+    .ck-pos-product:nth-child(8n + 5) { background: #a33e48; }
+    .ck-pos-product:nth-child(8n + 6) { background: #31678a; }
+    .ck-pos-product:nth-child(8n + 7) { background: #72542c; }
+    .ck-pos-product:nth-child(8n) { background: #3d695f; }
+    .ck-pos-product-name { font-size: 13px; font-weight: 800; line-height: 1.3; overflow-wrap: anywhere; }
+    .ck-pos-product-meta { margin-top: 10px; font-size: 11px; opacity: .9; }
+    .ck-pos-product-price { align-self: flex-end; margin-top: 8px; font-size: 12px; font-weight: 800; }
     .ck-button { border: 1px solid var(--ck-green); border-radius: 5px; background: var(--ck-green); color: #fff; font: inherit; font-weight: 700; padding: 9px 13px; cursor: pointer; }
     .ck-button.secondary { background: #fff; color: var(--ck-green); }
     .ck-button.danger { border-color: #b42318; background: #b42318; }
@@ -48,6 +84,20 @@
     .ck-message.error { color: #b42318; }
     .ck-message.success { color: #176b56; }
     .ck-order-list { display: grid; gap: 12px; }
+    .ck-display-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--ck-border); border-radius: 6px; background: #fff; }
+    .ck-display-switch button { min-height: 34px; padding: 6px 12px; border: 0; border-radius: 4px; background: transparent; color: #52665f; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .ck-display-switch button[aria-pressed="true"] { background: var(--ck-green); color: #fff; }
+    .ck-display-switch button:focus-visible { outline: 3px solid rgba(23, 107, 86, .2); outline-offset: 2px; }
+    .ck-cashier-wrap { overflow-x: auto; border: 1px solid var(--ck-border); border-radius: 6px; background: #fff; }
+    .ck-cashier-table { width: 100%; min-width: 680px; border-collapse: collapse; font-size: 12px; }
+    .ck-cashier-table th, .ck-cashier-table td { padding: 11px 12px; border-bottom: 1px solid #e5ece9; text-align: left; vertical-align: top; }
+    .ck-cashier-table th { background: var(--ck-soft); color: #52665f; font-size: 10px; text-transform: uppercase; }
+    .ck-cashier-table tbody tr:last-child td { border-bottom: 0; }
+    .ck-cashier-table .numeric { text-align: right; white-space: nowrap; }
+    .ck-cashier-number { display: block; color: #163c33; font-weight: 800; overflow-wrap: anywhere; }
+    .ck-cashier-details summary { min-width: 118px; color: var(--ck-green); font-weight: 700; cursor: pointer; }
+    .ck-cashier-details[open] { min-width: 260px; }
+    .ck-cashier-detail-body { padding-top: 10px; }
     .ck-order-card { overflow: hidden; border: 1px solid var(--ck-border); border-radius: 7px; background: #fff; }
     .ck-order-head { display: grid; grid-template-columns: minmax(170px, 1.4fr) minmax(120px, 1fr) minmax(120px, .8fr) auto; gap: 16px; align-items: center; padding: 13px 15px; background: #f7faf8; border-bottom: 1px solid #e5ece9; }
     .ck-order-head > div { min-width: 0; }
@@ -71,7 +121,8 @@
     .ck-kitchen-heading { margin-bottom: 16px; }
     .ck-kitchen-heading h2 { margin: 0 0 5px; font-size: 20px; }
     .ck-kitchen-heading p { margin: 0; color: var(--ck-muted); font-size: 13px; }
-    .ck-catalog-form { padding: 16px; border: 1px solid var(--ck-border); border-radius: 6px; background: var(--ck-soft); }
+    .ck-catalog-form { grid-template-columns: minmax(180px, 1.5fr) minmax(100px, .8fr) minmax(130px, 1fr) minmax(130px, .9fr) auto; padding: 16px; border: 1px solid var(--ck-border); border-radius: 6px; background: var(--ck-soft); }
+    .ck-catalog-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
     .ck-catalog-list { margin-top: 16px; }
     .ck-incoming-list { display: grid; gap: 12px; }
     .ck-order-details summary { color: var(--ck-green); font-size: 12px; font-weight: 700; cursor: pointer; }
@@ -84,12 +135,17 @@
     .ck-item-value { text-align: right; white-space: nowrap; }
     .ck-requested-row { grid-template-columns: minmax(180px, 1fr) minmax(100px, 160px); }
     .ck-fulfill-row { grid-template-columns: minmax(160px, 1.5fr) minmax(100px, .6fr) minmax(140px, .8fr); }
+    .ck-fulfill-price-row { grid-template-columns: minmax(150px, 1.2fr) minmax(88px, .65fr) minmax(125px, .8fr) minmax(125px, .8fr); }
     .ck-fulfill-help { margin-bottom: 8px; color: var(--ck-muted); font-size: 12px; line-height: 1.45; }
     .ck-actual { width: 82px !important; min-height: 34px !important; padding: 5px 7px; border: 1px solid #cbd7d2; border-radius: 4px; text-align: right; }
+    .ck-price-control { display: inline-flex; align-items: center; min-height: 34px; gap: 4px; padding: 0 6px; border: 1px solid #cbd7d2; border-radius: 4px; background: #fff; color: var(--ck-muted); font-size: 11px; }
+    .ck-actual-price { width: 100px !important; min-width: 0; border: 0 !important; padding: 5px 2px !important; background: transparent !important; color: var(--ck-ink) !important; }
     .ck-order-footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 15px; border-top: 1px solid #edf1ef; }
     .ck-print-actions { display: flex; flex-wrap: wrap; gap: 7px; }
     .ck-order-footer .ck-button { font-size: 12px; }
     @media (max-width: 680px) {
+      .ck-wrap { padding: 12px 10px 20px; }
+      .ck-panel, .ck-view { min-height: 0; }
       .ck-toolbar { align-items: stretch; flex-direction: column; }
       .ck-outlet-control { width: 100%; }
       .ck-form-grid { grid-template-columns: 1fr 1fr; }
@@ -98,8 +154,17 @@
       .ck-view { padding: 14px 10px; }
       .ck-title-row { flex-direction: column; }
       .ck-title-row > .ck-actions { width: 100%; align-items: end; }
+      .ck-order-view.cashier-mode #ck-order-form { grid-template-columns: minmax(0, 1fr); gap: 12px; min-height: 0; }
+      .ck-order-view.cashier-mode .ck-order-items { grid-column: 1; grid-row: 1; min-height: 380px; padding: 12px; }
+      .ck-order-view.cashier-mode .ck-order-summary { grid-column: 1; grid-row: 2; position: static; padding: 12px; }
+      .ck-order-view.cashier-mode .ck-line { grid-template-columns: minmax(0, 1fr) 58px 30px; }
+      .ck-pos-catalog-toolbar { grid-template-columns: minmax(0, 1fr); }
+      .ck-pos-product-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+      .ck-pos-product { min-height: 92px; padding: 10px; }
       .ck-history-tools { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px; }
       .ck-history-count { margin: 0; }
+      .ck-display-switch { width: 100%; }
+      .ck-display-switch button { flex: 1; }
       .ck-pagination { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
       .ck-pagination-label { grid-column: 1 / -1; grid-row: 1; }
       .ck-pagination .ck-button { width: 100%; min-width: 0; }
@@ -129,7 +194,11 @@
 (function() {
   var user = {};
   try { user = JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch (error) {}
-  if (!user.username) window.location.href = 'login.html';
+  if (!user.username) {
+    var loginUrl = new URL('login.html', window.location.href);
+    loginUrl.searchParams.set('returnTo', window.location.href);
+    window.location.href = loginUrl.href;
+  }
 })();
 </script>
 <header class="rbm-page-header">
@@ -150,14 +219,24 @@
       <button class="ck-tab" data-view="history-view" type="button">Riwayat PO</button>
       <button class="ck-tab" data-view="kitchen-view" id="ck-kitchen-tab" type="button" hidden>Central Kitchen</button>
     </nav>
-    <section class="ck-view" id="order-view">
-      <div class="ck-title-row"><div><h2>Buat Purchase Order</h2><p>Ajukan barang ke Central Kitchen. Harga pada PO mengikuti harga katalog saat pemesanan.</p></div></div>
+    <section class="ck-view ck-order-view cashier-mode" id="order-view">
+      <div class="ck-title-row"><div><h2>Buat Purchase Order</h2><p>Ajukan barang ke Central Kitchen. Harga pada PO mengikuti harga katalog saat pemesanan.</p></div><div class="ck-actions"><div class="ck-display-switch" role="group" aria-label="Tampilan form pemesanan"><button type="button" data-order-entry-display="standard" aria-pressed="false">Standar</button><button type="button" data-order-entry-display="cashier" aria-pressed="true">Kasir</button></div><button type="button" class="ck-button secondary" id="ck-copy-ordering-link">Salin link pemesanan</button></div></div>
       <div id="ck-order-form">
-        <div id="ck-order-lines" class="ck-lines"></div>
-        <div class="ck-actions"><button type="button" class="ck-button secondary" id="ck-add-line">Tambah Barang</button></div>
-        <div class="ck-field" style="margin-top:14px"><label for="ck-note">Catatan outlet</label><input id="ck-note" maxlength="300" placeholder="Catatan pengiriman (opsional)"></div>
-        <div id="ck-order-total" class="ck-total">Total: Rp 0</div>
-        <button type="button" class="ck-button" id="ck-submit-order">Kirim PO</button>
+        <div class="ck-order-summary">
+          <div class="ck-cart-heading"><div><h3>Pesanan Baru</h3><span id="ck-order-item-count" class="ck-cart-count">0 barang</span></div></div>
+          <div id="ck-order-lines" class="ck-lines"></div>
+          <div class="ck-actions"><button type="button" class="ck-button secondary" id="ck-add-line">Tambah Barang</button></div>
+          <div class="ck-field" style="margin-top:14px"><label for="ck-note">Catatan outlet</label><input id="ck-note" maxlength="300" placeholder="Catatan pengiriman (opsional)"></div>
+          <div id="ck-order-total" class="ck-total">Total: Rp 0</div>
+          <button type="button" class="ck-button" id="ck-submit-order">Kirim PO</button>
+        </div>
+        <section class="ck-order-items" aria-label="Katalog barang">
+          <div class="ck-pos-catalog-toolbar">
+            <div class="ck-field"><label for="ck-order-catalog-search">Cari barang</label><input id="ck-order-catalog-search" type="search" placeholder="Nama barang" autocomplete="off"></div>
+            <div id="ck-order-categories" class="ck-pos-categories" role="group" aria-label="Kategori barang"></div>
+          </div>
+          <div id="ck-order-products" class="ck-pos-product-grid"></div>
+        </section>
       </div>
       <p id="ck-order-message" class="ck-message" role="status"></p>
     </section>
@@ -191,10 +270,16 @@
       </section>
       <section id="kitchen-catalog" class="ck-kitchen-view" hidden>
         <div class="ck-kitchen-heading"><h2>Katalog Barang</h2><p>Kelola barang, satuan, dan harga untuk pesanan outlet.</p></div>
+        <div class="ck-catalog-tools">
+          <button type="button" class="ck-button secondary" id="ck-download-catalog-template">Unduh Template Excel</button>
+          <button type="button" class="ck-button secondary" id="ck-import-catalog-button">Impor Excel</button>
+          <input type="file" id="ck-import-catalog-file" accept=".xlsx,.xls" hidden>
+        </div>
         <div id="ck-catalog-form" class="ck-form-grid ck-catalog-form">
           <div class="ck-field"><label for="ck-item-name">Nama barang</label><input id="ck-item-name" maxlength="100" placeholder="Contoh: Ayam marinasi"></div>
           <div class="ck-field"><label for="ck-item-unit">Satuan</label><input id="ck-item-unit" maxlength="24" placeholder="kg, pack, pcs"></div>
           <div class="ck-field"><label for="ck-item-price">Harga per satuan (Rp)</label><input id="ck-item-price" type="number" min="0" step="1" inputmode="numeric"></div>
+          <div class="ck-field"><label for="ck-item-category">Kategori (opsional)</label><input id="ck-item-category" maxlength="60" placeholder="Contoh: Bahan baku"></div>
           <button type="button" class="ck-button" id="ck-save-item">Tambah Barang</button>
         </div>
         <p id="ck-catalog-message" class="ck-message" role="status"></p>
@@ -206,6 +291,7 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 <script src="firebase-storage.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script>
 (function() {
   'use strict';
@@ -222,7 +308,12 @@
   var user = {};
   var db;
   var canChooseOutlet = false;
+  var canDeleteOrders = false;
+  var canEditOrderPrices = false;
   var isKitchen = false;
+  var orderEntryDisplayMode = 'cashier';
+  var selectedOrderCategory = 'all';
+  var requestedPoId = new URLSearchParams(window.location.search).get('po') || '';
   var orderRef;
   var catalogRef;
 
@@ -242,6 +333,19 @@
     try { names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}'); } catch (error) {}
     return names[id] || (id === KITCHEN_ID ? 'Central Kitchen' : (id.indexOf(' ') >= 0 ? id : id.replace(/[-_]/g, ' ').replace(/\b\w/g, function(char) { return char.toUpperCase(); })));
   }
+  function allocateOrderNumber(timestamp) {
+    var date = new Date(timestamp);
+    var year = String(date.getFullYear());
+    var month = String(date.getMonth() + 1).padStart(2, '0');
+    var day = String(date.getDate()).padStart(2, '0');
+    var monthKey = year + month;
+    var sequenceRef = db.ref('rbm_pro/central_kitchen/order_sequences/' + monthKey);
+    return sequenceRef.transaction(function(current) { return (Number(current) || 0) + 1; }).then(function(result) {
+      if (!result.committed) throw new Error('Nomor PO gagal dialokasikan.');
+      var sequence = String(result.snapshot.val()).padStart(3, '0');
+      return 'RBM-' + day + month + year.slice(-2) + sequence;
+    });
+  }
   function isTestOutlet(id) {
     return /\btest\b/i.test(String(id) + ' ' + labelForOutlet(id));
   }
@@ -252,6 +356,13 @@
     } catch (error) { return []; }
   }
   function money(value) { return 'Rp ' + (Number(value) || 0).toLocaleString('id-ID'); }
+  function formatPriceInput(value) {
+    return (Number(value) || 0).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+  }
+  function parsePriceInput(value) {
+    var normalized = String(value == null ? '' : value).trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+    return normalized ? Number(normalized) : NaN;
+  }
   function message(id, text, isError) {
     var element = document.getElementById(id);
     element.textContent = text || '';
@@ -272,7 +383,7 @@
     if (isKitchen && document.getElementById('order-view').hidden === false) switchView('kitchen-view');
     if (!isKitchen && document.getElementById('kitchen-view').hidden === false) switchView('order-view');
     renderOrderLines();
-    loadOrderPage('history', 'first');
+    if (!requestedPoId) loadOrderPage('history', 'first');
     if (isKitchen) loadOrderPage('incoming', 'first');
     else {
       orderPages.incoming.rows = [];
@@ -293,11 +404,21 @@
       tab.setAttribute('aria-pressed', String(active));
     });
   }
+  function setOrderEntryDisplayMode(mode) {
+    orderEntryDisplayMode = mode === 'cashier' ? 'cashier' : 'standard';
+    document.getElementById('order-view').classList.toggle('cashier-mode', orderEntryDisplayMode === 'cashier');
+    document.querySelectorAll('[data-order-entry-display]').forEach(function(button) {
+      button.setAttribute('aria-pressed', String(button.dataset.orderEntryDisplay === orderEntryDisplayMode));
+    });
+  }
   document.querySelectorAll('.ck-tab').forEach(function(tab) {
     tab.addEventListener('click', function() { if (!tab.hidden) switchView(tab.dataset.view); });
   });
   document.querySelectorAll('.ck-kitchen-tab').forEach(function(tab) {
     tab.addEventListener('click', function() { switchKitchenView(tab.dataset.kitchenView); });
+  });
+  document.querySelectorAll('[data-order-entry-display]').forEach(function(button) {
+    button.addEventListener('click', function() { setOrderEntryDisplayMode(button.dataset.orderEntryDisplay); });
   });
   function itemOptions(selected) {
     var html = '<option value="">Pilih barang</option>';
@@ -316,14 +437,16 @@
       var select = row.querySelector('select');
       var selected = select.value;
       select.innerHTML = itemOptions(selected);
+      updateLinePrice(row);
     });
     updateOrderTotal();
   }
-  function addOrderLine() {
+  function addOrderLine(itemId) {
     var container = document.getElementById('ck-order-lines');
     var row = document.createElement('div');
     row.className = 'ck-line';
     row.innerHTML = '<select aria-label="Barang">' + itemOptions('') + '</select><input type="number" min="1" step="any" value="1" aria-label="Jumlah"><span class="ck-line-price ck-muted">Pilih barang</span><button class="ck-button secondary" type="button" title="Hapus baris" aria-label="Hapus baris">×</button>';
+    if (itemId) row.querySelector('select').value = itemId;
     row.querySelector('select').addEventListener('change', function() { updateLinePrice(row); updateOrderTotal(); });
     row.querySelector('input').addEventListener('input', updateOrderTotal);
     row.querySelector('button').addEventListener('click', function() { row.remove(); if (!container.children.length) addOrderLine(); updateOrderTotal(); });
@@ -331,7 +454,9 @@
     updateLinePrice(row);
   }
   function updateLinePrice(row) {
-    var item = catalog[row.querySelector('select').value];
+    var itemId = row.querySelector('select').value;
+    var item = catalog[itemId];
+    row.classList.toggle('is-empty', !itemId);
     row.querySelector('.ck-line-price').textContent = item ? money(item.price) + ' / ' + item.unit : 'Pilih barang';
   }
   function getOrderItems() {
@@ -346,16 +471,19 @@
     return result;
   }
   function updateOrderTotal() {
-    var total = getOrderItems().reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0);
+    var items = getOrderItems();
+    var total = items.reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0);
+    var quantity = items.reduce(function(sum, item) { return sum + item.quantity; }, 0);
     document.getElementById('ck-order-total').textContent = 'Total: ' + money(total);
+    document.getElementById('ck-order-item-count').textContent = items.length + ' jenis barang | ' + quantity.toLocaleString('id-ID') + ' item';
   }
   function renderCatalog() {
     var container = document.getElementById('ck-catalog-list');
     var ids = Object.keys(catalog).sort(function(a, b) { return (catalog[a].name || '').localeCompare(catalog[b].name || ''); });
     if (!ids.length) { container.innerHTML = '<div class="ck-empty">Katalog masih kosong. Tambahkan barang di atas.</div>'; return; }
-    container.innerHTML = '<table class="ck-table"><thead><tr><th>Barang</th><th>Satuan</th><th class="numeric">Harga / Satuan</th><th>Status</th><th>Aksi</th></tr></thead><tbody>' + ids.map(function(id) {
+    container.innerHTML = '<table class="ck-table"><thead><tr><th>Barang</th><th>Kategori</th><th>Satuan</th><th class="numeric">Harga / Satuan</th><th>Status</th><th>Aksi</th></tr></thead><tbody>' + ids.map(function(id) {
       var item = catalog[id];
-      return '<tr><td>' + safe(item.name) + '</td><td>' + safe(item.unit) + '</td><td class="numeric">' + money(item.price) + '</td><td>' + (item.active === false ? 'Nonaktif' : 'Aktif') + '</td><td><button type="button" class="ck-button secondary" data-toggle-item="' + safe(id) + '">' + (item.active === false ? 'Aktifkan' : 'Nonaktifkan') + '</button></td></tr>';
+      return '<tr><td>' + safe(item.name) + '</td><td>' + safe(item.category || '-') + '</td><td>' + safe(item.unit) + '</td><td class="numeric">' + money(item.price) + '</td><td>' + (item.active === false ? 'Nonaktif' : 'Aktif') + '</td><td><button type="button" class="ck-button secondary" data-toggle-item="' + safe(id) + '">' + (item.active === false ? 'Aktifkan' : 'Nonaktifkan') + '</button></td></tr>';
     }).join('') + '</tbody></table>';
     container.querySelectorAll('[data-toggle-item]').forEach(function(button) {
       button.addEventListener('click', function() {
@@ -363,6 +491,62 @@
         catalogRef.child(id).update({ active: catalog[id].active === false });
       });
     });
+  }
+  function renderOrderCatalog() {
+    var ids = Object.keys(catalog).filter(function(id) { return catalog[id].active !== false; }).sort(function(a, b) {
+      return (catalog[a].name || '').localeCompare(catalog[b].name || '');
+    });
+    var categories = Array.from(new Set(ids.map(function(id) { return catalog[id].category || catalog[id].kategori || ''; }).filter(Boolean)));
+    if (selectedOrderCategory !== 'all' && categories.indexOf(selectedOrderCategory) < 0) selectedOrderCategory = 'all';
+    var categoryButtons = [{ id: 'all', label: 'Semua Barang' }].concat(categories.map(function(category) { return { id: category, label: category }; }));
+    var categoryContainer = document.getElementById('ck-order-categories');
+    categoryContainer.innerHTML = categoryButtons.map(function(category) {
+      return '<button type="button" class="ck-pos-category' + (category.id === selectedOrderCategory ? ' active' : '') + '" data-order-category="' + safe(category.id) + '" aria-pressed="' + (category.id === selectedOrderCategory) + '">' + safe(category.label) + '</button>';
+    }).join('');
+    categoryContainer.querySelectorAll('[data-order-category]').forEach(function(button) {
+      button.addEventListener('click', function() {
+        selectedOrderCategory = button.dataset.orderCategory;
+        renderOrderCatalog();
+      });
+    });
+    var query = document.getElementById('ck-order-catalog-search').value.trim().toLocaleLowerCase('id-ID');
+    var products = ids.filter(function(id) {
+      var item = catalog[id];
+      var category = item.category || item.kategori || '';
+      var matchesCategory = selectedOrderCategory === 'all' || category === selectedOrderCategory;
+      return matchesCategory && String(item.name || '').toLocaleLowerCase('id-ID').indexOf(query) >= 0;
+    });
+    var container = document.getElementById('ck-order-products');
+    if (!products.length) {
+      container.innerHTML = '<div class="ck-empty">' + (ids.length ? 'Barang tidak ditemukan.' : 'Katalog barang masih kosong.') + '</div>';
+      return;
+    }
+    container.innerHTML = products.map(function(id) {
+      var item = catalog[id];
+      return '<button type="button" class="ck-pos-product" data-order-item="' + safe(id) + '"><span class="ck-pos-product-name">' + safe(item.name) + '</span><span class="ck-pos-product-meta">' + safe(item.unit) + '</span><strong class="ck-pos-product-price">' + money(item.price) + '</strong></button>';
+    }).join('');
+    container.querySelectorAll('[data-order-item]').forEach(function(button) {
+      button.addEventListener('click', function() { addCatalogItemToOrder(button.dataset.orderItem); });
+    });
+  }
+  function addCatalogItemToOrder(itemId) {
+    var rows = Array.from(document.querySelectorAll('#ck-order-lines .ck-line'));
+    var existing = rows.find(function(row) { return row.querySelector('select').value === itemId; });
+    if (existing) {
+      var quantityInput = existing.querySelector('input');
+      quantityInput.value = Number(quantityInput.value || 0) + 1;
+      updateOrderTotal();
+      return;
+    }
+    var empty = rows.find(function(row) { return !row.querySelector('select').value; });
+    if (!empty) {
+      addOrderLine(itemId);
+      updateOrderTotal();
+      return;
+    }
+    empty.querySelector('select').value = itemId;
+    updateLinePrice(empty);
+    updateOrderTotal();
   }
   function renderItems(items, actual) {
     return '<div class="ck-item-list ck-fulfilled-list"><div class="ck-item-row ck-item-head"><span>Barang</span><span class="ck-item-value">Diminta</span>' + (actual ? '<span class="ck-item-value">Dikirim</span>' : '') + '<span class="ck-item-value">Harga</span>' + (actual ? '<span class="ck-item-value">Subtotal</span>' : '') + '</div>' + items.map(function(item) {
@@ -394,6 +578,12 @@
     document.querySelectorAll('#ck-order-list [data-print-order]').forEach(function(button) {
       button.addEventListener('click', function() { printOrder(orders[button.dataset.printOrder] || incomingOrders[button.dataset.printOrder], button.dataset.printType); });
     });
+    document.querySelectorAll('#ck-order-list [data-copy-order]').forEach(function(button) {
+      button.addEventListener('click', function() { copyOrderLink(button.dataset.copyOrder, button); });
+    });
+    document.querySelectorAll('#ck-order-list [data-delete-order]').forEach(function(button) {
+      button.addEventListener('click', function() { deleteOrder(button.dataset.deleteOrder, button); });
+    });
   }
   function renderIncomingOrders() {
     incomingOrders = {};
@@ -402,6 +592,18 @@
     renderPagination('incoming');
     document.querySelectorAll('#ck-incoming-list [data-fulfill-order]').forEach(function(button) {
       button.addEventListener('click', function() { fulfillOrder(button.dataset.fulfillOrder); });
+    });
+    document.querySelectorAll('#ck-incoming-list [data-copy-order]').forEach(function(button) {
+      button.addEventListener('click', function() { copyOrderLink(button.dataset.copyOrder, button); });
+    });
+    document.querySelectorAll('#ck-incoming-list [data-delete-order]').forEach(function(button) {
+      button.addEventListener('click', function() { deleteOrder(button.dataset.deleteOrder, button); });
+    });
+    document.querySelectorAll('#ck-incoming-list .ck-actual-price').forEach(function(input) {
+      input.addEventListener('blur', function() {
+        var value = parsePriceInput(input.value);
+        if (Number.isFinite(value) && value >= 0) input.value = formatPriceInput(value);
+      });
     });
   }
   function renderPagination(type) {
@@ -458,39 +660,134 @@
   }
   function makeOrderTable(list, kitchenQueue) {
     if (!list.length) return '<div class="ck-empty">' + (kitchenQueue ? 'Belum ada PO yang menunggu diproses.' : 'Belum ada PO.') + '</div>';
-    return '<div class="ck-order-list">' + list.map(function(order) {
-      var status = order.status === 'fulfilled' ? '<span class="ck-badge done">Dikirim</span>' : '<span class="ck-badge">Menunggu</span>';
-      var total = order.status === 'fulfilled' ? order.actualTotal : order.requestTotal;
-      var actions = order.status === 'fulfilled' ? printButtons(order.id) : (kitchenQueue ? '<button type="button" class="ck-button" data-fulfill-order="' + safe(order.id) + '">Simpan Jumlah Aktual &amp; Proses Pengiriman</button>' : status);
-      var itemsContent = kitchenQueue && order.status === 'pending' ? renderFulfillInputs(order) : (order.status === 'fulfilled' ? renderItems(order.items || [], true) : renderRequestedItems(order));
-      var orderDetails = kitchenQueue ? itemsContent : '<details class="ck-order-details"><summary>Detail barang</summary>' + itemsContent + '</details>';
-      return '<article class="ck-order-card"><header class="ck-order-head"><div><span class="ck-order-label">Nomor PO</span><strong class="ck-order-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></div><div><span class="ck-order-label">Outlet</span><strong class="ck-order-outlet">' + safe(labelForOutlet(order.outletId)) + '</strong></div><div><span class="ck-order-label">' + (order.status === 'fulfilled' ? 'Nilai Nota' : 'Nilai PO') + '</span><strong class="ck-order-amount">' + money(total) + '</strong></div><div>' + status + '</div></header><div class="ck-order-body">' + orderDetails + '</div>' + (order.status === 'fulfilled' ? '<footer class="ck-order-footer"><div class="ck-print-actions">' + printButtons(order.id) + '</div></footer>' : (kitchenQueue ? '<footer class="ck-order-footer">' + actions + '</footer>' : '')) + '</article>';
-    }).join('') + '</div>';
+    return makeCashierTable(list, kitchenQueue);
+  }
+  function makeCashierTable(list, kitchenQueue) {
+    var rows = list.map(function(order) {
+      var fulfilled = order.status === 'fulfilled';
+      var status = fulfilled ? '<span class="ck-badge done">Dikirim</span>' : '<span class="ck-badge">Menunggu</span>';
+      var total = fulfilled ? order.actualTotal : order.requestTotal;
+      var items = kitchenQueue && !fulfilled ? renderFulfillInputs(order) : (fulfilled ? renderItems(order.items || [], true) : renderRequestedItems(order));
+      var deleteButton = canDeleteOrders ? '<button type="button" class="ck-button danger" data-delete-order="' + safe(order.id) + '">Hapus PO</button>' : '';
+      var actions = kitchenQueue && !fulfilled
+        ? '<div class="ck-actions"><button type="button" class="ck-button" data-fulfill-order="' + safe(order.id) + '">Simpan &amp; Proses</button><button type="button" class="ck-button secondary" data-copy-order="' + safe(order.id) + '">Salin link PO</button>' + deleteButton + '</div>'
+        : '<div class="ck-print-actions"><button type="button" class="ck-button secondary" data-copy-order="' + safe(order.id) + '">Salin link PO</button>' + (fulfilled ? printButtons(order.id) : '') + deleteButton + '</div>';
+      return '<tr><td><strong class="ck-cashier-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></td><td>' + safe(labelForOutlet(order.outletId)) + '</td><td>' + status + '</td><td class="numeric"><strong>' + money(total) + '</strong></td><td><details class="ck-cashier-details"><summary>Detail &amp; aksi</summary><div class="ck-cashier-detail-body">' + items + actions + '</div></details></td></tr>';
+    }).join('');
+    return '<div class="ck-cashier-wrap"><table class="ck-cashier-table"><thead><tr><th>Nomor PO</th><th>Outlet</th><th>Status</th><th class="numeric">Nilai</th><th>Rincian</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
   function renderFulfillInputs(order) {
-    return '<div class="ck-fulfill-help">Isi jumlah yang benar-benar dikirim. Jumlah boleh lebih sedikit dari permintaan; isi 0 jika barang tidak dikirim.</div><div class="ck-item-list ck-fulfill-list"><div class="ck-item-row ck-item-head ck-fulfill-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span><span class="ck-item-value">Jumlah aktual</span></div>' + (order.items || []).map(function(item, index) {
-      return '<div class="ck-item-row ck-fulfill-row"><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity).toLocaleString('id-ID') + ' ' + safe(item.unit) + '</span><span class="ck-item-value" data-label="Jumlah aktual"><input class="ck-actual" type="number" min="0" max="' + Number(item.quantity) + '" step="any" value="" placeholder="0" data-actual-order="' + safe(order.id) + '" data-actual-index="' + index + '" aria-label="Jumlah aktual ' + safe(item.name) + ' yang dikirim"></span></div>';
+    var rowClass = canEditOrderPrices ? 'ck-fulfill-row ck-fulfill-price-row' : 'ck-fulfill-row';
+    var priceHeading = canEditOrderPrices ? '<span class="ck-item-value">Harga satuan</span>' : '';
+    return '<div class="ck-fulfill-help">Masukkan jumlah aktual yang dikirim. Jumlah boleh lebih atau kurang dari PO; isi 0 jika barang tidak dikirim.</div><div class="ck-item-list ck-fulfill-list"><div class="ck-item-row ck-item-head ' + rowClass + '"><span>Barang</span><span class="ck-item-value">Jumlah PO</span><span class="ck-item-value">Jumlah aktual</span>' + priceHeading + '</div>' + (order.items || []).map(function(item, index) {
+      var priceInput = canEditOrderPrices ? '<span class="ck-item-value" data-label="Harga satuan"><span class="ck-price-control"><span>Rp</span><input class="ck-actual-price" type="text" inputmode="decimal" value="' + formatPriceInput(item.unitPrice) + '" data-price-order="' + safe(order.id) + '" data-price-index="' + index + '" aria-label="Harga satuan ' + safe(item.name) + '"></span></span>' : '';
+      return '<div class="ck-item-row ' + rowClass + '"><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity).toLocaleString('id-ID') + ' ' + safe(item.unit) + '</span><span class="ck-item-value" data-label="Jumlah aktual"><input class="ck-actual" type="number" min="0" step="any" value="" placeholder="0" data-actual-order="' + safe(order.id) + '" data-actual-index="' + index + '" aria-label="Jumlah aktual ' + safe(item.name) + ' yang dikirim"></span>' + priceInput + '</div>';
     }).join('') + '</div>';
   }
   function printButtons(orderId) {
     return '<button type="button" class="ck-button secondary" data-print-order="' + safe(orderId) + '" data-print-type="delivery">Cetak Surat Jalan</button> <button type="button" class="ck-button secondary" data-print-order="' + safe(orderId) + '" data-print-type="invoice">Cetak Nota</button>';
+  }
+  function appLink(params) {
+    var url = new URL(window.location.href);
+    url.search = '';
+    Object.keys(params).forEach(function(key) { url.searchParams.set(key, params[key]); });
+    return url.href;
+  }
+  function writeClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function() { return fallbackClipboard(text); });
+    }
+    return Promise.resolve().then(function() { fallbackClipboard(text); });
+  }
+  function fallbackClipboard(text) {
+    var input = document.createElement('textarea');
+    input.value = text;
+    input.setAttribute('readonly', '');
+    input.style.position = 'fixed';
+    input.style.opacity = '0';
+    document.body.appendChild(input);
+    input.select();
+    var copied = document.execCommand('copy');
+    input.remove();
+    if (!copied) throw new Error('Clipboard tidak tersedia.');
+  }
+  function copyLink(text, button) {
+    var label = button.textContent;
+    writeClipboard(text).then(function() {
+      button.textContent = 'Link tersalin';
+      window.setTimeout(function() { button.textContent = label; }, 1800);
+    }).catch(function() { message('ck-order-message', 'Link gagal disalin. Periksa izin clipboard browser.', true); });
+  }
+  function copyOrderLink(orderId, button) {
+    copyLink(appLink({ po: orderId }), button);
+  }
+  function loadSharedOrder(orderId) {
+    orderPages.history.requestId += 1;
+    return orderRef.child(orderId).once('value').then(function(snapshot) {
+      var value = snapshot.val();
+      if (!value) throw new Error('PO tidak ditemukan.');
+      if (!canChooseOutlet && user.outlet !== KITCHEN_ID && String(value.outletId) !== String(user.outlet)) {
+        throw new Error('PO ini bukan milik outlet akun Anda.');
+      }
+      orderPages.history.rows = [Object.assign({ id: orderId }, value)];
+      orderPages.history.page = 1;
+      orderPages.history.hasOlder = false;
+      orderPages.history.hasNewer = false;
+      requestedPoId = '';
+      renderOrders();
+      switchView('history-view');
+    }).catch(function(error) {
+      message('ck-order-message', error.message || 'Gagal membuka PO.', true);
+    });
   }
   function fulfillOrder(id) {
     var order = incomingOrders[id];
     if (!order || order.status !== 'pending') return;
     var items = (order.items || []).map(function(item, index) {
       var input = document.querySelector('[data-actual-order="' + CSS.escape(id) + '"][data-actual-index="' + index + '"]');
-      return Object.assign({}, item, { shippedQuantity: input ? Number(input.value) : 0 });
+      var priceInput = document.querySelector('[data-price-order="' + CSS.escape(id) + '"][data-price-index="' + index + '"]');
+      var unitPrice = canEditOrderPrices && priceInput ? parsePriceInput(priceInput.value) : Number(item.unitPrice) || 0;
+      return Object.assign({}, item, { shippedQuantity: input ? Number(input.value) : 0, unitPrice: unitPrice });
     });
     if (!items.some(function(item) { return item.shippedQuantity > 0; })) { window.alert('Jumlah barang yang dikirim harus lebih dari 0.'); return; }
-    var invalid = items.some(function(item) { return !Number.isFinite(item.shippedQuantity) || item.shippedQuantity < 0 || item.shippedQuantity > item.quantity; });
-    if (invalid) { window.alert('Jumlah aktual tidak boleh melebihi jumlah PO dan tidak boleh negatif.'); return; }
+    var invalid = items.some(function(item) { return !Number.isFinite(item.shippedQuantity) || item.shippedQuantity < 0 || !Number.isFinite(item.unitPrice) || item.unitPrice < 0; });
+    if (invalid) { window.alert('Jumlah aktual dan harga satuan harus berupa angka valid dan tidak boleh negatif.'); return; }
     var actualTotal = items.reduce(function(sum, item) { return sum + item.shippedQuantity * item.unitPrice; }, 0);
-    orderRef.child(id).update({ status: 'fulfilled', items: items, actualTotal: actualTotal, shippedAt: firebase.database.ServerValue.TIMESTAMP, processedBy: user.nama || user.username || '' }).then(function() {
+    var updates = {};
+    updates['rbm_pro/central_kitchen/orders/' + id] = { status: 'fulfilled', items: items, actualTotal: actualTotal, shippedAt: firebase.database.ServerValue.TIMESTAMP, processedBy: user.nama || user.username || '' };
+    var catalogPriceUpdates = [];
+    if (canEditOrderPrices) items.forEach(function(item) {
+      var catalogItem = catalog[item.itemId];
+      if (catalogItem && Number(catalogItem.price) !== item.unitPrice) {
+        updates['rbm_pro/central_kitchen/catalog/' + item.itemId + '/price'] = item.unitPrice;
+        catalogPriceUpdates.push({ id: item.itemId, price: item.unitPrice });
+      }
+    });
+    db.ref().update(updates).then(function() {
+      catalogPriceUpdates.forEach(function(update) { catalog[update.id].price = update.price; });
+      renderCatalog();
+      renderOrderLines();
       loadOrderPage('history', 'first');
       loadOrderPage('incoming', 'first');
     }).catch(function(error) {
       window.alert('Gagal menyimpan pemenuhan PO: ' + error.message);
+    });
+  }
+  function deleteOrder(id, button) {
+    if (!canDeleteOrders) return;
+    var order = incomingOrders[id] || orders[id];
+    if (!order) return;
+    if (!window.confirm('Hapus transaksi ' + order.number + '? Data PO ini akan dihapus permanen dari Firebase.')) return;
+    button.disabled = true;
+    orderRef.child(id).remove().then(function() {
+      window.alert('Transaksi ' + order.number + ' berhasil dihapus.');
+      return Promise.all([
+        loadOrderPage('history', 'first'),
+        isKitchen ? loadOrderPage('incoming', 'first') : Promise.resolve()
+      ]);
+    }).catch(function(error) {
+      window.alert('Transaksi gagal dihapus: ' + error.message);
+      button.disabled = false;
     });
   }
   function printOrder(order, documentType) {
@@ -498,6 +795,7 @@
     var shippedItems = (order.items || []).filter(function(item) { return Number(item.shippedQuantity) > 0; });
     var paperWidth = document.getElementById('ck-paper-width').value === '58' ? 58 : 80;
     var details = '<div class="details"><strong>No. PO:</strong> ' + safe(order.number) + '<br><strong>Outlet:</strong> ' + safe(labelForOutlet(order.outletId)) + '<br><strong>Tanggal:</strong> ' + safe(formatDate(order.shippedAt)) + '</div>';
+    var userDetails = '<div class="details"><strong>Dibuat oleh:</strong> ' + safe(order.createdBy || '-') + '<br><strong>Diproses oleh:</strong> ' + safe(order.processedBy || '-') + '</div>';
     var itemLines = shippedItems.map(function(item) {
       var quantity = Number(item.shippedQuantity).toLocaleString('id-ID');
       var requested = Number(item.quantity).toLocaleString('id-ID');
@@ -512,7 +810,7 @@
       var shippedTotal = shippedItems.reduce(function(sum, item) { return sum + Number(item.shippedQuantity); }, 0).toLocaleString('id-ID');
       return '<article class="paper"><h1>SURAT JALAN</h1><h2>Central Kitchen</h2>' + details + '<div class="copy">Salinan ' + copy + '</div>' + itemLines + '<p class="total">Total PO: ' + requestedTotal + '<br>Total dikirim: ' + shippedTotal + '</p><div class="sign"><span>Central Kitchen</span><span>Penerima</span></div></article>';
     };
-    var invoice = '<article class="paper"><h1>NOTA</h1><h2>Central Kitchen</h2>' + details + itemLines + '<p class="total">TOTAL ' + money(order.actualTotal) + '</p><p class="note">Catatan: ' + safe(order.note || '-') + '</p><div class="sign"><span>Central Kitchen</span><span>Penerima</span></div></article>';
+    var invoice = '<article class="paper"><h1>NOTA</h1><h2>Central Kitchen</h2>' + details + userDetails + itemLines + '<p class="total">TOTAL ' + money(order.actualTotal) + '</p><p class="note">Catatan: ' + safe(order.note || '-') + '</p><div class="sign"><span>Central Kitchen</span><span>Penerima</span></div></article>';
     var printContent = documentType === 'delivery' ? deliveryDoc('Central Kitchen') + deliveryDoc('Outlet') : invoice;
     var win = window.open('', '_blank', 'width=900,height=700');
     if (!win) { window.alert('Izinkan pop-up untuk mencetak dokumen.'); return; }
@@ -526,13 +824,13 @@
     if (!items.length) { message('ck-order-message', 'Pilih minimal satu barang dan isi jumlahnya.', true); return; }
     var duplicates = items.map(function(item) { return item.itemId; }).filter(function(id, index, all) { return all.indexOf(id) !== index; });
     if (duplicates.length) { message('ck-order-message', 'Pilih barang yang sama satu kali saja; ubah jumlah pada baris barang tersebut.', true); return; }
-    var ref = orderRef.push();
     var now = Date.now();
-    var date = new Date(now);
-    var number = 'PO-' + date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0') + '-' + ref.key.slice(-5).toUpperCase();
-    var payload = { number: number, outletId: selectedOutlet, outletName: labelForOutlet(selectedOutlet), items: items, requestTotal: items.reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0), note: document.getElementById('ck-note').value.trim(), status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP, createdBy: user.nama || user.username || '' };
     document.getElementById('ck-submit-order').disabled = true;
-    ref.set(payload).then(function() {
+    allocateOrderNumber(now).then(function(number) {
+      var ref = orderRef.push();
+      var payload = { number: number, outletId: selectedOutlet, outletName: labelForOutlet(selectedOutlet), items: items, requestTotal: items.reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0), note: document.getElementById('ck-note').value.trim(), status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP, createdBy: user.nama || user.username || '' };
+      return ref.set(payload).then(function() { return number; });
+    }).then(function(number) {
       document.getElementById('ck-note').value = '';
       document.getElementById('ck-order-lines').innerHTML = '';
       addOrderLine();
@@ -545,13 +843,109 @@
     var name = document.getElementById('ck-item-name').value.trim();
     var unit = document.getElementById('ck-item-unit').value.trim();
     var price = Number(document.getElementById('ck-item-price').value);
+    var category = document.getElementById('ck-item-category').value.trim();
     if (!name || !unit || !Number.isFinite(price) || price < 0) { message('ck-catalog-message', 'Nama, satuan, dan harga yang valid wajib diisi.', true); return; }
-    catalogRef.push({ name: name, unit: unit, price: price, active: true, updatedAt: firebase.database.ServerValue.TIMESTAMP, updatedBy: user.nama || user.username || '' }).then(function() {
+    catalogRef.push({ name: name, unit: unit, price: price, category: category, active: true, updatedAt: firebase.database.ServerValue.TIMESTAMP, updatedBy: user.nama || user.username || '' }).then(function() {
       document.getElementById('ck-item-name').value = '';
       document.getElementById('ck-item-unit').value = '';
       document.getElementById('ck-item-price').value = '';
+      document.getElementById('ck-item-category').value = '';
       message('ck-catalog-message', 'Barang berhasil ditambahkan ke katalog.');
     }).catch(function(error) { message('ck-catalog-message', 'Gagal menyimpan katalog: ' + error.message, true); });
+  }
+  function normalizeImportHeader(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function parseCatalogPrice(value) {
+    if (typeof value === 'number') return value;
+    var text = String(value == null ? '' : value).replace(/\s|rp/gi, '');
+    if (text.indexOf(',') >= 0) text = text.replace(/\./g, '').replace(',', '.');
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, '');
+    return text ? Number(text) : NaN;
+  }
+  function downloadCatalogTemplate() {
+    var workbook = XLSX.utils.book_new();
+    var catalogSheet = XLSX.utils.aoa_to_sheet([['Nama Barang', 'Satuan', 'Harga Satuan', 'Kategori']]);
+    catalogSheet['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 18 }, { wch: 22 }];
+    XLSX.utils.book_append_sheet(workbook, catalogSheet, 'Katalog');
+    var guideSheet = XLSX.utils.aoa_to_sheet([
+      ['Kolom', 'Keterangan'],
+      ['Nama Barang', 'Wajib diisi; nama yang sama akan memperbarui barang di katalog.'],
+      ['Satuan', 'Wajib diisi, contoh: kg, pack, pcs.'],
+      ['Harga Satuan', 'Wajib diisi sebagai angka, tanpa perlu mengetik Rp.'],
+      ['Kategori', 'Opsional; dipakai pada laporan kategori Central Kitchen.']
+    ]);
+    guideSheet['!cols'] = [{ wch: 20 }, { wch: 78 }];
+    XLSX.utils.book_append_sheet(workbook, guideSheet, 'Petunjuk');
+    XLSX.writeFile(workbook, 'Template_Katalog_Central_Kitchen.xlsx');
+  }
+  function importCatalogFile(file) {
+    if (!file || !/\.xlsx?$/i.test(file.name)) return;
+    if (typeof XLSX === 'undefined') { message('ck-catalog-message', 'Library Excel belum siap. Muat ulang halaman dan coba lagi.', true); return; }
+    var reader = new FileReader();
+    reader.onerror = function() { message('ck-catalog-message', 'File Excel tidak dapat dibaca.', true); };
+    reader.onload = function(event) {
+      try {
+        var workbook = XLSX.read(event.target.result, { type: 'array' });
+        var sheet = workbook.Sheets[workbook.SheetNames[0]];
+        var rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        if (rows.length < 2) throw new Error('Sheet Katalog belum berisi baris barang.');
+        var headers = rows[0].map(normalizeImportHeader);
+        var nameIndex = headers.findIndex(function(value) { return ['namabarang', 'nama', 'name', 'item'].indexOf(value) >= 0; });
+        var unitIndex = headers.findIndex(function(value) { return ['satuan', 'unit', 'satuanbarang'].indexOf(value) >= 0; });
+        var priceIndex = headers.findIndex(function(value) { return ['hargasatuan', 'harga', 'price', 'priceperunit'].indexOf(value) >= 0; });
+        var categoryIndex = headers.findIndex(function(value) { return ['kategori', 'category'].indexOf(value) >= 0; });
+        if (nameIndex < 0 || unitIndex < 0 || priceIndex < 0) throw new Error('Header wajib: Nama Barang, Satuan, dan Harga Satuan.');
+        var imported = [];
+        var seenNames = {};
+        var invalidRows = [];
+        rows.slice(1).forEach(function(row, index) {
+          if (!row.some(function(value) { return String(value).trim(); })) return;
+          var name = String(row[nameIndex] || '').trim();
+          var unit = String(row[unitIndex] || '').trim();
+          var price = parseCatalogPrice(row[priceIndex]);
+          var category = categoryIndex < 0 ? '' : String(row[categoryIndex] || '').trim();
+          var rowNumber = index + 2;
+          var normalizedName = name.toLocaleLowerCase('id-ID');
+          if (!name || !unit || !Number.isFinite(price) || price < 0) {
+            invalidRows.push(rowNumber);
+            return;
+          }
+          if (seenNames[normalizedName]) {
+            invalidRows.push(rowNumber + ' (nama barang duplikat)');
+            return;
+          }
+          seenNames[normalizedName] = true;
+          imported.push({ name: name, unit: unit, price: price, category: category });
+        });
+        if (invalidRows.length) throw new Error('Periksa baris: ' + invalidRows.join(', ') + '. Tidak ada data yang diimpor.');
+        if (!imported.length) throw new Error('Tidak ada baris barang untuk diimpor.');
+        var updates = {};
+        var newCount = 0;
+        var updatedCount = 0;
+        imported.forEach(function(item) {
+          var existingId = Object.keys(catalog).find(function(id) {
+            return String(catalog[id].name || '').trim().toLocaleLowerCase('id-ID') === item.name.toLocaleLowerCase('id-ID');
+          });
+          var id = existingId || catalogRef.push().key;
+          if (existingId) updatedCount += 1;
+          else newCount += 1;
+          updates[id] = Object.assign({}, existingId ? catalog[existingId] : {}, item, {
+            active: existingId ? catalog[existingId].active !== false : true,
+            updatedAt: firebase.database.ServerValue.TIMESTAMP,
+            updatedBy: user.nama || user.username || ''
+          });
+        });
+        var importButton = document.getElementById('ck-import-catalog-button');
+        importButton.disabled = true;
+        catalogRef.update(updates).then(function() {
+          message('ck-catalog-message', 'Impor berhasil: ' + newCount + ' barang baru, ' + updatedCount + ' diperbarui.');
+        }).catch(function(error) {
+          message('ck-catalog-message', 'Impor gagal: ' + error.message, true);
+        }).finally(function() { importButton.disabled = false; });
+      } catch (error) {
+        message('ck-catalog-message', error.message || 'Format file Excel tidak valid.', true);
+      }
+    };
+    reader.readAsArrayBuffer(file);
   }
   function setupOutletSelect(publicOutlets, locationOutlets) {
     var select = document.getElementById('ck-outlet');
@@ -559,6 +953,8 @@
     var username = String(user.username || '').toLowerCase();
     var userOutlet = String(user.outlet || '');
     canChooseOutlet = role === 'owner' || role === 'developer' || username === 'burhan';
+    canDeleteOrders = role === 'owner' || role === 'developer' || username === 'burhan';
+    canEditOrderPrices = role === 'owner' || role === 'developer' || username === 'burhan';
     publicOutlets = publicOutlets.filter(function(id) { return !isTestOutlet(id); });
     if (!publicOutlets.length) publicOutlets = locationOutlets.filter(function(id) { return !isTestOutlet(id); });
     if (!canChooseOutlet && (!userOutlet || userOutlet === 'all' || userOutlet === '*' || isTestOutlet(userOutlet))) {
@@ -574,7 +970,9 @@
     document.getElementById('ck-history-outlet').innerHTML = '<option value="">Semua outlet</option>' + publicOutlets.map(function(id) {
       return '<option value="' + safe(id) + '">' + safe(labelForOutlet(id)) + '</option>';
     }).join('');
-    if (userOutlet && outlets.indexOf(userOutlet) >= 0) select.value = userOutlet;
+    var requestedOutlet = new URLSearchParams(window.location.search).get('outlet') || '';
+    if (canChooseOutlet && outlets.indexOf(requestedOutlet) >= 0) select.value = requestedOutlet;
+    else if (userOutlet && outlets.indexOf(userOutlet) >= 0) select.value = userOutlet;
     else if (outlets.length) select.value = outlets[0];
     if (!canChooseOutlet) select.disabled = true;
     select.addEventListener('change', function() {
@@ -603,17 +1001,33 @@
     }).then(function() {
       orderRef = db.ref('rbm_pro/central_kitchen/orders');
       catalogRef = db.ref('rbm_pro/central_kitchen/catalog');
-      catalogRef.on('value', function(snapshot) { catalog = snapshot.val() || {}; renderCatalog(); renderOrderLines(); });
+      catalogRef.on('value', function(snapshot) { catalog = snapshot.val() || {}; renderCatalog(); renderOrderCatalog(); renderOrderLines(); });
       setCurrentMode();
+      var requestedView = new URLSearchParams(window.location.search).get('view');
+      if (requestedPoId) loadSharedOrder(requestedPoId);
+      else if (requestedView === 'history') switchView('history-view');
+      else if (requestedView === 'order' && !isKitchen) switchView('order-view');
     }).catch(function(error) {
       message('ck-order-message', error.message || 'Gagal memuat data Central Kitchen.', true);
       document.getElementById('ck-catalog-message').textContent = error.message || 'Database tidak tersedia.';
       document.getElementById('ck-submit-order').disabled = true;
       document.getElementById('ck-save-item').disabled = true;
+      document.getElementById('ck-import-catalog-button').disabled = true;
     });
   }
 
   document.getElementById('ck-add-line').addEventListener('click', addOrderLine);
+  document.getElementById('ck-download-catalog-template').addEventListener('click', downloadCatalogTemplate);
+  document.getElementById('ck-import-catalog-button').addEventListener('click', function() { document.getElementById('ck-import-catalog-file').click(); });
+  document.getElementById('ck-import-catalog-file').addEventListener('change', function(event) {
+    var file = event.target.files && event.target.files[0];
+    if (file) importCatalogFile(file);
+    event.target.value = '';
+  });
+  document.getElementById('ck-order-catalog-search').addEventListener('input', renderOrderCatalog);
+  document.getElementById('ck-copy-ordering-link').addEventListener('click', function() {
+    copyLink(appLink({ view: 'order', outlet: selectedOutlet }), this);
+  });
   document.getElementById('ck-submit-order').addEventListener('click', submitOrder);
   document.getElementById('ck-save-item').addEventListener('click', saveCatalogItem);
   document.getElementById('ck-refresh').addEventListener('click', function() {

@@ -184,7 +184,8 @@
 (function(){
   var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
   var publicOutlets = JSON.parse(localStorage.getItem('rbm_outlets') || '[]');
-  var internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '["office"]');
+  var internalOutlets = JSON.parse(localStorage.getItem('rbm_internal_outlets') || '[]');
+  internalOutlets = Array.from(new Set(internalOutlets.concat(['office', 'central-kitchen'])));
   var outlets = Array.from(new Set(publicOutlets.concat(internalOutlets)));
   var names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
   var sel = document.getElementById('rbm-outlet-select');
@@ -200,7 +201,7 @@
     outlets.forEach(function(id) {
       var opt = document.createElement('option');
       opt.value = id;
-      opt.textContent = names[id] || (id.charAt(0).toUpperCase() + id.slice(1));
+      opt.textContent = names[id] || (id === 'office' ? 'Office Internal' : (id === 'central-kitchen' ? 'Central Kitchen' : (id.charAt(0).toUpperCase() + id.slice(1))));
       sel.appendChild(opt);
     });
     if (outletFromUrl) {
@@ -264,7 +265,7 @@
         outlets.forEach(function(id) {
           var opt = document.createElement('option');
           opt.value = id;
-          opt.textContent = names[id] || (id.charAt(0).toUpperCase() + id.slice(1));
+          opt.textContent = names[id] || (id === 'office' ? 'Office Internal' : (id === 'central-kitchen' ? 'Central Kitchen' : (id.charAt(0).toUpperCase() + id.slice(1))));
           shareSel.appendChild(opt);
         });
         shareSel.value = sel.value || (outlets[0] || '');

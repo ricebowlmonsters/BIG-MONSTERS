@@ -47,6 +47,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script src="central-kitchen-reports.js"></script>
   <script>
     function formatRupiah(n) { return 'Rp ' + Math.round(n).toLocaleString('id-ID'); }
     function toStartOfDay(date) { const d = new Date(date); d.setHours(0,0,0,0); return d.getTime(); }
@@ -90,11 +91,15 @@
         menuSalesTbody.innerHTML = '<tr><td colspan="5" class="muted">Memuat data...</td></tr>';
 
         try {
-            const snap = await db.ref('orders/' + outlet).orderByChild('date').startAt(start).endAt(end).once('value');
-            const val = snap.val() || {};
-            // [DIUBAH] Filter hanya pesanan yang sudah dibayar/diproses
-            const validStatuses = ['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai'];
-            const orders = Object.values(val).filter(o => validStatuses.includes(o.status));
+            let orders;
+            if (outlet === CentralKitchenReports.outletId) {
+              orders = await CentralKitchenReports.readFulfilled(db, start, end);
+            } else {
+              const snap = await db.ref('orders/' + outlet).orderByChild('date').startAt(start).endAt(end).once('value');
+              const val = snap.val() || {};
+              const validStatuses = ['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai'];
+              orders = Object.values(val).filter(o => validStatuses.includes(o.status));
+            }
 
             const menuStats = {};
             const parseNumber = (v) => {

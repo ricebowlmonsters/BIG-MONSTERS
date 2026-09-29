@@ -143,6 +143,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script src="central-kitchen-reports.js"></script>
   <script src="custom-ui.js"></script>
   <script src="firebase-storage.js"></script>
   <script>
@@ -181,6 +182,8 @@
         option.textContent = outlet.charAt(0).toUpperCase() + outlet.slice(1);
         outletSel.appendChild(option);
       });
+      const outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+      CentralKitchenReports.addOutletOption(outletSel, outletNames[CentralKitchenReports.outletId] || 'Central Kitchen');
 
       // [BARU] Logika Role Manager
       const user = JSON.parse(localStorage.getItem('rbm_user') || '{}');
@@ -195,9 +198,17 @@
       // Set Nilai Awal dari URL atau Default
       const iso = (d) => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
       const todayStr = iso(new Date());
-      outletSel.value = params.get('outlet') || outletsToDisplay[0];
-      dateFromInput.value = params.get('dateFrom') || todayStr;
-      dateToInput.value = params.get('dateTo') || todayStr;
+      const monthStartStr = iso(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+      if (user.role === 'manager' && user.outlet) outletSel.value = user.outlet;
+      else outletSel.value = params.get('outlet') || outletsToDisplay[0];
+      const requestedFrom = params.get('dateFrom') || '';
+      const requestedTo = params.get('dateTo') || '';
+      const centralKitchenDefaultRange = outletSel.value === CentralKitchenReports.outletId && ((!requestedFrom && !requestedTo) || (requestedFrom === todayStr && requestedTo === todayStr));
+      dateFromInput.value = centralKitchenDefaultRange ? monthStartStr : (requestedFrom || todayStr);
+      dateToInput.value = requestedTo || todayStr;
+      outletSel.addEventListener('change', function() {
+        if (outletSel.value === CentralKitchenReports.outletId && dateFromInput.value === todayStr && dateToInput.value === todayStr) dateFromInput.value = monthStartStr;
+      });
 
       // Event Listener Tombol Refresh
       btnRefresh.addEventListener('click', loadData);
@@ -224,6 +235,27 @@
       window.showOrderDetail = function(order) {
         // [BARU] Update Judul Modal dengan ID Transaksi
         document.querySelector('#transaction-detail-modal .modal-title').textContent = `Detail Transaksi - ${order.id || ''}`;
+
+        if (order.centralKitchen) {
+          const escapeHtml = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+          const items = order.items || [];
+          const itemRows = items.map(item => {
+            const shipped = item.shippedQuantity;
+            const subtotal = shipped == null ? '-' : formatRupiah(Number(shipped) * Number(item.price));
+            return `<tr><td>${escapeHtml(item.name)}</td><td>${Number(item.requestedQuantity || 0).toLocaleString('id-ID')}</td><td>${shipped == null ? '-' : Number(shipped).toLocaleString('id-ID')}</td><td>${formatRupiah(Number(item.price) || 0)}</td><td>${subtotal}</td></tr>`;
+          }).join('');
+          const status = order.originalStatus === 'fulfilled' ? 'Dikirim' : 'Menunggu';
+          const printActions = order.originalStatus === 'fulfilled'
+            ? '<div style="display:flex;gap:8px;margin-top:14px"><button type="button" id="ck-reprint-delivery" class="btn btn-secondary" style="flex:1">Cetak Ulang Surat Jalan</button><button type="button" id="ck-reprint-invoice" class="btn btn-primary" style="flex:1">Cetak Ulang Nota</button></div>'
+            : '';
+          document.getElementById('detail-content').innerHTML = `<div style="font-size:13px;line-height:1.8;margin-bottom:12px"><div><strong>Nomor PO:</strong> ${escapeHtml(order.number)}</div><div><strong>Dibuat:</strong> ${fmtTime(order.createdAt)}</div><div><strong>Dikirim:</strong> ${order.shippedAt ? fmtTime(order.shippedAt) : '-'}</div><div><strong>Outlet:</strong> ${escapeHtml(order.outletName || order.outletId)}</div><div><strong>Status:</strong> ${status}</div><div><strong>Dibuat oleh:</strong> ${escapeHtml(order.createdBy || '-')}</div><div><strong>Diproses oleh:</strong> ${escapeHtml(order.processedBy || '-')}</div></div><div style="overflow-x:auto"><table class="table"><thead><tr><th>Barang</th><th>Qty PO</th><th>Qty Dikirim</th><th>Harga</th><th>Subtotal</th></tr></thead><tbody>${itemRows}</tbody></table></div><p style="text-align:right;font-weight:700">${status === 'Dikirim' ? 'Total nota' : 'Nilai PO'}: ${formatRupiah(order.payment.total)}</p><p class="muted">Catatan: ${escapeHtml(order.note || '-')}</p>${printActions}`;
+          if (order.originalStatus === 'fulfilled') {
+            document.getElementById('ck-reprint-delivery').addEventListener('click', function() { printCentralKitchenOrder(order, 'delivery'); });
+            document.getElementById('ck-reprint-invoice').addEventListener('click', function() { printCentralKitchenOrder(order, 'invoice'); });
+          }
+          modal.classList.add('show');
+          return;
+        }
 
         const outletVal = document.getElementById('outlet').value;
         const outletsData = JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]');
@@ -349,6 +381,35 @@
 
         modal.classList.add('show');
       };
+
+      function printCentralKitchenOrder(order, documentType) {
+        if (!order || order.originalStatus !== 'fulfilled') return;
+        const escapeHtml = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+        const items = (order.items || []).filter(item => Number(item.shippedQuantity) > 0);
+        const outletName = order.outletName || order.outletId || '-';
+        const details = `<div class="details"><strong>No. PO:</strong> ${escapeHtml(order.number)}<br><strong>Outlet:</strong> ${escapeHtml(outletName)}<br><strong>Tanggal:</strong> ${fmtTime(order.shippedAt)}</div><div class="details"><strong>Dibuat oleh:</strong> ${escapeHtml(order.createdBy || '-')}<br><strong>Diproses oleh:</strong> ${escapeHtml(order.processedBy || '-')}</div>`;
+        const lines = items.map(item => {
+          const qty = Number(item.quantity || 0).toLocaleString('id-ID');
+          const shipped = Number(item.shippedQuantity || 0).toLocaleString('id-ID');
+          const price = formatRupiah(Number(item.price) || 0);
+          const subtotal = formatRupiah(Number(item.shippedQuantity || 0) * (Number(item.price) || 0));
+          const quantityLine = documentType === 'delivery'
+            ? `<div class="item-meta"><span>Qty PO: ${Number(item.requestedQuantity || 0).toLocaleString('id-ID')} ${escapeHtml(item.unit || '')}</span><strong>Dikirim: ${shipped} ${escapeHtml(item.unit || '')}</strong></div>`
+            : `<div class="item-meta">${qty} ${escapeHtml(item.unit || '')} x ${price}<strong>${subtotal}</strong></div>`;
+          return `<div class="item"><div class="item-name">${escapeHtml(item.name)}</div>${quantityLine}</div>`;
+        }).join('');
+        const total = formatRupiah(Number(order.payment && order.payment.total) || 0);
+        const deliveryDocs = ['Central Kitchen', 'Outlet'].map(copy => `<article class="paper"><h1>SURAT JALAN</h1><h2>Central Kitchen</h2>${details}<div class="copy">Salinan ${copy}</div>${lines}<p class="total">NILAI PO ${total}</p><div class="sign"><span>Central Kitchen</span><span>Penerima</span></div></article>`).join('');
+        const invoice = `<article class="paper"><h1>NOTA</h1><h2>Central Kitchen</h2>${details}${lines}<p class="total">TOTAL ${total}</p><p class="note">Catatan: ${escapeHtml(order.note || '-')}</p><div class="sign"><span>Central Kitchen</span><span>Penerima</span></div></article>`;
+        const paperWidth = 80;
+        const printContent = documentType === 'delivery' ? deliveryDocs : invoice;
+        const printWindow = window.open('', '_blank', 'width=900,height=700');
+        if (!printWindow) { CustomUI.alert('Izinkan pop-up untuk mencetak dokumen.'); return; }
+        printWindow.document.write(`<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>${documentType === 'delivery' ? 'Surat Jalan' : 'Nota'} ${escapeHtml(order.number)}</title><style>@page{size:${paperWidth}mm auto;margin:2mm}*{box-sizing:border-box}body{width:${paperWidth - 4}mm;margin:0 auto;font:11px Arial,sans-serif;line-height:1.35;color:#111}.paper{width:100%;padding:2mm 0 5mm;page-break-after:always;break-after:page}.paper:last-child{page-break-after:auto;break-after:auto}h1{text-align:center;font-size:15px;margin:0 0 2px}h2{text-align:center;font-size:11px;margin:0 0 8px}.details{font-size:10px;border-bottom:1px dashed #333;padding-bottom:6px;margin-bottom:7px}.copy{text-align:center;font-weight:bold;margin:6px 0}.item{padding:4px 0;border-bottom:1px dashed #999}.item-name{font-weight:bold;overflow-wrap:anywhere}.item-meta{display:flex;justify-content:space-between;gap:2px;font-size:10px}.item-meta strong{white-space:nowrap}.total{text-align:right;font-size:13px;font-weight:bold;margin:8px 0}.note{font-size:10px;overflow-wrap:anywhere}.sign{display:flex;justify-content:space-between;gap:8px;margin-top:28px}.sign span{width:48%;text-align:center;border-top:1px solid #555;padding-top:4px;font-size:9px}</style></head><body>${printContent}</body></html>`);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.onload = function() { printWindow.print(); };
+      }
 
       // Fungsi Cetak Bukti Refund
       window.printRefundReceipt = async function(orderId) {
@@ -620,11 +681,15 @@
         detailTbody.innerHTML = '<tr><td colspan="8" class="muted">Memuat data...</td></tr>';
 
         try {
-            const snap = await db.ref('orders/' + outlet).orderByChild('date').startAt(start).endAt(end).once('value');
-            const val = snap.val() || {};
-            // [DIUBAH] Filter hanya pesanan yang sudah dibayar/diproses
-            const validStatuses = ['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai', 'Refund'];
-            const orders = Object.values(val).filter(o => validStatuses.includes(o.status)).sort((a,b) => (b.date||0) - (a.date||0));
+            let orders;
+            if (outlet === CentralKitchenReports.outletId) {
+              orders = await CentralKitchenReports.readTransactions(db, start, end);
+            } else {
+              const snap = await db.ref('orders/' + outlet).orderByChild('date').startAt(start).endAt(end).once('value');
+              const val = snap.val() || {};
+              const validStatuses = ['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai', 'Refund'];
+              orders = Object.values(val).filter(o => validStatuses.includes(o.status)).sort((a,b) => (b.date||0) - (a.date||0));
+            }
 
             detailTbody.innerHTML = '';
             if (orders.length === 0) {
@@ -635,7 +700,7 @@
                 tr.style.cursor = 'pointer';
                 tr.onclick = () => showOrderDetail(o);
                 const orderTime = fmtTime(o.date || new Date().getTime());
-                const orderType = o.details?.type === 'Dine-in' ? ('Meja ' + (o.details?.tableNumber || '-')) : 'Bawa Pulang';
+                const orderType = o.centralKitchen ? 'Purchase Order' : (o.details?.type === 'Dine-in' ? ('Meja ' + (o.details?.tableNumber || '-')) : 'Bawa Pulang');
                 
                 // [BARU] Tampilkan info diskon jika ada
                 const discountVal = o.payment?.discount || 0;
@@ -644,7 +709,8 @@
                 
                 // [BARU] Badge Asal Pesanan (POS vs Web)
                 const isPos = o.source === 'pos';
-                const sourceBadge = isPos ? '<span style="background:#f3f4f6; color:#374151; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:600; border:1px solid #d1d5db;">Kasir</span>' : '<span style="background:#eef2ff; color:#4C2A85; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:600; border:1px solid #c7d2fe;">Web App</span>';
+                const sourceBadge = o.centralKitchen ? '<span style="background:#e7f4ef; color:#176b56; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:600; border:1px solid #b8d8ca;">Central Kitchen</span>' : (isPos ? '<span style="background:#f3f4f6; color:#374151; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:600; border:1px solid #d1d5db;">Kasir</span>' : '<span style="background:#eef2ff; color:#4C2A85; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:600; border:1px solid #c7d2fe;">Web App</span>');
+                const status = o.centralKitchen ? (o.originalStatus === 'fulfilled' ? 'Dikirim' : 'Menunggu') : o.status;
 
                 tr.innerHTML = `
                 <td style="font-weight:600; font-size:12px;">${o.id}</td>
@@ -653,8 +719,8 @@
                 <td>${orderType}</td>
                 <td>${o.payment?.method || 'N/A'}</td>
                 <td>${discountHtml}</td>
-                <td style="color:${o.status==='Refund'?'#dc2626':(o.status==='Sudah Dibayar'?'#059669':'#374151')}">${o.status}</td>
-                <td style="${o.status==='Refund'?'color:#dc2626':''}">${o.status === 'Refund' ? '-' : ''}${formatRupiah(o.payment?.total || 0)}</td>
+                <td style="color:${status==='Refund'?'#dc2626':(['Sudah Dibayar','Dikirim'].includes(status)?'#059669':'#374151')}">${status}</td>
+                <td style="${status==='Refund'?'color:#dc2626':''}">${status === 'Refund' ? '-' : ''}${formatRupiah(o.payment?.total || 0)}</td>
                 `;
                 detailTbody.appendChild(tr);
             });

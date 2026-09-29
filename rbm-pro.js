@@ -12972,9 +12972,10 @@ function absensiRequestRole(user) {
     const registeredUser = (() => {
         try { return JSON.parse(localStorage.getItem('rbm_users') || '[]').find(u => u.username && user.username && u.username.toLowerCase() === user.username.toLowerCase()) || {}; } catch (e) { return {}; }
     })();
-    const value = String(registeredUser.jabatan || user.jabatan || user.role || '').toLowerCase();
+    const value = String(registeredUser.jabatan || user.jabatan || user.role || '').toLowerCase().replace(/[_-]+/g, ' ');
     if (value === 'owner' || value === 'developer' || value.includes('owner')) return 'Owner/Developer';
     if (value.includes('supervisor regional') || value === 'regional supervisor') return 'Supervisor Regional';
+    if (value.includes('manager regional') || value === 'regional manager') return 'Manager Regional';
     if (value.includes('manager outlet') || value === 'manager') return 'Manager Outlet';
     if (value === 'supervisor' || value === 'spv' || value.includes('supervisor')) return 'Supervisor';
     return '';
@@ -13037,7 +13038,8 @@ function requestApprovalSummary(request) {
         ['Supervisor', request.approvedBy_Supervisor],
         ['Manager Outlet', request.approvedBy_Manager_Outlet],
         ['Supervisor Regional', request.approvedBy_Supervisor_Regional],
-        ['Owner/Developer', request.approvedBy_Owner_Developer || request.approvedBy_Manager_Regional]
+        ['Manager Regional', request.approvedBy_Manager_Regional],
+        ['Owner/Developer', request.approvedBy_Owner_Developer]
     ];
     return labels.filter(item => item[1]).map(item => '&#10003; ' + item[0] + ': ' + item[1]).join('<br>');
 }
@@ -13169,7 +13171,6 @@ async function applyApprovedAbsensiRequest(request) {
         if (requesterIndex < 0 || partnerIndex < 0 || requesterIndex === partnerIndex) throw new Error('Karyawan untuk tukar jadwal tidak ditemukan atau tidak valid.');
         var swapDate = request.startDate || request.requestDate;
         if (!swapDate) throw new Error('Tanggal tukar jadwal tidak tersedia.');
-        if (isPastAbsensiDate(swapDate)) throw new Error('Tukar jadwal hanya dapat diajukan untuk hari ini atau tanggal mendatang.');
         var requesterKey = swapDate + '_' + getAbsensiRequestEmployeeKey(employeesForSwap[requesterIndex], requesterIndex);
         var partnerKey = swapDate + '_' + getAbsensiRequestEmployeeKey(employeesForSwap[partnerIndex], partnerIndex);
         var scheduleData = await FirebaseStorage.loadAbsensiJadwal(outletForSwap, 'jadwal', swapDate, swapDate);
@@ -13258,7 +13259,6 @@ async function submitEmployeeAbsensiRequest() {
     const feedback = document.getElementById('gps_request_feedback');
     if (!name || window._gpsPasswordVerifiedName !== name) { if (feedback) feedback.textContent = 'Masukkan password dan tekan Lanjutkan terlebih dahulu.'; return; }
     if (!requestDate || !reason) { if (feedback) feedback.textContent = 'Tanggal dan alasan wajib diisi.'; return; }
-    if (type === 'Tukar Jadwal Shift' && isPastAbsensiDate(requestDate)) { if (feedback) feedback.textContent = 'Tukar jadwal hanya dapat diajukan untuk hari ini atau tanggal mendatang.'; return; }
     if (type === 'Lupa Absen' && (!attendanceDetails.length || attendanceDetails.some(function(detail) { return !detail.type || !detail.time; }))) { if (feedback) feedback.textContent = 'Tipe dan jam semua detail absensi wajib diisi.'; return; }
     if (type === 'Pengajuan Lembur' && (!(Number(lemburHours) > 0))) { if (feedback) feedback.textContent = 'Jumlah jam lembur wajib diisi.'; return; }
     if (type === 'Tukar Jadwal Shift' && !swapWithEmployeeId) { if (feedback) feedback.textContent = 'Pilih rekan kerja untuk tukar jadwal.'; return; }
@@ -13436,6 +13436,30 @@ async function approveAbsensiRequest(requestId) {
     const snap = await ref.once('value');
     const request = snap.val();
     if (!request || request.status !== 'pending' || request.currentStep !== role) { alert('Pengajuan belum berada pada tahap persetujuan Anda.'); return; }
+    if (request.type === 'Tukar Jadwal Shift') {
+        const steps = ['Supervisor', 'Manager Outlet', 'Supervisor Regional', 'Manager Regional'];
+        const stepIndex = steps.indexOf(role);
+        const nextStep = steps[stepIndex + 1];
+        const approver = user.nama || user.username || role;
+        const approvalField = 'approvedBy_' + role.replace(/\//g, '_').replace(/ /g, '_');
+        try {
+            if (role === 'Supervisor Regional' && !request.appliedToAttendance) {
+                await applyApprovedAbsensiRequest(request);
+                await ref.update({ currentStep: 'Manager Regional', [approvalField]: approver, appliedToAttendance: true });
+            } else if (role === 'Manager Regional') {
+                await ref.update({ status: 'approved', currentStep: '', [approvalField]: approver });
+            } else if (nextStep) {
+                await ref.update({ currentStep: nextStep, [approvalField]: approver });
+            } else {
+                alert('Peran Anda tidak termasuk dalam alur persetujuan tukar shift.');
+                return;
+            }
+            loadAbsensiRequests();
+        } catch (error) {
+            alert('Gagal memproses persetujuan tukar shift: ' + (error.message || error));
+        }
+        return;
+    }
     if (request.type === GAJI_KENAIKAN_REQUEST_TYPE) {
         const steps = ['Supervisor', 'Manager Outlet', 'Supervisor Regional'];
         const stepIndex = steps.indexOf(role);

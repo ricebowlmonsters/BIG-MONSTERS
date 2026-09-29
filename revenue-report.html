@@ -485,6 +485,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
   <script src="custom-ui.js"></script>
   <script src="firebase-storage.js"></script>
+  <script src="central-kitchen-reports.js"></script>
   <script>
     function formatRupiah(n) {
       if (!n) return '0';
@@ -561,6 +562,7 @@
 
         outletSel.innerHTML = ''; // Hapus opsi yang ada
         const outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+        CentralKitchenReports.addOutletOption(outletSel, outletNames[CentralKitchenReports.outletId] || 'Central Kitchen');
 
         if (outletsToDisplay.length === 0) {
           outletSel.innerHTML = '<option disabled>Tidak ada outlet</option>';
@@ -601,6 +603,34 @@
                 cashierSel.appendChild(option);
             });
         }
+      }
+
+      function updateReportLabels(outlet) {
+        const centralKitchen = outlet === CentralKitchenReports.outletId;
+        statItemSales.previousElementSibling.textContent = centralKitchen ? 'Nilai Barang PO (Gross)' : 'Item Sales (Gross)';
+        statItemDisc.previousElementSibling.textContent = centralKitchen ? 'Diskon Barang PO' : 'Item Discount';
+        statBillDisc.previousElementSibling.textContent = centralKitchen ? 'Diskon PO' : 'Bill Discount';
+        statNetSales.previousElementSibling.textContent = centralKitchen ? 'Nilai PO Terkirim' : 'Total Sales (Net)';
+        statTax.previousElementSibling.textContent = centralKitchen ? 'Pajak' : `PPN (${JSON.parse(localStorage.getItem('rbm_outlets_data') || '[]').find(item => item.id === outlet)?.ppn ?? 10}%)`;
+        statTotal.previousElementSibling.textContent = centralKitchen ? 'Total Pembelian' : 'Grand Total (Omzet)';
+        const paymentCard = document.getElementById('payment-summary').closest('.card');
+        paymentCard.querySelector('.card-title').textContent = centralKitchen ? 'Ringkasan Purchase Order' : 'Ringkasan Per Metode Pembayaran';
+        const paymentHeaders = document.querySelectorAll('#payment-summary thead th');
+        if (centralKitchen) {
+          paymentHeaders[0].textContent = 'Jenis';
+          paymentHeaders[1].textContent = 'Jumlah PO';
+          paymentHeaders[2].textContent = 'Nilai PO';
+          paymentHeaders[3].textContent = 'Nilai terkirim';
+        } else {
+          paymentHeaders[0].textContent = 'Metode';
+          paymentHeaders[1].textContent = 'Jumlah Transaksi';
+          paymentHeaders[2].textContent = 'Total (Sebelum PPN)';
+          paymentHeaders[3].textContent = 'Total (Sesudah PPN)';
+        }
+        const revenueTitle = document.getElementById('revenueChart').parentElement.previousElementSibling;
+        const sourceTitle = document.getElementById('sourceChart').parentElement.previousElementSibling;
+        revenueTitle.textContent = centralKitchen ? 'Nilai PO Terkirim Harian' : 'Grafik Pendapatan Harian';
+        sourceTitle.textContent = centralKitchen ? 'Transaksi Central Kitchen' : 'Sumber Pesanan (Kasir vs Web)';
       }
 
       // [DIUBAH] Secara default, atur tanggal ke HARI INI (sesuai permintaan)
@@ -651,20 +681,21 @@
 
       async function load() {
         const outlet = outletSel.value;
+        updateReportLabels(outlet);
         const selectedCashier = cashierSel.value; // [BARU]
         // [DIUBAH] Gunakan waktu dari input untuk filter yang lebih presisi
         const start = new Date(`${dateFrom.value}T${timeFrom.value || '00:00'}:00`).getTime();
         const end = new Date(`${dateTo.value}T${timeTo.value || '23:59'}:59`).getTime();
 
-        // Ambil semua orders di outlet, kemudian filter di client
-        // [DIPERBAIKI] Query diubah untuk mengambil data berdasarkan rentang tanggal.
-        // Pastikan Anda sudah menambahkan index pada field 'date' di Firebase Rules.
-        const snap = await db.ref('orders/' + outlet).orderByChild('date').startAt(start).endAt(end).once('value');
-        const val = snap.val() || {};
-        // [DIUBAH] Filter hanya pesanan yang sudah dibayar/diproses (Revenue)
-        const validStatuses = ['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai'];
-        
-        let orders = Object.values(val).filter(o => validStatuses.includes(o.status));
+        let orders;
+        if (outlet === CentralKitchenReports.outletId) {
+          orders = await CentralKitchenReports.readFulfilled(db, start, end);
+        } else {
+          const snap = await db.ref('orders/' + outlet).orderByChild('date').startAt(start).endAt(end).once('value');
+          const val = snap.val() || {};
+          const validStatuses = ['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai'];
+          orders = Object.values(val).filter(o => validStatuses.includes(o.status));
+        }
 
         // [BARU] Filter berdasarkan Kasir jika dipilih
         if (selectedCashier !== 'all') {
@@ -751,7 +782,7 @@
             totalGrandTotal += grandTotal;
 
             // [BARU] Akumulasi per Asal Pesanan (Source)
-            const src = o.source === 'pos' ? 'Kasir (POS)' : 'Web App';
+            const src = o.centralKitchen ? 'Central Kitchen' : (o.source === 'pos' ? 'Kasir (POS)' : 'Web App');
             if (!bySource[src]) bySource[src] = { count: 0, net: 0, gross: 0 };
             bySource[src].count += 1;
             bySource[src].net += netSales;
@@ -771,7 +802,7 @@
         const currentOutletData = outletsData.find(o => o.id === outlet) || {};
         const ppnLabel = currentOutletData.ppn !== undefined ? currentOutletData.ppn : 10;
         const taxLabelEl = document.getElementById('stat-tax-label');
-        if (taxLabelEl) taxLabelEl.textContent = `PPN (${ppnLabel}%)`;
+        if (taxLabelEl) taxLabelEl.textContent = outlet === CentralKitchenReports.outletId ? 'Pajak' : `PPN (${ppnLabel}%)`;
         
         // Update Tampilan Statistik Baru
         statItemSales.textContent = formatRupiah(totalItemSales);
@@ -1050,6 +1081,8 @@
 
       async function prepareReport(type, isClosing, isPreviewMode = false, useA4 = false, applyFilters = false) {
         const outlet = outletSel.value;
+        updateReportLabels(outlet);
+        const centralKitchen = outlet === CentralKitchenReports.outletId;
         const selectedCashier = cashierSel.value; // [BARU]
         currentReportType = type;
         isClosingReport = isClosing;
@@ -1082,10 +1115,15 @@
             endRange = endMs;
           }
         }
-        snap = await db.ref(`orders/${outlet}`).orderByChild('date').startAt(startRange).endAt(endRange).once('value');
-        const val = snap.val() || {};
-        const validStatuses = ['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai'];
-        let orders = Object.values(val).filter(o => validStatuses.includes(o.status));
+        let orders;
+        if (outlet === CentralKitchenReports.outletId) {
+          orders = await CentralKitchenReports.readFulfilled(db, startRange, endRange);
+        } else {
+          snap = await db.ref(`orders/${outlet}`).orderByChild('date').startAt(startRange).endAt(endRange).once('value');
+          const val = snap.val() || {};
+          const validStatuses = ['Sudah Dibayar', 'Diproses', 'Siap Diambil', 'Selesai'];
+          orders = Object.values(val).filter(o => validStatuses.includes(o.status));
+        }
 
         // [BARU] Filter Kasir di Laporan
         if (selectedCashier !== 'all') {
@@ -1168,7 +1206,7 @@
             if (tax > 0) countTax++;
 
             // [BARU] Akumulasi per Asal Pesanan (Source)
-            const src = o.source === 'pos' ? 'Kasir (POS)' : 'Web App';
+            const src = o.centralKitchen ? 'Central Kitchen' : (o.source === 'pos' ? 'Kasir (POS)' : 'Web App');
             if (!bySource[src]) bySource[src] = { count: 0, net: 0, gross: 0 };
             bySource[src].count += 1;
             bySource[src].net += netSales;
@@ -1183,7 +1221,7 @@
         });
 
         // 4. Buat Data Laporan (Definisi variabel dipindah ke sini agar bisa dipakai di currentReportRaw)
-        const reportTitle = `${isClosing ? 'Z' : 'X'} ${type} REPORT`;
+        const reportTitle = centralKitchen ? `${isClosing ? 'Z' : 'X'} CENTRAL KITCHEN PURCHASE REPORT` : `${isClosing ? 'Z' : 'X'} ${type} REPORT`;
         const startTimeStr = applyFilters ? `${dateFrom.value} ${timeFrom.value || '00:00'}` : (lastClosed === 0 ? 'Awal' : new Date(lastClosed).toLocaleString('id-ID'));
         const endTimeStr = applyFilters ? `${dateTo.value} ${timeTo.value || '23:59'}` : new Date(now).toLocaleString('id-ID');
 
@@ -1251,8 +1289,8 @@
         const doubleSeparator = '='.repeat(WIDTH) + '\n';
 
         let content = doubleSeparator;
-        content += pad("RICE BOWL MONSTER", WIDTH, 'center') + '\n';
-        content += pad(outlet.toUpperCase(), WIDTH, 'center') + '\n';
+        content += pad(centralKitchen ? 'CENTRAL KITCHEN' : 'RICE BOWL MONSTER', WIDTH, 'center') + '\n';
+        content += pad(centralKitchen ? 'PURCHASE REPORT' : outlet.toUpperCase(), WIDTH, 'center') + '\n';
         content += doubleSeparator;
         // [BARU] Tampilkan nama kasir jika difilter
         if (selectedCashier !== 'all') {
@@ -1273,11 +1311,11 @@
         content += pad("TYPE", h1_c1, 'left') + pad("QTY", h1_c2, 'center') + pad("AMOUNT", h1_c3, 'right') + '\n';
         content += separator;
         
-        content += fmtRow('Item Sales', totalTx, totalItemSales);
+        content += fmtRow(centralKitchen ? 'PO Items' : 'Item Sales', totalTx, totalItemSales);
         content += fmtRow('Item Disc', countItemDisc, totalItemDisc);
         content += fmtRow('Bill Disc', countBillDisc, totalBillDisc);
         content += '\n';
-        content += fmtRow('Net Sales', totalTx, totalNetSales);
+        content += fmtRow(centralKitchen ? 'PO Value' : 'Net Sales', totalTx, totalNetSales);
         
         // [BARU] Bagian Laporan Asal Pesanan (Source)
         content += centerText('Source');
@@ -1295,7 +1333,7 @@
         content += fmtRow(`PPN ${ppnLabel}%`, '', totalTax);
 
         content += separator;
-        content += fmtRow('Grand Total', '', totalGrandTotal);
+        content += fmtRow(centralKitchen ? 'Total Purchases' : 'Grand Total', '', totalGrandTotal);
 
         content += doubleSeparator;
         content += `Printed: ${new Date().toLocaleString('id-ID')}\n`;

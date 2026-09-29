@@ -56,6 +56,17 @@
       };
       const username = document.getElementById('login-username');
       const password = document.getElementById('login-password');
+      const getPostLoginUrl = () => {
+        const returnTo = new URLSearchParams(window.location.search).get('returnTo');
+        if (!returnTo) return 'index.html';
+        try {
+          const target = new URL(returnTo, window.location.href);
+          const loginUrl = new URL(window.location.href);
+          const directory = loginUrl.pathname.slice(0, loginUrl.pathname.lastIndexOf('/') + 1);
+          if (target.origin === loginUrl.origin && target.pathname.toLowerCase() === (directory + 'rbm-central-kitchen.html').toLowerCase()) return target.href;
+        } catch (error) {}
+        return 'index.html';
+      };
       const submit = async () => {
         try {
           // [DIUBAH] Logika login diperbarui agar membaca data user terbaru (rbm_users)
@@ -78,10 +89,10 @@
             const welcomeScreen = document.getElementById('owner-welcome');
             if (welcomeScreen) {
               welcomeScreen.style.display = 'flex';
-              setTimeout(() => { window.top.location.href = 'index.html'; }, 7000);
+              setTimeout(() => { window.top.location.href = getPostLoginUrl(); }, 7000);
             } else {
               show('Login berhasil', 'success');
-              setTimeout(() => { window.top.location.href = 'index.html'; }, 500);
+              setTimeout(() => { window.top.location.href = getPostLoginUrl(); }, 500);
             }
             return;
           }
@@ -100,7 +111,7 @@
               FirebaseStorage.setActiveSession(user.username, sessionId).then(() => {});
             }
             show('Login berhasil', 'success');
-            setTimeout(() => { window.top.location.href = 'index.html'; }, 500);
+            setTimeout(() => { window.top.location.href = getPostLoginUrl(); }, 500);
           } else {
             show('Username atau password salah', 'error');
           }
