@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PO Central Kitchen</title>
+  <link rel="stylesheet" href="rbm-pro.css">
+  <style>
+    :root { --ck-ink: #172b3a; --ck-green: #176b56; --ck-border: #d8e2df; --ck-muted: #64748b; --ck-soft: #f7faf8; }
+    body { background: #f3f6f4; color: var(--ck-ink); }
+    .rbm-page-header { background: #173f36; color: #fff; }
+    .rbm-page-title { color: inherit; }
+    .ck-wrap { max-width: 1180px; margin: 22px auto; padding: 0 18px 36px; }
+    .ck-toolbar, .ck-panel { background: #fff; border: 1px solid var(--ck-border); border-radius: 8px; box-shadow: 0 2px 10px rgba(23, 43, 58, .035); }
+    .ck-toolbar { display: flex; align-items: end; gap: 14px; justify-content: space-between; padding: 16px; margin-bottom: 16px; }
+    .ck-toolbar label, .ck-field label { display: block; margin-bottom: 5px; font-size: 12px; font-weight: 700; color: #52665f; }
+    .ck-toolbar select, .ck-field input, .ck-field select, .ck-line select, .ck-line input { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #cbd7d2; border-radius: 5px; background: #fff; color: var(--ck-ink); font: inherit; box-sizing: border-box; }
+    .ck-outlet-control { width: min(100%, 360px); }
+    .ck-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--ck-border); margin: 0 18px; }
+    .ck-tab { border: 0; background: transparent; padding: 13px 15px; color: #52665f; font: inherit; font-weight: 700; cursor: pointer; border-bottom: 3px solid transparent; }
+    .ck-tab.active { color: var(--ck-green); border-color: var(--ck-green); }
+    .ck-panel { overflow: hidden; }
+    .ck-view { padding: 18px; }
+    .ck-title-row { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 16px; }
+    .ck-title-row h2 { margin: 0 0 5px; font-size: 20px; }
+    .ck-title-row p, .ck-muted { margin: 0; color: var(--ck-muted); font-size: 13px; }
+    .ck-form-grid { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(100px, 1fr) minmax(130px, 1fr) auto; gap: 10px; align-items: end; }
+    .ck-lines { display: grid; gap: 8px; margin: 12px 0; }
+    .ck-line { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(100px, 1fr) minmax(110px, 1fr) 38px; gap: 8px; align-items: center; }
+    .ck-total { text-align: right; font-weight: 800; font-size: 18px; margin: 14px 0; }
+    .ck-button { border: 1px solid var(--ck-green); border-radius: 5px; background: var(--ck-green); color: #fff; font: inherit; font-weight: 700; padding: 9px 13px; cursor: pointer; }
+    .ck-button.secondary { background: #fff; color: var(--ck-green); }
+    .ck-button.danger { border-color: #b42318; background: #b42318; }
+    .ck-button:disabled { opacity: .5; cursor: not-allowed; }
+    .ck-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .ck-button { transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease; }
+    .ck-button:hover:not(:disabled) { box-shadow: 0 2px 6px rgba(23, 63, 54, .14); }
+    .ck-button:focus-visible, .ck-tab:focus-visible, .ck-toolbar select:focus-visible, .ck-field input:focus-visible, .ck-field select:focus-visible { outline: 3px solid rgba(23, 107, 86, .2); outline-offset: 2px; }
+    .ck-table-wrap { overflow-x: auto; }
+    .ck-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .ck-table th, .ck-table td { padding: 10px 9px; border-bottom: 1px solid #e5ece9; text-align: left; vertical-align: top; }
+    .ck-table th { color: #52665f; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+    .ck-table td.numeric, .ck-table th.numeric { text-align: right; white-space: nowrap; }
+    .ck-badge { display: inline-block; padding: 3px 7px; border-radius: 4px; background: #fff1d6; color: #8a4b08; font-size: 11px; font-weight: 800; }
+    .ck-badge.done { background: #d9f3e8; color: #176b56; }
+    .ck-empty { text-align: center; color: var(--ck-muted); padding: 28px 12px; }
+    .ck-message { margin: 10px 0 0; font-size: 13px; min-height: 18px; }
+    .ck-message.error { color: #b42318; }
+    .ck-message.success { color: #176b56; }
+    .ck-order-list { display: grid; gap: 12px; }
+    .ck-order-card { overflow: hidden; border: 1px solid var(--ck-border); border-radius: 7px; background: #fff; }
+    .ck-order-head { display: grid; grid-template-columns: minmax(170px, 1.4fr) minmax(120px, 1fr) minmax(120px, .8fr) auto; gap: 16px; align-items: center; padding: 13px 15px; background: #f7faf8; border-bottom: 1px solid #e5ece9; }
+    .ck-order-head > div { min-width: 0; }
+    .ck-order-label { display: block; margin-bottom: 3px; color: #75857e; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+    .ck-order-number { color: #163c33; font-size: 14px; overflow-wrap: anywhere; }
+    .ck-order-date { display: block; margin-top: 3px; color: var(--ck-muted); font-size: 11px; }
+    .ck-order-outlet { font-size: 13px; font-weight: 700; }
+    .ck-order-amount { font-size: 15px; font-weight: 800; white-space: nowrap; }
+    .ck-order-body { padding: 12px 15px; }
+    .ck-history-tools { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(240px, 1.4fr) auto; gap: 12px; align-items: end; padding: 14px; margin-bottom: 14px; border: 1px solid var(--ck-border); border-radius: 6px; background: var(--ck-soft); }
+    .ck-history-count { margin: 0 0 10px; color: var(--ck-muted); font-size: 12px; white-space: nowrap; }
+    .ck-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+    .ck-pagination-label { color: var(--ck-muted); font-size: 12px; text-align: center; }
+    .ck-pagination .ck-button { min-width: 118px; }
+    .ck-kitchen-tabs { display: flex; gap: 6px; padding-bottom: 12px; margin-bottom: 18px; border-bottom: 1px solid var(--ck-border); }
+    .ck-kitchen-tab { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 12px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #52665f; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .ck-kitchen-tab.active { border-color: #c9ddd5; background: #edf6f1; color: var(--ck-green); }
+    .ck-kitchen-tab:focus-visible { outline: 3px solid rgba(23, 107, 86, .2); outline-offset: 2px; }
+    .ck-subtab-count { min-width: 20px; padding: 2px 6px; border-radius: 10px; background: #e7eeea; color: #52665f; font-size: 11px; text-align: center; }
+    .ck-kitchen-tab.active .ck-subtab-count { background: var(--ck-green); color: #fff; }
+    .ck-kitchen-heading { margin-bottom: 16px; }
+    .ck-kitchen-heading h2 { margin: 0 0 5px; font-size: 20px; }
+    .ck-kitchen-heading p { margin: 0; color: var(--ck-muted); font-size: 13px; }
+    .ck-catalog-form { padding: 16px; border: 1px solid var(--ck-border); border-radius: 6px; background: var(--ck-soft); }
+    .ck-catalog-list { margin-top: 16px; }
+    .ck-incoming-list { display: grid; gap: 12px; }
+    .ck-order-details summary { color: var(--ck-green); font-size: 12px; font-weight: 700; cursor: pointer; }
+    .ck-order-details[open] summary { margin-bottom: 8px; }
+    .ck-item-list { display: grid; }
+    .ck-item-row { display: grid; grid-template-columns: minmax(160px, 1.6fr) repeat(4, minmax(80px, .7fr)); gap: 12px; align-items: center; padding: 8px 4px; border-bottom: 1px solid #edf1ef; font-size: 12px; }
+    .ck-item-row:last-child { border-bottom: 0; }
+    .ck-item-head { padding-top: 0; color: #75857e; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+    .ck-item-name { min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+    .ck-item-value { text-align: right; white-space: nowrap; }
+    .ck-requested-row { grid-template-columns: minmax(180px, 1fr) minmax(100px, 160px); }
+    .ck-fulfill-row { grid-template-columns: minmax(160px, 1.5fr) minmax(100px, .6fr) minmax(140px, .8fr); }
+    .ck-fulfill-help { margin-bottom: 8px; color: var(--ck-muted); font-size: 12px; line-height: 1.45; }
+    .ck-actual { width: 82px !important; min-height: 34px !important; padding: 5px 7px; border: 1px solid #cbd7d2; border-radius: 4px; text-align: right; }
+    .ck-order-footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 15px; border-top: 1px solid #edf1ef; }
+    .ck-print-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .ck-order-footer .ck-button { font-size: 12px; }
+    @media (max-width: 680px) {
+      .ck-toolbar { align-items: stretch; flex-direction: column; }
+      .ck-outlet-control { width: 100%; }
+      .ck-form-grid { grid-template-columns: 1fr 1fr; }
+      .ck-form-grid .ck-field:first-child { grid-column: 1 / -1; }
+      .ck-line { grid-template-columns: minmax(120px, 1fr) 78px 94px 34px; gap: 5px; }
+      .ck-view { padding: 14px 10px; }
+      .ck-title-row { flex-direction: column; }
+      .ck-title-row > .ck-actions { width: 100%; align-items: end; }
+      .ck-history-tools { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px; }
+      .ck-history-count { margin: 0; }
+      .ck-pagination { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .ck-pagination-label { grid-column: 1 / -1; grid-row: 1; }
+      .ck-pagination .ck-button { width: 100%; min-width: 0; }
+      .ck-kitchen-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      .ck-kitchen-tab { justify-content: center; padding: 8px 6px; }
+      .ck-catalog-form { padding: 12px; }
+      .ck-catalog-form > .ck-button { grid-column: 1 / -1; }
+      .ck-tabs { margin: 0 10px; overflow-x: auto; }
+      .ck-tab { white-space: nowrap; padding: 12px 9px; }
+      .ck-order-head { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; padding: 12px; }
+      .ck-order-body { padding: 10px 12px; }
+      .ck-order-footer { justify-content: stretch; flex-wrap: wrap; padding: 10px 12px; }
+      .ck-order-footer > .ck-button { width: 100%; }
+      .ck-item-head { display: none; }
+      .ck-item-row, .ck-requested-row, .ck-fulfill-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 2px; }
+      .ck-item-name { grid-column: 1 / -1; }
+      .ck-item-value { text-align: left; white-space: normal; }
+      .ck-item-value::before { content: attr(data-label); display: block; margin-bottom: 3px; color: #75857e; font-size: 10px; font-weight: 700; }
+      .ck-item-value input { max-width: 100%; }
+      .ck-print-actions { width: 100%; }
+      .ck-print-actions .ck-button { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+<script>
+(function() {
+  var user = {};
+  try { user = JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch (error) {}
+  if (!user.username) window.location.href = 'login.html';
+})();
+</script>
+<header class="rbm-page-header">
+  <a href="index.html" class="rbm-back-btn" aria-label="Kembali">&#8249;</a>
+  <h1 class="rbm-page-title">PO Central Kitchen</h1>
+</header>
+<main class="ck-wrap">
+  <section class="ck-toolbar">
+    <div>
+      <label for="ck-outlet">Outlet kerja</label>
+      <div class="ck-outlet-control"><select id="ck-outlet"></select></div>
+    </div>
+    <div id="ck-user-caption" class="ck-muted"></div>
+  </section>
+  <section class="ck-panel">
+    <nav class="ck-tabs" aria-label="Modul Central Kitchen">
+      <button class="ck-tab active" data-view="order-view" id="ck-order-tab" type="button">Buat PO</button>
+      <button class="ck-tab" data-view="history-view" type="button">Riwayat PO</button>
+      <button class="ck-tab" data-view="kitchen-view" id="ck-kitchen-tab" type="button" hidden>Central Kitchen</button>
+    </nav>
+    <section class="ck-view" id="order-view">
+      <div class="ck-title-row"><div><h2>Buat Purchase Order</h2><p>Ajukan barang ke Central Kitchen. Harga pada PO mengikuti harga katalog saat pemesanan.</p></div></div>
+      <div id="ck-order-form">
+        <div id="ck-order-lines" class="ck-lines"></div>
+        <div class="ck-actions"><button type="button" class="ck-button secondary" id="ck-add-line">Tambah Barang</button></div>
+        <div class="ck-field" style="margin-top:14px"><label for="ck-note">Catatan outlet</label><input id="ck-note" maxlength="300" placeholder="Catatan pengiriman (opsional)"></div>
+        <div id="ck-order-total" class="ck-total">Total: Rp 0</div>
+        <button type="button" class="ck-button" id="ck-submit-order">Kirim PO</button>
+      </div>
+      <p id="ck-order-message" class="ck-message" role="status"></p>
+    </section>
+    <section class="ck-view" id="history-view" hidden>
+      <div class="ck-title-row"><div><h2>Riwayat Purchase Order</h2><p>Jumlah terkirim dan nilai nota memakai kuantitas aktual dari Central Kitchen.</p></div><div class="ck-actions"><label class="ck-muted" for="ck-paper-width" style="align-self:center">Thermal</label><select id="ck-paper-width" aria-label="Lebar kertas thermal" style="min-height:38px;padding:6px;border:1px solid #cbd7d2;border-radius:5px"><option value="80">80 mm</option><option value="58">58 mm</option></select><button type="button" class="ck-button secondary" id="ck-refresh">Refresh</button></div></div>
+        <div class="ck-history-tools">
+        <div class="ck-field" id="ck-history-outlet-wrap" hidden><label for="ck-history-outlet">Filter outlet</label><select id="ck-history-outlet"><option value="">Semua outlet</option></select></div>
+        <div class="ck-field"><label for="ck-order-search">Cari nota pada halaman ini</label><input id="ck-order-search" type="search" placeholder="Nomor PO atau catatan" autocomplete="off"></div>
+        <p id="ck-order-count" class="ck-history-count" role="status" aria-live="polite"></p>
+      </div>
+      <div id="ck-order-list" class="ck-table-wrap"></div>
+      <nav class="ck-pagination" aria-label="Halaman riwayat PO">
+        <button type="button" class="ck-button secondary" id="ck-history-previous" disabled>Sebelumnya</button>
+        <span class="ck-pagination-label" id="ck-history-page" aria-live="polite">Halaman 1</span>
+        <button type="button" class="ck-button secondary" id="ck-history-next" disabled>Berikutnya</button>
+      </nav>
+    </section>
+    <section class="ck-view" id="kitchen-view" hidden>
+      <nav class="ck-kitchen-tabs" aria-label="Menu Central Kitchen">
+        <button class="ck-kitchen-tab active" type="button" data-kitchen-view="kitchen-orders" aria-controls="kitchen-orders" aria-pressed="true">PO Masuk</button>
+        <button class="ck-kitchen-tab" type="button" data-kitchen-view="kitchen-catalog" aria-controls="kitchen-catalog" aria-pressed="false">Katalog Barang</button>
+      </nav>
+      <section id="kitchen-orders" class="ck-kitchen-view">
+        <div class="ck-kitchen-heading"><h2>PO Masuk</h2><p>Periksa pesanan dan isi jumlah aktual sebelum memproses pengiriman.</p></div>
+        <div id="ck-incoming-list" class="ck-incoming-list"></div>
+        <nav class="ck-pagination" aria-label="Halaman PO masuk">
+          <button type="button" class="ck-button secondary" id="ck-incoming-previous" disabled>Sebelumnya</button>
+          <span class="ck-pagination-label" id="ck-incoming-page" aria-live="polite">Halaman 1</span>
+          <button type="button" class="ck-button secondary" id="ck-incoming-next" disabled>Berikutnya</button>
+        </nav>
+      </section>
+      <section id="kitchen-catalog" class="ck-kitchen-view" hidden>
+        <div class="ck-kitchen-heading"><h2>Katalog Barang</h2><p>Kelola barang, satuan, dan harga untuk pesanan outlet.</p></div>
+        <div id="ck-catalog-form" class="ck-form-grid ck-catalog-form">
+          <div class="ck-field"><label for="ck-item-name">Nama barang</label><input id="ck-item-name" maxlength="100" placeholder="Contoh: Ayam marinasi"></div>
+          <div class="ck-field"><label for="ck-item-unit">Satuan</label><input id="ck-item-unit" maxlength="24" placeholder="kg, pack, pcs"></div>
+          <div class="ck-field"><label for="ck-item-price">Harga per satuan (Rp)</label><input id="ck-item-price" type="number" min="0" step="1" inputmode="numeric"></div>
+          <button type="button" class="ck-button" id="ck-save-item">Tambah Barang</button>
+        </div>
+        <p id="ck-catalog-message" class="ck-message" role="status"></p>
+        <div id="ck-catalog-list" class="ck-table-wrap ck-catalog-list"></div>
+      </section>
+    </section>
+  </section>
+</main>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+<script src="firebase-storage.js"></script>
+<script>
+(function() {
+  'use strict';
+  var KITCHEN_ID = 'central-kitchen';
+  var PAGE_SIZE = 10;
+  var catalog = {};
+  var orders = {};
+  var incomingOrders = {};
+  var orderPages = {
+    history: { rows: [], page: 1, hasOlder: false, hasNewer: false, requestId: 0 },
+    incoming: { rows: [], page: 1, hasOlder: false, hasNewer: false, requestId: 0 }
+  };
+  var selectedOutlet = '';
+  var user = {};
+  var db;
+  var canChooseOutlet = false;
+  var isKitchen = false;
+  var orderRef;
+  var catalogRef;
+
+  function parseList(raw) {
+    try {
+      var value = JSON.parse(raw || '[]');
+      return Array.isArray(value) ? value.map(function(item) { return typeof item === 'string' ? item : item && (item.id || item.value || item.outlet); }).filter(Boolean).map(String) : [];
+    } catch (error) { return []; }
+  }
+  function safe(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(char) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char];
+    });
+  }
+  function labelForOutlet(id) {
+    var names = {};
+    try { names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}'); } catch (error) {}
+    return names[id] || (id === KITCHEN_ID ? 'Central Kitchen' : (id.indexOf(' ') >= 0 ? id : id.replace(/[-_]/g, ' ').replace(/\b\w/g, function(char) { return char.toUpperCase(); })));
+  }
+  function isTestOutlet(id) {
+    return /\btest\b/i.test(String(id) + ' ' + labelForOutlet(id));
+  }
+  function getOutletLocationIds(raw) {
+    try {
+      var locations = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw;
+      return locations && typeof locations === 'object' && !Array.isArray(locations) ? Object.keys(locations) : [];
+    } catch (error) { return []; }
+  }
+  function money(value) { return 'Rp ' + (Number(value) || 0).toLocaleString('id-ID'); }
+  function message(id, text, isError) {
+    var element = document.getElementById(id);
+    element.textContent = text || '';
+    element.className = 'ck-message' + (text ? (isError ? ' error' : ' success') : '');
+  }
+  function formatDate(value) {
+    var date = new Date(Number(value) || value || Date.now());
+    return isNaN(date.getTime()) ? '-' : date.toLocaleString('id-ID');
+  }
+  function setCurrentMode() {
+    selectedOutlet = document.getElementById('ck-outlet').value;
+    isKitchen = selectedOutlet === KITCHEN_ID;
+    document.getElementById('ck-order-tab').hidden = isKitchen;
+    document.getElementById('ck-kitchen-tab').hidden = !isKitchen;
+    document.getElementById('ck-history-outlet-wrap').hidden = !isKitchen;
+    document.getElementById('ck-user-caption').textContent = 'Masuk sebagai ' + (user.nama || user.username || 'User');
+    document.getElementById('ck-order-form').hidden = isKitchen;
+    if (isKitchen && document.getElementById('order-view').hidden === false) switchView('kitchen-view');
+    if (!isKitchen && document.getElementById('kitchen-view').hidden === false) switchView('order-view');
+    renderOrderLines();
+    loadOrderPage('history', 'first');
+    if (isKitchen) loadOrderPage('incoming', 'first');
+    else {
+      orderPages.incoming.rows = [];
+      incomingOrders = {};
+      renderIncomingOrders();
+    }
+    renderCatalog();
+  }
+  function switchView(viewId) {
+    document.querySelectorAll('.ck-view').forEach(function(view) { view.hidden = view.id !== viewId; });
+    document.querySelectorAll('.ck-tab').forEach(function(tab) { tab.classList.toggle('active', tab.dataset.view === viewId); });
+  }
+  function switchKitchenView(viewId) {
+    document.querySelectorAll('.ck-kitchen-view').forEach(function(view) { view.hidden = view.id !== viewId; });
+    document.querySelectorAll('.ck-kitchen-tab').forEach(function(tab) {
+      var active = tab.dataset.kitchenView === viewId;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-pressed', String(active));
+    });
+  }
+  document.querySelectorAll('.ck-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() { if (!tab.hidden) switchView(tab.dataset.view); });
+  });
+  document.querySelectorAll('.ck-kitchen-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() { switchKitchenView(tab.dataset.kitchenView); });
+  });
+  function itemOptions(selected) {
+    var html = '<option value="">Pilih barang</option>';
+    Object.keys(catalog).sort(function(a, b) { return (catalog[a].name || '').localeCompare(catalog[b].name || ''); }).forEach(function(id) {
+      var item = catalog[id];
+      if (item.active === false) return;
+      html += '<option value="' + safe(id) + '" ' + (id === selected ? 'selected' : '') + '>' + safe(item.name) + ' (' + safe(item.unit) + ')</option>';
+    });
+    return html;
+  }
+  function renderOrderLines() {
+    var container = document.getElementById('ck-order-lines');
+    var rows = container.querySelectorAll('.ck-line');
+    if (!rows.length) addOrderLine();
+    container.querySelectorAll('.ck-line').forEach(function(row) {
+      var select = row.querySelector('select');
+      var selected = select.value;
+      select.innerHTML = itemOptions(selected);
+    });
+    updateOrderTotal();
+  }
+  function addOrderLine() {
+    var container = document.getElementById('ck-order-lines');
+    var row = document.createElement('div');
+    row.className = 'ck-line';
+    row.innerHTML = '<select aria-label="Barang">' + itemOptions('') + '</select><input type="number" min="1" step="any" value="1" aria-label="Jumlah"><span class="ck-line-price ck-muted">Pilih barang</span><button class="ck-button secondary" type="button" title="Hapus baris" aria-label="Hapus baris">×</button>';
+    row.querySelector('select').addEventListener('change', function() { updateLinePrice(row); updateOrderTotal(); });
+    row.querySelector('input').addEventListener('input', updateOrderTotal);
+    row.querySelector('button').addEventListener('click', function() { row.remove(); if (!container.children.length) addOrderLine(); updateOrderTotal(); });
+    container.appendChild(row);
+    updateLinePrice(row);
+  }
+  function updateLinePrice(row) {
+    var item = catalog[row.querySelector('select').value];
+    row.querySelector('.ck-line-price').textContent = item ? money(item.price) + ' / ' + item.unit : 'Pilih barang';
+  }
+  function getOrderItems() {
+    var result = [];
+    document.querySelectorAll('#ck-order-lines .ck-line').forEach(function(row) {
+      var id = row.querySelector('select').value;
+      var quantity = Number(row.querySelector('input').value);
+      if (!id) return;
+      var item = catalog[id];
+      if (item && quantity > 0) result.push({ itemId: id, name: item.name, unit: item.unit, quantity: quantity, unitPrice: Number(item.price) || 0 });
+    });
+    return result;
+  }
+  function updateOrderTotal() {
+    var total = getOrderItems().reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0);
+    document.getElementById('ck-order-total').textContent = 'Total: ' + money(total);
+  }
+  function renderCatalog() {
+    var container = document.getElementById('ck-catalog-list');
+    var ids = Object.keys(catalog).sort(function(a, b) { return (catalog[a].name || '').localeCompare(catalog[b].name || ''); });
+    if (!ids.length) { container.innerHTML = '<div class="ck-empty">Katalog masih kosong. Tambahkan barang di atas.</div>'; return; }
+    container.innerHTML = '<table class="ck-table"><thead><tr><th>Barang</th><th>Satuan</th><th class="numeric">Harga / Satuan</th><th>Status</th><th>Aksi</th></tr></thead><tbody>' + ids.map(function(id) {
+      var item = catalog[id];
+      return '<tr><td>' + safe(item.name) + '</td><td>' + safe(item.unit) + '</td><td class="numeric">' + money(item.price) + '</td><td>' + (item.active === false ? 'Nonaktif' : 'Aktif') + '</td><td><button type="button" class="ck-button secondary" data-toggle-item="' + safe(id) + '">' + (item.active === false ? 'Aktifkan' : 'Nonaktifkan') + '</button></td></tr>';
+    }).join('') + '</tbody></table>';
+    container.querySelectorAll('[data-toggle-item]').forEach(function(button) {
+      button.addEventListener('click', function() {
+        var id = button.dataset.toggleItem;
+        catalogRef.child(id).update({ active: catalog[id].active === false });
+      });
+    });
+  }
+  function renderItems(items, actual) {
+    return '<div class="ck-item-list ck-fulfilled-list"><div class="ck-item-row ck-item-head"><span>Barang</span><span class="ck-item-value">Diminta</span>' + (actual ? '<span class="ck-item-value">Dikirim</span>' : '') + '<span class="ck-item-value">Harga</span>' + (actual ? '<span class="ck-item-value">Subtotal</span>' : '') + '</div>' + items.map(function(item) {
+      var shipped = actual && item.shippedQuantity != null ? item.shippedQuantity : item.quantity;
+      return '<div class="ck-item-row"><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity || 0).toLocaleString('id-ID') + '</span>' + (actual ? '<span class="ck-item-value" data-label="Dikirim">' + Number(shipped || 0).toLocaleString('id-ID') + '</span>' : '') + '<span class="ck-item-value" data-label="Harga">' + money(item.unitPrice) + '</span>' + (actual ? '<span class="ck-item-value" data-label="Subtotal">' + money(shipped * item.unitPrice) + '</span>' : '') + '</div>';
+    }).join('') + '</div>';
+  }
+  function renderRequestedItems(order) {
+    return '<div class="ck-item-list"><div class="ck-item-row ck-item-head ck-requested-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span></div>' + (order.items || []).map(function(item) {
+      return '<div class="ck-item-row ck-requested-row"><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity || 0).toLocaleString('id-ID') + ' ' + safe(item.unit) + '</span></div>';
+    }).join('') + (order.note ? '<div class="ck-muted" style="padding-top:8px">Catatan outlet: ' + safe(order.note) + '</div>' : '') + '</div>';
+  }
+  function renderOrders() {
+    orders = {};
+    orderPages.history.rows.forEach(function(order) { orders[order.id] = order; });
+    var outletOrders = orderPages.history.rows;
+    var query = document.getElementById('ck-order-search').value.trim().toLocaleLowerCase('id-ID');
+    var historyOrders = outletOrders.filter(function(order) {
+      if (!query) return true;
+      var searchable = [order.number, order.invoiceNumber, order.note].join(' ').toLocaleLowerCase('id-ID');
+      return searchable.indexOf(query) >= 0;
+    });
+    document.getElementById('ck-order-count').textContent = historyOrders.length + ' PO ditampilkan | Halaman ' + orderPages.history.page;
+    document.getElementById('ck-order-list').innerHTML = historyOrders.length || !outletOrders.length
+      ? makeOrderTable(historyOrders, false)
+      : '<div class="ck-empty">Tidak ada nota yang cocok di halaman ini.</div>';
+    renderPagination('history');
+    renderIncomingOrders();
+    document.querySelectorAll('#ck-order-list [data-print-order]').forEach(function(button) {
+      button.addEventListener('click', function() { printOrder(orders[button.dataset.printOrder] || incomingOrders[button.dataset.printOrder], button.dataset.printType); });
+    });
+  }
+  function renderIncomingOrders() {
+    incomingOrders = {};
+    orderPages.incoming.rows.forEach(function(order) { incomingOrders[order.id] = order; });
+    document.getElementById('ck-incoming-list').innerHTML = makeOrderTable(orderPages.incoming.rows, true);
+    renderPagination('incoming');
+    document.querySelectorAll('#ck-incoming-list [data-fulfill-order]').forEach(function(button) {
+      button.addEventListener('click', function() { fulfillOrder(button.dataset.fulfillOrder); });
+    });
+  }
+  function renderPagination(type) {
+    var page = orderPages[type];
+    var prefix = type === 'history' ? 'ck-history' : 'ck-incoming';
+    document.getElementById(prefix + '-page').textContent = 'Halaman ' + page.page;
+    document.getElementById(prefix + '-previous').disabled = !page.hasNewer;
+    document.getElementById(prefix + '-next').disabled = !page.hasOlder;
+  }
+  function orderPageQuery(type, direction) {
+    var page = orderPages[type];
+    var filter = type === 'incoming'
+      ? { field: 'status', value: 'pending' }
+      : { field: 'outletId', value: isKitchen ? document.getElementById('ck-history-outlet').value : selectedOutlet };
+    if (!filter.value) filter = null;
+    var query = filter ? orderRef.orderByChild(filter.field) : orderRef.orderByKey();
+    if (direction === 'first') {
+      if (filter) return query.startAt(filter.value).endAt(filter.value, '\uf8ff').limitToLast(PAGE_SIZE + 1);
+      return query.limitToLast(PAGE_SIZE + 1);
+    }
+    var boundary = direction === 'older' ? page.rows[page.rows.length - 1].id : page.rows[0].id;
+    if (filter && direction === 'older') return query.startAt(filter.value).endAt(filter.value, boundary).limitToLast(PAGE_SIZE + 2);
+    if (filter) return query.startAt(filter.value, boundary).endAt(filter.value, '\uf8ff').limitToFirst(PAGE_SIZE + 2);
+    if (direction === 'older') return query.endAt(boundary).limitToLast(PAGE_SIZE + 2);
+    return query.startAt(boundary).limitToFirst(PAGE_SIZE + 2);
+  }
+  function loadOrderPage(type, direction) {
+    if (!orderRef) return Promise.resolve();
+    var page = orderPages[type];
+    if (direction !== 'first' && !page.rows.length) direction = 'first';
+    var boundary = direction === 'older' ? page.rows[page.rows.length - 1] : page.rows[0];
+    var requestId = ++page.requestId;
+    return orderPageQuery(type, direction).once('value').then(function(snapshot) {
+      if (requestId !== page.requestId) return;
+      var values = snapshot.val() || {};
+      var rows = Object.keys(values).map(function(id) { return Object.assign({ id: id }, values[id]); });
+      rows.sort(function(a, b) { return String(b.id).localeCompare(String(a.id)); });
+      if (direction === 'first') {
+        page.hasOlder = rows.length > PAGE_SIZE;
+        page.hasNewer = false;
+        page.page = 1;
+      } else {
+        rows = rows.filter(function(order) { return order.id !== boundary.id; });
+        page.hasOlder = direction === 'older' ? rows.length > PAGE_SIZE : true;
+        page.hasNewer = direction === 'newer' ? rows.length > PAGE_SIZE : true;
+        page.page += direction === 'older' ? 1 : -1;
+      }
+      page.rows = rows.slice(0, PAGE_SIZE);
+      if (type === 'history') renderOrders();
+      else renderIncomingOrders();
+    }).catch(function(error) {
+      if (requestId === page.requestId) message('ck-order-message', 'Gagal memuat PO: ' + error.message, true);
+    });
+  }
+  function makeOrderTable(list, kitchenQueue) {
+    if (!list.length) return '<div class="ck-empty">' + (kitchenQueue ? 'Belum ada PO yang menunggu diproses.' : 'Belum ada PO.') + '</div>';
+    return '<div class="ck-order-list">' + list.map(function(order) {
+      var status = order.status === 'fulfilled' ? '<span class="ck-badge done">Dikirim</span>' : '<span class="ck-badge">Menunggu</span>';
+      var total = order.status === 'fulfilled' ? order.actualTotal : order.requestTotal;
+      var actions = order.status === 'fulfilled' ? printButtons(order.id) : (kitchenQueue ? '<button type="button" class="ck-button" data-fulfill-order="' + safe(order.id) + '">Simpan Jumlah Aktual &amp; Proses Pengiriman</button>' : status);
+      var itemsContent = kitchenQueue && order.status === 'pending' ? renderFulfillInputs(order) : (order.status === 'fulfilled' ? renderItems(order.items || [], true) : renderRequestedItems(order));
+      var orderDetails = kitchenQueue ? itemsContent : '<details class="ck-order-details"><summary>Detail barang</summary>' + itemsContent + '</details>';
+      return '<article class="ck-order-card"><header class="ck-order-head"><div><span class="ck-order-label">Nomor PO</span><strong class="ck-order-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></div><div><span class="ck-order-label">Outlet</span><strong class="ck-order-outlet">' + safe(labelForOutlet(order.outletId)) + '</strong></div><div><span class="ck-order-label">' + (order.status === 'fulfilled' ? 'Nilai Nota' : 'Nilai PO') + '</span><strong class="ck-order-amount">' + money(total) + '</strong></div><div>' + status + '</div></header><div class="ck-order-body">' + orderDetails + '</div>' + (order.status === 'fulfilled' ? '<footer class="ck-order-footer"><div class="ck-print-actions">' + printButtons(order.id) + '</div></footer>' : (kitchenQueue ? '<footer class="ck-order-footer">' + actions + '</footer>' : '')) + '</article>';
+    }).join('') + '</div>';
+  }
+  function renderFulfillInputs(order) {
+    return '<div class="ck-fulfill-help">Isi jumlah yang benar-benar dikirim. Jumlah boleh lebih sedikit dari permintaan; isi 0 jika barang tidak dikirim.</div><div class="ck-item-list ck-fulfill-list"><div class="ck-item-row ck-item-head ck-fulfill-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span><span class="ck-item-value">Jumlah aktual</span></div>' + (order.items || []).map(function(item, index) {
+      return '<div class="ck-item-row ck-fulfill-row"><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity).toLocaleString('id-ID') + ' ' + safe(item.unit) + '</span><span class="ck-item-value" data-label="Jumlah aktual"><input class="ck-actual" type="number" min="0" max="' + Number(item.quantity) + '" step="any" value="" placeholder="0" data-actual-order="' + safe(order.id) + '" data-actual-index="' + index + '" aria-label="Jumlah aktual ' + safe(item.name) + ' yang dikirim"></span></div>';
+    }).join('') + '</div>';
+  }
+  function printButtons(orderId) {
+    return '<button type="button" class="ck-button secondary" data-print-order="' + safe(orderId) + '" data-print-type="delivery">Cetak Surat Jalan</button> <button type="button" class="ck-button secondary" data-print-order="' + safe(orderId) + '" data-print-type="invoice">Cetak Nota</button>';
+  }
+  function fulfillOrder(id) {
+    var order = incomingOrders[id];
+    if (!order || order.status !== 'pending') return;
+    var items = (order.items || []).map(function(item, index) {
+      var input = document.querySelector('[data-actual-order="' + CSS.escape(id) + '"][data-actual-index="' + index + '"]');
+      return Object.assign({}, item, { shippedQuantity: input ? Number(input.value) : 0 });
+    });
+    if (!items.some(function(item) { return item.shippedQuantity > 0; })) { window.alert('Jumlah barang yang dikirim harus lebih dari 0.'); return; }
+    var invalid = items.some(function(item) { return !Number.isFinite(item.shippedQuantity) || item.shippedQuantity < 0 || item.shippedQuantity > item.quantity; });
+    if (invalid) { window.alert('Jumlah aktual tidak boleh melebihi jumlah PO dan tidak boleh negatif.'); return; }
+    var actualTotal = items.reduce(function(sum, item) { return sum + item.shippedQuantity * item.unitPrice; }, 0);
+    orderRef.child(id).update({ status: 'fulfilled', items: items, actualTotal: actualTotal, shippedAt: firebase.database.ServerValue.TIMESTAMP, processedBy: user.nama || user.username || '' }).then(function() {
+      loadOrderPage('history', 'first');
+      loadOrderPage('incoming', 'first');
+    }).catch(function(error) {
+      window.alert('Gagal menyimpan pemenuhan PO: ' + error.message);
+    });
+  }
+  function printOrder(order, documentType) {
+    if (!order || order.status !== 'fulfilled') return;
+    var shippedItems = (order.items || []).filter(function(item) { return Number(item.shippedQuantity) > 0; });
+    var paperWidth = document.getElementById('ck-paper-width').value === '58' ? 58 : 80;
+    var details = '<div class="details"><strong>No. PO:</strong> ' + safe(order.number) + '<br><strong>Outlet:</strong> ' + safe(labelForOutlet(order.outletId)) + '<br><strong>Tanggal:</strong> ' + safe(formatDate(order.shippedAt)) + '</div>';
+    var itemLines = shippedItems.map(function(item) {
+      var quantity = Number(item.shippedQuantity).toLocaleString('id-ID');
+      var requested = Number(item.quantity).toLocaleString('id-ID');
+      var name = '<div class="item-name">' + safe(item.name) + '</div>';
+      var quantityLine = documentType === 'delivery'
+        ? '<div class="item-meta"><span>Jumlah PO: ' + requested + ' ' + safe(item.unit) + '</span><strong>Dikirim: ' + quantity + ' ' + safe(item.unit) + '</strong></div>'
+        : '<div class="item-meta">' + quantity + ' ' + safe(item.unit) + ' x ' + money(item.unitPrice) + '<strong>' + money(item.shippedQuantity * item.unitPrice) + '</strong></div>';
+      return '<div class="item">' + name + quantityLine + '</div>';
+    }).join('');
+    var deliveryDoc = function(copy) {
+      var requestedTotal = shippedItems.reduce(function(sum, item) { return sum + Number(item.quantity); }, 0).toLocaleString('id-ID');
+      var shippedTotal = shippedItems.reduce(function(sum, item) { return sum + Number(item.shippedQuantity); }, 0).toLocaleString('id-ID');
+      return '<article class="paper"><h1>SURAT JALAN</h1><h2>Central Kitchen</h2>' + details + '<div class="copy">Salinan ' + copy + '</div>' + itemLines + '<p class="total">Total PO: ' + requestedTotal + '<br>Total dikirim: ' + shippedTotal + '</p><div class="sign"><span>Central Kitchen</span><span>Penerima</span></div></article>';
+    };
+    var invoice = '<article class="paper"><h1>NOTA</h1><h2>Central Kitchen</h2>' + details + itemLines + '<p class="total">TOTAL ' + money(order.actualTotal) + '</p><p class="note">Catatan: ' + safe(order.note || '-') + '</p><div class="sign"><span>Central Kitchen</span><span>Penerima</span></div></article>';
+    var printContent = documentType === 'delivery' ? deliveryDoc('Central Kitchen') + deliveryDoc('Outlet') : invoice;
+    var win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) { window.alert('Izinkan pop-up untuk mencetak dokumen.'); return; }
+    win.document.write('<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>' + (documentType === 'delivery' ? 'Surat Jalan' : 'Nota') + ' ' + safe(order.number) + '</title><style>@page{size:' + paperWidth + 'mm auto;margin:2mm}*{box-sizing:border-box}body{width:' + (paperWidth - 4) + 'mm;margin:0 auto;font:11px Arial,sans-serif;line-height:1.35;color:#111}.paper{width:100%;padding:2mm 0 5mm;page-break-after:always;break-after:page}.paper:last-child{page-break-after:auto;break-after:auto}h1{text-align:center;font-size:15px;margin:0 0 2px}h2{text-align:center;font-size:11px;margin:0 0 8px}.details{font-size:10px;border-bottom:1px dashed #333;padding-bottom:6px;margin-bottom:7px}.copy{text-align:center;font-weight:bold;margin:6px 0}.item{padding:4px 0;border-bottom:1px dashed #999}.item-name{font-weight:bold;overflow-wrap:anywhere}.item-meta{display:flex;justify-content:space-between;gap:2px;font-size:10px}.item-meta strong{white-space:nowrap}.total{text-align:right;font-size:13px;font-weight:bold;margin:8px 0}.note{font-size:10px;overflow-wrap:anywhere}.sign{display:flex;justify-content:space-between;gap:8px;margin-top:28px}.sign span{width:48%;text-align:center;border-top:1px solid #555;padding-top:4px;font-size:9px}@media print{html,body{width:' + (paperWidth - 4) + 'mm}.paper:last-child{page-break-after:auto;break-after:auto}}</style></head><body>' + printContent + '</body></html>');
+    win.document.close();
+    win.focus();
+    win.onload = function() { win.print(); };
+  }
+  function submitOrder() {
+    var items = getOrderItems();
+    if (!items.length) { message('ck-order-message', 'Pilih minimal satu barang dan isi jumlahnya.', true); return; }
+    var duplicates = items.map(function(item) { return item.itemId; }).filter(function(id, index, all) { return all.indexOf(id) !== index; });
+    if (duplicates.length) { message('ck-order-message', 'Pilih barang yang sama satu kali saja; ubah jumlah pada baris barang tersebut.', true); return; }
+    var ref = orderRef.push();
+    var now = Date.now();
+    var date = new Date(now);
+    var number = 'PO-' + date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0') + '-' + ref.key.slice(-5).toUpperCase();
+    var payload = { number: number, outletId: selectedOutlet, outletName: labelForOutlet(selectedOutlet), items: items, requestTotal: items.reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0), note: document.getElementById('ck-note').value.trim(), status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP, createdBy: user.nama || user.username || '' };
+    document.getElementById('ck-submit-order').disabled = true;
+    ref.set(payload).then(function() {
+      document.getElementById('ck-note').value = '';
+      document.getElementById('ck-order-lines').innerHTML = '';
+      addOrderLine();
+      message('ck-order-message', 'PO ' + number + ' berhasil dikirim ke Central Kitchen.');
+      switchView('history-view');
+      loadOrderPage('history', 'first');
+    }).catch(function(error) { message('ck-order-message', 'PO gagal disimpan: ' + error.message, true); }).finally(function() { document.getElementById('ck-submit-order').disabled = false; });
+  }
+  function saveCatalogItem() {
+    var name = document.getElementById('ck-item-name').value.trim();
+    var unit = document.getElementById('ck-item-unit').value.trim();
+    var price = Number(document.getElementById('ck-item-price').value);
+    if (!name || !unit || !Number.isFinite(price) || price < 0) { message('ck-catalog-message', 'Nama, satuan, dan harga yang valid wajib diisi.', true); return; }
+    catalogRef.push({ name: name, unit: unit, price: price, active: true, updatedAt: firebase.database.ServerValue.TIMESTAMP, updatedBy: user.nama || user.username || '' }).then(function() {
+      document.getElementById('ck-item-name').value = '';
+      document.getElementById('ck-item-unit').value = '';
+      document.getElementById('ck-item-price').value = '';
+      message('ck-catalog-message', 'Barang berhasil ditambahkan ke katalog.');
+    }).catch(function(error) { message('ck-catalog-message', 'Gagal menyimpan katalog: ' + error.message, true); });
+  }
+  function setupOutletSelect(publicOutlets, locationOutlets) {
+    var select = document.getElementById('ck-outlet');
+    var role = String(user.role || '').toLowerCase();
+    var username = String(user.username || '').toLowerCase();
+    canChooseOutlet = role === 'owner' || role === 'manager' || role === 'developer' || username === 'burhan';
+    publicOutlets = publicOutlets.filter(function(id) { return !isTestOutlet(id); });
+    if (!publicOutlets.length) publicOutlets = locationOutlets.filter(function(id) { return !isTestOutlet(id); });
+    var outlets = publicOutlets.slice();
+    if (canChooseOutlet || String(user.outlet || '').toLowerCase() === KITCHEN_ID) outlets.push(KITCHEN_ID);
+    if (user.outlet && outlets.indexOf(String(user.outlet)) >= 0 && !canChooseOutlet) outlets = [String(user.outlet)];
+    select.innerHTML = outlets.map(function(id) { return '<option value="' + safe(id) + '">' + safe(labelForOutlet(id)) + '</option>'; }).join('');
+    document.getElementById('ck-history-outlet').innerHTML = '<option value="">Semua outlet</option>' + publicOutlets.map(function(id) {
+      return '<option value="' + safe(id) + '">' + safe(labelForOutlet(id)) + '</option>';
+    }).join('');
+    if (user.outlet && outlets.indexOf(String(user.outlet)) >= 0) select.value = String(user.outlet);
+    else if (outlets.length) select.value = outlets[0];
+    if (!canChooseOutlet) select.disabled = true;
+    select.addEventListener('change', function() {
+      setCurrentMode();
+    });
+    if (!outlets.length) throw new Error('Belum ada outlet yang terdaftar. Tambahkan outlet terlebih dahulu di Pengaturan.');
+  }
+  function boot() {
+    try { user = JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch (error) { user = {}; }
+    if (!user.username) { window.location.href = 'login.html'; return; }
+    if (!window.FirebaseStorage || !FirebaseStorage.init()) throw new Error('Firebase tidak tersedia. Pastikan koneksi database online untuk menggunakan PO bersama.');
+    db = FirebaseStorage.db();
+    if (!db) throw new Error('Database belum siap.');
+    Promise.all([FirebaseStorage.getAppState('rbm_outlets'), FirebaseStorage.getAppState('rbm_internal_outlets'), FirebaseStorage.getAppState('rbm_outlet_names'), FirebaseStorage.getAppState('rbm_outlet_locations')]).then(function(values) {
+      var publicOutlets = parseList(values[0]);
+      var internalOutlets = parseList(values[1]);
+      var locationOutlets = getOutletLocationIds(values[3]);
+      var names = {};
+      try { names = JSON.parse(values[2] || '{}'); } catch (error) {}
+      if (internalOutlets.indexOf(KITCHEN_ID) < 0) internalOutlets.push(KITCHEN_ID);
+      names[KITCHEN_ID] = names[KITCHEN_ID] || 'Central Kitchen';
+      return Promise.all([
+        FirebaseStorage.setAppState('rbm_internal_outlets', JSON.stringify(internalOutlets)),
+        FirebaseStorage.setAppState('rbm_outlet_names', JSON.stringify(names))
+      ]).then(function() { setupOutletSelect(publicOutlets, locationOutlets); });
+    }).then(function() {
+      orderRef = db.ref('rbm_pro/central_kitchen/orders');
+      catalogRef = db.ref('rbm_pro/central_kitchen/catalog');
+      catalogRef.on('value', function(snapshot) { catalog = snapshot.val() || {}; renderCatalog(); renderOrderLines(); });
+      setCurrentMode();
+    }).catch(function(error) {
+      message('ck-order-message', error.message || 'Gagal memuat data Central Kitchen.', true);
+      document.getElementById('ck-catalog-message').textContent = error.message || 'Database tidak tersedia.';
+      document.getElementById('ck-submit-order').disabled = true;
+      document.getElementById('ck-save-item').disabled = true;
+    });
+  }
+
+  document.getElementById('ck-add-line').addEventListener('click', addOrderLine);
+  document.getElementById('ck-submit-order').addEventListener('click', submitOrder);
+  document.getElementById('ck-save-item').addEventListener('click', saveCatalogItem);
+  document.getElementById('ck-refresh').addEventListener('click', function() {
+    loadOrderPage('history', 'first');
+    if (isKitchen) loadOrderPage('incoming', 'first');
+  });
+  document.getElementById('ck-history-outlet').addEventListener('change', function() { loadOrderPage('history', 'first'); });
+  document.getElementById('ck-order-search').addEventListener('input', renderOrders);
+  document.getElementById('ck-history-previous').addEventListener('click', function() { loadOrderPage('history', 'newer'); });
+  document.getElementById('ck-history-next').addEventListener('click', function() { loadOrderPage('history', 'older'); });
+  document.getElementById('ck-incoming-previous').addEventListener('click', function() { loadOrderPage('incoming', 'newer'); });
+  document.getElementById('ck-incoming-next').addEventListener('click', function() { loadOrderPage('incoming', 'older'); });
+  boot();
+})();
+</script>
+</body>
+</html>

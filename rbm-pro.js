@@ -5186,6 +5186,38 @@ function getLocalDateKey(input) {
     return `${y}-${m}-${day}`;
 }
 
+function canEditPastAbsensi() {
+    var user = getAbsensiRequestUser();
+    var registeredUser = {};
+    try {
+        var users = JSON.parse(localStorage.getItem('rbm_users') || '[]');
+        registeredUser = users.find(function(item) {
+            return item && item.username && user.username && String(item.username).toLowerCase() === String(user.username).toLowerCase();
+        }) || {};
+    } catch (e) {}
+    var username = String(user.username || '').toLowerCase();
+    var role = String(registeredUser.jabatan || user.jabatan || user.role || '').toLowerCase().replace(/[_-]+/g, ' ');
+    return username === 'burhan' || username === 'developer' || role === 'owner' || role === 'developer' ||
+        role.indexOf('owner') >= 0 || role.indexOf('manager regional') >= 0 || role.indexOf('supervisor regional') >= 0;
+}
+
+function isOfficeInternalAbsensiOutlet(outlet) {
+    var outletId = String(outlet || '').toLowerCase();
+    if (outletId === 'office' || outletId === 'office-internal' || outletId === 'office_internal') return true;
+    try {
+        var names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+        return String(names[outlet] || '').toLowerCase().replace(/[_-]+/g, ' ').trim() === 'office internal';
+    } catch (e) { return false; }
+}
+
+function isPastAbsensiDate(dateKey) {
+    return !!dateKey && dateKey < getLocalDateKey(new Date());
+}
+
+function absensiDateEditScope(outlet, type) {
+    return String(outlet || 'default') + ':' + String(type || 'absensi');
+}
+
 function syncAbsensiPeriodAndRefresh() {
     if (window._absensiEmployeesDirty) {
         if (!confirm("Ada perubahan data karyawan yang belum disimpan! Lanjutkan refresh (perubahan akan hilang)?")) return;
@@ -5383,6 +5415,8 @@ function renderAbsensiTable(mode) {
 
     // Toggle Legends
     const isJadwal = activeAbsensiMode === 'jadwal';
+    const outlet = getRbmOutlet() || 'default';
+    const canEditPast = isOfficeInternalAbsensiOutlet(outlet) || canEditPastAbsensi();
     const legendAbsensi = document.getElementById('legend-absensi');
     const legendJadwal = document.getElementById('legend-jadwal');
     if (legendAbsensi && legendJadwal) {
@@ -5548,7 +5582,8 @@ function renderAbsensiTable(mode) {
                     colorClass = `status-${type}`;
                  }
             }
-            rowHtml += `<td class="absensi-cell ${colorClass}" onclick="cycleAbsensiStatus(this, '${key}')">${status}</td>`;
+            const isReadOnlyPast = isPastAbsensiDate(dateKey) && !canEditPast;
+            rowHtml += `<td class="absensi-cell ${colorClass}" ${isReadOnlyPast ? 'title="Tanggal lampau hanya dapat diubah Developer/Owner, Manager Regional, atau Supervisor Regional" style="cursor:not-allowed; opacity:0.72;"' : `onclick="cycleAbsensiStatus(this, '${key}')"`}>${status}</td>`;
         });
 
         // Rekap Columns
@@ -5610,6 +5645,12 @@ function toggleAbsensiExtraCols(btn) {
 
 function cycleAbsensiStatus(cell, key) {
     const isJadwal = activeAbsensiMode === 'jadwal';
+    const outlet = getRbmOutlet() || 'default';
+    const dateKey = String(key || '').substring(0, 10);
+    if (!isOfficeInternalAbsensiOutlet(outlet) && isPastAbsensiDate(dateKey) && !canEditPastAbsensi()) {
+        showCustomAlert('Tanggal lampau hanya dapat diubah Developer/Owner, Manager Regional, atau Supervisor Regional.', 'Akses Ditolak', 'error');
+        return;
+    }
     const codes = isJadwal ? (typeof getJadwalCodesList === 'function' ? getJadwalCodesList() : JADWAL_CODES) : ABSENSI_CODES;
     const current = cell.innerText;
     let nextIdx = codes.indexOf(current) + 1;
@@ -5636,6 +5677,10 @@ function cycleAbsensiStatus(cell, key) {
         window._absensiViewData = getCachedParsedStorage(getRbmStorageKey(isJadwal ? 'RBM_JADWAL_DATA' : 'RBM_ABSENSI_DATA'), {});
     }
     window._absensiViewData[key] = next;
+    var editScope = absensiDateEditScope(outlet, isJadwal ? 'jadwal' : 'absensi');
+    window._absensiEditedDates = window._absensiEditedDates || {};
+    window._absensiEditedDates[editScope] = window._absensiEditedDates[editScope] || {};
+    window._absensiEditedDates[editScope][dateKey] = true;
 }
 
 function updateEmployee(index, field, value) {
@@ -5669,7 +5714,7 @@ function addEmployeeRow() {
     }
     const employees = window._absensiViewEmployees;
     const newId = employees.length > 0 ? Math.max(...employees.map(e => e.id || 0)) + 1 : 1;
-    employees.push({ id: newId, name: "Nama Baru", jabatan: "-", email: "", joinDate: "", sisaAL:0, sisaDP:0, sisaPH:0 });
+    employees.push({ id: newId, name: "Nama Baru", jabatan: "-", email: "", joinDate: "", gajiPokok: 2000000, sisaAL:0, sisaDP:0, sisaPH:0 });
     // [NO AUTO-SAVE] harus disimpan manual
     window._absensiEmployeesDirty = true;
     markAbsensiEmployeesDirtyUI();
@@ -5706,6 +5751,12 @@ function saveAbsensiToFirebase(silent) {
     var isJadwal = activeAbsensiMode === 'jadwal';
     var type = isJadwal ? 'jadwal' : 'absensi';
     var outlet = getRbmOutlet() || 'default';
+    var editScope = absensiDateEditScope(outlet, type);
+    var editedDates = window._absensiEditedDates && window._absensiEditedDates[editScope] || {};
+    if (!isOfficeInternalAbsensiOutlet(outlet) && !canEditPastAbsensi() && Object.keys(editedDates).some(isPastAbsensiDate)) {
+        if (!silent) showCustomAlert('Tanggal lampau hanya dapat diubah Developer/Owner, Manager Regional, atau Supervisor Regional.', 'Akses Ditolak', 'error');
+        return;
+    }
     var msg = document.getElementById('absensi-save-feedback');
     function showSuccess() {
         if (msg) {
@@ -5745,6 +5796,7 @@ function saveAbsensiToFirebase(silent) {
 
     Promise.all(promises).then(function() {
         window._absensiEmployeesDirty = false;
+        if (window._absensiEditedDates) delete window._absensiEditedDates[editScope];
         if (msg && !silent) msg.textContent = 'Data tersimpan.';
         showSuccess();
         try {
@@ -6241,6 +6293,9 @@ function renderRekapGaji() {
         const transportCell = enableTransport ? `<td><input type="text" data-field="transport" value="${formatRupiah(transport)}" oninput="resizeInput(this)" style="width:${wTransport}px; text-align:right; padding:5px;" placeholder="Rp 0"></td>` : '';
 
         // 4. Render Row (NO dan NAMA sticky) - simpan hanya saat klik Simpan Perubahan
+        const gajiPokokCell = canEditGajiPokokManual()
+            ? `<input type="text" data-field="gajiPokok" value="${formatRupiah(gajiPokok)}" oninput="resizeInput(this)" style="width:${wGP}px; text-align:right; padding:5px;">`
+            : `<span title="Hanya Developer yang dapat mengubah gaji pokok">${formatRupiah(gajiPokok)}</span>`;
         html += `<tr data-emp-index="${idx}" data-emp-id="${empKeyAttr}">
             <td style="text-align:center; position:sticky; left:0; background:white; z-index:5; border:1px solid #ccc;">${idx + 1}</td>
             <td style="position:sticky; left:40px; background:white; z-index:5; border:1px solid #ccc;">${emp.name}</td>
@@ -6261,7 +6316,7 @@ function renderRekapGaji() {
             <td style="text-align:center; font-size:9px;">${dates.length}</td>
 
             <!-- Financials -->
-            <td><input type="text" data-field="gajiPokok" value="${formatRupiah(gajiPokok)}" oninput="resizeInput(this)" style="width:${wGP}px; text-align:right; padding:5px;"></td>
+            <td>${gajiPokokCell}</td>
             <td style="text-align:right;">${formatRupiah(gajiPerHari)}</td>
             
             <!-- Potongan Kehadiran -->
@@ -6346,7 +6401,7 @@ async function saveRekapGajiData() {
         var selMetode = tr.querySelector('select[data-field="metodeBayar"]');
         if (inpBank) employees[empIdx].bank = inpBank.value || '';
         if (inpNoRek) employees[empIdx].noRek = inpNoRek.value || '';
-        if (inpGajiPokok) employees[empIdx].gajiPokok = parseRp(inpGajiPokok.value);
+        if (inpGajiPokok && canEditGajiPokokManual()) employees[empIdx].gajiPokok = parseRp(inpGajiPokok.value);
         if (!gajiData[empId]) gajiData[empId] = {};
         if (inpHkTarget) gajiData[empId].hkTarget = parseInt(inpHkTarget.value, 10) || 0;
         if (inpPotHari) gajiData[empId].potHari = parseFloat(inpPotHari.value) || 0;
@@ -6785,6 +6840,10 @@ async function approveGajiPengajuan(requestId, role) {
 }
 
 function updateEmpGaji(idx, field, val) {
+    if (field === 'gajiPokok' && !canEditGajiPokokManual()) {
+        showCustomAlert('Hanya Developer yang dapat mengubah gaji pokok secara manual.', 'Akses Ditolak', 'error');
+        return;
+    }
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     if (employees[idx]) {
         if (field === 'gajiPokok') {
@@ -7969,6 +8028,22 @@ function rbmIsDeveloper() {
     try {
         var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
         return (u && (u.username || '').toString().toLowerCase() === 'burhan');
+    } catch (e) {
+        return false;
+    }
+}
+
+function canEditGajiPokokManual() {
+    try {
+        var user = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+        var registeredUsers = JSON.parse(localStorage.getItem('rbm_users') || '[]');
+        var registeredUser = Array.isArray(registeredUsers) ? registeredUsers.find(function(item) {
+            return item && item.username && user.username && String(item.username).toLowerCase() === String(user.username).toLowerCase();
+        }) : null;
+        var roles = [registeredUser && registeredUser.role, registeredUser && registeredUser.jabatan, user.role, user.jabatan]
+            .map(function(value) { return String(value || '').toLowerCase().trim(); });
+        var username = String(user.username || '').toLowerCase();
+        return username === 'burhan' || username === 'developer' || roles.indexOf('developer') >= 0;
     } catch (e) {
         return false;
     }
@@ -12904,6 +12979,50 @@ function absensiRequestRole(user) {
 }
 
 const ABSENSI_REQUEST_STEPS = ['Supervisor', 'Manager Outlet', 'Supervisor Regional', 'Owner/Developer'];
+const GAJI_KENAIKAN_REQUEST_TYPE = 'Pengajuan Kenaikan Gaji';
+const GAJI_POKOK_TIERS = [2000000, 2200000, 2400000, 2500000, 2750000, 2900000];
+
+function getNextGajiPokokTier(currentSalary) {
+    return GAJI_POKOK_TIERS.find(function(salary) { return salary > currentSalary; }) || 0;
+}
+
+function updateGajiKenaikanAmount() {
+    const currentEl = document.getElementById('gaji-kenaikan-current');
+    const amountEl = document.getElementById('gaji-kenaikan-amount');
+    const targetEl = document.getElementById('gaji-kenaikan-target');
+    const employeeSelect = document.getElementById('gaji-kenaikan-employee');
+    if (!currentEl || !amountEl || !targetEl || !employeeSelect) return;
+    if (!employeeSelect.value) {
+        currentEl.value = '';
+        amountEl.value = '';
+        targetEl.value = '';
+        return;
+    }
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const employee = employees[Number(employeeSelect.value)];
+    if (!employee) {
+        currentEl.value = '';
+        amountEl.value = '';
+        targetEl.value = '';
+        return;
+    }
+    const currentSalary = Number(employee.gajiPokok) || 0;
+    const nextSalary = getNextGajiPokokTier(currentSalary);
+    currentEl.value = formatRupiah(currentSalary);
+    amountEl.value = nextSalary ? formatRupiah(nextSalary - currentSalary) : formatRupiah(0);
+    targetEl.value = nextSalary ? formatRupiah(nextSalary) : 'Jenjang maksimum';
+}
+
+function openGajiKenaikanModal() {
+    const modal = document.getElementById('gajiKenaikanModal');
+    if (modal) modal.style.display = 'flex';
+    updateGajiKenaikanAmount();
+}
+
+function closeGajiKenaikanModal() {
+    const modal = document.getElementById('gajiKenaikanModal');
+    if (modal) modal.style.display = 'none';
+}
 
 function requestStatusText(request) {
     if (request.status === 'rejected') return 'Ditolak';
@@ -13011,6 +13130,92 @@ async function submitEmployeeAbsensiRequest() {
     } catch (error) { if (feedback) { feedback.textContent = 'Gagal mengirim pengajuan: ' + error.message; feedback.style.color = '#b91c1c'; } }
 }
 
+async function submitGajiKenaikanRequest() {
+    const user = getAbsensiRequestUser();
+    if (absensiRequestRole(user) !== 'Supervisor') { alert('Pengajuan kenaikan gaji hanya dapat dibuat oleh Supervisor Outlet.'); return; }
+    if (typeof firebase === 'undefined' || !firebase.database) { alert('Koneksi Firebase diperlukan.'); return; }
+    const outlet = getAbsensiRequestOutlet();
+    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const selectedEmployeeValue = document.getElementById('gaji-kenaikan-employee')?.value || '';
+    const selectedIndex = selectedEmployeeValue === '' ? -1 : Number(selectedEmployeeValue);
+    const employee = employees[selectedIndex];
+    const reason = document.getElementById('gaji-kenaikan-reason')?.value.trim() || '';
+    if (!employee) { alert('Pilih karyawan yang akan diajukan.'); return; }
+    if (!reason) { alert('Alasan kenaikan wajib diisi.'); return; }
+    const currentSalary = Number(employee.gajiPokok) || 0;
+    if (currentSalary <= 0) { alert('Gaji pokok karyawan belum diatur. Hubungi Developer.'); return; }
+    const requestedSalary = getNextGajiPokokTier(currentSalary);
+    if (!requestedSalary) { alert('Gaji karyawan sudah berada pada jenjang tertinggi.'); return; }
+
+    const requestsRef = firebase.database().ref('rbm_pro/pengajuan_absensi/' + outlet);
+    const existing = await requestsRef.once('value');
+    const employeeId = employee.id != null ? String(employee.id) : '';
+    const hasPendingRequest = Object.values(existing.val() || {}).some(function(request) {
+        return request && request.type === GAJI_KENAIKAN_REQUEST_TYPE && request.status === 'pending' &&
+            (employeeId ? String(request.employeeId || '') === employeeId : request.name === employee.name);
+    });
+    if (hasPendingRequest) { alert('Masih ada pengajuan kenaikan gaji yang menunggu persetujuan untuk karyawan ini.'); return; }
+
+    try {
+        await requestsRef.push({
+            name: employee.name,
+            employeeId: employeeId,
+            outlet: outlet,
+            type: GAJI_KENAIKAN_REQUEST_TYPE,
+            currentSalary: currentSalary,
+            requestedSalary: requestedSalary,
+            increaseAmount: requestedSalary - currentSalary,
+            reason: reason,
+            currentStep: 'Manager Outlet',
+            status: 'pending',
+            createdAt: firebase.database.ServerValue.TIMESTAMP,
+            createdBy: user.username || user.nama || 'Supervisor'
+        });
+        const reasonInput = document.getElementById('gaji-kenaikan-reason');
+        if (reasonInput) reasonInput.value = '';
+        closeGajiKenaikanModal();
+        alert('Pengajuan terkirim. Menunggu persetujuan Manager Outlet, lalu Supervisor Regional.');
+        loadAbsensiRequests();
+    } catch (error) {
+        alert('Gagal mengirim pengajuan kenaikan gaji: ' + (error.message || error));
+    }
+}
+
+async function applyApprovedGajiKenaikan(request) {
+    const outlet = request.outlet || getAbsensiRequestOutlet();
+    const employeesRef = firebase.database().ref('rbm_pro/employees/' + outlet);
+    const snapshot = await employeesRef.once('value');
+    const storedEmployees = snapshot.val();
+    const employees = Array.isArray(storedEmployees) ? storedEmployees : Object.values(storedEmployees || {});
+    const employee = employees.find(function(item) {
+        return item && (request.employeeId
+            ? String(item.id) === String(request.employeeId)
+            : item.name === request.name);
+    });
+    if (!employee) throw new Error('Karyawan pengaju tidak ditemukan di outlet.');
+
+    const currentSalary = Number(employee.gajiPokok) || 0;
+    const requestedSalary = Number(request.requestedSalary) || 0;
+    if (currentSalary === requestedSalary) return employees;
+    if (currentSalary !== Number(request.currentSalary) || getNextGajiPokokTier(currentSalary) !== requestedSalary) {
+        throw new Error('Gaji karyawan berubah atau jenjang pengajuan sudah tidak sesuai. Muat ulang dan ajukan kembali.');
+    }
+
+    employee.gajiPokok = requestedSalary;
+    await employeesRef.set(employees);
+    const suffix = window.RBMStorage && typeof window.RBMStorage._outletSuffix === 'function'
+        ? window.RBMStorage._outletSuffix(outlet)
+        : '_' + String(outlet).toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const employeeStorageKey = 'RBM_EMPLOYEES' + suffix;
+    window._rbmParsedCache[employeeStorageKey] = { data: employees };
+    try { localStorage.setItem(employeeStorageKey, JSON.stringify(employees)); } catch (e) {}
+    if (getRbmOutlet() === outlet) {
+        window._absensiViewEmployees = employees;
+        if (activeAbsensiMode === 'gaji') renderRekapGaji();
+    }
+    return employees;
+}
+
 async function loadEmployeeAbsensiRequests() {
     const name = document.getElementById('gps_absen_name')?.value || '';
     const container = document.getElementById('gps_request_history');
@@ -13029,12 +13234,28 @@ async function loadAbsensiRequests() {
         const snap = await firebase.database().ref('rbm_pro/pengajuan_absensi/' + getAbsensiRequestOutlet()).once('value');
         const entries = Object.entries(snap.val() || {}).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
         const role = absensiRequestRole(getAbsensiRequestUser());
+        const raiseForm = document.getElementById('gaji-kenaikan-form');
+        const raiseEmployeeSelect = document.getElementById('gaji-kenaikan-employee');
+        if (raiseForm) raiseForm.style.display = role === 'Supervisor' ? 'flex' : 'none';
+        if (raiseEmployeeSelect) {
+            const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+            raiseEmployeeSelect.innerHTML = '<option value="">Pilih karyawan</option>';
+            employees.forEach(function(employee, index) {
+                const option = document.createElement('option');
+                option.value = String(index);
+                option.textContent = employee.name + ' · ' + formatRupiah(Number(employee.gajiPokok) || 0);
+                raiseEmployeeSelect.appendChild(option);
+            });
+            updateGajiKenaikanAmount();
+        }
         tbody.innerHTML = entries.length ? entries.map(([id, r]) => {
             const canApprove = r.status === 'pending' && r.currentStep === role;
             const user = getAbsensiRequestUser();
             const canDelete = String(user.role || '').toLowerCase() === 'owner' || String(user.role || '').toLowerCase() === 'developer' || r.createdBy === user.username;
             const deleteButton = canDelete ? `<button class="btn btn-secondary" style="padding:5px 8px; margin-left:4px; color:#b91c1c;" onclick="deleteAbsensiRequest('${id}')">Hapus</button>` : '';
-            const detailSummary = r.type === 'Lupa Absen' && Array.isArray(r.attendanceDetails) ? '<br><span style="font-size:11px;color:#475569;">' + r.attendanceDetails.map(function(detail) { return (detail.type || '-') + ': ' + (detail.time || '-'); }).join(' | ') + '</span>' : '';
+            const detailSummary = r.type === GAJI_KENAIKAN_REQUEST_TYPE
+                ? '<br><span style="font-size:11px;color:#475569;">Gaji: ' + formatRupiah(Number(r.currentSalary) || 0) + ' → ' + formatRupiah(Number(r.requestedSalary) || 0) + ' (naik ' + formatRupiah(Number(r.increaseAmount) || ((Number(r.requestedSalary) || 0) - (Number(r.currentSalary) || 0))) + ')</span>'
+                : (r.type === 'Lupa Absen' && Array.isArray(r.attendanceDetails) ? '<br><span style="font-size:11px;color:#475569;">' + r.attendanceDetails.map(function(detail) { return (detail.type || '-') + ': ' + (detail.time || '-'); }).join(' | ') + '</span>' : '');
             const action = (canApprove ? `<button class="btn btn-primary" style="padding:5px 8px;" onclick="approveAbsensiRequest('${id}')">Setujui</button>` : (r.status === 'approved' ? '<strong style="color:#15803d;">Disetujui</strong>' : '-')) + deleteButton;
             const summary = requestApprovalSummary(r);
             return `<tr><td>${r.name || '-'}</td><td>${r.type || '-'}${detailSummary}</td><td>${r.startDate || '-'} s/d ${r.endDate || '-'}</td><td>${r.reason || '-'}</td><td>${requestStatusText(r)}${summary ? '<br><span style="font-size:11px;color:#64748b;">' + summary + '</span>' : ''}</td><td>${action}</td></tr>`;
@@ -13044,14 +13265,33 @@ async function loadAbsensiRequests() {
 
 async function approveAbsensiRequest(requestId) {
     const role = absensiRequestRole(getAbsensiRequestUser());
+    const user = getAbsensiRequestUser();
     if (!role || typeof firebase === 'undefined' || !firebase.database) return;
     const ref = firebase.database().ref('rbm_pro/pengajuan_absensi/' + getAbsensiRequestOutlet() + '/' + requestId);
     const snap = await ref.once('value');
     const request = snap.val();
     if (!request || request.status !== 'pending' || request.currentStep !== role) { alert('Pengajuan belum berada pada tahap persetujuan Anda.'); return; }
+    if (request.type === GAJI_KENAIKAN_REQUEST_TYPE) {
+        const steps = ['Supervisor', 'Manager Outlet', 'Supervisor Regional'];
+        const stepIndex = steps.indexOf(role);
+        const nextStep = steps[stepIndex + 1];
+        const approver = user.nama || user.username || role;
+        const approvalField = 'approvedBy_' + role.replace(/\//g, '_').replace(/ /g, '_');
+        try {
+            if (role === 'Supervisor Regional') {
+                await applyApprovedGajiKenaikan(request);
+                await ref.update({ status: 'approved', currentStep: '', [approvalField]: approver, appliedSalary: Number(request.requestedSalary) || 0 });
+            } else {
+                await ref.update({ currentStep: nextStep, [approvalField]: approver });
+            }
+            loadAbsensiRequests();
+        } catch (error) {
+            alert('Gagal memproses persetujuan kenaikan gaji: ' + (error.message || error));
+        }
+        return;
+    }
     const stepIndex = ABSENSI_REQUEST_STEPS.indexOf(role);
     const nextStep = ABSENSI_REQUEST_STEPS[stepIndex + 1];
-    const user = getAbsensiRequestUser();
     if (role === 'Supervisor Regional' && ['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur'].includes(request.type)) {
         await applyApprovedAbsensiRequest(request);
         request.appliedToAttendance = true;
@@ -13447,6 +13687,10 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
     if (typeof loadEmployeeAbsensiRequests !== 'undefined') window.loadEmployeeAbsensiRequests = loadEmployeeAbsensiRequests;
     if (typeof loadAbsensiRequests !== 'undefined') window.loadAbsensiRequests = loadAbsensiRequests;
     if (typeof approveAbsensiRequest !== 'undefined') window.approveAbsensiRequest = approveAbsensiRequest;
+    if (typeof openGajiKenaikanModal !== 'undefined') window.openGajiKenaikanModal = openGajiKenaikanModal;
+    if (typeof closeGajiKenaikanModal !== 'undefined') window.closeGajiKenaikanModal = closeGajiKenaikanModal;
+    if (typeof updateGajiKenaikanAmount !== 'undefined') window.updateGajiKenaikanAmount = updateGajiKenaikanAmount;
+    if (typeof submitGajiKenaikanRequest !== 'undefined') window.submitGajiKenaikanRequest = submitGajiKenaikanRequest;
     if (typeof deleteAbsensiRequest !== 'undefined') window.deleteAbsensiRequest = deleteAbsensiRequest;
     if (typeof continueAbsensiWithPassword !== 'undefined') window.continueAbsensiWithPassword = continueAbsensiWithPassword;
     if (typeof resetAbsensiPassword !== 'undefined') window.resetAbsensiPassword = resetAbsensiPassword;

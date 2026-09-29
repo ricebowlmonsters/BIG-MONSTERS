@@ -1,6 +1,11 @@
 {
   "rules": {
     "rbm_pro": {
+      "central_kitchen": {
+        "orders": {
+          ".indexOn": ["outletId", "status"]
+        }
+      },
       "gps_logs_partitioned": {
         "$outlet": {
           "$month": {

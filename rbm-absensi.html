@@ -231,10 +231,44 @@
     </div>
 
         <div id="tab-content-pengajuan-absensi" style="display:none;">
+            <div id="gaji-kenaikan-form" style="display:none; margin-bottom:12px;">
+                <button type="button" class="btn btn-primary" onclick="openGajiKenaikanModal()">Buat Pengajuan Kenaikan Gaji</button>
+            </div>
+            <div id="gajiKenaikanModal" class="modal-overlay" style="display:none; align-items:center; justify-content:center; z-index:10000;" onclick="closeGajiKenaikanModal()">
+                <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="gaji-kenaikan-title" style="background:#fff; padding:24px; width:560px; max-width:95%; border-radius:8px; max-height:90vh; overflow-y:auto;" onclick="event.stopPropagation()">
+                    <h3 id="gaji-kenaikan-title" style="margin:0 0 18px;">Pengajuan Kenaikan Gaji</h3>
+                    <div class="filter-group" style="margin-bottom:14px;">
+                        <label for="gaji-kenaikan-employee">Nama karyawan</label>
+                        <select id="gaji-kenaikan-employee" onchange="updateGajiKenaikanAmount()" style="width:100%;"></select>
+                    </div>
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:10px; margin-bottom:14px;">
+                        <div class="filter-group">
+                            <label for="gaji-kenaikan-current">Gaji sebelumnya</label>
+                            <input id="gaji-kenaikan-current" type="text" readonly placeholder="Pilih karyawan" style="width:100%; background:#f8fafc;">
+                        </div>
+                        <div class="filter-group">
+                            <label for="gaji-kenaikan-amount">Nominal kenaikan</label>
+                            <input id="gaji-kenaikan-amount" type="text" readonly placeholder="Otomatis" style="width:100%; background:#f8fafc;">
+                        </div>
+                        <div class="filter-group">
+                            <label for="gaji-kenaikan-target">Gaji setelah disetujui</label>
+                            <input id="gaji-kenaikan-target" type="text" readonly placeholder="Pilih karyawan" style="width:100%; background:#f8fafc;">
+                        </div>
+                    </div>
+                    <div class="filter-group" style="margin-bottom:16px;">
+                        <label for="gaji-kenaikan-reason">Alasan pengajuan</label>
+                        <textarea id="gaji-kenaikan-reason" maxlength="300" rows="3" placeholder="Jelaskan alasan kenaikan gaji" style="width:100%; box-sizing:border-box; resize:vertical;"></textarea>
+                    </div>
+                    <p style="font-size:12px; color:#64748b; margin:0 0 16px;">Kenaikan mengikuti jenjang gaji berikutnya dan berlaku setelah persetujuan Manager Outlet serta Supervisor Regional.</p>
+                    <div style="display:flex; justify-content:flex-end; gap:8px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeGajiKenaikanModal()">Tutup</button>
+                        <button type="button" class="btn btn-primary" onclick="submitGajiKenaikanRequest()">Kirim Pengajuan</button>
+                    </div>
+                </div>
+            </div>
             <div class="filter-row" style="margin-bottom:12px; gap:8px; align-items:center;">
                 <button class="btn btn-primary" onclick="loadAbsensiRequests()">Muat Pengajuan</button>
-                <span style="font-size:12px; color:#64748b;">Alur: Supervisor → Manager Outlet → Supervisor Regional → Manager Regional
-</span>
+                <span style="font-size:12px; color:#64748b;">Kenaikan gaji: Supervisor Outlet → Manager Outlet → Supervisor Regional</span>
             </div>
             <div class="table-card"><div class="table-wrapper"><table class="data-table" id="absensi-requests-table">
                 <thead><tr><th>Pengaju</th><th>Jenis</th><th>Tanggal</th><th>Alasan</th><th>Status</th><th>Aksi</th></tr></thead>

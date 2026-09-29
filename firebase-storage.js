@@ -16,6 +16,7 @@
   var APP_STATE_KEYS = {
     rbm_users: 'app_state/users',
     rbm_outlets: 'app_state/outlet_ids',
+    rbm_internal_outlets: 'app_state/internal_outlets',
     rbm_outlet_names: 'app_state/outlet_names',
     rbm_db_connections: 'app_state/db_connections',
     rbm_active_connection_index: 'app_state/active_connection_index',
