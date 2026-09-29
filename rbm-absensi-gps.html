@@ -327,7 +327,7 @@ function fallbackCopy(url, feedback) {
   <div class="form-container">
     <div class="form-section rbm-absen-name-section">
       <label>Nama Karyawan</label>
-      <select id="gps_absen_name" onchange="document.getElementById('gps_absen_password').value=''; resetAbsensiPassword(); updateGpsJadwalDisplay(); loadEmployeeAbsensiRequests(); checkDistance();">
+      <select id="gps_absen_name" onchange="document.getElementById('gps_absen_password').value=''; resetAbsensiPassword(); updateGpsJadwalDisplay(); loadEmployeeAbsensiRequests(); checkDistance(); if(typeof populateShiftSwapEmployees === 'function') populateShiftSwapEmployees();">
         <option value="">-- Pilih Nama --</option>
         <!-- Populated by JS -->
       </select>
@@ -363,8 +363,15 @@ function fallbackCopy(url, feedback) {
     <div class="form-section" style="background:#fff; border:1px solid #e2e8f0; padding:16px 20px; border-radius:16px; margin-bottom:24px; text-align:left;">
       <strong style="font-size:14px; display:block; margin-bottom:12px; color:#334155;">Pengajuan Absensi, Libur &amp; Cuti</strong>
       <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px;">
-            <div><label for="gps_request_type" style="font-size:12px;">Jenis Pengajuan</label><select id="gps_request_type" onchange="var detail=document.getElementById('gps_lupa_absen_detail'); var lembur=document.getElementById('gps_lembur_detail'); if(detail) detail.style.display=this.value === 'Lupa Absen' ? 'block' : 'none'; if(lembur) lembur.style.display=this.value === 'Pengajuan Lembur' ? 'block' : 'none'; if(typeof toggleLupaAbsenDetail === 'function') toggleLupaAbsenDetail(this.value);" style="width:100%; box-sizing:border-box;"><option value="P">P: Pagi</option><option value="S">S: Siang</option><option value="M">M: Middle</option><option value="Off">Off: Libur</option><option value="PH">PH: Cuti</option><option value="AL">AL: Cuti</option><option value="DP">DP: Cuti</option><option value="Lupa Absen">Lupa Absen</option><option value="Pengajuan Lembur">Pengajuan Lembur</option></select></div>
-            <div><label for="gps_request_date" style="font-size:12px;">Tanggal</label><input type="date" id="gps_request_date" style="width:100%; box-sizing:border-box;"></div>
+            <div><label for="gps_request_type" style="font-size:12px;">Jenis Pengajuan</label><select id="gps_request_type" onchange="var detail=document.getElementById('gps_lupa_absen_detail'); var lembur=document.getElementById('gps_lembur_detail'); var tukar=document.getElementById('gps_tukar_jadwal_detail'); if(detail) detail.style.display=this.value === 'Lupa Absen' ? 'block' : 'none'; if(lembur) lembur.style.display=this.value === 'Pengajuan Lembur' ? 'block' : 'none'; if(tukar) tukar.style.display=this.value === 'Tukar Jadwal Shift' ? 'block' : 'none'; if(this.value === 'Tukar Jadwal Shift' && typeof populateShiftSwapEmployees === 'function') populateShiftSwapEmployees(); if(typeof toggleLupaAbsenDetail === 'function') toggleLupaAbsenDetail(this.value);" style="width:100%; box-sizing:border-box;"><option value="P">P: Pagi</option><option value="S">S: Siang</option><option value="M">M: Middle</option><option value="Off">Off: Libur</option><option value="PH">PH: Cuti</option><option value="AL">AL: Cuti</option><option value="DP">DP: Cuti</option><option value="Lupa Absen">Lupa Absen</option><option value="Pengajuan Lembur">Pengajuan Lembur</option><option value="Tukar Jadwal Shift">Tukar Jadwal Shift</option></select></div>
+            <div><label for="gps_request_date" style="font-size:12px;">Tanggal</label><input type="date" id="gps_request_date" onchange="if(document.getElementById('gps_request_type').value === 'Tukar Jadwal Shift') updateShiftSwapPreview();" style="width:100%; box-sizing:border-box;"></div>
+      </div>
+      <div id="gps_tukar_jadwal_detail" style="display:none; margin-top:10px;">
+        <label for="gps_tukar_jadwal_karyawan" style="font-size:12px;">Tukar jadwal dengan</label>
+        <select id="gps_tukar_jadwal_karyawan" onchange="updateShiftSwapPreview()" style="width:100%; box-sizing:border-box;">
+          <option value="">-- Pilih rekan kerja --</option>
+        </select>
+        <p id="gps_tukar_jadwal_preview" role="status" aria-live="polite" style="font-size:12px; color:#475569; margin:8px 0 0; padding:9px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;">Pilih tanggal dan rekan kerja untuk melihat shift yang akan ditukar.</p>
       </div>
       <div id="gps_lupa_absen_detail" style="display:none; margin-top:10px;">
         <div style="font-size:12px; font-weight:600; margin-bottom:6px;">Detail Absen (outlet, tanggal, dan nama sama)</div>

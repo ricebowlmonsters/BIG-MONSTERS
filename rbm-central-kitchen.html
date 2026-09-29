@@ -557,17 +557,24 @@
     var select = document.getElementById('ck-outlet');
     var role = String(user.role || '').toLowerCase();
     var username = String(user.username || '').toLowerCase();
-    canChooseOutlet = role === 'owner' || role === 'manager' || role === 'developer' || username === 'burhan';
+    var userOutlet = String(user.outlet || '');
+    canChooseOutlet = role === 'owner' || role === 'developer' || username === 'burhan';
     publicOutlets = publicOutlets.filter(function(id) { return !isTestOutlet(id); });
     if (!publicOutlets.length) publicOutlets = locationOutlets.filter(function(id) { return !isTestOutlet(id); });
+    if (!canChooseOutlet && (!userOutlet || userOutlet === 'all' || userOutlet === '*' || isTestOutlet(userOutlet))) {
+      throw new Error('Outlet akun belum valid. Minta Owner memperbarui outlet pada akun sebelum membuat PO.');
+    }
+    if (userOutlet && userOutlet !== 'all' && userOutlet !== '*' && userOutlet !== KITCHEN_ID && !isTestOutlet(userOutlet) && publicOutlets.indexOf(userOutlet) < 0) {
+      publicOutlets.unshift(userOutlet);
+    }
     var outlets = publicOutlets.slice();
-    if (canChooseOutlet || String(user.outlet || '').toLowerCase() === KITCHEN_ID) outlets.push(KITCHEN_ID);
-    if (user.outlet && outlets.indexOf(String(user.outlet)) >= 0 && !canChooseOutlet) outlets = [String(user.outlet)];
+    if (canChooseOutlet || userOutlet === KITCHEN_ID) outlets.push(KITCHEN_ID);
+    if (userOutlet && outlets.indexOf(userOutlet) >= 0 && !canChooseOutlet) outlets = [userOutlet];
     select.innerHTML = outlets.map(function(id) { return '<option value="' + safe(id) + '">' + safe(labelForOutlet(id)) + '</option>'; }).join('');
     document.getElementById('ck-history-outlet').innerHTML = '<option value="">Semua outlet</option>' + publicOutlets.map(function(id) {
       return '<option value="' + safe(id) + '">' + safe(labelForOutlet(id)) + '</option>';
     }).join('');
-    if (user.outlet && outlets.indexOf(String(user.outlet)) >= 0) select.value = String(user.outlet);
+    if (userOutlet && outlets.indexOf(userOutlet) >= 0) select.value = userOutlet;
     else if (outlets.length) select.value = outlets[0];
     if (!canChooseOutlet) select.disabled = true;
     select.addEventListener('change', function() {

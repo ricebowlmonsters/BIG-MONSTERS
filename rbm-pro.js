@@ -11283,6 +11283,7 @@ function populateGpsNames() {
             } else {
                 sel2.innerHTML = '<option value="">⚠️ Belum ada data karyawan untuk outlet ini.</option>';
             }
+            if (typeof populateShiftSwapEmployees === 'function') populateShiftSwapEmployees();
         }
 
         function runFullFirebaseSync() {
@@ -11330,6 +11331,7 @@ function populateGpsNames() {
         employees.forEach(emp => {
             select.innerHTML += `<option value="${emp.name}">${emp.name}</option>`;
         });
+        if (typeof populateShiftSwapEmployees === 'function') populateShiftSwapEmployees();
     }
     if (Array.from(select.options).some(opt => opt.value === currentValue)) {
         select.value = currentValue;
@@ -13040,7 +13042,151 @@ function requestApprovalSummary(request) {
     return labels.filter(item => item[1]).map(item => '&#10003; ' + item[0] + ': ' + item[1]).join('<br>');
 }
 
+function getAbsensiRequestEmployees() {
+    var employees = window._gpsKioskRosterEmployees;
+    if (!Array.isArray(employees) || !employees.length) {
+        employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    }
+    if (Array.isArray(employees)) return employees.filter(function(employee) { return employee && employee.name; });
+    if (employees && typeof employees === 'object') {
+        return Object.keys(employees).map(function(key) { return employees[key]; }).filter(function(employee) { return employee && employee.name; });
+    }
+    return [];
+}
+
+async function loadShiftSwapEmployeesForOutlet(outlet) {
+    if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskRoster) {
+        try {
+            var roster = await FirebaseStorage.loadGpsKioskRoster(outlet);
+            if (roster && Array.isArray(roster.employees) && roster.employees.length) {
+                return roster.employees.filter(function(employee) { return employee && employee.name; });
+            }
+        } catch (e) {}
+    }
+    try {
+        var db = typeof FirebaseStorage !== 'undefined' && FirebaseStorage.db ? FirebaseStorage.db() : null;
+        if (db) {
+            var suffix = window.RBMStorage && typeof window.RBMStorage._outletSuffix === 'function'
+                ? window.RBMStorage._outletSuffix(outlet)
+                : '_' + String(outlet || '').toLowerCase().replace(/[^a-z0-9]/g, '_');
+            var snapshot = await db.ref('rbm_pro/employees' + suffix).once('value');
+            var value = snapshot.val();
+            if (Array.isArray(value)) return value.filter(function(employee) { return employee && employee.name; });
+            if (value && typeof value === 'object') return Object.keys(value).map(function(key) { return value[key]; }).filter(function(employee) { return employee && employee.name; });
+        }
+    } catch (e2) {}
+    if (String(getRbmOutlet() || 'default') !== String(outlet || 'default')) return [];
+    return getAbsensiRequestEmployees();
+}
+
+function getAbsensiRequestEmployeeKey(employee, index) {
+    return String(employee && employee.id || index);
+}
+
+async function populateShiftSwapEmployees() {
+    var select = document.getElementById('gps_tukar_jadwal_karyawan');
+    var requesterName = document.getElementById('gps_absen_name')?.value || '';
+    if (!select) return;
+    var outlet = getAbsensiRequestOutlet();
+    var selectedValue = select.value;
+    select.innerHTML = '<option value="">Memuat rekan satu outlet...</option>';
+    var employees = await loadShiftSwapEmployeesForOutlet(outlet);
+    if (getAbsensiRequestOutlet() !== outlet || document.getElementById('gps_absen_name')?.value !== requesterName || !document.getElementById('gps_tukar_jadwal_karyawan')) return;
+    select.innerHTML = '<option value="">-- Pilih rekan kerja --</option>';
+    employees.forEach(function(employee, index) {
+        if (employee.name === requesterName) return;
+        var option = document.createElement('option');
+        option.value = getAbsensiRequestEmployeeKey(employee, index);
+        option.textContent = employee.name;
+        select.appendChild(option);
+    });
+    if (Array.from(select.options).some(function(option) { return option.value === selectedValue; })) select.value = selectedValue;
+    if (select.options.length === 1) select.innerHTML = '<option value="">Belum ada rekan lain di outlet ini</option>';
+    updateShiftSwapPreview();
+}
+
+async function updateShiftSwapPreview() {
+    var preview = document.getElementById('gps_tukar_jadwal_preview');
+    var partnerSelect = document.getElementById('gps_tukar_jadwal_karyawan');
+    var requesterName = document.getElementById('gps_absen_name')?.value || '';
+    var date = document.getElementById('gps_request_date')?.value || '';
+    var partnerId = partnerSelect?.value || '';
+    if (!preview) return;
+    var requestId = (window._shiftSwapPreviewRequestId || 0) + 1;
+    window._shiftSwapPreviewRequestId = requestId;
+    if (!requesterName || !date || !partnerId) {
+        preview.textContent = 'Pilih tanggal dan rekan kerja untuk melihat shift yang akan ditukar.';
+        return;
+    }
+
+    var outlet = getAbsensiRequestOutlet();
+    preview.textContent = 'Memuat jadwal kedua karyawan...';
+    try {
+        var employees = await loadShiftSwapEmployeesForOutlet(outlet);
+        var requesterIndex = employees.findIndex(function(employee) { return employee.name === requesterName; });
+        var partnerIndex = employees.findIndex(function(employee, index) { return getAbsensiRequestEmployeeKey(employee, index) === partnerId; });
+        if (requestId !== window._shiftSwapPreviewRequestId || outlet !== getAbsensiRequestOutlet()) return;
+        if (requesterIndex < 0 || partnerIndex < 0 || requesterIndex === partnerIndex) {
+            preview.textContent = 'Rekan kerja harus berasal dari outlet yang sama.';
+            return;
+        }
+        var scheduleData = await FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', date, date);
+        if (requestId !== window._shiftSwapPreviewRequestId || outlet !== getAbsensiRequestOutlet()) return;
+        var requester = employees[requesterIndex];
+        var partner = employees[partnerIndex];
+        var requesterKey = date + '_' + getAbsensiRequestEmployeeKey(requester, requesterIndex);
+        var partnerKey = date + '_' + getAbsensiRequestEmployeeKey(partner, partnerIndex);
+        var requesterShift = scheduleData && scheduleData[requesterKey];
+        var partnerShift = scheduleData && scheduleData[partnerKey];
+        if (!requesterShift || !partnerShift) {
+            preview.textContent = 'Jadwal belum lengkap untuk Anda atau rekan pada tanggal ini; shift belum dapat ditukar.';
+            return;
+        }
+        var shiftLabel = function(code) {
+            var label = typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(code) : code;
+            return label && label !== code ? label + ' (' + code + ')' : code;
+        };
+        preview.textContent = 'Setelah disetujui: Anda ' + shiftLabel(requesterShift) + ' → ' + shiftLabel(partnerShift) + '; ' + partner.name + ' ' + shiftLabel(partnerShift) + ' → ' + shiftLabel(requesterShift) + '.';
+    } catch (error) {
+        if (requestId === window._shiftSwapPreviewRequestId) preview.textContent = 'Jadwal belum dapat dimuat. Periksa koneksi lalu coba lagi.';
+    }
+}
+
 async function applyApprovedAbsensiRequest(request) {
+    if (request && request.type === 'Tukar Jadwal Shift') {
+        var outletForSwap = request.outlet || getAbsensiRequestOutlet();
+        var employeesForSwap = await loadShiftSwapEmployeesForOutlet(outletForSwap);
+        var requesterIndex = employeesForSwap.findIndex(function(employee) {
+            return request.employeeId !== undefined
+                ? getAbsensiRequestEmployeeKey(employee, employeesForSwap.indexOf(employee)) === String(request.employeeId)
+                : employee.name === request.name;
+        });
+        var partnerIndex = employeesForSwap.findIndex(function(employee) {
+            return request.swapWithEmployeeId !== undefined
+                ? getAbsensiRequestEmployeeKey(employee, employeesForSwap.indexOf(employee)) === String(request.swapWithEmployeeId)
+                : employee.name === request.swapWithName;
+        });
+        if (requesterIndex < 0 || partnerIndex < 0 || requesterIndex === partnerIndex) throw new Error('Karyawan untuk tukar jadwal tidak ditemukan atau tidak valid.');
+        var swapDate = request.startDate || request.requestDate;
+        if (!swapDate) throw new Error('Tanggal tukar jadwal tidak tersedia.');
+        if (isPastAbsensiDate(swapDate)) throw new Error('Tukar jadwal hanya dapat diajukan untuk hari ini atau tanggal mendatang.');
+        var requesterKey = swapDate + '_' + getAbsensiRequestEmployeeKey(employeesForSwap[requesterIndex], requesterIndex);
+        var partnerKey = swapDate + '_' + getAbsensiRequestEmployeeKey(employeesForSwap[partnerIndex], partnerIndex);
+        var scheduleData = await FirebaseStorage.loadAbsensiJadwal(outletForSwap, 'jadwal', swapDate, swapDate);
+        var requesterShift = scheduleData[requesterKey];
+        var partnerShift = scheduleData[partnerKey];
+        if (!requesterShift || !partnerShift) throw new Error('Jadwal kedua karyawan belum lengkap untuk tanggal tersebut.');
+        var scheduleUpdates = {};
+        scheduleUpdates[requesterKey] = partnerShift;
+        scheduleUpdates[partnerKey] = requesterShift;
+        await FirebaseStorage.saveAbsensiJadwal(outletForSwap, 'jadwal', scheduleUpdates);
+        var scheduleCacheKey = getRbmStorageKey('RBM_JADWAL_DATA');
+        var cachedSchedule = getCachedParsedStorage(scheduleCacheKey, {});
+        Object.assign(cachedSchedule, scheduleUpdates);
+        window._rbmParsedCache[scheduleCacheKey] = { data: cachedSchedule };
+        try { localStorage.setItem(scheduleCacheKey, JSON.stringify(cachedSchedule)); } catch (e) {}
+        return;
+    }
     if (!request || !['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur'].includes(request.type)) return;
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
     const employee = employees.find(e => e && e.name === request.name);
@@ -13103,6 +13249,7 @@ async function submitEmployeeAbsensiRequest() {
     const name = document.getElementById('gps_absen_name')?.value || '';
     const requestDate = document.getElementById('gps_request_date')?.value || '';
     const type = document.getElementById('gps_request_type')?.value || '';
+    const swapWithEmployeeId = document.getElementById('gps_tukar_jadwal_karyawan')?.value || '';
     const lemburHours = document.getElementById('gps_request_lembur_jam')?.value || '';
     const attendanceDetails = Array.from(document.querySelectorAll('#gps_lupa_absen_rows .lupa-absen-row')).map(function(row) {
         return { type: row.querySelector('.gps-request-absensi-type')?.value || '', time: row.querySelector('.gps-request-absensi-time')?.value || '' };
@@ -13111,12 +13258,26 @@ async function submitEmployeeAbsensiRequest() {
     const feedback = document.getElementById('gps_request_feedback');
     if (!name || window._gpsPasswordVerifiedName !== name) { if (feedback) feedback.textContent = 'Masukkan password dan tekan Lanjutkan terlebih dahulu.'; return; }
     if (!requestDate || !reason) { if (feedback) feedback.textContent = 'Tanggal dan alasan wajib diisi.'; return; }
+    if (type === 'Tukar Jadwal Shift' && isPastAbsensiDate(requestDate)) { if (feedback) feedback.textContent = 'Tukar jadwal hanya dapat diajukan untuk hari ini atau tanggal mendatang.'; return; }
     if (type === 'Lupa Absen' && (!attendanceDetails.length || attendanceDetails.some(function(detail) { return !detail.type || !detail.time; }))) { if (feedback) feedback.textContent = 'Tipe dan jam semua detail absensi wajib diisi.'; return; }
     if (type === 'Pengajuan Lembur' && (!(Number(lemburHours) > 0))) { if (feedback) feedback.textContent = 'Jumlah jam lembur wajib diisi.'; return; }
+    if (type === 'Tukar Jadwal Shift' && !swapWithEmployeeId) { if (feedback) feedback.textContent = 'Pilih rekan kerja untuk tukar jadwal.'; return; }
     if (typeof firebase === 'undefined' || !firebase.database) { if (feedback) feedback.textContent = 'Koneksi Firebase diperlukan.'; return; }
     const user = getAbsensiRequestUser();
     const outlet = getAbsensiRequestOutlet();
+    const requestEmployees = type === 'Tukar Jadwal Shift'
+        ? await loadShiftSwapEmployeesForOutlet(outlet)
+        : getAbsensiRequestEmployees();
+    if (type === 'Tukar Jadwal Shift' && !requestEmployees.length) { if (feedback) feedback.textContent = 'Daftar karyawan outlet belum tersedia. Muat ulang dan coba lagi.'; return; }
+    const requesterIndex = requestEmployees.findIndex(function(employee) { return employee.name === name; });
+    const partnerIndex = requestEmployees.findIndex(function(employee, index) { return type === 'Tukar Jadwal Shift' && getAbsensiRequestEmployeeKey(employee, index) === swapWithEmployeeId; });
+    if (type === 'Tukar Jadwal Shift' && (requesterIndex < 0 || partnerIndex < 0 || requesterIndex === partnerIndex)) { if (feedback) feedback.textContent = 'Nama karyawan untuk tukar jadwal tidak valid.'; return; }
     const payload = { name, outlet, type, requestDate, startDate: requestDate, endDate: requestDate, reason, lemburHours: type === 'Pengajuan Lembur' ? Number(lemburHours) : 0, attendanceDetails: type === 'Lupa Absen' ? attendanceDetails : [], currentStep: ABSENSI_REQUEST_STEPS[0], status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP, createdBy: user.username || name };
+    if (type === 'Tukar Jadwal Shift') {
+        payload.employeeId = getAbsensiRequestEmployeeKey(requestEmployees[requesterIndex], requesterIndex);
+        payload.swapWithEmployeeId = getAbsensiRequestEmployeeKey(requestEmployees[partnerIndex], partnerIndex);
+        payload.swapWithName = requestEmployees[partnerIndex].name;
+    }
     try {
         await firebase.database().ref('rbm_pro/pengajuan_absensi/' + outlet).push(payload);
         document.getElementById('gps_request_reason').value = '';
@@ -13125,6 +13286,8 @@ async function submitEmployeeAbsensiRequest() {
         if (lupaRows) lupaRows.innerHTML = '';
         const lemburHoursInput = document.getElementById('gps_request_lembur_jam');
         if (lemburHoursInput) lemburHoursInput.value = '';
+        const swapSelect = document.getElementById('gps_tukar_jadwal_karyawan');
+        if (swapSelect) swapSelect.value = '';
         if (feedback) { feedback.textContent = 'Pengajuan berhasil dikirim. Menunggu persetujuan Supervisor.'; feedback.style.color = '#15803d'; }
         loadEmployeeAbsensiRequests();
     } catch (error) { if (feedback) { feedback.textContent = 'Gagal mengirim pengajuan: ' + error.message; feedback.style.color = '#b91c1c'; } }
@@ -13253,9 +13416,11 @@ async function loadAbsensiRequests() {
             const user = getAbsensiRequestUser();
             const canDelete = String(user.role || '').toLowerCase() === 'owner' || String(user.role || '').toLowerCase() === 'developer' || r.createdBy === user.username;
             const deleteButton = canDelete ? `<button class="btn btn-secondary" style="padding:5px 8px; margin-left:4px; color:#b91c1c;" onclick="deleteAbsensiRequest('${id}')">Hapus</button>` : '';
-            const detailSummary = r.type === GAJI_KENAIKAN_REQUEST_TYPE
+            const detailSummary = r.type === 'Tukar Jadwal Shift'
+                ? '<br><span style="font-size:11px;color:#475569;">Bertukar dengan: ' + (r.swapWithName || '-') + '</span>'
+                : (r.type === GAJI_KENAIKAN_REQUEST_TYPE
                 ? '<br><span style="font-size:11px;color:#475569;">Gaji: ' + formatRupiah(Number(r.currentSalary) || 0) + ' → ' + formatRupiah(Number(r.requestedSalary) || 0) + ' (naik ' + formatRupiah(Number(r.increaseAmount) || ((Number(r.requestedSalary) || 0) - (Number(r.currentSalary) || 0))) + ')</span>'
-                : (r.type === 'Lupa Absen' && Array.isArray(r.attendanceDetails) ? '<br><span style="font-size:11px;color:#475569;">' + r.attendanceDetails.map(function(detail) { return (detail.type || '-') + ': ' + (detail.time || '-'); }).join(' | ') + '</span>' : '');
+                : (r.type === 'Lupa Absen' && Array.isArray(r.attendanceDetails) ? '<br><span style="font-size:11px;color:#475569;">' + r.attendanceDetails.map(function(detail) { return (detail.type || '-') + ': ' + (detail.time || '-'); }).join(' | ') + '</span>' : ''));
             const action = (canApprove ? `<button class="btn btn-primary" style="padding:5px 8px;" onclick="approveAbsensiRequest('${id}')">Setujui</button>` : (r.status === 'approved' ? '<strong style="color:#15803d;">Disetujui</strong>' : '-')) + deleteButton;
             const summary = requestApprovalSummary(r);
             return `<tr><td>${r.name || '-'}</td><td>${r.type || '-'}${detailSummary}</td><td>${r.startDate || '-'} s/d ${r.endDate || '-'}</td><td>${r.reason || '-'}</td><td>${requestStatusText(r)}${summary ? '<br><span style="font-size:11px;color:#64748b;">' + summary + '</span>' : ''}</td><td>${action}</td></tr>`;
@@ -13292,7 +13457,7 @@ async function approveAbsensiRequest(requestId) {
     }
     const stepIndex = ABSENSI_REQUEST_STEPS.indexOf(role);
     const nextStep = ABSENSI_REQUEST_STEPS[stepIndex + 1];
-    if (role === 'Supervisor Regional' && ['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur'].includes(request.type)) {
+    if (role === 'Supervisor Regional' && ['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur', 'Tukar Jadwal Shift'].includes(request.type)) {
         await applyApprovedAbsensiRequest(request);
         request.appliedToAttendance = true;
     }
@@ -13687,6 +13852,8 @@ function saveAbsensiGpsManual(name, type, date, time, photoData, feedbackEl, noA
     if (typeof loadEmployeeAbsensiRequests !== 'undefined') window.loadEmployeeAbsensiRequests = loadEmployeeAbsensiRequests;
     if (typeof loadAbsensiRequests !== 'undefined') window.loadAbsensiRequests = loadAbsensiRequests;
     if (typeof approveAbsensiRequest !== 'undefined') window.approveAbsensiRequest = approveAbsensiRequest;
+    if (typeof populateShiftSwapEmployees !== 'undefined') window.populateShiftSwapEmployees = populateShiftSwapEmployees;
+    if (typeof updateShiftSwapPreview !== 'undefined') window.updateShiftSwapPreview = updateShiftSwapPreview;
     if (typeof openGajiKenaikanModal !== 'undefined') window.openGajiKenaikanModal = openGajiKenaikanModal;
     if (typeof closeGajiKenaikanModal !== 'undefined') window.closeGajiKenaikanModal = closeGajiKenaikanModal;
     if (typeof updateGajiKenaikanAmount !== 'undefined') window.updateGajiKenaikanAmount = updateGajiKenaikanAmount;
