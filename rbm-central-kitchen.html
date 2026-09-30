@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
+  <script src="display-mode.js" defer></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PO Central Kitchen</title>
@@ -34,11 +35,26 @@
     .ck-order-view.cashier-mode .ck-order-summary { grid-column: 1; grid-row: 1; position: sticky; top: 14px; padding: 16px; border: 1px solid var(--ck-border); border-radius: 6px; background: var(--ck-soft); }
     .ck-order-view.cashier-mode .ck-order-items { display: block; grid-column: 2; grid-row: 1; min-height: max(520px, calc(100vh - 350px)); padding: 16px; border: 1px solid var(--ck-border); border-radius: 6px; background: #fff; }
     .ck-order-view.cashier-mode .ck-order-lines { max-height: 300px; overflow-y: auto; }
-    .ck-order-view.cashier-mode .ck-line { grid-template-columns: minmax(0, 1fr) 62px 32px; gap: 5px; padding: 8px; border: 1px solid var(--ck-border); border-radius: 5px; background: #fff; }
-    .ck-order-view.cashier-mode .ck-line select { grid-column: 1; grid-row: 1; min-width: 0; }
-    .ck-order-view.cashier-mode .ck-line input { grid-column: 2; grid-row: 1; min-width: 0; text-align: right; }
-    .ck-order-view.cashier-mode .ck-line .ck-line-price { grid-column: 1 / 3; grid-row: 2; font-size: 11px; }
-    .ck-order-view.cashier-mode .ck-line > .ck-button { grid-column: 3; grid-row: 1 / 3; padding: 4px; }
+    .ck-cart-table-head { display: none; }
+    .ck-line-product { display: none; min-width: 0; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+    .ck-line-product-unit { display: block; margin-top: 2px; color: var(--ck-muted); font-size: 10px; font-weight: 400; }
+    .ck-line-quantity { display: flex; align-items: center; justify-content: center; gap: 3px; min-width: 0; }
+    .ck-line-quantity input { flex: 1; min-width: 0; }
+    .ck-line-unit { display: none; color: var(--ck-ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .ck-qty-step { display: none; }
+    .ck-order-view.cashier-mode .ck-cart-table-head { display: grid; grid-template-columns: minmax(0, 1fr) 92px 48px; gap: 6px; padding: 0 4px 6px; border-bottom: 1px solid var(--ck-border); color: var(--ck-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .ck-order-view.cashier-mode .ck-cart-table-head span:nth-child(2) { text-align: center; }
+    .ck-order-view.cashier-mode .ck-line { grid-template-columns: minmax(0, 1fr) 92px 48px; gap: 6px; padding: 9px 4px; border: 0; border-bottom: 1px solid #e5ece9; border-radius: 0; background: transparent; }
+    .ck-order-view.cashier-mode .ck-line select { display: none; }
+    .ck-order-view.cashier-mode .ck-line-product { display: block; grid-column: 1; grid-row: 1; }
+    .ck-order-view.cashier-mode .ck-line-product-unit { display: none; }
+    .ck-order-view.cashier-mode .ck-line-quantity { grid-column: 2; grid-row: 1; }
+    .ck-order-view.cashier-mode .ck-line-unit { display: block; grid-column: 3; grid-row: 1; align-self: center; text-align: center; }
+    .ck-order-view.cashier-mode .ck-line-quantity input { width: 34px; min-height: 30px; padding: 3px; text-align: center; }
+    .ck-order-view.cashier-mode .ck-qty-step { display: inline-grid; place-items: center; width: 24px; height: 28px; padding: 0; border: 1px solid var(--ck-border); border-radius: 4px; background: #fff; color: var(--ck-green); font: inherit; font-weight: 800; cursor: pointer; }
+    .ck-order-view.cashier-mode .ck-line .ck-line-price { grid-column: 1; grid-row: 2; padding-top: 3px; font-size: 10px; }
+    .ck-order-view.cashier-mode .ck-line > [data-remove-line] { display: none; }
+    .ck-order-view.cashier-mode #ck-add-line { display: none; }
     .ck-order-view.cashier-mode .ck-line.is-empty { display: none; }
     .ck-order-view.cashier-mode .ck-total { padding-top: 14px; border-top: 1px solid var(--ck-border); text-align: left; }
     .ck-order-view.cashier-mode #ck-submit-order { width: 100%; min-height: 42px; }
@@ -157,7 +173,10 @@
       .ck-order-view.cashier-mode #ck-order-form { grid-template-columns: minmax(0, 1fr); gap: 12px; min-height: 0; }
       .ck-order-view.cashier-mode .ck-order-items { grid-column: 1; grid-row: 1; min-height: 380px; padding: 12px; }
       .ck-order-view.cashier-mode .ck-order-summary { grid-column: 1; grid-row: 2; position: static; padding: 12px; }
-      .ck-order-view.cashier-mode .ck-line { grid-template-columns: minmax(0, 1fr) 58px 30px; }
+      .ck-order-view.cashier-mode .ck-cart-table-head, .ck-order-view.cashier-mode .ck-line { grid-template-columns: minmax(0, 1fr) 86px 42px; }
+      .ck-order-view.cashier-mode .ck-line-quantity { gap: 2px; }
+      .ck-order-view.cashier-mode .ck-line-quantity input { width: 30px; }
+      .ck-order-view.cashier-mode .ck-qty-step { width: 22px; }
       .ck-pos-catalog-toolbar { grid-template-columns: minmax(0, 1fr); }
       .ck-pos-product-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
       .ck-pos-product { min-height: 92px; padding: 10px; }
@@ -224,6 +243,7 @@
       <div id="ck-order-form">
         <div class="ck-order-summary">
           <div class="ck-cart-heading"><div><h3>Pesanan Baru</h3><span id="ck-order-item-count" class="ck-cart-count">0 barang</span></div></div>
+          <div class="ck-cart-table-head"><span>Item</span><span>Qty</span><span>Satuan</span></div>
           <div id="ck-order-lines" class="ck-lines"></div>
           <div class="ck-actions"><button type="button" class="ck-button secondary" id="ck-add-line">Tambah Barang</button></div>
           <div class="ck-field" style="margin-top:14px"><label for="ck-note">Catatan outlet</label><input id="ck-note" maxlength="300" placeholder="Catatan pengiriman (opsional)"></div>
@@ -445,19 +465,36 @@
     var container = document.getElementById('ck-order-lines');
     var row = document.createElement('div');
     row.className = 'ck-line';
-    row.innerHTML = '<select aria-label="Barang">' + itemOptions('') + '</select><input type="number" min="1" step="any" value="1" aria-label="Jumlah"><span class="ck-line-price ck-muted">Pilih barang</span><button class="ck-button secondary" type="button" title="Hapus baris" aria-label="Hapus baris">×</button>';
+    row.innerHTML = '<select aria-label="Barang">' + itemOptions('') + '</select><div class="ck-line-product"><span class="ck-line-product-name"></span><span class="ck-line-product-unit"></span></div><div class="ck-line-quantity"><button type="button" class="ck-qty-step" data-quantity-step="-1" aria-label="Kurangi jumlah">−</button><input type="number" min="1" step="any" value="1" aria-label="Jumlah"><button type="button" class="ck-qty-step" data-quantity-step="1" aria-label="Tambah jumlah">+</button></div><span class="ck-line-unit"></span><span class="ck-line-price ck-muted">Pilih barang</span><button class="ck-button secondary" type="button" data-remove-line title="Hapus baris" aria-label="Hapus baris">×</button>';
     if (itemId) row.querySelector('select').value = itemId;
     row.querySelector('select').addEventListener('change', function() { updateLinePrice(row); updateOrderTotal(); });
     row.querySelector('input').addEventListener('input', updateOrderTotal);
-    row.querySelector('button').addEventListener('click', function() { row.remove(); if (!container.children.length) addOrderLine(); updateOrderTotal(); });
+    row.querySelectorAll('[data-quantity-step]').forEach(function(button) {
+      button.addEventListener('click', function() {
+        var input = row.querySelector('input');
+        var nextQuantity = (Number(input.value) || 1) + Number(button.dataset.quantityStep);
+        if (nextQuantity < 1) {
+          row.remove();
+          if (!container.children.length) addOrderLine();
+        } else {
+          input.value = nextQuantity;
+        }
+        updateOrderTotal();
+      });
+    });
+    row.querySelector('[data-remove-line]').addEventListener('click', function() { row.remove(); if (!container.children.length) addOrderLine(); updateOrderTotal(); });
     container.appendChild(row);
     updateLinePrice(row);
   }
   function updateLinePrice(row) {
     var itemId = row.querySelector('select').value;
     var item = catalog[itemId];
+    var quantity = Number(row.querySelector('input').value) || 0;
     row.classList.toggle('is-empty', !itemId);
-    row.querySelector('.ck-line-price').textContent = item ? money(item.price) + ' / ' + item.unit : 'Pilih barang';
+    row.querySelector('.ck-line-product-name').textContent = item ? item.name : '';
+    row.querySelector('.ck-line-product-unit').textContent = item ? item.unit : '';
+    row.querySelector('.ck-line-unit').textContent = item ? item.unit : '';
+    row.querySelector('.ck-line-price').textContent = item ? money(item.price) + ' / ' + item.unit + ' | Subtotal ' + money(item.price * quantity) : 'Pilih barang';
   }
   function getOrderItems() {
     var result = [];
@@ -471,6 +508,7 @@
     return result;
   }
   function updateOrderTotal() {
+    document.querySelectorAll('#ck-order-lines .ck-line').forEach(updateLinePrice);
     var items = getOrderItems();
     var total = items.reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0);
     var quantity = items.reduce(function(sum, item) { return sum + item.quantity; }, 0);
@@ -754,7 +792,12 @@
     if (invalid) { window.alert('Jumlah aktual dan harga satuan harus berupa angka valid dan tidak boleh negatif.'); return; }
     var actualTotal = items.reduce(function(sum, item) { return sum + item.shippedQuantity * item.unitPrice; }, 0);
     var updates = {};
-    updates['rbm_pro/central_kitchen/orders/' + id] = { status: 'fulfilled', items: items, actualTotal: actualTotal, shippedAt: firebase.database.ServerValue.TIMESTAMP, processedBy: user.nama || user.username || '' };
+    var orderPath = 'rbm_pro/central_kitchen/orders/' + id;
+    updates[orderPath + '/status'] = 'fulfilled';
+    updates[orderPath + '/items'] = items;
+    updates[orderPath + '/actualTotal'] = actualTotal;
+    updates[orderPath + '/shippedAt'] = firebase.database.ServerValue.TIMESTAMP;
+    updates[orderPath + '/processedBy'] = user.nama || user.username || '';
     var catalogPriceUpdates = [];
     if (canEditOrderPrices) items.forEach(function(item) {
       var catalogItem = catalog[item.itemId];
