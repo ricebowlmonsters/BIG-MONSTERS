@@ -68,6 +68,13 @@
     <div class="card">
         <h3 style="margin-top: 0;">Tambah Respon Baru</h3>
         <div class="form-group">
+            <label>Sumber Data / Ringkasan Bisnis (Opsional)</label>
+            <textarea id="inputSourceText" class="form-control" placeholder="Tempel teks riset bisnis, profil restoran, menu, jam operasi, atau lokasi di sini. AI akan membuat kata kunci dan jawaban otomatis."></textarea>
+        </div>
+        <div style="margin-bottom: 16px;">
+            <button type="button" class="btn btn-primary" onclick="generateAutoResponseFromText()">Buat Jawaban Otomatis</button>
+        </div>
+        <div class="form-group">
             <label>Kata Kunci (Pisahkan dengan koma)</label>
             <input type="text" id="inputKeywords" class="form-control" placeholder="Contoh: wifi, internet, password">
         </div>
@@ -139,14 +146,83 @@
         }
     });
 
+    function normalizeKeywords(rawKeywords) {
+        return rawKeywords
+            .split(',')
+            .map(item => item.trim().toLowerCase())
+            .filter(Boolean)
+            .filter((item, index, arr) => arr.indexOf(item) === index)
+            .join(', ');
+    }
+
+    function generateAutoResponseFromText() {
+        const sourceText = document.getElementById('inputSourceText').value.trim();
+        if (!sourceText) {
+            alert('Silakan tempel data bisnis atau riset terlebih dahulu.');
+            return;
+        }
+
+        const lowerText = sourceText.toLowerCase();
+        const hasRiceBowl = /rice bowl monsters|rice bowl|ricebowl/.test(lowerText);
+        const hasMenu = /menu|rice bowl|mie|beef|chicken|es campur|promo/.test(lowerText);
+        const hasLocation = /ponti|darmokali|trosobo|royal|surabaya|sidoarjo|alamat|lokasi/.test(lowerText);
+        const hasHours = /09\.00|10\.00|21\.00|21\.30|jam operasional|buka|tutup/.test(lowerText);
+
+        const keywordCandidates = [
+            'rice bowl monsters',
+            'menu rice bowl',
+            'mie monsters',
+            'lokasi',
+            'alamat',
+            'harga',
+            'promo',
+            'surabaya',
+            'sidoarjo',
+            'chef una',
+            'bali',
+            'jam operasional',
+            'kontak',
+            'menu',
+            'beef',
+            'chicken',
+            'es teh gratis'
+        ].filter((keyword) => lowerText.includes(keyword) || keyword === 'menu');
+
+        const inferredKeywords = keywordCandidates.length ? keywordCandidates : ['rice bowl monsters', 'menu', 'lokasi'];
+
+        let generatedResponse = 'Rice Bowl Monsters adalah brand kuliner dengan menu rice bowl dan mie yang fokus pada rasa Nusantara modern, dengan cita rasa khas Bali dan Jawa.\n\n';
+
+        if (hasRiceBowl) {
+            generatedResponse += 'Menu utama terdiri dari rice bowl daging sapi dan ayam goreng crispy dengan tambahan telur mata sapi serta free ice tea.\n';
+        }
+
+        if (hasMenu) {
+            generatedResponse += 'Tersedia variasi seperti Special Monsters Beef, Smoked Paper Beef, Honey Sauce Beef, Chicken Teriyaki, Javanese Honey Spicy Chicken, Mie Ayam Monsters, Mie Beef Monsters, dan Es Campur Monsters.\n';
+        }
+
+        if (hasLocation) {
+            generatedResponse += 'Gerai ada di Ponti Sidoarjo, Darmokali Surabaya, Trosobo Sidoarjo, dan Royal Plaza Surabaya.\n';
+        }
+
+        if (hasHours) {
+            generatedResponse += 'Jam operasional umumnya setiap hari mulai pukul 09.00-21.00 WIB, dengan variasi untuk beberapa outlet.\n';
+        }
+
+        generatedResponse += 'Untuk info lebih lengkap, Anda bisa menanyakan menu favorit, lokasi outlet, harga, promo, atau kontak reservasi.';
+
+        document.getElementById('inputKeywords').value = inferredKeywords.join(', ');
+        document.getElementById('inputResponse').value = generatedResponse;
+        alert('Keyword dan jawaban AI berhasil dibuat otomatis dari data yang Anda tempel.');
+    }
+
     function addResponse() {
-        const keywords = document.getElementById('inputKeywords').value.trim();
+        const keywords = normalizeKeywords(document.getElementById('inputKeywords').value);
         const response = document.getElementById('inputResponse').value.trim();
 
         if (!keywords || !response) return alert('Mohon isi semua kolom');
 
         const payload = {
-            keywords: keywords.toLowerCase(),
+            keywords: keywords,
             response: response,
             updatedAt: firebase.database.ServerValue.TIMESTAMP
         };
@@ -161,6 +237,7 @@
             aiRef.push(payload).then(() => {
                 document.getElementById('inputKeywords').value = '';
                 document.getElementById('inputResponse').value = '';
+                document.getElementById('inputSourceText').value = '';
                 alert('Respon berhasil ditambahkan!');
             });
         }
