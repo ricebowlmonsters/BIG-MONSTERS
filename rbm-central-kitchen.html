@@ -633,6 +633,18 @@
     document.querySelectorAll('#ck-order-list [data-print-order]').forEach(function(button) {
       button.addEventListener('click', function() { printOrder(orders[button.dataset.printOrder] || incomingOrders[button.dataset.printOrder], button.dataset.printType); });
     });
+    document.querySelectorAll('#ck-order-list [data-print-fulfilled-order]').forEach(function(button) {
+      button.addEventListener('click', function() {
+        var order = orders[button.dataset.printFulfilledOrder];
+        if (!order || order.status !== 'fulfilled' || button.disabled) return;
+        button.disabled = true;
+        printFulfilledOrder(order).then(function() {
+          message('ck-order-message', 'PO ' + order.number + ': 3 surat jalan dan 3 nota berhasil dicetak.');
+        }).catch(function(error) {
+          window.alert('Cetak ulang PO ' + order.number + ' gagal: ' + error.message);
+        }).finally(function() { button.disabled = false; });
+      });
+    });
     document.querySelectorAll('#ck-order-list [data-copy-order]').forEach(function(button) {
       button.addEventListener('click', function() { copyOrderLink(button.dataset.copyOrder, button); });
     });
@@ -724,9 +736,10 @@
       var total = fulfilled ? order.actualTotal : order.requestTotal;
       var items = kitchenQueue && !fulfilled ? renderFulfillInputs(order) : (fulfilled ? renderItems(order.items || [], true) : renderRequestedItems(order));
       var deleteButton = canDeleteOrders ? '<button type="button" class="ck-button danger" data-delete-order="' + safe(order.id) + '">Hapus PO</button>' : '';
+      var reprintButton = fulfilled ? '<button type="button" class="ck-button secondary" data-print-fulfilled-order="' + safe(order.id) + '">Cetak Ulang 3 SJ + 3 Nota</button>' : '';
       var actions = kitchenQueue && !fulfilled
         ? '<div class="ck-actions"><button type="button" class="ck-button" data-fulfill-order="' + safe(order.id) + '">Simpan &amp; Proses</button><button type="button" class="ck-button secondary" data-copy-order="' + safe(order.id) + '">Salin link PO</button>' + deleteButton + '</div>'
-        : '<div class="ck-print-actions"><button type="button" class="ck-button secondary" data-copy-order="' + safe(order.id) + '">Salin link PO</button>' + (fulfilled ? printButtons(order.id) : '') + deleteButton + '</div>';
+        : '<div class="ck-print-actions"><button type="button" class="ck-button secondary" data-copy-order="' + safe(order.id) + '">Salin link PO</button>' + (fulfilled ? printButtons(order.id) + reprintButton : '') + deleteButton + '</div>';
       return '<tr><td><strong class="ck-cashier-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></td><td>' + safe(labelForOutlet(order.outletId)) + '</td><td>' + status + '</td><td class="numeric"><strong>' + money(total) + '</strong></td><td><details class="ck-cashier-details"><summary>Detail &amp; aksi</summary><div class="ck-cashier-detail-body">' + items + actions + '</div></details></td></tr>';
     }).join('');
     return '<div class="ck-cashier-wrap"><table class="ck-cashier-table"><thead><tr><th>Nomor PO</th><th>Outlet</th><th>Status</th><th class="numeric">Nilai</th><th>Rincian</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
