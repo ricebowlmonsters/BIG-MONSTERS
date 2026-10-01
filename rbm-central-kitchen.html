@@ -319,6 +319,7 @@
   var catalog = {};
   var orders = {};
   var incomingOrders = {};
+  var processingOrderIds = {};
   var orderPages = {
     history: { rows: [], page: 1, hasOlder: false, hasNewer: false, requestId: 0 },
     incoming: { rows: [], page: 1, hasOlder: false, hasNewer: false, requestId: 0 }
@@ -390,6 +391,23 @@
   function formatDate(value) {
     var date = new Date(Number(value) || value || Date.now());
     return isNaN(date.getTime()) ? '-' : date.toLocaleString('id-ID');
+  }
+  function buildWhatsAppOrderMessage(order, createdAt) {
+    var itemLines = (order.items || []).map(function(item, index) {
+      var quantity = Number(item.quantity) || 0;
+      return (index + 1) + '. ' + item.name + ' - ' + quantity.toLocaleString('id-ID') + ' ' + item.unit;
+    });
+    return [
+      'Purchase Order Central Kitchen',
+      'No. PO: ' + order.number,
+      'Outlet: ' + order.outletName,
+      'Dibuat oleh: ' + order.createdBy,
+      'Tanggal: ' + formatDate(createdAt),
+      '',
+      'Daftar barang:',
+      itemLines.join('\n'),
+      order.note ? 'Catatan: ' + order.note : ''
+    ].filter(Boolean).join('\n');
   }
   function setCurrentMode() {
     selectedOutlet = document.getElementById('ck-outlet').value;
@@ -777,9 +795,87 @@
       message('ck-order-message', error.message || 'Gagal membuka PO.', true);
     });
   }
+  function getCentralKitchenPrinter() {
+    var printerGroups = {};
+    var printerConfig = {};
+    try { printerGroups = JSON.parse(localStorage.getItem('rbm_printer_groups') || '{}'); } catch (error) {}
+    try { printerConfig = JSON.parse(localStorage.getItem('rbm_printer_config') || '{}'); } catch (error) {}
+    var printers = printerGroups.printers || [];
+    var selectedId = printerGroups.printerKasir || printerGroups.printerChecker || '';
+    var selected = printers.find(function(printer) { return (printer.id || printer.name) === selectedId && printer.ip; });
+    return {
+      name: selected ? (selected.id || selected.name) : (printerConfig.PRINTER_UTAMA || 'PRINTER_UTAMA'),
+      ip: selected ? selected.ip : ''
+    };
+  }
+  function cleanPrintText(value) {
+    return String(value == null ? '' : value).replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function buildThermalCopy(order, documentType, copyNumber) {
+    var title = documentType === 'delivery' ? 'SURAT JALAN' : 'NOTA';
+    var columns = document.getElementById('ck-paper-width').value === '58' ? 32 : 48;
+    var separator = new Array(columns + 1).join('-');
+    var lines = [
+      '\x1b@\x1ba\x01\x1bE\x01\x1d!\x01' + title + '\x1d!\x00\n',
+      'CENTRAL KITCHEN',
+      'Salinan ' + copyNumber + ' dari 3',
+      '\x1bE\x00\x1ba\x00',
+      separator,
+      'No. PO: ' + cleanPrintText(order.number),
+      'Outlet: ' + cleanPrintText(labelForOutlet(order.outletId)),
+      'Tanggal: ' + cleanPrintText(formatDate(order.shippedAt)),
+      'Diproses: ' + cleanPrintText(order.processedBy || '-'),
+      separator
+    ];
+    (order.items || []).filter(function(item) { return Number(item.shippedQuantity) > 0; }).forEach(function(item, index) {
+      var quantity = Number(item.shippedQuantity) || 0;
+      var unit = cleanPrintText(item.unit);
+      lines.push((index + 1) + '. ' + cleanPrintText(item.name));
+      if (documentType === 'delivery') {
+        lines.push('   PO: ' + (Number(item.quantity) || 0).toLocaleString('id-ID') + ' ' + unit + ' | Kirim: ' + quantity.toLocaleString('id-ID') + ' ' + unit);
+      } else {
+        var unitPrice = Number(item.unitPrice) || 0;
+        lines.push('   ' + quantity.toLocaleString('id-ID') + ' ' + unit + ' x ' + money(unitPrice));
+        lines.push('   Jumlah: ' + money(quantity * unitPrice));
+      }
+    });
+    lines.push(separator);
+    if (documentType === 'delivery') {
+      var requestedTotal = (order.items || []).reduce(function(sum, item) { return sum + (Number(item.quantity) || 0); }, 0);
+      var shippedTotal = (order.items || []).reduce(function(sum, item) { return sum + (Number(item.shippedQuantity) || 0); }, 0);
+      lines.push('Total PO: ' + requestedTotal.toLocaleString('id-ID'));
+      lines.push('Total dikirim: ' + shippedTotal.toLocaleString('id-ID'));
+    } else {
+      lines.push('\x1bE\x01TOTAL: ' + money(order.actualTotal) + '\x1bE\x00');
+      lines.push('Catatan: ' + cleanPrintText(order.note || '-'));
+    }
+    lines.push('', 'Central Kitchen                 Penerima', '', '', '', '\x1dV\x00');
+    return lines.join('\n');
+  }
+  function printFulfilledOrder(order) {
+    var printer = getCentralKitchenPrinter();
+    var documents = ['delivery', 'delivery', 'delivery', 'invoice', 'invoice', 'invoice'];
+    var printed = 0;
+    return documents.reduce(function(queue, documentType, index) {
+      return queue.then(function() {
+        return fetch('http://localhost:3000/print', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ printerName: printer.name, printerIP: printer.ip || undefined, content: buildThermalCopy(order, documentType, index % 3 + 1) })
+        }).then(function(response) {
+          return response.json().then(function(result) {
+            if (!response.ok || result.status !== 'success') throw new Error(result.message || 'Print bridge menolak perintah cetak.');
+            printed += 1;
+          });
+        });
+      });
+    }, Promise.resolve()).catch(function(error) {
+      throw new Error('Baru tercetak ' + printed + ' dari 6 lembar. ' + error.message);
+    });
+  }
   function fulfillOrder(id) {
     var order = incomingOrders[id];
-    if (!order || order.status !== 'pending') return;
+    if (!order || order.status !== 'pending' || processingOrderIds[id]) return;
     var items = (order.items || []).map(function(item, index) {
       var input = document.querySelector('[data-actual-order="' + CSS.escape(id) + '"][data-actual-index="' + index + '"]');
       var priceInput = document.querySelector('[data-price-order="' + CSS.escape(id) + '"][data-price-index="' + index + '"]');
@@ -805,13 +901,30 @@
         catalogPriceUpdates.push({ id: item.itemId, price: item.unitPrice });
       }
     });
+    processingOrderIds[id] = true;
     db.ref().update(updates).then(function() {
+      order.status = 'fulfilled';
       catalogPriceUpdates.forEach(function(update) { catalog[update.id].price = update.price; });
       renderCatalog();
       renderOrderLines();
       loadOrderPage('history', 'first');
       loadOrderPage('incoming', 'first');
+      var fulfilledOrder = Object.assign({}, order, {
+        status: 'fulfilled',
+        items: items,
+        actualTotal: actualTotal,
+        shippedAt: Date.now(),
+        processedBy: user.nama || user.username || ''
+      });
+      printFulfilledOrder(fulfilledOrder).then(function() {
+        message('ck-order-message', 'PO ' + order.number + ' tersimpan. 3 surat jalan dan 3 nota berhasil dicetak dengan auto-cut.');
+        delete processingOrderIds[id];
+      }).catch(function(error) {
+        delete processingOrderIds[id];
+        window.alert('PO ' + order.number + ' berhasil disimpan, tetapi cetak otomatis gagal: ' + error.message + ' Pastikan print bridge berjalan dan printer Central Kitchen sudah dipilih di Pengaturan.');
+      });
     }).catch(function(error) {
+      delete processingOrderIds[id];
       window.alert('Gagal menyimpan pemenuhan PO: ' + error.message);
     });
   }
@@ -856,7 +969,7 @@
     var printContent = documentType === 'delivery' ? deliveryDoc('Central Kitchen') + deliveryDoc('Outlet') : invoice;
     var win = window.open('', '_blank', 'width=900,height=700');
     if (!win) { window.alert('Izinkan pop-up untuk mencetak dokumen.'); return; }
-    win.document.write('<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>' + (documentType === 'delivery' ? 'Surat Jalan' : 'Nota') + ' ' + safe(order.number) + '</title><style>@page{size:' + paperWidth + 'mm auto;margin:2mm}*{box-sizing:border-box}body{width:' + (paperWidth - 4) + 'mm;margin:0 auto;font:11px Arial,sans-serif;line-height:1.35;color:#111}.paper{width:100%;padding:2mm 0 5mm;page-break-after:always;break-after:page}.paper:last-child{page-break-after:auto;break-after:auto}h1{text-align:center;font-size:15px;margin:0 0 2px}h2{text-align:center;font-size:11px;margin:0 0 8px}.details{font-size:10px;border-bottom:1px dashed #333;padding-bottom:6px;margin-bottom:7px}.copy{text-align:center;font-weight:bold;margin:6px 0}.item{padding:4px 0;border-bottom:1px dashed #999}.item-name{font-weight:bold;overflow-wrap:anywhere}.item-meta{display:flex;justify-content:space-between;gap:2px;font-size:10px}.item-meta strong{white-space:nowrap}.total{text-align:right;font-size:13px;font-weight:bold;margin:8px 0}.note{font-size:10px;overflow-wrap:anywhere}.sign{display:flex;justify-content:space-between;gap:8px;margin-top:28px}.sign span{width:48%;text-align:center;border-top:1px solid #555;padding-top:4px;font-size:9px}@media print{html,body{width:' + (paperWidth - 4) + 'mm}.paper:last-child{page-break-after:auto;break-after:auto}}</style></head><body>' + printContent + '</body></html>');
+    win.document.write('<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>' + (documentType === 'delivery' ? 'Surat Jalan' : 'Nota') + ' ' + safe(order.number) + '</title><style>@page{size:' + paperWidth + 'mm auto;margin:2mm}*{box-sizing:border-box}body{width:' + (paperWidth - 4) + 'mm;margin:0 auto;font:12px Arial,Helvetica,sans-serif;line-height:1.45;color:#111}.paper{width:100%;padding:3mm 0 6mm;page-break-after:always;break-after:page}.paper:last-child{page-break-after:auto;break-after:auto}h1{text-align:center;font-size:17px;font-weight:700;margin:0 0 3px}h2{text-align:center;font-size:12px;font-weight:700;margin:0 0 9px}.details{font-size:11px;line-height:1.5;border-bottom:1px dashed #333;padding-bottom:7px;margin-bottom:8px}.copy{text-align:center;font-weight:bold;margin:7px 0}.item{padding:5px 0;border-bottom:1px dashed #999}.item-name{font-size:12px;font-weight:700;line-height:1.4;overflow-wrap:anywhere}.item-meta{display:flex;justify-content:space-between;gap:3px;font-size:10px;line-height:1.45}.item-meta strong{white-space:nowrap}.total{text-align:right;font-size:14px;font-weight:bold;margin:9px 0}.note{font-size:11px;line-height:1.45;overflow-wrap:anywhere}.sign{display:flex;justify-content:space-between;gap:8px;margin-top:32px}.sign span{width:48%;text-align:center;border-top:1px solid #555;padding-top:5px;font-size:10px}@media print{html,body{width:' + (paperWidth - 4) + 'mm}.paper:last-child{page-break-after:auto;break-after:auto}}</style></head><body>' + printContent + '</body></html>');
     win.document.close();
     win.focus();
     win.onload = function() { win.print(); };
@@ -867,19 +980,33 @@
     var duplicates = items.map(function(item) { return item.itemId; }).filter(function(id, index, all) { return all.indexOf(id) !== index; });
     if (duplicates.length) { message('ck-order-message', 'Pilih barang yang sama satu kali saja; ubah jumlah pada baris barang tersebut.', true); return; }
     var now = Date.now();
+    var whatsappWindow = window.open('about:blank', '_blank');
     document.getElementById('ck-submit-order').disabled = true;
     allocateOrderNumber(now).then(function(number) {
       var ref = orderRef.push();
       var payload = { number: number, outletId: selectedOutlet, outletName: labelForOutlet(selectedOutlet), items: items, requestTotal: items.reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0), note: document.getElementById('ck-note').value.trim(), status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP, createdBy: user.nama || user.username || '' };
-      return ref.set(payload).then(function() { return number; });
-    }).then(function(number) {
+      return ref.set(payload).then(function() { return { number: number, payload: payload }; });
+    }).then(function(result) {
       document.getElementById('ck-note').value = '';
       document.getElementById('ck-order-lines').innerHTML = '';
       addOrderLine();
-      message('ck-order-message', 'PO ' + number + ' berhasil dikirim ke Central Kitchen.');
+      var whatsappText = buildWhatsAppOrderMessage(result.payload, now);
+      if (whatsappWindow && !whatsappWindow.closed) {
+        whatsappWindow.location.href = 'https://wa.me/?text=' + encodeURIComponent(whatsappText);
+        message('ck-order-message', 'PO ' + result.number + ' tersimpan. Pilih grup WhatsApp lalu tekan Kirim.');
+      } else {
+        writeClipboard(whatsappText).then(function() {
+          message('ck-order-message', 'PO ' + result.number + ' tersimpan. Pop-up WhatsApp diblokir; rincian PO disalin untuk ditempel ke grup.', true);
+        }).catch(function() {
+          message('ck-order-message', 'PO ' + result.number + ' tersimpan, tetapi WhatsApp tidak terbuka. Izinkan pop-up browser lalu buka riwayat PO.', true);
+        });
+      }
       switchView('history-view');
       loadOrderPage('history', 'first');
-    }).catch(function(error) { message('ck-order-message', 'PO gagal disimpan: ' + error.message, true); }).finally(function() { document.getElementById('ck-submit-order').disabled = false; });
+    }).catch(function(error) {
+      if (whatsappWindow && !whatsappWindow.closed) whatsappWindow.close();
+      message('ck-order-message', 'PO gagal disimpan: ' + error.message, true);
+    }).finally(function() { document.getElementById('ck-submit-order').disabled = false; });
   }
   function saveCatalogItem() {
     var name = document.getElementById('ck-item-name').value.trim();
