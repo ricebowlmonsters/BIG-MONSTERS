@@ -23,6 +23,17 @@
 <style>
 .packaging-item{flex-wrap:wrap}.packaging-actions{display:flex;gap:9px;white-space:nowrap}.packaging-edit-form{display:grid;grid-template-columns:minmax(110px,1fr) minmax(180px,1.5fr) 85px 85px auto auto;gap:8px;align-items:end;width:100%;padding:8px 0}.packaging-edit-form label{color:var(--muted);font-size:11px;font-weight:600}.packaging-edit-form .search,.packaging-edit-form .select{width:100%;min-width:0;margin-top:4px;padding:8px}.packaging-edit-form button{white-space:nowrap}@media(max-width:760px){.packaging-edit-form{grid-template-columns:1fr 1fr}.packaging-edit-form label:nth-child(2){grid-column:1/-1}}
 </style>
+<style>
+.material-picker{position:relative;width:100%;min-width:0}.material-picker>.search{width:100%;min-width:0}.material-suggestions{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:30;display:none;max-height:230px;overflow:auto;background:#fff;border:1px solid var(--line);box-shadow:0 8px 22px #173c3226}.material-suggestions.open{display:block}.material-suggestion{display:block;width:100%;padding:9px 11px;border:0;border-bottom:1px solid #edf2ef;background:#fff;color:var(--ink);text-align:left;cursor:pointer;font:inherit;font-size:12px}.material-suggestion:hover,.material-suggestion:focus{background:var(--mint);color:var(--teal-dark);outline:0}.material-suggestion-empty{padding:10px 11px;color:var(--muted);font-size:12px}
+.kitchen-head-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.kitchen-head-actions .small{white-space:nowrap}
+</style>
+<style>
+@media print{@page{size:A4 landscape;margin:12mm}body.print-kitchen-report{background:#fff;color:#111;font-size:10pt}.print-kitchen-report .wrap{max-width:none;margin:0;padding:0}.print-kitchen-report .wrap>*:not(#kitchen){display:none!important}.print-kitchen-report #kitchen{display:block!important;margin:0;padding:0;border:0;box-shadow:none;background:#fff}.print-kitchen-report #kitchen>.card-head,.print-kitchen-report #kitchen>.table-scroll{display:none!important}.print-kitchen-report #kitchen>.jpg-report{position:static!important;left:auto!important;top:auto!important;width:100%!important;padding:0!important;background:#fff!important;overflow:visible}.print-kitchen-report #kitchen .jpg-report-head{background:#174541!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.print-kitchen-report #kitchen .jpg-report-meta,.print-kitchen-report #kitchen .jpg-recipe-head,.print-kitchen-report #kitchen .jpg-report-table th{background:#e7f0ed!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.print-kitchen-report #kitchen .jpg-report-table,.print-kitchen-report #kitchen .jpg-recipe-table{width:100%;border-collapse:collapse}.print-kitchen-report #kitchen .jpg-report-table th,.print-kitchen-report #kitchen .jpg-report-table td,.print-kitchen-report #kitchen .jpg-recipe-table th,.print-kitchen-report #kitchen .jpg-recipe-table td{padding:5px 7px;border-bottom:1px solid #ccc;color:#111;font-size:8pt;vertical-align:top}.print-kitchen-report #kitchen .jpg-recipe-card{break-inside:avoid;page-break-inside:avoid}.print-kitchen-report #kitchen .jpg-report-footer{color:#444}.print-kitchen-report #kitchen button{display:none!important}}
+</style>
+<style>
+.jpg-preview-overlay{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:20px;background:#102b2780}.jpg-preview-overlay.open{display:flex}.jpg-preview-dialog{display:flex;flex-direction:column;width:min(1120px,96vw);max-height:92vh;background:#fff;border:1px solid var(--line);box-shadow:0 20px 60px #102b2740}.jpg-preview-head,.jpg-preview-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px}.jpg-preview-head{border-bottom:1px solid var(--line)}.jpg-preview-head h2{font-size:17px}.jpg-preview-body{min-height:160px;overflow:auto;padding:16px;background:#e9efed;text-align:center}.jpg-preview-body img{display:block;width:100%;height:auto;margin:0 auto;box-shadow:0 2px 12px #17252924}.jpg-preview-actions{justify-content:flex-end;border-top:1px solid var(--line)}.jpg-preview-message{padding:36px 12px;color:var(--muted);font-size:13px}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body><main class="wrap">
 <header class="top"><div><div class="eyebrow">HPP Resto & Kitchen / September 2026</div><h1>HPP Resto & Kitchen</h1><p class="subtitle">Menu & Kitchen HPP Monitor untuk memantau seluruh menu resto dan produk semi-finished dapur dalam satu layar.</p></div><div class="live"><span class="dot"></span> Simulasi real-time <span>|</span> Data aktif</div></header>
@@ -31,7 +42,7 @@
 <section class="packaging-breakdowns" aria-label="Rincian biaya pembungkus"><details class="packaging-breakdown" id="ice-packaging-detail"><summary><span>Pembungkus Es Campur</span><span id="ice-packaging-total"></span></summary><div class="packaging-breakdown-list" id="ice-packaging-rows"></div></details><details class="packaging-breakdown" id="pack-packaging-detail"><summary><span>Pembungkus Rice Bowl & Mie</span><span id="pack-packaging-total"></span></summary><div class="packaging-breakdown-list" id="pack-packaging-rows"></div></details></section>
 <nav class="tabs"><button class="tab active" data-tab="resto">BPP Resto / Finished Menu</button><button class="tab" data-tab="kitchen">BPP Dapur / Central Kitchen</button><button class="tab" data-tab="database">Database Upload</button></nav>
 <section id="resto" class="view active card"><div class="card-head"><div><h2>All-menu monitoring</h2><p class="note">HPP per porsi = bahan per porsi + kemasan per porsi.</p></div><span class="small" id="row-count"></span></div><div class="table-scroll"><table><thead><tr><th>Kategori & Kode</th><th>Nama Menu</th><th>Harga Jual</th><th>HPP / porsi</th><th>Food Cost</th><th>Laba / porsi</th><th>Health</th><th>Action</th></tr></thead><tbody id="resto-body"></tbody></table></div></section>
-<section id="kitchen" class="view card kitchen"><div class="card-head"><div><h2>Central kitchen monitor</h2><p class="note">Produk central kitchen menggunakan nama produk tanpa kode. Bahan mengikuti database BPP.</p></div><span class="small" id="kitchen-count"></span></div><div class="table-scroll"><table><thead><tr><th>Nama Produk</th><th>Batch Yield</th><th>Satuan Jual</th><th>HPP / Gram</th><th>BPP Batch</th><th>Harga Transfer / Satuan</th><th>Laba Dapur</th><th>Linked Resto Menus</th></tr></thead><tbody id="kitchen-body"></tbody></table></div></section>
+<section id="kitchen" class="view card kitchen"><div class="card-head"><div><h2>Central kitchen monitor</h2><p class="note">Produk central kitchen menggunakan nama produk tanpa kode. Bahan mengikuti database BPP.</p></div><div class="kitchen-head-actions"><button id="kitchen-pricing-toggle" class="action" type="button" aria-pressed="false">Ikuti HPP untuk semua</button><button id="export-kitchen-pdf" class="action" type="button">Export PDF</button><button id="export-kitchen-jpg" class="action" type="button">Simpan JPG</button><span class="small" id="kitchen-count"></span></div></div><div class="table-scroll"><table><thead><tr><th>Nama Produk</th><th>Batch Yield</th><th>HPP / Satuan Jual</th><th>Harga Jual / Satuan Jual</th><th>Laba Dapur / Satuan Jual</th><th>Linked Resto Menus</th></tr></thead><tbody id="kitchen-body"></tbody></table></div></section>
 <section id="database" class="view card"><div class="card-head"><div><h2>Database dari Excel</h2><p class="note">Semua bahan, menu, resep dapur, dan kemasan dari import terakhir.</p></div><div class="database-actions"><span class="small" id="database-count"></span><button class="action" id="export-database">Export Excel</button></div></div><div class="database-controls"><input id="database-search" class="search" placeholder="Cari kode, nama, kategori, atau detail..."><select id="database-type" class="select"><option value="all">Semua data</option><option value="materials-resto">Bahan baku resto</option><option value="materials-dapur">Bahan baku dapur</option><option value="menus">Resep resto</option><option value="kitchen">Resep dapur</option><option value="packaging">Kemasan</option></select><label class="toggle"><input type="checkbox" id="database-select-all"> Pilih semua</label><button class="import-secondary" id="database-delete-selected">Hapus yang dipilih</button></div><div class="table-scroll"><table><thead><tr><th>Pilih</th><th>Jenis</th><th>Kode / Nama</th><th>Kategori / Detail</th><th>Jumlah / Komponen</th><th>Nilai</th><th>Aksi</th></tr></thead><tbody id="database-body"></tbody></table></div></section>
 </main><div class="drawer-bg" id="drawer-bg"></div><aside class="drawer" id="drawer" aria-label="Detail resep"><div class="drawer-head"><div><div class="eyebrow">Recipe detail</div><h2 id="drawer-title">—</h2><p class="note" id="drawer-meta"></p></div><button class="close" id="close" aria-label="Tutup">×</button></div><div class="recipe-line recipe-head"><span>Bahan</span><span>Qty</span><span>SHS Baru</span><span>Subtotal</span></div><div id="recipe-lines"></div><div class="calc"><h3>Smart Price Calculator</h3><div class="calc-row"><label for="target">Target Food Cost (%)</label><input id="target" class="target" type="number" min="1" max="100" value="35"></div><div class="calc-row"><label for="custom-price">Harga Jual Custom (Rp)</label><input id="custom-price" class="target" type="number" min="0" step="500" placeholder="Kosongkan untuk pakai target food cost"></div><div class="calc-row"><span>Harga jual baru disarankan</span><strong class="recommend" id="recommend">—</strong></div><button class="apply" id="apply">Terapkan Harga Baru</button></div></aside><section class="import-panel" id="import-panel" aria-label="Import data"><div class="import-box"><div class="card-head"><div><div class="eyebrow">Data intake</div><h2>Import data HPP</h2><p class="note">Pilih format, unggah CSV, atau tempel data dari Excel.</p></div><button class="close" id="close-import" aria-label="Tutup">×</button></div><select id="import-type" class="select"><option value="materials">Harga bahan baku</option><option value="menus">Resep menu resto</option><option value="kitchen">Resep dapur</option><option value="packaging">Packaging</option></select><input id="csv-file" type="file" accept=".csv,text/csv"><textarea id="csv-text" placeholder="Header CSV akan muncul di sini..."></textarea><p class="note">Template: klik download template untuk melihat kolom wajib. Pemisah kolom: koma.</p><p class="import-error" id="import-error"></p><div class="import-actions"><button class="import-secondary" id="download-template">Download template</button><button class="import-secondary" id="cancel-import">Batal</button><button class="import-button" id="apply-import">Terapkan import</button></div></div></section>
 <script>
@@ -39,23 +50,31 @@ const materials=[];
 const packaging={ice:0,pack:0,items:[]};
 const menus=[];
 const kitchen=[];
+let kitchenPricingMode='custom';
 const money=n=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(n);const unitFactor={gr:1,gram:1,grams:1,kg:1000,pcs:1,pc:1,buah:1,ml:1,liter:1000,l:1000,ltr:1000,btl:1,botol:1,pack:1,porsi:1};const normalizeUnit=value=>{const unit=String(value||'gr').trim().toLowerCase().replace(/[.\s]+/g,'');return unit==='g'||unit==='gram'?'gram':unit==='kilogram'?'kg':unit==='milliliter'?'ml':unit==='liter'?'liter':unit==='pcs.'?'pcs':unit};const gramMoney=n=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',minimumFractionDigits:3,maximumFractionDigits:3}).format(n);
-const isKitchenMaterial=x=>/^BB\.DAPUR\./i.test(String(x.code||''));const mat=(code,name,source)=>{const matches=materials.filter(x=>!source||(source==='dapur'?isKitchenMaterial(x):!isKitchenMaterial(x)));if(source==='dapur')return name?matches.find(x=>String(x.name).trim().toLowerCase()===String(name).trim().toLowerCase()):null;if(source==='resto')return code?matches.find(x=>String(x.code||'').trim().toLowerCase()===String(code).trim().toLowerCase()):null;return matches.find(x=>x.code===code)||(name?matches.find(x=>String(x.name).trim().toLowerCase()===String(name).trim().toLowerCase()):null)};const priceUnit=(code,name,qtyUnit,source)=>{const x=mat(code,name,source);if(!x)return 0;const materialUnit=normalizeUnit(x.unit||'gr'),recipeUnit=normalizeUnit(qtyUnit||materialUnit),unitPrice=Number(x.new??x.price??0);return unitPrice*Number(qtyUnit?((unitFactor[recipeUnit]||1)/(unitFactor[materialUnit]||1)):1)};const kitchenRecipeCost=x=>{if(!x.items?.length)return Number(x.cost)||0;return x.items.reduce((total,[code,name,qty,unit])=>total+Number(qty||0)*priceUnit(code,name,unit,'dapur'),0)/Number(x.yield||1)};
+const isKitchenMaterial=x=>/^BB\.DAPUR\./i.test(String(x.code||''));const mat=(code,name,source)=>{const matches=materials.filter(x=>!source||(source==='dapur'?isKitchenMaterial(x):!isKitchenMaterial(x)));if(source==='dapur')return name?matches.find(x=>String(x.name).trim().toLowerCase()===String(name).trim().toLowerCase()):null;if(source==='resto')return code?matches.find(x=>String(x.code||'').trim().toLowerCase()===String(code).trim().toLowerCase()):null;return matches.find(x=>x.code===code)||(name?matches.find(x=>String(x.name).trim().toLowerCase()===String(name).trim().toLowerCase()):null)};const priceUnit=(code,name,qtyUnit,source)=>{const x=mat(code,name,source);if(!x)return 0;const materialUnit=normalizeUnit(x.unit||'gr'),recipeUnit=normalizeUnit(qtyUnit||materialUnit),unitPrice=Number(x.new??x.price??0);return unitPrice*Number(qtyUnit?((unitFactor[recipeUnit]||1)/(unitFactor[materialUnit]||1)):1)};const kitchenRecipeCost=x=>{if(!x.items?.length)return Number(x.cost)||0;return x.items.reduce((total,[code,name,qty,unit])=>total+Number(qty||0)*priceUnit(code,name,unit,'dapur'),0)/Number(x.yield||1)};const kitchenBppSalePrice=x=>{const batchCost=kitchenRecipeCost(x)*Number(x.yield||0),batchUnit=normalizeUnit(x.yieldUnit||'gr'),saleUnit=normalizeUnit(x.saleUnit||x.yieldUnit||'gr'),saleQuantity=Number(x.yield||0)*(unitFactor[batchUnit]||1)/(unitFactor[saleUnit]||1);return saleQuantity>0?Math.ceil((batchCost/saleQuantity)/1000)*1000:0};const kitchenSalePrice=x=>kitchenPricingMode==='bpp'?kitchenBppSalePrice(x):Number(x.customTransfer??x.newTransfer)||0;function setKitchenPricingMode(mode){kitchenPricingMode=mode==='bpp'?'bpp':'custom';if(kitchenPricingMode==='bpp')kitchen.forEach(item=>{if(item.customTransfer===undefined)item.customTransfer=Number(item.newTransfer)||0});else kitchen.forEach(item=>{item.newTransfer=Number(item.customTransfer??item.newTransfer)||0;delete item.transferMode});saveImportedData();renderKitchen();renderDatabase()}
 const isIcePackagingType=value=>/\b(?:es|ice|campur)\b/i.test(String(value||''));const isPackMenuCategory=value=>/\b(?:mie|rice|bowl|bungkus|pack)\b/i.test(String(value||''));
 const packagingForMenu=m=>{const category=String(m.category||'');if(isIcePackagingType(category))return packaging.items.filter(x=>isIcePackagingType(x.type)).reduce((sum,x)=>sum+Number(x.cost||0),0)||packaging.ice;if(isPackMenuCategory(category))return packaging.items.filter(x=>!isIcePackagingType(x.type)).reduce((sum,x)=>sum+Number(x.cost||0),0)||packaging.pack;return 0};
 function calc(m){let ingredientsTotal=0;m.items.forEach(([code,name,q,unit])=>{ingredientsTotal+=q*priceUnit(code,name,unit,'resto')});let packagingCost=0;if(document.querySelector('#ice').checked&&isIcePackagingType(m.category))packagingCost=packagingForMenu(m);if(document.querySelector('#pack').checked&&isPackMenuCategory(m.category))packagingCost=packagingForMenu(m);const total=ingredientsTotal+packagingCost,price=Number(m.price)||0,food=price?total/price*100:0,profit=price-total,margin=price?profit/price*100:0;return {...m,total,ingredientsTotal,food,profit,margin,packagingCost,old:total,fresh:total,oldPct:food,newPct:food,oldProfit:profit,newProfit:profit,oldMargin:margin,newMargin:margin}}
 function status(x){return x<=35?'safe':x<=50?'warn':'risk'}function statusText(x){return x<=35?'Sehat':x<=50?'Waspada':'Bahaya'}
 function renderStats(){const r=menus.map(calc),avg=r.length?r.reduce((a,x)=>a+x.newPct,0)/r.length:0,old=r.length?r.reduce((a,x)=>a+x.oldPct,0)/r.length:0,risks=r.filter(x=>x.newPct>50),top=[...r].sort((a,b)=>b.newMargin-a.newMargin)[0],low=[...r].sort((a,b)=>a.newMargin-b.newMargin)[0];document.querySelector('#total').textContent=menus.length+kitchen.length;document.querySelector('#average').textContent=r.length?avg.toFixed(1)+'%':'—';document.querySelector('#average-detail').textContent=r.length?`Lama ${old.toFixed(1)}%  →  Baru ${avg.toFixed(1)}%`:'Belum ada data import';document.querySelector('#high-risk').textContent=risks.length;document.querySelector('#top-menu').textContent=top?top.name:'—';document.querySelector('#low-menu').textContent='Margin terendah: '+(low?low.name:'—')}
 function renderResto(){const q=document.querySelector('#search').value.toLowerCase(),c=document.querySelector('#category').value,h=document.querySelector('#health').value,r=menus.map(calc).filter(x=>(c==='Semua kategori'||x.category===c)&&(x.name+x.code).toLowerCase().includes(q)&&(h==='Semua status'||statusText(x.newPct)===h));document.querySelector('#row-count').textContent=`${r.length} dari ${menus.length} menu`;document.querySelector('#resto-body').innerHTML=r.map(x=>`<tr data-code="${x.code}"><td><span class="category">${x.category}</span><br><span class="code">${x.code}</span></td><td class="name">${x.name}</td><td class="money">${money(x.price)}</td><td class="money">${money(x.total)}<br><small class="small">Bahan ${money(x.ingredientsTotal)} + Kemasan ${money(x.packagingCost)}</small></td><td><span class="badge ${status(x.food)}">${x.food.toFixed(1)}%</span></td><td class="money">${money(x.profit)}<br><span class="small">${x.margin.toFixed(1)}%</span></td><td><span class="badge ${status(x.food)}">${statusText(x.food)}</span></td><td><button class="action detail" data-code="${x.code}">Detail Resep</button><br><button class="link recommend-link" data-code="${x.code}">Rekomendasi Harga</button></td></tr>`).join('')||'<tr><td colspan="8" class="empty">Tidak ada menu yang cocok.</td></tr>';document.querySelectorAll('.detail,.recommend-link').forEach(b=>b.addEventListener('click',()=>openDrawer(b.dataset.code)))}
-function renderKitchen(){document.querySelector('#kitchen-count').textContent=`${kitchen.length} produk aktif`;document.querySelector('#kitchen-body').innerHTML=kitchen.map(x=>{const linked=x.name==='SAUS ASAM MANIS'?1:x.name==='SAMBAL JAWA'?3:2, cost=kitchenRecipeCost(x),batchUnit=normalizeUnit(x.yieldUnit||'gr'),saleUnit=normalizeUnit(x.saleUnit||x.yieldUnit||'gr'),batchCost=cost*x.yield,saleQuantity=x.yield*(unitFactor[batchUnit]||1)/(unitFactor[saleUnit]||1),revenue=x.newTransfer*saleQuantity,profit=revenue-batchCost;return `<tr><td class="name">${x.name}</td><td>${x.yield.toLocaleString('id-ID')} ${x.yieldUnit||'gr'}</td><td>${x.newTransfer?money(x.newTransfer)+' / '+(x.saleUnit||x.yieldUnit||'gr'):'—'}</td><td class="money">${gramMoney(cost)}</td><td class="money">${money(batchCost)}</td><td>${money(x.oldTransfer)}<br><strong>${money(x.newTransfer)} / ${x.saleUnit||x.yieldUnit||'gr'}</strong></td><td class="money">${money(profit)}<br><span class="small">Pendapatan ${money(revenue)}</span></td><td><button class="action kitchen-recipe" data-kitchen-recipe="${x.name}">Lihat resep</button><br><button class="link kitchen-links" data-kitchen="${x.name}">${linked} menu terkait →</button></td></tr>`}).join('');document.querySelectorAll('.kitchen-recipe').forEach(button=>button.addEventListener('click',()=>openKitchenRecipe(button.dataset.kitchenRecipe)));document.querySelectorAll('.kitchen-links').forEach(button=>button.addEventListener('click',()=>openKitchenMenus(button.dataset.kitchen)))}
+function getKitchenLinkedMenus(name){const target=String(name||'').trim().toLowerCase();return menus.filter(menu=>Array.isArray(menu.items)&&menu.items.some(item=>String(item[1]||'').trim().toLowerCase()===target))}
+function createKitchenReport(now){const report=document.createElement('section');report.className='jpg-report';report.style.cssText='position:fixed;left:-20000px;top:0;width:1600px;padding:56px;background:#f2f6f5;color:#172529;font-family:Arial,Helvetica,sans-serif';const style=document.createElement('style');style.textContent='.jpg-report{box-sizing:border-box}.jpg-report-head{padding:30px 34px;background:#174541;color:#fff;border-radius:10px 10px 0 0;-webkit-print-color-adjust:exact;print-color-adjust:exact}.jpg-report-eyebrow{font-size:13px;font-weight:700;letter-spacing:2px;color:#a8d9c7}.jpg-report-title{font-size:32px;margin:10px 0 6px}.jpg-report-subtitle{font-size:15px;color:#d8e9e2}.jpg-report-meta{display:flex;gap:14px;padding:16px 34px;background:#fff;border:1px solid #dce7e3;border-top:0;color:#53656a;font-size:14px}.jpg-report-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #dce7e3}.jpg-report-table th{padding:13px 12px;background:#e7f0ed;color:#174541;text-align:left;font-size:12px;letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #bfd1ca;-webkit-print-color-adjust:exact;print-color-adjust:exact}.jpg-report-table td{padding:13px 12px;border-bottom:1px solid #e4ebe8;font-size:14px;vertical-align:top}.jpg-report-table tbody tr:nth-child(even){background:#f7faf9}.jpg-report-table .small{font-size:11px;color:#5f7074}.jpg-report-footer{padding:16px 34px;color:#738286;font-size:11px;background:#fff;border:1px solid #dce7e3;border-top:0;border-radius:0 0 10px 10px}.jpg-recipes-title{margin:30px 0 14px;color:#174541;font-size:22px}.jpg-recipe-card{margin:0 0 18px;background:#fff;border:1px solid #dce7e3;border-radius:8px;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.jpg-recipe-head{padding:14px 18px;background:#e7f0ed;border-bottom:1px solid #cbdad5;-webkit-print-color-adjust:exact;print-color-adjust:exact}.jpg-recipe-name{margin:0 0 5px;color:#174541;font-size:17px}.jpg-recipe-meta{color:#5f7074;font-size:12px}.jpg-recipe-table{width:100%;border-collapse:collapse}.jpg-recipe-table th{padding:9px 12px;background:#f7faf9;color:#53656a;text-align:left;font-size:10px;text-transform:uppercase;border-bottom:1px solid #dce7e3}.jpg-recipe-table td{padding:9px 12px;border-bottom:1px solid #edf2ef;font-size:12px}.jpg-recipe-table tbody tr:nth-child(even){background:#fbfcfc}.jpg-recipe-empty{padding:15px 18px;color:#738286;font-size:12px}';report.appendChild(style);const head=document.createElement('header');head.className='jpg-report-head';head.innerHTML='<div class="jpg-report-eyebrow">RICE BOWL MONSTER · COST CONTROL</div><h1 class="jpg-report-title">Laporan BPP Dapur &amp; Central Kitchen</h1><div class="jpg-report-subtitle">Monitoring biaya produksi, harga jual, dan laba per satuan jual</div>';report.appendChild(head);const meta=document.createElement('div');meta.className='jpg-report-meta';meta.innerHTML='<span><strong>Produk:</strong> '+kitchen.length+' item</span><span><strong>Mode harga:</strong> '+(kitchenPricingMode==='bpp'?'Ikuti HPP · pembulatan ke atas per Rp1.000':'Harga custom')+'</span><span><strong>Diekspor:</strong> '+now.toLocaleString('id-ID')+'</span>';report.appendChild(meta);const table=document.querySelector('#kitchen table').cloneNode(true);table.className='jpg-report-table';table.querySelectorAll('button').forEach(button=>button.remove());table.querySelectorAll('tbody tr').forEach(row=>{const name=row.cells[0]?.textContent.trim()||'';if(row.cells[5])row.cells[5].textContent=getKitchenLinkedMenus(name).length+' menu'});report.appendChild(table);const recipesTitle=document.createElement('h2');recipesTitle.className='jpg-recipes-title';recipesTitle.textContent='Rincian Resep per Produk';report.appendChild(recipesTitle);kitchen.forEach(function(product){const batchCost=kitchenRecipeCost(product)*Number(product.yield||0),card=document.createElement('section');card.className='jpg-recipe-card';const recipeHead=document.createElement('header');recipeHead.className='jpg-recipe-head';const productName=document.createElement('h3');productName.className='jpg-recipe-name';productName.textContent=product.name;const productMeta=document.createElement('div');productMeta.className='jpg-recipe-meta';productMeta.textContent='Batch yield '+Number(product.yield||0).toLocaleString('id-ID')+' '+(product.yieldUnit||'gr')+' · BPP batch '+money(batchCost)+' · Harga jual '+money(kitchenSalePrice(product))+' / '+(product.saleUnit||product.yieldUnit||'gr');recipeHead.append(productName,productMeta);card.appendChild(recipeHead);if(product.items&&product.items.length){const recipeTable=document.createElement('table');recipeTable.className='jpg-recipe-table';recipeTable.innerHTML='<thead><tr><th>Bahan</th><th>Kode BPP</th><th>Qty</th><th>Satuan</th></tr></thead>';const recipeBody=document.createElement('tbody');product.items.forEach(function(item){const name=item[1]||'',material=mat('',name,'dapur'),unit=item[3]||material?.unit||'gr',qty=Number(item[2])||0,row=document.createElement('tr');[name,material?.code||'—',qty.toLocaleString('id-ID'),unit].forEach(function(value){const cell=document.createElement('td');cell.textContent=value;row.appendChild(cell)});recipeBody.appendChild(row)});recipeTable.appendChild(recipeBody);card.appendChild(recipeTable)}else{const empty=document.createElement('div');empty.className='jpg-recipe-empty';empty.textContent='Resep belum memiliki rincian bahan.';card.appendChild(empty)}report.appendChild(card)});const footer=document.createElement('footer');footer.className='jpg-report-footer';footer.textContent='Rice Bowl Monster · HPP Resto & Kitchen · Data diambil saat laporan diekspor';report.appendChild(footer);return report}
+function exportKitchenPdf(){const previousTitle=document.title,report=createKitchenReport(new Date()),kitchenSection=document.querySelector('#kitchen'),cleanup=()=>{document.body.classList.remove('print-kitchen-report');report.remove();document.title=previousTitle};report.style.position='static';report.style.left='auto';report.style.top='auto';report.style.width='100%';report.style.padding='0';report.style.background='#fff';kitchenSection.appendChild(report);document.title='Laporan BPP Dapur - Central Kitchen';document.body.classList.add('print-kitchen-report');window.addEventListener('afterprint',cleanup,{once:true});window.print()}
+async function exportKitchenJpg(){if(typeof window.html2canvas!=='function'){alert('Fitur pembuat gambar belum termuat. Periksa koneksi internet lalu muat ulang halaman.');return}const button=document.querySelector('#export-kitchen-jpg'),report=document.createElement('section'),now=new Date(),modeLabel=kitchenPricingMode==='bpp'?'Ikuti HPP · pembulatan ke atas per Rp1.000':'Harga custom';button.disabled=true;button.textContent='Membuat JPG...';report.style.cssText='position:fixed;left:-20000px;top:0;width:1600px;padding:56px;background:#f2f6f5;color:#172529;font-family:Arial,Helvetica,sans-serif';const style=document.createElement('style');style.textContent='.jpg-report{box-sizing:border-box}.jpg-report-head{padding:30px 34px;background:#174541;color:#fff;border-radius:10px 10px 0 0}.jpg-report-eyebrow{font-size:13px;font-weight:700;letter-spacing:2px;color:#a8d9c7}.jpg-report-title{font-size:32px;margin:10px 0 6px}.jpg-report-subtitle{font-size:15px;color:#d8e9e2}.jpg-report-meta{display:flex;gap:14px;padding:16px 34px;background:#fff;border:1px solid #dce7e3;border-top:0;color:#53656a;font-size:14px}.jpg-report-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #dce7e3}.jpg-report-table th{padding:13px 12px;background:#e7f0ed;color:#174541;text-align:left;font-size:12px;letter-spacing:.5px;text-transform:uppercase;border-bottom:2px solid #bfd1ca}.jpg-report-table td{padding:13px 12px;border-bottom:1px solid #e4ebe8;font-size:14px;vertical-align:top}.jpg-report-table tbody tr:nth-child(even){background:#f7faf9}.jpg-report-table .small{font-size:11px;color:#5f7074}.jpg-report-footer{padding:16px 34px;color:#738286;font-size:11px;background:#fff;border:1px solid #dce7e3;border-top:0;border-radius:0 0 10px 10px}';report.className='jpg-report';report.appendChild(style);const head=document.createElement('header');head.className='jpg-report-head';head.innerHTML='<div class="jpg-report-eyebrow">RICE BOWL MONSTER · COST CONTROL</div><h1 class="jpg-report-title">Laporan BPP Dapur &amp; Central Kitchen</h1><div class="jpg-report-subtitle">Monitoring biaya produksi, harga jual, dan laba per satuan jual</div>';report.appendChild(head);const meta=document.createElement('div');meta.className='jpg-report-meta';meta.innerHTML='<span><strong>Produk:</strong> '+kitchen.length+' item</span><span><strong>Mode harga:</strong> '+modeLabel+'</span><span><strong>Diekspor:</strong> '+now.toLocaleString('id-ID')+'</span>';report.appendChild(meta);const table=document.querySelector('#kitchen table').cloneNode(true);table.className='jpg-report-table';table.querySelectorAll('button').forEach(button=>button.remove());table.querySelectorAll('tbody tr').forEach(row=>{const name=row.cells[0]?.textContent.trim()||'';if(row.cells[5])row.cells[5].textContent=getKitchenLinkedMenus(name).length+' menu'});report.appendChild(table);const footer=document.createElement('footer');footer.className='jpg-report-footer';footer.textContent='Rice Bowl Monster · HPP Resto & Kitchen · Data diambil saat laporan diekspor';report.appendChild(footer);document.body.appendChild(report);try{const canvas=await window.html2canvas(report,{scale:2,backgroundColor:'#f2f6f5',width:1600,useCORS:true});const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.94));if(!blob)throw new Error('Gambar laporan gagal dibuat.');const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='laporan-central-kitchen-'+now.toISOString().slice(0,10)+'.jpg';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(error){alert('Gagal menyimpan JPG: '+error.message)}finally{report.remove();button.disabled=false;button.textContent='Simpan JPG'}}
+function renderKitchen(){document.querySelector('#kitchen-count').textContent=`${kitchen.length} produk aktif`;const pricingToggle=document.querySelector('#kitchen-pricing-toggle');pricingToggle.textContent=kitchenPricingMode==='bpp'?'Kembali ke harga Custom':'Ikuti HPP untuk semua';pricingToggle.setAttribute('aria-pressed',String(kitchenPricingMode==='bpp'));document.querySelector('#kitchen-body').innerHTML=kitchen.map(x=>{const linked=getKitchenLinkedMenus(x.name),cost=kitchenRecipeCost(x),batchUnit=normalizeUnit(x.yieldUnit||'gr'),saleUnit=normalizeUnit(x.saleUnit||x.yieldUnit||'gr'),batchCost=cost*x.yield,saleQuantity=x.yield*(unitFactor[batchUnit]||1)/(unitFactor[saleUnit]||1),hppPerSaleUnit=saleQuantity?batchCost/saleQuantity:0,salePrice=kitchenSalePrice(x),hppPercent=salePrice?hppPerSaleUnit/salePrice*100:0,revenue=salePrice*saleQuantity,profit=revenue-batchCost,profitMargin=revenue?profit/revenue*100:0;return `<tr><td class="name">${x.name}</td><td>${x.yield.toLocaleString('id-ID')} ${x.yieldUnit||'gr'}<br><span class="small">BPP Batch ${money(batchCost)}</span></td><td class="money">${money(hppPerSaleUnit)} / ${x.saleUnit||x.yieldUnit||'gr'}<br><span class="small">${hppPercent.toFixed(1)}%</span></td><td><strong>${money(salePrice)} / ${x.saleUnit||x.yieldUnit||'gr'}</strong>${kitchenPricingMode==='custom'?`<br><button type="button" class="link kitchen-price-edit" data-kitchen-price-edit="${x.name}">Edit harga</button>`:''}</td><td class="money">${money(profit)}<br><span class="small">${profitMargin.toFixed(1)}%</span></td><td><button class="action kitchen-recipe" data-kitchen-recipe="${x.name}">Lihat resep</button><br><button class="link kitchen-links" data-kitchen="${x.name}">${linked.length} menu terkait →</button></td></tr>`}).join('');document.querySelectorAll('.kitchen-recipe').forEach(button=>button.addEventListener('click',()=>openKitchenRecipe(button.dataset.kitchenRecipe)));document.querySelectorAll('.kitchen-links').forEach(button=>button.addEventListener('click',()=>openKitchenMenus(button.dataset.kitchen)));document.querySelectorAll('.kitchen-price-edit').forEach(button=>button.addEventListener('click',()=>editKitchenPrice(button)));pricingToggle.onclick=()=>setKitchenPricingMode(kitchenPricingMode==='bpp'?'custom':'bpp')}
+document.querySelector('#export-kitchen-pdf').addEventListener('click',exportKitchenPdf);
+document.querySelector('#export-kitchen-jpg').addEventListener('click',exportKitchenJpg);
+function editKitchenPrice(button){const row=button.closest('tr'),name=button.dataset.kitchenPriceEdit,product=kitchen.find(item=>item.name===name);if(!row||!product)return;const cell=row.cells[3],previous=cell.innerHTML,input=document.createElement('input');input.type='number';input.min='0';input.step='1';input.className='number';input.setAttribute('aria-label','Harga jual custom');input.value=String(kitchenSalePrice(product));const save=document.createElement('button');save.type='button';save.className='link';save.textContent='Simpan';const cancel=document.createElement('button');cancel.type='button';cancel.className='link';cancel.textContent='Batal';cell.replaceChildren(input,document.createElement('br'),save,document.createTextNode(' '),cancel);cancel.addEventListener('click',()=>{cell.innerHTML=previous});save.addEventListener('click',()=>{const price=Number(input.value);if(!Number.isFinite(price)||price<0){alert('Harga jual tidak boleh negatif.');return}product.customTransfer=price;product.newTransfer=price;delete product.transferMode;saveImportedData();renderKitchen();renderDatabase()});input.focus();input.select()}
 let activeMenu=null;function openDrawer(code){activeMenu=calc(menus.find(x=>x.code===code));document.querySelector('.calc').classList.remove('hidden');document.querySelector('#drawer-title').textContent=activeMenu.name;document.querySelector('#drawer-meta').textContent=`${activeMenu.code} · ${activeMenu.category} · HPP per porsi ${money(activeMenu.total)} (bahan ${money(activeMenu.ingredientsTotal)} + kemasan ${money(activeMenu.packagingCost)})`;document.querySelector('#recipe-lines').innerHTML=activeMenu.items.map(([ingredientCode,ingredientName,q,unit])=>{const m=mat(ingredientCode,ingredientName,'resto'),unitPrice=priceUnit(ingredientCode,ingredientName,unit,'resto'),sub=q*unitPrice;return `<div class="recipe-line"><span><strong>${ingredientCode} · ${ingredientName}</strong><br><small class="small">Bahan baku resto</small></span><span>${q} ${unit||m?.unit||'gr'}</span><span>${money(unitPrice)} / unit</span><strong>${money(sub)}</strong></div>`}).join('');updateRecommend();document.querySelector('#drawer-bg').classList.add('open');document.querySelector('#drawer').classList.add('open')}
 function updateRecommend(){const t=Number(document.querySelector('#target').value)||35;document.querySelector('#recommend').textContent=money(activeMenu.fresh/(t/100))}function closeDrawer(){document.querySelector('#drawer-bg').classList.remove('open');document.querySelector('#drawer').classList.remove('open')}document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tab,.view').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelector('#'+b.dataset.tab).classList.add('active')}));['search','category','health'].forEach(id=>document.querySelector('#'+id).addEventListener(id==='search'?'input':'change',renderResto));['ice','pack'].forEach(id=>document.querySelector('#'+id).addEventListener('change',()=>{renderStats();renderResto()}));document.querySelector('#target').addEventListener('input',updateRecommend);document.querySelector('#close').addEventListener('click',closeDrawer);document.querySelector('#drawer-bg').addEventListener('click',closeDrawer);document.querySelector('#apply').addEventListener('click',()=>{activeMenu.price=activeMenu.fresh/(Number(document.querySelector('#target').value)||35)*100;document.querySelector('#apply').textContent='Harga disimulasikan';renderStats();renderResto()});renderStats();renderResto();renderKitchen();
-function openKitchenMenus(name){const linked=name==='SAUS ASAM MANIS'?menus.filter(x=>x.code==='RB.010 NEW'):name==='SAMBAL JAWA'?menus.filter(x=>['MIE.020 NEW','MIE.021 NEW','RB.011 NEW'].includes(x.code)):menus.filter(x=>['MIE.020 NEW','RB.010 NEW'].includes(x.code));document.querySelector('#drawer-title').textContent=name;document.querySelector('#drawer-meta').textContent=`${linked.length} menu resto menggunakan produk dapur ini`;document.querySelector('#recipe-lines').innerHTML=linked.map(x=>`<div class="recipe-line" style="grid-template-columns:1fr auto"><span><strong>${x.name}</strong><br><small class="small">${x.code} · ${x.category}</small></span><strong>${money(x.price)}</strong></div>`).join('');document.querySelector('.calc').classList.add('hidden');document.querySelector('#drawer-bg').classList.add('open');document.querySelector('#drawer').classList.add('open')}
+function openKitchenMenus(name){const linked=getKitchenLinkedMenus(name);document.querySelector('#drawer-title').textContent=name;document.querySelector('#drawer-meta').textContent=`${linked.length} menu resto menggunakan produk dapur ini`;document.querySelector('#recipe-lines').innerHTML=linked.map(x=>`<div class="recipe-line" style="grid-template-columns:1fr auto"><span><strong>${x.name}</strong><br><small class="small">${x.code} · ${x.category}</small></span><strong>${money(x.price)}</strong></div>`).join('')||'<div class="empty">Belum ada menu resto yang menggunakan produk ini.</div>';document.querySelector('.calc').classList.add('hidden');document.querySelector('#drawer-bg').classList.add('open');document.querySelector('#drawer').classList.add('open')}
 function openKitchenRecipe(name){const product=kitchen.find(x=>x.name===name);if(!product)return;document.querySelector('#drawer-title').textContent=product.name;document.querySelector('#drawer-meta').textContent=`Resep dapur · Yield ${Number(product.yield||0).toLocaleString('id-ID')} gr · Bahan diambil dari BB Dapur berdasarkan nama`;document.querySelector('#recipe-lines').innerHTML=product.items.map(([code,ingredientName,qty,unit])=>{const material=mat('',ingredientName,'dapur'),recipeUnit=normalizeUnit(unit||'gr'),unitPrice=material?priceUnit('',ingredientName,recipeUnit,'dapur'):0,subtotal=qty*unitPrice;return `<div class="recipe-line"><span><strong>${ingredientName}</strong><br><small class="small">${material?material.code:'Bahan tidak ditemukan di BB Dapur'}</small></span><span>${qty} ${unit||'gr'}</span><span>${money(unitPrice)} / ${recipeUnit}</span><strong>${money(subtotal)}</strong></div>`}).join('')||'<div class="empty">Resep belum memiliki bahan.</div>';document.querySelector('.calc').classList.add('hidden');document.querySelector('#drawer-bg').classList.add('open');document.querySelector('#drawer').classList.add('open')}
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tab,.view').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelector('#'+b.dataset.tab).classList.add('active')}));['search','category','health'].forEach(id=>document.querySelector('#'+id).addEventListener(id==='search'?'input':'change',renderResto));['ice','pack'].forEach(id=>document.querySelector('#'+id).addEventListener('change',()=>{renderStats();renderResto()}));document.querySelector('#target').addEventListener('input',updateRecommend);document.querySelector('#close').addEventListener('click',()=>{document.querySelector('.calc').classList.remove('hidden');closeDrawer()});document.querySelector('#drawer-bg').addEventListener('click',()=>{document.querySelector('.calc').classList.remove('hidden');closeDrawer()});document.querySelector('#apply').addEventListener('click',()=>{const source=menus.find(x=>x.code===activeMenu.code);source.price=activeMenu.fresh/(Number(document.querySelector('#target').value)||35)*100;activeMenu=calc(source);document.querySelector('#apply').textContent='Harga disimulasikan';renderStats();renderResto();updateRecommend()});renderStats();renderResto();renderKitchen();
 </script><script>
 const importTemplates={materials:'kode_bahan,nama_bahan,kategori,satuan,harga\nBB.001,Bahan Baru,Makanan,kg,28000',menus:'kode_menu,nama_menu,kategori,harga_jual,kode_bahan,nama_bahan,qty,satuan\nNEW.001,Menu Baru,RICE BOWL,25000,BB.001,Bahan Baru,100,gr',kitchen:'nama_produk,qty_barang_jadi,satuan_barang_jadi,harga_jual_satuan,satuan_harga_jual,nama_bahan_baku,qty_bahan,satuan_bahan\nSAUS BARU,1000,Gram,500000,Kg,Bahan Baku Baru,500,Gram',packaging:'jenis,nama,satuan,biaya\nice,Cup Baru,pcs,1000'};const IMPORT_STORAGE='rbm_hpp_monitor_imports';
-function applySavedData(saved){if(!saved||saved.source!=='excel-import')return;materials.splice(0,materials.length,...(saved.materials||[]));menus.splice(0,menus.length,...(saved.menus||[]));kitchen.splice(0,kitchen.length,...(saved.kitchen||[]));packaging.ice=saved.packaging?.ice||0;packaging.pack=saved.packaging?.pack||0;packaging.items=saved.packaging?.items||[]}function saveImportedData(){const payload=JSON.stringify({source:'excel-import',importedAt:new Date().toISOString(),materials,menus,kitchen,packaging});localStorage.setItem(IMPORT_STORAGE,payload);if(typeof FirebaseStorage!=='undefined'&&FirebaseStorage.setAppState){FirebaseStorage.setAppState('rbm_hpp_monitor',payload).then(()=>{document.querySelector('.live').innerHTML='<span class="dot"></span> Tersimpan di Firebase <span>|</span> Data aktif'}).catch(()=>{document.querySelector('.live').innerHTML='<span class="dot"></span> Tersimpan lokal (Firebase gagal) <span>|</span> Data aktif'})}}function loadImportedData(){try{const localSaved=JSON.parse(localStorage.getItem(IMPORT_STORAGE));applySavedData(localSaved)}catch(error){localStorage.removeItem(IMPORT_STORAGE)}if(typeof FirebaseStorage!=='undefined'&&FirebaseStorage.getAppState){FirebaseStorage.getAppState('rbm_hpp_monitor').then(value=>{if(value){const cloudSaved=typeof value==='string'?JSON.parse(value):value;if(cloudSaved.source!=='excel-import')return;applySavedData(cloudSaved);localStorage.setItem(IMPORT_STORAGE,JSON.stringify(cloudSaved));renderStats();renderResto();renderKitchen();document.querySelector('.live').innerHTML='<span class="dot"></span> Terhubung ke Firebase <span>|</span> Data aktif'}}).catch(()=>{})}}loadImportedData();renderStats();renderResto();renderKitchen();
+function applySavedData(saved){if(!saved||saved.source!=='excel-import')return;materials.splice(0,materials.length,...(saved.materials||[]));menus.splice(0,menus.length,...(saved.menus||[]));kitchen.splice(0,kitchen.length,...(saved.kitchen||[]));kitchenPricingMode=saved.kitchenPricingMode==='bpp'?'bpp':'custom';packaging.ice=saved.packaging?.ice||0;packaging.pack=saved.packaging?.pack||0;packaging.items=saved.packaging?.items||[]}function saveImportedData(){const payload=JSON.stringify({source:'excel-import',importedAt:new Date().toISOString(),materials,menus,kitchen,packaging,kitchenPricingMode});localStorage.setItem(IMPORT_STORAGE,payload);if(typeof FirebaseStorage!=='undefined'&&FirebaseStorage.setAppState){FirebaseStorage.setAppState('rbm_hpp_monitor',payload).then(()=>{document.querySelector('.live').innerHTML='<span class="dot"></span> Tersimpan di Firebase <span>|</span> Data aktif'}).catch(()=>{document.querySelector('.live').innerHTML='<span class="dot"></span> Tersimpan lokal (Firebase gagal) <span>|</span> Data aktif'})}}function loadImportedData(){try{const localSaved=JSON.parse(localStorage.getItem(IMPORT_STORAGE));applySavedData(localSaved)}catch(error){localStorage.removeItem(IMPORT_STORAGE)}if(typeof FirebaseStorage!=='undefined'&&FirebaseStorage.getAppState){FirebaseStorage.getAppState('rbm_hpp_monitor').then(value=>{if(value){const cloudSaved=typeof value==='string'?JSON.parse(value):value;if(cloudSaved.source!=='excel-import')return;applySavedData(cloudSaved);localStorage.setItem(IMPORT_STORAGE,JSON.stringify(cloudSaved));renderStats();renderResto();renderKitchen();renderDatabase();document.querySelector('.live').innerHTML='<span class="dot"></span> Terhubung ke Firebase <span>|</span> Data aktif'}}).catch(()=>{})}}loadImportedData();renderStats();renderResto();renderKitchen();
 const importPanel=document.querySelector('#import-panel');const importType=document.querySelector('#import-type');const csvText=document.querySelector('#csv-text');const importError=document.querySelector('#import-error');
 function parseCsv(text){return text.trim().split(/\r?\n/).filter(Boolean).map(line=>{const cells=[];let cell='',quoted=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){quoted=!quoted}else if(ch===','&&!quoted){cells.push(cell.trim());cell=''}else{cell+=ch}}cells.push(cell.trim());return cells})}
 function rowsByHeader(text){const rows=parseCsv(text);if(rows.length<2)throw new Error('Excel harus memiliki header dan minimal satu baris data.');const aliases={kode_bahan:'code',nama_bahan:'name',harga_lama:'old',harga_baru:'new',kode_menu:'code',nama_menu:'name',harga_jual:'price',kategori:'category',nama_produk:'name',batch_yield:'yield',hpp_per_gram:'cost',harga_transfer_lama:'oldTransfer',harga_transfer_baru:'newTransfer',jenis:'type',nama:'name',biaya:'cost'};const header=rows.shift().map(x=>aliases[x.toLowerCase()]||x.toLowerCase());return rows.map(row=>Object.fromEntries(header.map((key,i)=>[key,row[i]||''])))}
@@ -74,7 +93,7 @@ const codeApply=document.querySelector('#apply-import');const codeApplyFresh=cod
 codeApplyFresh.addEventListener('click',()=>{try{let count=0;if(pendingWorkbook){pendingWorkbook.SheetNames.forEach(name=>{const type=sheetType(name),sheet=pendingWorkbook.Sheets[name],rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:''}).filter(row=>row.some(cell=>String(cell).trim()));if(type&&rows.length>1){applyCodeImport(type,XLSX.utils.sheet_to_csv(sheet));count++}})}else{applyCodeImport(importType.value,csvText.value);count=1}if(!count)throw new Error('Tidak ada sheet berisi data yang dikenali.');saveImportedData();renderStats();renderResto();renderKitchen();renderDatabase();closeImport();pendingWorkbook=null}catch(error){importError.textContent=error.message}});
 </script><script>
 const escapeDatabaseHtml=value=>String(value??'').replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
-function databaseRows(){const rows=[];materials.forEach(item=>{const kitchenMaterial=String(item.code||'').toUpperCase().startsWith('BB.DAPUR.');rows.push({type:kitchenMaterial?'Bahan baku dapur':'Bahan baku resto',kind:kitchenMaterial?'materials-dapur':'materials-resto',name:item.name,code:item.code||'—',detail:item.category||item.unit||'Bahan',quantity:item.unit||'—',value:`Lama ${money(item.old||0)} / Baru ${money(item.new||0)}`})});menus.forEach(item=>rows.push({type:'Resep resto',kind:'menus',name:item.name,code:item.code,detail:item.category,quantity:`${item.items.length} bahan`,value:money(item.price)}));kitchen.forEach(item=>rows.push({type:'Resep dapur',kind:'kitchen',name:item.name,code:'—',detail:`Yield ${Number(item.yield||0).toLocaleString('id-ID')} gr`,quantity:`${item.items.length} bahan`,value:`HPP/gr ${gramMoney(item.cost||0)}`}));[['ice','Es / ice',packaging.ice],['pack','Packaging menu',packaging.pack]].forEach(([kind,name,value])=>{if(Number(value)>0)rows.push({type:'Kemasan',kind:'packaging',name,code:'—',detail:'Biaya kemasan',quantity:'Total',value:money(value)})});return rows}
+function databaseRows(){const rows=[];materials.forEach(item=>{const kitchenMaterial=String(item.code||'').toUpperCase().startsWith('BB.DAPUR.');rows.push({type:kitchenMaterial?'Bahan baku dapur':'Bahan baku resto',kind:kitchenMaterial?'materials-dapur':'materials-resto',name:item.name,code:item.code||'—',detail:item.category||item.unit||'Bahan',quantity:item.unit||'—',value:money(item.new??item.price??item.old??0)})});menus.forEach(item=>rows.push({type:'Resep resto',kind:'menus',name:item.name,code:item.code,detail:item.category,quantity:`${item.items.length} bahan`,value:money(item.price)}));kitchen.forEach(item=>rows.push({type:'Resep dapur',kind:'kitchen',name:item.name,code:'—',detail:`Yield ${Number(item.yield||0).toLocaleString('id-ID')} gr`,quantity:`${item.items.length} bahan`,value:`Harga jual ${money(kitchenSalePrice(item))} / ${item.saleUnit||item.yieldUnit||'gr'}`}));[['ice','Es / ice',packaging.ice],['pack','Packaging menu',packaging.pack]].forEach(([kind,name,value])=>{if(Number(value)>0)rows.push({type:'Kemasan',kind:'packaging',name,code:'—',detail:'Biaya kemasan',quantity:'Total',value:money(value)})});return rows}
 function renderDatabase(){const query=document.querySelector('#database-search').value.toLowerCase().trim(),type=document.querySelector('#database-type').value,all=databaseRows(),filtered=all.filter(row=>(type==='all'||row.kind===type)&&Object.values(row).join(' ').toLowerCase().includes(query));document.querySelector('#database-count').textContent=`${filtered.length} dari ${all.length} record`;document.querySelector('#database-body').innerHTML=filtered.map(row=>`<tr><td><span class="badge safe">${escapeDatabaseHtml(row.type)}</span></td><td><strong>${escapeDatabaseHtml(row.name)}</strong><br><span class="code">${escapeDatabaseHtml(row.code)}</span></td><td>${escapeDatabaseHtml(row.detail)}</td><td>${escapeDatabaseHtml(row.quantity)}</td><td>${escapeDatabaseHtml(row.value)}</td><td class="small">Data aktif</td></tr>`).join('')||'<tr><td colspan="6" class="empty">Belum ada data yang cocok.</td></tr>'}
 document.querySelector('#database-search').addEventListener('input',renderDatabase);document.querySelector('#database-type').addEventListener('change',renderDatabase);document.querySelector('#export-database').addEventListener('click',()=>{const query=document.querySelector('#database-search').value.toLowerCase().trim(),type=document.querySelector('#database-type').value,rows=databaseRows().filter(row=>(type==='all'||row.kind===type)&&Object.values(row).join(' ').toLowerCase().includes(query)).map(({kind,...row})=>row);if(!rows.length){alert('Tidak ada data untuk diekspor.');return}const workbook=XLSX.utils.book_new();XLSX.utils.book_append_sheet(workbook,XLSX.utils.json_to_sheet(rows),'Database Upload');XLSX.writeFile(workbook,'database-upload-rbm.xlsx')});renderDatabase();
 </script><script>
@@ -268,7 +287,7 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 			const material = materials.find(item => isKitchenMaterial(item) && item.name.toLowerCase() === ingredientName.toLowerCase());
 			product.items.push([material?.code || '', ingredientName, qty, valueOf(row, ['satuan_bahan', 'satuan']) || 'gr']);
 		});
-		Object.values(grouped).forEach(item => { const existing = kitchen.find(product => product.name === item.name); if (existing) Object.assign(existing, item); else kitchen.push(item); });
+		Object.values(grouped).forEach(item => { const existing = kitchen.find(product => product.name === item.name); if (existing) { const oldTransfer = existing.oldTransfer; Object.assign(existing, item); existing.oldTransfer = oldTransfer; existing.customTransfer = Number(item.newTransfer) || 0; delete existing.transferMode; } else { item.customTransfer = Number(item.newTransfer) || 0; kitchen.push(item); } });
 	}
 	document.addEventListener('click', function (event) {
 		if (event.target.id !== 'apply-import' || importType.value === 'workbook' || importType.value === 'packaging') return;
@@ -306,6 +325,14 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 		if (!customPrice.value.trim()) originalUpdateRecommend();
 	};
 	customPrice.addEventListener('input', window.updateRecommend);
+	document.querySelector('#database-body').addEventListener('click', function (event) {
+		const button = event.target.closest('.database-kitchen');
+		if (!button) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const row = button.closest('tr');
+		if (row) openKitchenRecipe(row.dataset.key);
+	}, true);
 	document.addEventListener('click', function (event) {
 		if (event.target.closest('.detail,.recommend-link')) {
 			customPrice.value = '';
@@ -314,5 +341,444 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 	});
 	const previousApplyHandler = document.querySelector('#apply');
 	previousApplyHandler.dataset.customPriceEnabled = 'true';
+})();
+</script><script>
+(function () {
+	const databaseBody = document.querySelector('#database-body');
+	const originalRenderDatabase = renderDatabase;
+
+	function addAction(cell, label, className) {
+		if (cell.childNodes.length) cell.appendChild(document.createElement('br'));
+		const button = document.createElement('button');
+		button.type = 'button';
+		button.className = 'link ' + className;
+		button.textContent = label;
+		if (className === 'database-row-delete') button.style.color = 'var(--red)';
+		cell.appendChild(button);
+	}
+
+	function bindMaterialSearch(input, select) {
+		const placeholder = select.options[0]?.textContent || 'Pilih bahan baku...';
+		const options = Array.from(select.options).slice(1).map(option => ({ value: option.value, label: option.textContent }));
+		const wrapper = document.createElement('div');
+		const suggestions = document.createElement('div');
+		wrapper.className = 'material-picker';
+		suggestions.className = 'material-suggestions';
+		suggestions.setAttribute('role', 'listbox');
+		suggestions.id = input.id + '-suggestions';
+		input.parentNode.insertBefore(wrapper, input);
+		wrapper.appendChild(input);
+		wrapper.appendChild(suggestions);
+		select.style.display = 'none';
+		input.placeholder = placeholder.replace(/[.…]+$/, '') + ' atau ketik nama/kode...';
+		input.setAttribute('role', 'combobox');
+		input.setAttribute('aria-autocomplete', 'list');
+		input.setAttribute('aria-controls', suggestions.id);
+		input.setAttribute('aria-expanded', 'false');
+
+		function closeSuggestions() {
+			suggestions.classList.remove('open');
+			input.setAttribute('aria-expanded', 'false');
+		}
+		function showSuggestions(query) {
+			const normalizedQuery = String(query || '').trim().toLowerCase();
+			const matches = options.filter(option => (option.value + ' ' + option.label).toLowerCase().includes(normalizedQuery));
+			suggestions.replaceChildren();
+			if (!matches.length) {
+				const empty = document.createElement('div');
+				empty.className = 'material-suggestion-empty';
+				empty.textContent = 'Bahan tidak ditemukan.';
+				suggestions.appendChild(empty);
+			} else {
+				matches.forEach(option => {
+					const suggestion = document.createElement('button');
+					suggestion.type = 'button';
+					suggestion.className = 'material-suggestion';
+					suggestion.setAttribute('role', 'option');
+					suggestion.textContent = option.label;
+					suggestion.addEventListener('mousedown', event => event.preventDefault());
+					suggestion.addEventListener('click', () => {
+						select.value = option.value;
+						input.value = option.label;
+						closeSuggestions();
+					});
+					suggestions.appendChild(suggestion);
+				});
+			}
+			suggestions.classList.add('open');
+			input.setAttribute('aria-expanded', 'true');
+		}
+
+		input.addEventListener('focus', () => showSuggestions(''));
+		input.addEventListener('click', () => showSuggestions(''));
+		input.addEventListener('input', () => showSuggestions(input.value));
+		input.addEventListener('keydown', event => { if (event.key === 'Escape') closeSuggestions(); });
+		document.addEventListener('click', event => { if (!wrapper.contains(event.target)) closeSuggestions(); });
+	}
+
+	function enhanceDatabaseActions() {
+		databaseBody.querySelectorAll('tr').forEach(function (row) {
+			if (!row.dataset.kind || row.dataset.actionsReady || row.querySelector('td[colspan]')) return;
+			const quantity = row.cells[4];
+			const actions = row.cells[6];
+			if (!quantity || !actions) return;
+			if (row.dataset.kind === 'menus') addAction(quantity, 'Edit komponen', 'database-components-edit database-replace');
+			else if (row.dataset.kind === 'kitchen') addAction(quantity, 'Edit komponen', 'database-components-edit database-kitchen-edit');
+			else if (row.dataset.kind === 'materials-resto' || row.dataset.kind === 'materials-dapur') addAction(quantity, 'Edit satuan', 'database-unit-edit');
+			actions.replaceChildren();
+			if (row.dataset.kind === 'menus') {
+				addAction(actions, 'Lihat resep', 'database-recipe');
+			} else if (row.dataset.kind === 'kitchen') {
+				addAction(actions, 'Lihat resep', 'database-kitchen');
+			} else {
+				addAction(actions, 'Edit harga', 'database-price-edit');
+			}
+			addAction(actions, 'Hapus', 'database-row-delete');
+			row.dataset.actionsReady = 'true';
+		});
+	}
+
+	renderDatabase = function () {
+		originalRenderDatabase();
+		enhanceDatabaseTable();
+		enhanceDatabaseActions();
+	};
+	const databaseActionObserver = new MutationObserver(function () {
+		enhanceDatabaseTable();
+		enhanceDatabaseActions();
+	});
+	databaseActionObserver.observe(databaseBody, { childList: true });
+
+	function rowRecord(row) {
+		return databaseRows().find(function (item) {
+			return item.kind === row.dataset.kind && (item.code && item.code !== '—' ? item.code : item.name) === row.dataset.key;
+		});
+	}
+
+	function currentPrice(row) {
+		const key = row.dataset.key;
+		if (row.dataset.kind === 'materials-resto' || row.dataset.kind === 'materials-dapur') {
+			const item = materials.find(entry => entry.code === key || entry.name === key);
+			return Number(item?.new || 0);
+		}
+		if (row.dataset.kind === 'menus') return Number(menus.find(entry => entry.code === key)?.price || 0);
+		if (row.dataset.kind === 'kitchen') return Number(kitchen.find(entry => entry.name === key)?.newTransfer || 0);
+		return /ice|es/i.test(key) ? Number(packaging.ice || 0) : Number(packaging.pack || 0);
+	}
+
+	function setPackagingPrice(key, price) {
+		const ice = /ice|es/i.test(key);
+		const items = packaging.items.filter(item => isIcePackagingType(item.type) === ice);
+		if (!items.length) {
+			packaging.items.push({ type: ice ? 'Ice Campur' : 'Packaging menu', name: ice ? 'Es / ice' : 'Packaging menu', qty: 1, unit: 'Porsi', unitCost: price, cost: price });
+			return;
+		}
+		const total = items.reduce((sum, item) => sum + (Number(item.cost) || 0), 0);
+		items.forEach(item => {
+			item.cost = total > 0 ? (Number(item.cost) || 0) * price / total : price / items.length;
+			item.unitCost = Number(item.qty) > 0 ? item.cost / Number(item.qty) : item.cost;
+		});
+	}
+
+	function savePrice(row, price) {
+		const key = row.dataset.key;
+		if (row.dataset.kind === 'materials-resto' || row.dataset.kind === 'materials-dapur') {
+			const item = materials.find(entry => entry.code === key || entry.name === key);
+			if (item) item.new = price;
+		} else if (row.dataset.kind === 'menus') {
+			const item = menus.find(entry => entry.code === key);
+			if (item) item.price = price;
+		} else if (row.dataset.kind === 'kitchen') {
+			const item = kitchen.find(entry => entry.name === key);
+			if (item) item.newTransfer = price;
+		} else if (row.dataset.kind === 'packaging') {
+			setPackagingPrice(key, price);
+		}
+		saveImportedData();
+		renderStats(); renderResto(); renderKitchen(); renderDatabase();
+	}
+
+	function startPriceEdit(row) {
+		const cell = row.cells[5];
+		if (!cell || cell.querySelector('.database-price-input')) return;
+		const previousValue = cell.innerHTML;
+		const input = document.createElement('input');
+		input.type = 'number'; input.min = '0'; input.step = '1';
+		input.className = 'number database-price-input'; input.value = String(currentPrice(row));
+		input.setAttribute('aria-label', 'Harga baru');
+		const save = document.createElement('button');
+		save.type = 'button'; save.className = 'link'; save.textContent = 'Simpan';
+		const cancel = document.createElement('button');
+		cancel.type = 'button'; cancel.className = 'link'; cancel.textContent = 'Batal';
+		cell.replaceChildren(input, document.createElement('br'), save, document.createTextNode(' '), cancel);
+		cancel.addEventListener('click', () => { cell.innerHTML = previousValue; });
+		save.addEventListener('click', () => {
+			const price = Number(input.value);
+			if (!Number.isFinite(price) || price < 0) { alert('Harga harus berupa angka nol atau lebih.'); return; }
+			savePrice(row, price);
+		});
+		input.focus(); input.select();
+	}
+
+	function startUnitEdit(row) {
+		const key = row.dataset.key;
+		const material = materials.find(item => item.code === key || item.name === key);
+		const cell = row.cells[4];
+		if (!material || !cell || cell.querySelector('.database-unit-input')) return;
+		const previous = cell.innerHTML;
+		const input = document.createElement('input');
+		input.type = 'text'; input.className = 'search database-unit-input';
+		input.setAttribute('aria-label', 'Satuan bahan'); input.value = material.unit || 'gr';
+		const save = document.createElement('button');
+		save.type = 'button'; save.className = 'link'; save.textContent = 'Simpan';
+		const cancel = document.createElement('button');
+		cancel.type = 'button'; cancel.className = 'link'; cancel.textContent = 'Batal';
+		cell.replaceChildren(input, document.createElement('br'), save, document.createTextNode(' '), cancel);
+		cancel.addEventListener('click', () => { cell.innerHTML = previous; });
+		save.addEventListener('click', () => {
+			const unit = input.value.trim();
+			if (!unit) { alert('Satuan bahan harus diisi.'); return; }
+			material.unit = unit;
+			saveImportedData();
+			renderStats(); renderResto(); renderKitchen(); renderDatabase();
+		});
+		input.focus(); input.select();
+	}
+
+	function editKitchenRecipe(name) {
+		const product = kitchen.find(item => item.name === name);
+		if (!product) return;
+		const recipeLines = document.querySelector('#recipe-lines');
+		const calcBox = document.querySelector('.calc');
+		const unitChoices = ['Gram', 'Kg', 'Ml', 'Liter', 'Pcs', 'Porsi'];
+		const unitOptions = current => {
+			const currentUnit = String(current || 'gr').trim();
+			const choices = unitChoices.some(unit => normalizeUnit(unit) === normalizeUnit(currentUnit)) ? unitChoices : [...unitChoices, currentUnit];
+			return choices.map(unit => `<option value="${escapeDatabaseHtml(unit)}" ${normalizeUnit(currentUnit) === normalizeUnit(unit) ? 'selected' : ''}>${escapeDatabaseHtml(unit)}</option>`).join('');
+		};
+		const materialsOptions = materials.filter(isKitchenMaterial).map(item => `<option value="${escapeDatabaseHtml(item.name)}">${escapeDatabaseHtml(item.name)} · ${escapeDatabaseHtml(item.code || '')}</option>`).join('');
+		document.querySelector('#drawer-title').textContent = 'Ganti Resep: ' + product.name;
+		document.querySelector('#drawer-meta').textContent = 'Resep dapur · Ubah yield, harga jual, qty dan satuan bahan';
+		recipeLines.innerHTML = '<div class="recipe-line recipe-head"><span>Bahan</span><span>Qty</span><span>Satuan</span><span></span></div>' + (product.items || []).map((item, index) => {
+			const material = mat('', item[1], 'dapur');
+			return `<div class="recipe-line kitchen-edit-line" data-index="${index}" style="grid-template-columns:minmax(150px,1fr) 82px 86px 32px;gap:8px"><span><strong>${escapeDatabaseHtml(item[1])}</strong><br><small class="small">${escapeDatabaseHtml(material?.code || 'Bahan tidak ditemukan di BB Dapur')}</small></span><input class="target kitchen-edit-qty" type="number" min="0" step="any" value="${Number(item[2]) || 0}" aria-label="Qty ${escapeDatabaseHtml(item[1])}"><select class="select kitchen-edit-unit" aria-label="Satuan ${escapeDatabaseHtml(item[1])}">${unitOptions(item[3])}</select><button class="close kitchen-edit-remove" type="button" aria-label="Hapus bahan">×</button></div>`;
+		}).join('') || '<div class="empty">Resep belum memiliki bahan.</div>';
+		calcBox.classList.remove('hidden');
+		calcBox.innerHTML = `<h3>Detail Produk Dapur</h3><div class="calc-row"><label for="kitchen-edit-yield">Batch Yield</label><div style="display:flex;gap:8px"><input id="kitchen-edit-yield" class="target" type="number" min="0.01" step="any" value="${Number(product.yield) || 0}" aria-label="Batch yield"><select id="kitchen-edit-yield-unit" class="select" aria-label="Satuan batch yield">${unitOptions(product.yieldUnit)}</select></div></div><div class="calc-row"><label for="kitchen-edit-price">Harga Jual Custom (Rp)</label><input id="kitchen-edit-price" class="target" type="number" min="0" step="500" value="${Number(product.customTransfer ?? product.newTransfer) || 0}" aria-label="Harga jual custom"></div><div class="calc-row"><label for="kitchen-edit-sale-unit">Satuan Jual</label><select id="kitchen-edit-sale-unit" class="select">${unitOptions(product.saleUnit || product.yieldUnit)}</select></div><div style="margin:12px 0"><input id="kitchen-edit-material-search" class="search" type="search" placeholder="Cari nama atau kode bahan baku dapur..." aria-label="Cari bahan baku dapur"><div style="display:flex;gap:8px;margin-top:8px"><select id="kitchen-edit-add-material" class="select" style="flex:1;min-width:0"><option value="">Pilih bahan baku dapur...</option>${materialsOptions}</select><button id="kitchen-edit-add" class="import-secondary" type="button">Tambah</button></div></div><button id="kitchen-edit-save" class="apply" type="button">Simpan Perubahan Resep</button><button id="kitchen-edit-cancel" class="import-secondary" type="button" style="margin-top:8px;width:100%">Batal</button>`;
+		bindMaterialSearch(document.querySelector('#kitchen-edit-material-search'), document.querySelector('#kitchen-edit-add-material'));
+		document.querySelector('#drawer-bg').classList.add('open');
+		document.querySelector('#drawer').classList.add('open');
+	}
+
+	function deleteRow(row) {
+		const key = row.dataset.key, kind = row.dataset.kind;
+		const name = row.cells[2]?.querySelector('strong')?.textContent || key;
+		if (!confirm('Hapus ' + name + '?')) return;
+		if (kind === 'materials-resto' || kind === 'materials-dapur') {
+			materials.splice(0, materials.length, ...materials.filter(item => item.code !== key && item.name !== key));
+		} else if (kind === 'menus') {
+			menus.splice(0, menus.length, ...menus.filter(item => item.code !== key));
+		} else if (kind === 'kitchen') {
+			kitchen.splice(0, kitchen.length, ...kitchen.filter(item => item.name !== key));
+		} else if (kind === 'packaging') {
+			const ice = /ice|es/i.test(key);
+			packaging.items.splice(0, packaging.items.length, ...packaging.items.filter(item => isIcePackagingType(item.type) !== ice));
+			packaging.ice = 0; packaging.pack = 0;
+		}
+		saveImportedData();
+		renderStats(); renderResto(); renderKitchen(); renderDatabase();
+	}
+
+	databaseBody.addEventListener('click', function (event) {
+		const priceButton = event.target.closest('.database-price-edit');
+		const unitButton = event.target.closest('.database-unit-edit');
+		const kitchenEditButton = event.target.closest('.database-kitchen-edit');
+		const deleteButton = event.target.closest('.database-row-delete');
+		if (!priceButton && !unitButton && !kitchenEditButton && !deleteButton) return;
+		event.preventDefault(); event.stopPropagation();
+		const row = event.target.closest('tr');
+		if (priceButton) startPriceEdit(row);
+		else if (unitButton) startUnitEdit(row);
+		else if (kitchenEditButton) editKitchenRecipe(row.dataset.key);
+		else deleteRow(row);
+	}, true);
+	document.querySelector('#drawer').addEventListener('click', function (event) {
+		const removeButton = event.target.closest('.kitchen-edit-remove');
+		const addButton = event.target.closest('#kitchen-edit-add');
+		const saveButton = event.target.closest('#kitchen-edit-save');
+		const cancelButton = event.target.closest('#kitchen-edit-cancel');
+		if (!removeButton && !addButton && !saveButton && !cancelButton) return;
+		event.preventDefault();
+		const title = document.querySelector('#drawer-title').textContent.replace(/^Ganti Resep:\s*/, '');
+		const product = kitchen.find(item => item.name === title);
+		if (!product) return;
+		if (removeButton) { removeButton.closest('.kitchen-edit-line').remove(); return; }
+		if (cancelButton) { openKitchenRecipe(product.name); return; }
+		if (addButton) {
+			const material = materials.find(item => isKitchenMaterial(item) && item.name === document.querySelector('#kitchen-edit-add-material').value);
+			if (!material) return;
+			const line = document.createElement('div');
+			line.className = 'recipe-line kitchen-edit-line';
+			line.style.cssText = 'grid-template-columns:minmax(150px,1fr) 82px 86px 32px;gap:8px';
+			line.innerHTML = `<span><strong>${escapeDatabaseHtml(material.name)}</strong><br><small class="small">${escapeDatabaseHtml(material.code || '')}</small></span><input class="target kitchen-edit-qty" type="number" min="0" step="any" value="1" aria-label="Qty ${escapeDatabaseHtml(material.name)}"><select class="select kitchen-edit-unit" aria-label="Satuan ${escapeDatabaseHtml(material.name)}">${unitOptions(material.unit)}</select><button class="close kitchen-edit-remove" type="button" aria-label="Hapus bahan">×</button>`;
+			document.querySelector('#recipe-lines').appendChild(line);
+			return;
+		}
+		const nextItems = [...document.querySelectorAll('.kitchen-edit-line')].map(line => {
+			const name = line.querySelector('strong').textContent;
+			return ['', name, Number(line.querySelector('.kitchen-edit-qty').value), line.querySelector('.kitchen-edit-unit').value];
+		});
+		const yieldValue = Number(document.querySelector('#kitchen-edit-yield').value);
+		const price = Number(document.querySelector('#kitchen-edit-price').value);
+		if (!nextItems.length || nextItems.some(item => !Number.isFinite(item[2]) || item[2] <= 0)) { alert('Resep perlu minimal satu bahan dengan qty lebih besar dari nol.'); return; }
+		if (!Number.isFinite(yieldValue) || yieldValue <= 0 || !Number.isFinite(price) || price < 0) { alert('Batch Yield harus lebih besar dari nol dan harga jual tidak boleh negatif.'); return; }
+		product.items = nextItems;
+		product.yield = yieldValue;
+		product.yieldUnit = document.querySelector('#kitchen-edit-yield-unit').value;
+		product.customTransfer = price;
+		product.saleUnit = document.querySelector('#kitchen-edit-sale-unit').value;
+		product.newTransfer = price;
+		delete product.transferMode;
+		saveImportedData(); renderStats(); renderKitchen(); renderDatabase();
+		openKitchenRecipe(product.name);
+	}, true);
+	const recipePriceObserver = new MutationObserver(function () {
+		const saveButton = document.querySelector('#save-recipe-edit');
+		const calcBox = document.querySelector('.calc');
+		if (!saveButton || !calcBox || document.querySelector('#recipe-edit-price')) return;
+		const menu = menus.find(item => item.code === editingRecipeCode);
+		if (!menu) return;
+		const priceRow = document.createElement('div');
+		priceRow.className = 'calc-row';
+		priceRow.innerHTML = '<label for="recipe-edit-price">Harga Jual Menu (Rp)</label><input id="recipe-edit-price" class="target" type="number" min="0" step="500" aria-label="Harga jual menu">';
+		const priceInput = priceRow.querySelector('input');
+		priceInput.value = String(menu.price || 0);
+		calcBox.insertBefore(priceRow, saveButton);
+		saveButton.addEventListener('click', function (event) {
+			const price = Number(priceInput.value);
+			if (!Number.isFinite(price) || price <= 0) {
+				event.preventDefault(); event.stopImmediatePropagation();
+				alert('Harga jual harus lebih besar dari nol.');
+				return;
+			}
+			const currentMenu = menus.find(item => item.code === editingRecipeCode);
+			if (currentMenu) currentMenu.price = price;
+		}, true);
+	});
+	recipePriceObserver.observe(document.querySelector('.calc'), { childList: true });
+	const recipeMaterialSearchObserver = new MutationObserver(function () {
+		const select = document.querySelector('#recipe-add-material');
+		const calcBox = document.querySelector('.calc');
+		if (!select || select.dataset.searchReady || !calcBox) return;
+		const addBox = select.parentElement;
+		const search = document.createElement('input');
+		search.type = 'search';
+		search.id = 'recipe-material-search';
+		search.className = 'search';
+		search.placeholder = 'Cari nama atau kode bahan baku...';
+		search.setAttribute('aria-label', 'Cari bahan baku');
+		addBox.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-bottom:8px';
+		addBox.insertBefore(search, select);
+		select.dataset.searchReady = 'true';
+		bindMaterialSearch(search, select);
+	});
+	recipeMaterialSearchObserver.observe(document.querySelector('.calc'), { childList: true, subtree: true });
+
+	renderDatabase();
+})();
+</script><script>
+(function () {
+	const renderKitchenWithBatchProfit = renderKitchen;
+	renderKitchen = function () {
+		renderKitchenWithBatchProfit();
+		document.querySelectorAll('#kitchen-body tr').forEach(function (row) {
+			const product = kitchen.find(function (item) { return item.name === row.cells[0]?.textContent.trim(); });
+			if (!product) return;
+			const batchUnit = normalizeUnit(product.yieldUnit || 'gr');
+			const saleUnit = normalizeUnit(product.saleUnit || product.yieldUnit || 'gr');
+			const saleQuantity = Number(product.yield || 0) * (unitFactor[batchUnit] || 1) / (unitFactor[saleUnit] || 1);
+			const batchCost = kitchenRecipeCost(product) * Number(product.yield || 0);
+			const hppPerSaleUnit = saleQuantity > 0 ? batchCost / saleQuantity : 0;
+			const salePrice = kitchenSalePrice(product);
+			const profitPerSaleUnit = salePrice - hppPerSaleUnit;
+			const profitMargin = salePrice ? profitPerSaleUnit / salePrice * 100 : 0;
+			row.cells[4].innerHTML = `${money(profitPerSaleUnit)} / ${product.saleUnit || product.yieldUnit || 'gr'}<br><span class="small">${profitMargin.toFixed(1)}%</span>`;
+		});
+	};
+	renderKitchen();
+})();
+</script><script>
+(function () {
+	const oldButton = document.querySelector('#export-kitchen-jpg');
+	const previewButton = oldButton.cloneNode(true);
+	previewButton.textContent = 'Preview JPG';
+	previewButton.setAttribute('aria-haspopup', 'dialog');
+	oldButton.replaceWith(previewButton);
+	const overlay = document.createElement('div');
+	overlay.className = 'jpg-preview-overlay';
+	overlay.innerHTML = '<section class="jpg-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="jpg-preview-title"><header class="jpg-preview-head"><div><h2 id="jpg-preview-title">Preview Laporan Central Kitchen</h2><p class="note">Periksa gambar sebelum menyimpan JPG.</p></div><button class="close" type="button" data-jpg-preview-close aria-label="Tutup preview">×</button></header><div class="jpg-preview-body"><p class="jpg-preview-message" data-jpg-preview-message>Menyiapkan preview...</p><img data-jpg-preview-image alt="Preview laporan Central Kitchen" hidden></div><footer class="jpg-preview-actions"><button class="import-secondary" type="button" data-jpg-preview-close>Tutup</button><button class="action" type="button" data-jpg-preview-save disabled>Simpan JPG</button></footer></section>';
+	document.body.appendChild(overlay);
+	let previewBlob = null;
+	let previewUrl = '';
+	let downloadName = '';
+
+	function closePreview() {
+		overlay.classList.remove('open');
+		previewBlob = null;
+		if (previewUrl) URL.revokeObjectURL(previewUrl);
+		previewUrl = '';
+		const image = overlay.querySelector('[data-jpg-preview-image]');
+		image.removeAttribute('src'); image.hidden = true;
+		overlay.querySelector('[data-jpg-preview-message]').hidden = false;
+		overlay.querySelector('[data-jpg-preview-save]').disabled = true;
+	}
+
+	overlay.querySelectorAll('[data-jpg-preview-close]').forEach(button => button.addEventListener('click', closePreview));
+	overlay.addEventListener('click', event => { if (event.target === overlay) closePreview(); });
+	document.addEventListener('keydown', event => { if (event.key === 'Escape' && overlay.classList.contains('open')) closePreview(); });
+	overlay.querySelector('[data-jpg-preview-save]').addEventListener('click', function () {
+		if (!previewBlob) return;
+		const link = document.createElement('a');
+		link.href = previewUrl;
+		link.download = downloadName;
+		link.click();
+		closePreview();
+	});
+
+	previewButton.addEventListener('click', async function () {
+		if (typeof window.html2canvas !== 'function') {
+			const message = overlay.querySelector('[data-jpg-preview-message]');
+			message.hidden = false;
+			message.textContent = 'Fitur gambar belum termuat. Periksa koneksi internet lalu muat ulang halaman.';
+			overlay.classList.add('open');
+			return;
+		}
+		previewButton.disabled = true;
+		overlay.querySelector('[data-jpg-preview-image]').hidden = true;
+		const message = overlay.querySelector('[data-jpg-preview-message]');
+		message.hidden = false;
+		message.textContent = 'Menyiapkan preview...';
+		overlay.classList.add('open');
+		const now = new Date();
+		const report = createKitchenReport(now);
+		document.body.appendChild(report);
+		try {
+			const canvas = await window.html2canvas(report, { scale: 2, backgroundColor: '#f2f6f5', width: 1600, useCORS: true });
+			previewBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.94));
+			if (!previewBlob) throw new Error('Gambar laporan gagal dibuat.');
+			previewUrl = URL.createObjectURL(previewBlob);
+			downloadName = 'laporan-central-kitchen-' + now.toISOString().slice(0, 10) + '.jpg';
+			const image = overlay.querySelector('[data-jpg-preview-image]');
+			image.src = previewUrl; image.hidden = false;
+			overlay.querySelector('[data-jpg-preview-message]').hidden = true;
+			overlay.querySelector('[data-jpg-preview-save]').disabled = false;
+		} catch (error) {
+			overlay.querySelector('[data-jpg-preview-message]').hidden = false;
+			overlay.querySelector('[data-jpg-preview-message]').textContent = 'Preview gagal dibuat: ' + error.message;
+		} finally {
+			report.remove();
+			previewButton.disabled = false;
+		}
+	});
 })();
 </script></body></html>
