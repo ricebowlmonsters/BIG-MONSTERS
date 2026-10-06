@@ -38,7 +38,7 @@
 <body><main class="wrap">
 <header class="top"><div><div class="eyebrow">HPP Resto & Kitchen / September 2026</div><h1>HPP Resto & Kitchen</h1><p class="subtitle">Menu & Kitchen HPP Monitor untuk memantau seluruh menu resto dan produk semi-finished dapur dalam satu layar.</p></div><div class="live"><span class="dot"></span> Simulasi real-time <span>|</span> Data aktif</div></header>
 <section class="stats"><div class="stat"><div class="stat-label">Total item aktif</div><div class="stat-value" id="total">—</div><div class="stat-detail" id="total-detail">Menu resto + resep dapur</div></div><div class="stat"><div class="stat-label">Rata-rata Food Cost Resto</div><div class="stat-value" id="average">—</div><div class="stat-detail" id="average-detail">Lama vs Baru</div></div><div class="stat danger-pulse"><div class="stat-label">High-risk items alert</div><div class="stat-value alert" id="high-risk">—</div><div class="stat-detail">Food Cost Baru di atas 50%</div></div><div class="stat"><div class="stat-label">Top / lowest margin</div><div class="stat-value" id="top-menu">—</div><div class="stat-detail" id="low-menu">Margin terendah: —</div></div></section>
-<section class="card controls"><input id="search" class="search" placeholder="Cari nama atau kode menu..."><select id="category" class="select"><option>Semua kategori</option><option>ES CAMPUR MONSTERS</option><option>MIE BASAH</option><option>MIE GORENG</option><option>RICE BOWL BEEF</option><option>RICE BOWL CHIKEN</option><option>TAMBAHAN</option></select><select id="health" class="select"><option>Semua status</option><option>Sehat</option><option>Waspada</option><option>Bahaya</option></select><label class="toggle"><input type="checkbox" id="ice"> Simulasikan Pembungkus Es Campur</label><label class="toggle"><input type="checkbox" id="pack"> Simulasikan Pembungkus Rice Bowl & Mie</label><button class="import-button" id="open-import">Import Data</button><button class="import-secondary" id="view-upload">Lihat Data Upload</button></section>
+<section class="card controls"><input id="search" class="search" placeholder="Cari nama atau kode menu..."><select id="category" class="select"><option>Semua kategori</option><option>ES CAMPUR MONSTERS</option><option>MIE BASAH</option><option>MIE GORENG</option><option>RICE BOWL BEEF</option><option>RICE BOWL CHIKEN</option><option>TAMBAHAN</option></select><select id="health" class="select"><option>Semua status</option><option>Sehat</option><option>Waspada</option><option>Bahaya</option></select><label class="toggle"><input type="checkbox" id="ice"> Simulasikan Pembungkus Es Campur</label><label class="toggle"><input type="checkbox" id="pack"> Simulasikan Pembungkus Rice Bowl & Mie</label><button class="import-button" id="open-import">Import Data</button><button class="import-secondary" id="view-upload">Lihat Data Upload</button><button class="import-secondary" id="open-sheets-settings" type="button">Atur Link Sheets</button></section>
 <section class="packaging-breakdowns" aria-label="Rincian biaya pembungkus"><details class="packaging-breakdown" id="ice-packaging-detail"><summary><span>Pembungkus Es Campur</span><span id="ice-packaging-total"></span></summary><div class="packaging-breakdown-list" id="ice-packaging-rows"></div></details><details class="packaging-breakdown" id="pack-packaging-detail"><summary><span>Pembungkus Rice Bowl & Mie</span><span id="pack-packaging-total"></span></summary><div class="packaging-breakdown-list" id="pack-packaging-rows"></div></details></section>
 <nav class="tabs"><button class="tab active" data-tab="resto">BPP Resto / Finished Menu</button><button class="tab" data-tab="kitchen">BPP Dapur / Central Kitchen</button><button class="tab" data-tab="database">Database Upload</button></nav>
 <section id="resto" class="view active card"><div class="card-head"><div><h2>All-menu monitoring</h2><p class="note">HPP per porsi = bahan per porsi + kemasan per porsi.</p></div><span class="small" id="row-count"></span></div><div class="table-scroll"><table><thead><tr><th>Kategori & Kode</th><th>Nama Menu</th><th>Harga Jual</th><th>HPP / porsi</th><th>Food Cost</th><th>Laba / porsi</th><th>Health</th><th>Action</th></tr></thead><tbody id="resto-body"></tbody></table></div></section>
@@ -422,6 +422,12 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 			const quantity = row.cells[4];
 			const actions = row.cells[6];
 			if (!quantity || !actions) return;
+			if (row.dataset.kind === 'materials-dapur') {
+				row.cells[0].replaceChildren();
+				actions.textContent = 'Edit melalui Google Sheets';
+				row.dataset.actionsReady = 'true';
+				return;
+			}
 			if (row.dataset.kind === 'menus') addAction(quantity, 'Edit komponen', 'database-components-edit database-replace');
 			else if (row.dataset.kind === 'kitchen') addAction(quantity, 'Edit komponen', 'database-components-edit database-kitchen-edit');
 			else if (row.dataset.kind === 'materials-resto' || row.dataset.kind === 'materials-dapur') addAction(quantity, 'Edit satuan', 'database-unit-edit');
@@ -781,4 +787,47 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 		}
 	});
 })();
-</script></body></html>
+</script><script>
+window.getKitchenMaterialsForSheets = function () {
+	return materials.filter(isKitchenMaterial).map(function (item) {
+		return { code: item.code, name: item.name, category: item.category || '', unit: item.unit || '', price: Number(item.new ?? item.price ?? item.old ?? 0) };
+	});
+};
+const kitchenMaterialImportOption = document.querySelector('#import-type option[value="kitchenMaterials"]');
+if (kitchenMaterialImportOption) kitchenMaterialImportOption.remove();
+const databaseHelp = document.querySelector('#database .card-head .note');
+if (databaseHelp) databaseHelp.textContent = 'Master bahan baku dapur hanya dapat diubah melalui Google Sheets. Perubahan bahan lain tetap dikelola di web.';
+window.withoutKitchenMaterialsForPersistence = function (save) {
+	const retained = materials.filter(function (item) { return !isKitchenMaterial(item); });
+	const kitchenItems = materials.filter(isKitchenMaterial);
+	materials.splice(0, materials.length, ...retained);
+	try { return save(); } finally { materials.push(...kitchenItems); }
+};
+window.filterKitchenMaterialsFromSavedData = function (saved) {
+	if (!saved || saved.source !== 'excel-import' || !Array.isArray(saved.materials)) return saved;
+	const filteredMaterials = saved.materials.filter(function (item) { return !isKitchenMaterial(item); });
+	return filteredMaterials.length === saved.materials.length ? saved : Object.assign({}, saved, { materials: filteredMaterials });
+};
+window.removeKitchenMaterialsFromMemory = function () {
+	const hasKitchenMaterials = materials.some(isKitchenMaterial);
+	if (hasKitchenMaterials) materials.splice(0, materials.length, ...materials.filter(function (item) { return !isKitchenMaterial(item); }));
+	return hasKitchenMaterials;
+};
+window.applyKitchenMaterialsFromSheets = function (items) {
+	const updated = items.map(function (item) {
+		const existing = materials.find(function (entry) { return entry.code === item.code; });
+		const price = Number(item.price) || 0;
+		return Object.assign({}, existing || {}, {
+			code: item.code,
+			name: item.name,
+			category: item.category || '',
+			unit: item.unit || 'gr',
+			old: existing ? existing.old : price,
+			new: price
+		});
+	});
+	materials.splice(0, materials.length, ...materials.filter(function (item) { return !isKitchenMaterial(item); }), ...updated);
+	saveImportedData();
+	renderStats(); renderResto(); renderKitchen(); renderDatabase();
+};
+</script><script src="./google-sheets-sync-config.js"></script><script src="./google-sheets-sync.js"></script></body></html>
