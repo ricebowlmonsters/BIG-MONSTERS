@@ -158,6 +158,27 @@
     .ck-order-footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 15px; border-top: 1px solid #edf1ef; }
     .ck-print-actions { display: flex; flex-wrap: wrap; gap: 7px; }
     .ck-order-footer .ck-button { font-size: 12px; }
+    .ck-incoming-cards { display: grid; gap: 12px; }
+    .ck-share-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 16px; padding: 14px 16px; border: 1px solid #c9ddd5; border-radius: 8px; background: #f3f8f5; }
+    .ck-share-title { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; color: var(--ck-green); font-size: 15px; }
+    .ck-share-label { padding: 3px 7px; border-radius: 999px; background: #dcece4; color: #315c4d; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .ck-share-panel p { margin: 0; color: var(--ck-muted); font-size: 13px; line-height: 1.5; }
+    .ck-po-link-mode .rbm-back-btn, .ck-po-link-mode .ck-toolbar, .ck-po-link-mode .ck-tabs,
+    .ck-po-link-mode .ck-kitchen-tabs, .ck-po-link-mode .ck-share-panel,
+    .ck-po-link-mode #order-view, .ck-po-link-mode #history-view,
+    .ck-po-link-mode #kitchen-catalog, .ck-po-link-mode #ck-incoming-previous,
+    .ck-po-link-mode #ck-incoming-next, .ck-po-link-mode #ck-incoming-page,
+    .ck-po-link-mode .ck-kitchen-heading p { display: none !important; }
+    .ck-po-link-mode .ck-wrap { max-width: 900px; padding: 16px; }
+    .ck-po-link-mode .ck-panel { min-height: 0; }
+    .ck-po-link-mode #kitchen-view, .ck-po-link-mode #kitchen-orders {
+      display: block !important; min-height: 0; padding: 16px;
+    }
+    .ck-po-link-mode .ck-kitchen-heading h2 { margin: 0 0 12px; }
+    .ck-po-link-mode #ck-incoming-list { min-height: 48px; }
+    .ck-po-link-mode .ck-incoming-card .ck-order-head { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ck-po-link-status { margin: 0 0 12px; color: var(--ck-muted); font-size: 14px; }
+    .ck-po-link-status.error { color: #b42318; }
     @media (max-width: 680px) {
       .ck-wrap { padding: 12px 10px 20px; }
       .ck-panel, .ck-view { min-height: 0; }
@@ -204,13 +225,31 @@
       .ck-item-value input { max-width: 100%; }
       .ck-print-actions { width: 100%; }
       .ck-print-actions .ck-button { flex: 1; }
+      .ck-incoming-card .ck-order-head { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+      .ck-incoming-card .ck-order-number { font-size: 15px; }
+      .ck-incoming-card .ck-order-amount { font-size: 16px; }
+      .ck-incoming-card .ck-order-body { padding: 12px; }
+      .ck-incoming-card .ck-order-details summary { min-height: 40px; display: flex; align-items: center; }
+      .ck-incoming-card .ck-fulfill-help { padding: 9px 10px; border-radius: 5px; background: #f2f7f4; font-size: 13px; }
+      .ck-incoming-card .ck-fulfill-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px 4px; }
+      .ck-incoming-card .ck-fulfill-row .ck-item-name { grid-column: 1 / -1; font-size: 14px; }
+      .ck-incoming-card .ck-fulfill-row .ck-item-value { min-width: 0; text-align: left; }
+      .ck-incoming-card .ck-fulfill-row .ck-item-value::before { content: attr(data-label); display: block; margin-bottom: 5px; color: #75857e; font-size: 11px; font-weight: 700; }
+      .ck-incoming-card .ck-fulfill-row .ck-item-value input { width: 100% !important; min-height: 46px; padding: 8px 10px; font-size: 16px; text-align: left; }
+      .ck-incoming-card .ck-price-control { width: 100%; min-height: 46px; }
+      .ck-incoming-card .ck-actual-price { flex: 1; width: 100% !important; min-height: 40px !important; font-size: 16px !important; }
+      .ck-incoming-card .ck-actions { display: grid; grid-template-columns: 1fr; margin-top: 12px; }
+      .ck-incoming-card .ck-actions .ck-button { width: 100%; min-height: 48px; }
+      .ck-share-panel { align-items: stretch; flex-direction: column; gap: 10px; padding: 12px; }
+      .ck-share-panel .ck-button { width: 100%; min-height: 46px; }
     }
   </style>
 </head>
 <body>
 <script>
 (function() {
-  var user = {};
+if (new URLSearchParams(window.location.search).has('po')) document.body.classList.add('ck-po-link-mode');
+var user = {};
   try { user = JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch (error) {}
   if (!user.username) {
     var loginUrl = new URL('login.html', window.location.href);
@@ -238,7 +277,7 @@
       <button class="ck-tab" data-view="kitchen-view" id="ck-kitchen-tab" type="button" hidden>Central Kitchen</button>
     </nav>
     <section class="ck-view ck-order-view cashier-mode" id="order-view">
-      <div class="ck-title-row"><div><h2>Buat Purchase Order</h2><p>Ajukan barang ke Central Kitchen. Harga pada PO mengikuti harga katalog saat pemesanan.</p></div><div class="ck-actions"><div class="ck-display-switch" role="group" aria-label="Tampilan form pemesanan"><button type="button" data-order-entry-display="standard" aria-pressed="false">Standar</button><button type="button" data-order-entry-display="cashier" aria-pressed="true">Kasir</button></div><button type="button" class="ck-button secondary" id="ck-copy-ordering-link">Salin link pemesanan</button></div></div>
+      <div class="ck-title-row"><div><h2>Buat Purchase Order</h2><p>Ajukan barang ke Central Kitchen. Harga pada PO mengikuti harga katalog saat pemesanan.</p></div><div class="ck-actions"><div class="ck-display-switch" role="group" aria-label="Tampilan form pemesanan"><button type="button" data-order-entry-display="standard" aria-pressed="false">Standar</button><button type="button" data-order-entry-display="cashier" aria-pressed="true">Kasir</button></div></div></div>
       <div id="ck-order-form">
         <div class="ck-order-summary">
           <div class="ck-cart-heading"><div><h3>Pesanan Baru</h3><span id="ck-order-item-count" class="ck-cart-count">0 barang</span></div></div>
@@ -280,6 +319,11 @@
       </nav>
       <section id="kitchen-orders" class="ck-kitchen-view">
         <div class="ck-kitchen-heading"><h2>PO Masuk</h2><p>Periksa pesanan dan isi jumlah aktual sebelum memproses pengiriman.</p></div>
+        <p id="ck-po-link-message" class="ck-po-link-status" role="status" aria-live="polite"></p>
+        <div class="ck-share-panel">
+          <div><h3 class="ck-share-title">Bagikan link PO Masuk ke staf Central Kitchen <span class="ck-share-label">Internal</span></h3><p>Staf membuka link dari HP masing-masing dan harus login dengan akun Central Kitchen. Outlet kerja terkunci ke Central Kitchen.</p></div>
+          <button type="button" class="ck-button secondary" id="ck-copy-kitchen-link">Salin Link</button>
+        </div>
         <div id="ck-incoming-list" class="ck-incoming-list"></div>
         <nav class="ck-pagination" aria-label="Halaman PO masuk">
           <button type="button" class="ck-button secondary" id="ck-incoming-previous" disabled>Sebelumnya</button>
@@ -288,19 +332,8 @@
         </nav>
       </section>
       <section id="kitchen-catalog" class="ck-kitchen-view" hidden>
-        <div class="ck-kitchen-heading"><h2>Katalog Barang</h2><p>Kelola barang, satuan, dan harga untuk pesanan outlet.</p></div>
-        <div class="ck-catalog-tools">
-          <button type="button" class="ck-button secondary" id="ck-download-catalog-template">Unduh Template Excel</button>
-          <button type="button" class="ck-button secondary" id="ck-import-catalog-button">Impor Excel</button>
-          <input type="file" id="ck-import-catalog-file" accept=".xlsx,.xls" hidden>
-        </div>
-        <div id="ck-catalog-form" class="ck-form-grid ck-catalog-form">
-          <div class="ck-field"><label for="ck-item-name">Nama barang</label><input id="ck-item-name" maxlength="100" placeholder="Contoh: Ayam marinasi"></div>
-          <div class="ck-field"><label for="ck-item-unit">Satuan</label><input id="ck-item-unit" maxlength="24" placeholder="kg, pack, pcs"></div>
-          <div class="ck-field"><label for="ck-item-price">Harga per satuan (Rp)</label><input id="ck-item-price" type="number" min="0" step="1" inputmode="numeric"></div>
-          <div class="ck-field"><label for="ck-item-category">Kategori (opsional)</label><input id="ck-item-category" maxlength="60" placeholder="Contoh: Bahan baku"></div>
-          <button type="button" class="ck-button" id="ck-save-item">Tambah Barang</button>
-        </div>
+        <div class="ck-kitchen-heading"><h2>Katalog Barang</h2><p>Data dibaca dari tab Bahan Baku Dapur Google Sheets: nama kolom B, kategori kolom C, satuan kolom D, dan harga kolom E.</p></div>
+        <div class="ck-catalog-tools"><button type="button" class="ck-button secondary" id="ck-refresh-catalog">Muat ulang katalog</button></div>
         <p id="ck-catalog-message" class="ck-message" role="status"></p>
         <div id="ck-catalog-list" class="ck-table-wrap ck-catalog-list"></div>
       </section>
@@ -310,7 +343,7 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 <script src="firebase-storage.js"></script>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="admin/menu-monitor/google-sheets-sync-config.js"></script>
 <script>
 (function() {
   'use strict';
@@ -331,11 +364,12 @@
   var canDeleteOrders = false;
   var canEditOrderPrices = false;
   var isKitchen = false;
+  var catalogLoading = false;
   var orderEntryDisplayMode = 'cashier';
   var selectedOrderCategory = 'all';
   var requestedPoId = new URLSearchParams(window.location.search).get('po') || '';
+  var standalonePoLinkMode = Boolean(requestedPoId);
   var orderRef;
-  var catalogRef;
 
   function parseList(raw) {
     try {
@@ -388,6 +422,19 @@
     element.textContent = text || '';
     element.className = 'ck-message' + (text ? (isError ? ' error' : ' success') : '');
   }
+  function setPoLinkMessage(text, isError) {
+    var element = document.getElementById('ck-po-link-message');
+    element.textContent = text || '';
+    element.classList.toggle('error', Boolean(isError));
+  }
+  function isCentralKitchenAccount() {
+    return String(user.outlet || '').trim().toLowerCase() === KITCHEN_ID;
+  }
+  function showPoLinkView() {
+    document.body.classList.add('ck-po-link-mode');
+    switchView('kitchen-view');
+    switchKitchenView('kitchen-orders');
+  }
   function formatDate(value) {
     var date = new Date(Number(value) || value || Date.now());
     return isNaN(date.getTime()) ? '-' : date.toLocaleString('id-ID');
@@ -421,7 +468,7 @@
     if (!isKitchen && document.getElementById('kitchen-view').hidden === false) switchView('order-view');
     renderOrderLines();
     if (!requestedPoId) loadOrderPage('history', 'first');
-    if (isKitchen) loadOrderPage('incoming', 'first');
+    if (isKitchen && !standalonePoLinkMode) loadOrderPage('incoming', 'first');
     else {
       orderPages.incoming.rows = [];
       incomingOrders = {};
@@ -461,7 +508,7 @@
     var html = '<option value="">Pilih barang</option>';
     Object.keys(catalog).sort(function(a, b) { return (catalog[a].name || '').localeCompare(catalog[b].name || ''); }).forEach(function(id) {
       var item = catalog[id];
-      if (item.active === false) return;
+      if (item.active === false || item.showInPo !== true) return;
       html += '<option value="' + safe(id) + '" ' + (id === selected ? 'selected' : '') + '>' + safe(item.name) + ' (' + safe(item.unit) + ')</option>';
     });
     return html;
@@ -473,6 +520,7 @@
     container.querySelectorAll('.ck-line').forEach(function(row) {
       var select = row.querySelector('select');
       var selected = select.value;
+      if (selected && (!catalog[selected] || catalog[selected].showInPo !== true)) selected = '';
       select.innerHTML = itemOptions(selected);
       updateLinePrice(row);
     });
@@ -520,7 +568,7 @@
       var quantity = Number(row.querySelector('input').value);
       if (!id) return;
       var item = catalog[id];
-      if (item && quantity > 0) result.push({ itemId: id, name: item.name, unit: item.unit, quantity: quantity, unitPrice: Number(item.price) || 0 });
+      if (item && item.showInPo === true && quantity > 0) result.push({ itemId: id, name: item.name, unit: item.unit, quantity: quantity, unitPrice: Number(item.price) || 0 });
     });
     return result;
   }
@@ -535,20 +583,104 @@
   function renderCatalog() {
     var container = document.getElementById('ck-catalog-list');
     var ids = Object.keys(catalog).sort(function(a, b) { return (catalog[a].name || '').localeCompare(catalog[b].name || ''); });
-    if (!ids.length) { container.innerHTML = '<div class="ck-empty">Katalog masih kosong. Tambahkan barang di atas.</div>'; return; }
-    container.innerHTML = '<table class="ck-table"><thead><tr><th>Barang</th><th>Kategori</th><th>Satuan</th><th class="numeric">Harga / Satuan</th><th>Status</th><th>Aksi</th></tr></thead><tbody>' + ids.map(function(id) {
+    if (!ids.length) {
+      container.innerHTML = '<div class="ck-empty">' + (catalogLoading ? 'Memuat katalog dari Google Sheets…' : 'Belum ada barang di tab Bahan Baku Dapur.') + '</div>';
+      return;
+    }
+    container.innerHTML = '<table class="ck-table"><thead><tr><th>Barang</th><th>Kategori</th><th>Satuan</th><th class="numeric">Harga / Satuan</th><th>Tampil di PO</th></tr></thead><tbody>' + ids.map(function(id) {
       var item = catalog[id];
-      return '<tr><td>' + safe(item.name) + '</td><td>' + safe(item.category || '-') + '</td><td>' + safe(item.unit) + '</td><td class="numeric">' + money(item.price) + '</td><td>' + (item.active === false ? 'Nonaktif' : 'Aktif') + '</td><td><button type="button" class="ck-button secondary" data-toggle-item="' + safe(id) + '">' + (item.active === false ? 'Aktifkan' : 'Nonaktifkan') + '</button></td></tr>';
+      return '<tr><td>' + safe(item.name) + '</td><td>' + safe(item.category || '-') + '</td><td>' + safe(item.unit || '-') + '</td><td class="numeric">' + money(item.price) + '</td><td>' + (item.showInPo === true ? 'Ya' : 'Tidak') + '</td></tr>';
     }).join('') + '</tbody></table>';
-    container.querySelectorAll('[data-toggle-item]').forEach(function(button) {
-      button.addEventListener('click', function() {
-        var id = button.dataset.toggleItem;
-        catalogRef.child(id).update({ active: catalog[id].active === false });
+  }
+  function loadKitchenCatalog() {
+    if (catalogLoading) return;
+    var endpoint = String(localStorage.getItem('hpp_kitchen_sheets_url') || window.HPP_KITCHEN_SHEETS_URL || '').trim();
+    if (!endpoint) {
+      message('ck-catalog-message', 'URL Google Sheets belum dikonfigurasi.', true);
+      return;
+    }
+    catalogLoading = true;
+    renderCatalog();
+    renderOrderCatalog();
+    message('ck-catalog-message', 'Memuat katalog dari Google Sheets…');
+    var callbackName = '__ckKitchenCatalog' + Date.now() + Math.floor(Math.random() * 1000);
+    var script = document.createElement('script');
+    var settled = false;
+    var timeout = window.setTimeout(function() {
+      finish(new Error('Google Sheets tidak merespons dalam 60 detik.'));
+    }, 60000);
+    function finish(error, result) {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      script.remove();
+      delete window[callbackName];
+      catalogLoading = false;
+      if (error) {
+        message('ck-catalog-message', 'Gagal memuat katalog Google Sheets: ' + error.message, true);
+        renderCatalog();
+        renderOrderCatalog();
+        return;
+      }
+      if (!result || result.status !== 'success' || !Array.isArray(result.materials)) {
+        message('ck-catalog-message', 'Google Sheets mengembalikan data katalog dengan format tidak valid.', true);
+        renderCatalog();
+        renderOrderCatalog();
+        return;
+      }
+      if (result.version !== 'hpp-five-tabs-2026-10-06-5') {
+        message('ck-catalog-message', 'Apps Script perlu diperbarui untuk membaca checkbox kolom I. Versi yang dibutuhkan: hpp-five-tabs-2026-10-06-5.', true);
+        renderCatalog();
+        renderOrderCatalog();
+        return;
+      }
+      var nextCatalog = {};
+      var invalidItem = '';
+      result.materials.forEach(function(row) {
+        if (invalidItem) return;
+        var name = String(row.nama_bahan || '').trim();
+        if (!name) return;
+        var code = String(row.kode_bahan || '').trim();
+        var id = code || 'name-' + name.toLocaleLowerCase('id-ID');
+        var price = parseCatalogPrice(row.harga);
+        if (!String(row.satuan || '').trim() || !Number.isFinite(price) || price < 0) {
+          invalidItem = name;
+          return;
+        }
+        nextCatalog[id] = {
+          name: name,
+          unit: String(row.satuan || '').trim(),
+          category: String(row.kategori || '').trim(),
+          price: price,
+          active: true,
+          showInPo: row.tampil_di_po === true
+        };
       });
-    });
+      if (invalidItem) {
+        message('ck-catalog-message', 'Data "' + invalidItem + '" pada tab Bahan Baku Dapur harus memiliki satuan di kolom D dan harga valid di kolom E.', true);
+        renderCatalog();
+        renderOrderCatalog();
+        return;
+      }
+      catalog = nextCatalog;
+      message('ck-catalog-message', 'Katalog dimuat dari tab Bahan Baku Dapur Google Sheets.');
+      renderCatalog();
+      renderOrderCatalog();
+      renderOrderLines();
+    }
+    window[callbackName] = function(result) { finish(null, result); };
+    script.onerror = function() {
+      finish(new Error('Web App menolak akses. Periksa deployment Google Apps Script.'));
+    };
+    var spreadsheetId = localStorage.getItem('hpp_kitchen_spreadsheet_id') || '';
+    script.src = endpoint + (endpoint.indexOf('?') === -1 ? '?' : '&') +
+      'action=getKitchenMaterials&callback=' + callbackName +
+      (spreadsheetId ? '&spreadsheetId=' + encodeURIComponent(spreadsheetId) : '') +
+      '&_=' + Date.now();
+    document.head.appendChild(script);
   }
   function renderOrderCatalog() {
-    var ids = Object.keys(catalog).filter(function(id) { return catalog[id].active !== false; }).sort(function(a, b) {
+    var ids = Object.keys(catalog).filter(function(id) { return catalog[id].active !== false && catalog[id].showInPo === true; }).sort(function(a, b) {
       return (catalog[a].name || '').localeCompare(catalog[b].name || '');
     });
     var categories = Array.from(new Set(ids.map(function(id) { return catalog[id].category || catalog[id].kategori || ''; }).filter(Boolean)));
@@ -573,7 +705,7 @@
     });
     var container = document.getElementById('ck-order-products');
     if (!products.length) {
-      container.innerHTML = '<div class="ck-empty">' + (ids.length ? 'Barang tidak ditemukan.' : 'Katalog barang masih kosong.') + '</div>';
+      container.innerHTML = '<div class="ck-empty">' + (ids.length ? 'Barang tidak ditemukan.' : (catalogLoading ? 'Memuat katalog dari Google Sheets…' : Object.keys(catalog).length ? 'Belum ada barang yang dicentang di kolom I.' : 'Katalog barang belum tersedia. Periksa koneksi Google Sheets.')) + '</div>';
       return;
     }
     container.innerHTML = products.map(function(id) {
@@ -660,9 +792,6 @@
     document.querySelectorAll('#ck-incoming-list [data-fulfill-order]').forEach(function(button) {
       button.addEventListener('click', function() { fulfillOrder(button.dataset.fulfillOrder); });
     });
-    document.querySelectorAll('#ck-incoming-list [data-copy-order]').forEach(function(button) {
-      button.addEventListener('click', function() { copyOrderLink(button.dataset.copyOrder, button); });
-    });
     document.querySelectorAll('#ck-incoming-list [data-delete-order]').forEach(function(button) {
       button.addEventListener('click', function() { deleteOrder(button.dataset.deleteOrder, button); });
     });
@@ -738,10 +867,14 @@
       var deleteButton = canDeleteOrders ? '<button type="button" class="ck-button danger" data-delete-order="' + safe(order.id) + '">Hapus PO</button>' : '';
       var reprintButton = fulfilled ? '<button type="button" class="ck-button secondary" data-print-fulfilled-order="' + safe(order.id) + '">Cetak Ulang 3 SJ + 3 Nota</button>' : '';
       var actions = kitchenQueue && !fulfilled
-        ? '<div class="ck-actions"><button type="button" class="ck-button" data-fulfill-order="' + safe(order.id) + '">Simpan &amp; Proses</button><button type="button" class="ck-button secondary" data-copy-order="' + safe(order.id) + '">Salin link PO</button>' + deleteButton + '</div>'
-        : '<div class="ck-print-actions"><button type="button" class="ck-button secondary" data-copy-order="' + safe(order.id) + '">Salin link PO</button>' + (fulfilled ? printButtons(order.id) + reprintButton : '') + deleteButton + '</div>';
+        ? '<div class="ck-actions"><button type="button" class="ck-button" data-fulfill-order="' + safe(order.id) + '">Simpan &amp; Proses</button>' + deleteButton + '</div>'
+        : '<div class="ck-print-actions">' + (fulfilled ? printButtons(order.id) + reprintButton : '') + deleteButton + '</div>';
+      if (kitchenQueue && (standalonePoLinkMode || !fulfilled)) {
+        return '<article class="ck-order-card ck-incoming-card"><header class="ck-order-head"><div><span class="ck-order-label">Nomor PO</span><strong class="ck-order-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></div><div><span class="ck-order-label">Outlet</span><strong class="ck-order-outlet">' + safe(labelForOutlet(order.outletId)) + '</strong></div><div><span class="ck-order-label">Status</span>' + status + '</div><div><span class="ck-order-label">Nilai PO</span><strong class="ck-order-amount">' + money(total) + '</strong></div></header><div class="ck-order-body"><details class="ck-order-details" open><summary>' + (fulfilled ? 'Rincian PO' : 'Periksa barang dan isi jumlah aktual') + '</summary>' + items + actions + '</details></div></article>';
+      }
       return '<tr><td><strong class="ck-cashier-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></td><td>' + safe(labelForOutlet(order.outletId)) + '</td><td>' + status + '</td><td class="numeric"><strong>' + money(total) + '</strong></td><td><details class="ck-cashier-details"><summary>Detail &amp; aksi</summary><div class="ck-cashier-detail-body">' + items + actions + '</div></details></td></tr>';
     }).join('');
+    if (kitchenQueue) return '<div class="ck-incoming-cards">' + rows + '</div>';
     return '<div class="ck-cashier-wrap"><table class="ck-cashier-table"><thead><tr><th>Nomor PO</th><th>Outlet</th><th>Status</th><th class="numeric">Nilai</th><th>Rincian</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
   function renderFulfillInputs(order) {
@@ -786,14 +919,23 @@
       window.setTimeout(function() { button.textContent = label; }, 1800);
     }).catch(function() { message('ck-order-message', 'Link gagal disalin. Periksa izin clipboard browser.', true); });
   }
-  function copyOrderLink(orderId, button) {
-    copyLink(appLink({ po: orderId }), button);
-  }
   function loadSharedOrder(orderId) {
-    orderPages.history.requestId += 1;
+    orderPages.incoming.requestId += 1;
     return orderRef.child(orderId).once('value').then(function(snapshot) {
       var value = snapshot.val();
       if (!value) throw new Error('PO tidak ditemukan.');
+      if (standalonePoLinkMode) {
+        if (!isCentralKitchenAccount()) throw new Error('Link PO ini hanya dapat dibuka oleh akun Central Kitchen.');
+        var linkedOrder = Object.assign({ id: orderId }, value);
+        orderPages.incoming.rows = [linkedOrder];
+        orderPages.incoming.page = 1;
+        orderPages.incoming.hasOlder = false;
+        orderPages.incoming.hasNewer = false;
+        renderIncomingOrders();
+        setPoLinkMessage(linkedOrder.status === 'fulfilled' ? 'PO ini sudah diproses. Rincian tersimpan tetap dapat dilihat.' : '', false);
+        showPoLinkView();
+        return;
+      }
       if (!canChooseOutlet && user.outlet !== KITCHEN_ID && String(value.outletId) !== String(user.outlet)) {
         throw new Error('PO ini bukan milik outlet akun Anda.');
       }
@@ -805,7 +947,10 @@
       renderOrders();
       switchView('history-view');
     }).catch(function(error) {
-      message('ck-order-message', error.message || 'Gagal membuka PO.', true);
+      if (standalonePoLinkMode) {
+        showPoLinkView();
+        setPoLinkMessage(error.message || 'Gagal membuka PO.', true);
+      } else message('ck-order-message', error.message || 'Gagal membuka PO.', true);
     });
   }
   function getCentralKitchenPrinter() {
@@ -906,22 +1051,20 @@
     updates[orderPath + '/actualTotal'] = actualTotal;
     updates[orderPath + '/shippedAt'] = firebase.database.ServerValue.TIMESTAMP;
     updates[orderPath + '/processedBy'] = user.nama || user.username || '';
-    var catalogPriceUpdates = [];
-    if (canEditOrderPrices) items.forEach(function(item) {
-      var catalogItem = catalog[item.itemId];
-      if (catalogItem && Number(catalogItem.price) !== item.unitPrice) {
-        updates['rbm_pro/central_kitchen/catalog/' + item.itemId + '/price'] = item.unitPrice;
-        catalogPriceUpdates.push({ id: item.itemId, price: item.unitPrice });
-      }
-    });
     processingOrderIds[id] = true;
     db.ref().update(updates).then(function() {
       order.status = 'fulfilled';
-      catalogPriceUpdates.forEach(function(update) { catalog[update.id].price = update.price; });
-      renderCatalog();
+      order.items = items;
+      order.actualTotal = actualTotal;
+      order.shippedAt = Date.now();
+      order.processedBy = user.nama || user.username || '';
       renderOrderLines();
-      loadOrderPage('history', 'first');
-      loadOrderPage('incoming', 'first');
+      if (standalonePoLinkMode) renderIncomingOrders();
+      else {
+        loadOrderPage('history', 'first');
+        loadOrderPage('incoming', 'first');
+      }
+      if (standalonePoLinkMode) setPoLinkMessage('PO ' + order.number + ' tersimpan. Sedang mencetak surat jalan dan nota.', false);
       var fulfilledOrder = Object.assign({}, order, {
         status: 'fulfilled',
         items: items,
@@ -930,10 +1073,13 @@
         processedBy: user.nama || user.username || ''
       });
       printFulfilledOrder(fulfilledOrder).then(function() {
-        message('ck-order-message', 'PO ' + order.number + ' tersimpan. 3 surat jalan dan 3 nota berhasil dicetak dengan auto-cut.');
+        var successMessage = 'PO ' + order.number + ' tersimpan. 3 surat jalan dan 3 nota berhasil dicetak dengan auto-cut.';
+        if (standalonePoLinkMode) setPoLinkMessage(successMessage, false);
+        else message('ck-order-message', successMessage);
         delete processingOrderIds[id];
       }).catch(function(error) {
         delete processingOrderIds[id];
+        if (standalonePoLinkMode) setPoLinkMessage('PO ' + order.number + ' tersimpan, tetapi cetak otomatis gagal: ' + error.message, true);
         window.alert('PO ' + order.number + ' berhasil disimpan, tetapi cetak otomatis gagal: ' + error.message + ' Pastikan print bridge berjalan dan printer Central Kitchen sudah dipilih di Pengaturan.');
       });
     }).catch(function(error) {
@@ -1021,113 +1167,13 @@
       message('ck-order-message', 'PO gagal disimpan: ' + error.message, true);
     }).finally(function() { document.getElementById('ck-submit-order').disabled = false; });
   }
-  function saveCatalogItem() {
-    var name = document.getElementById('ck-item-name').value.trim();
-    var unit = document.getElementById('ck-item-unit').value.trim();
-    var price = Number(document.getElementById('ck-item-price').value);
-    var category = document.getElementById('ck-item-category').value.trim();
-    if (!name || !unit || !Number.isFinite(price) || price < 0) { message('ck-catalog-message', 'Nama, satuan, dan harga yang valid wajib diisi.', true); return; }
-    catalogRef.push({ name: name, unit: unit, price: price, category: category, active: true, updatedAt: firebase.database.ServerValue.TIMESTAMP, updatedBy: user.nama || user.username || '' }).then(function() {
-      document.getElementById('ck-item-name').value = '';
-      document.getElementById('ck-item-unit').value = '';
-      document.getElementById('ck-item-price').value = '';
-      document.getElementById('ck-item-category').value = '';
-      message('ck-catalog-message', 'Barang berhasil ditambahkan ke katalog.');
-    }).catch(function(error) { message('ck-catalog-message', 'Gagal menyimpan katalog: ' + error.message, true); });
-  }
-  function normalizeImportHeader(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
   function parseCatalogPrice(value) {
     if (typeof value === 'number') return value;
-    var text = String(value == null ? '' : value).replace(/\s|rp/gi, '');
-    if (text.indexOf(',') >= 0) text = text.replace(/\./g, '').replace(',', '.');
-    else if (/^-?\d{1,3}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, '');
+    var text = String(value == null ? '' : value).trim().replace(/^rp\.?\s*/i, '').replace(/\s/g, '');
+    if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(text)) text = text.replace(/\./g, '').replace(',', '.');
+    else if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(text)) text = text.replace(/,/g, '');
+    else text = text.replace(/[^0-9.,-]/g, '').replace(',', '.');
     return text ? Number(text) : NaN;
-  }
-  function downloadCatalogTemplate() {
-    var workbook = XLSX.utils.book_new();
-    var catalogSheet = XLSX.utils.aoa_to_sheet([['Nama Barang', 'Satuan', 'Harga Satuan', 'Kategori']]);
-    catalogSheet['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 18 }, { wch: 22 }];
-    XLSX.utils.book_append_sheet(workbook, catalogSheet, 'Katalog');
-    var guideSheet = XLSX.utils.aoa_to_sheet([
-      ['Kolom', 'Keterangan'],
-      ['Nama Barang', 'Wajib diisi; nama yang sama akan memperbarui barang di katalog.'],
-      ['Satuan', 'Wajib diisi, contoh: kg, pack, pcs.'],
-      ['Harga Satuan', 'Wajib diisi sebagai angka, tanpa perlu mengetik Rp.'],
-      ['Kategori', 'Opsional; dipakai pada laporan kategori Central Kitchen.']
-    ]);
-    guideSheet['!cols'] = [{ wch: 20 }, { wch: 78 }];
-    XLSX.utils.book_append_sheet(workbook, guideSheet, 'Petunjuk');
-    XLSX.writeFile(workbook, 'Template_Katalog_Central_Kitchen.xlsx');
-  }
-  function importCatalogFile(file) {
-    if (!file || !/\.xlsx?$/i.test(file.name)) return;
-    if (typeof XLSX === 'undefined') { message('ck-catalog-message', 'Library Excel belum siap. Muat ulang halaman dan coba lagi.', true); return; }
-    var reader = new FileReader();
-    reader.onerror = function() { message('ck-catalog-message', 'File Excel tidak dapat dibaca.', true); };
-    reader.onload = function(event) {
-      try {
-        var workbook = XLSX.read(event.target.result, { type: 'array' });
-        var sheet = workbook.Sheets[workbook.SheetNames[0]];
-        var rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-        if (rows.length < 2) throw new Error('Sheet Katalog belum berisi baris barang.');
-        var headers = rows[0].map(normalizeImportHeader);
-        var nameIndex = headers.findIndex(function(value) { return ['namabarang', 'nama', 'name', 'item'].indexOf(value) >= 0; });
-        var unitIndex = headers.findIndex(function(value) { return ['satuan', 'unit', 'satuanbarang'].indexOf(value) >= 0; });
-        var priceIndex = headers.findIndex(function(value) { return ['hargasatuan', 'harga', 'price', 'priceperunit'].indexOf(value) >= 0; });
-        var categoryIndex = headers.findIndex(function(value) { return ['kategori', 'category'].indexOf(value) >= 0; });
-        if (nameIndex < 0 || unitIndex < 0 || priceIndex < 0) throw new Error('Header wajib: Nama Barang, Satuan, dan Harga Satuan.');
-        var imported = [];
-        var seenNames = {};
-        var invalidRows = [];
-        rows.slice(1).forEach(function(row, index) {
-          if (!row.some(function(value) { return String(value).trim(); })) return;
-          var name = String(row[nameIndex] || '').trim();
-          var unit = String(row[unitIndex] || '').trim();
-          var price = parseCatalogPrice(row[priceIndex]);
-          var category = categoryIndex < 0 ? '' : String(row[categoryIndex] || '').trim();
-          var rowNumber = index + 2;
-          var normalizedName = name.toLocaleLowerCase('id-ID');
-          if (!name || !unit || !Number.isFinite(price) || price < 0) {
-            invalidRows.push(rowNumber);
-            return;
-          }
-          if (seenNames[normalizedName]) {
-            invalidRows.push(rowNumber + ' (nama barang duplikat)');
-            return;
-          }
-          seenNames[normalizedName] = true;
-          imported.push({ name: name, unit: unit, price: price, category: category });
-        });
-        if (invalidRows.length) throw new Error('Periksa baris: ' + invalidRows.join(', ') + '. Tidak ada data yang diimpor.');
-        if (!imported.length) throw new Error('Tidak ada baris barang untuk diimpor.');
-        var updates = {};
-        var newCount = 0;
-        var updatedCount = 0;
-        imported.forEach(function(item) {
-          var existingId = Object.keys(catalog).find(function(id) {
-            return String(catalog[id].name || '').trim().toLocaleLowerCase('id-ID') === item.name.toLocaleLowerCase('id-ID');
-          });
-          var id = existingId || catalogRef.push().key;
-          if (existingId) updatedCount += 1;
-          else newCount += 1;
-          updates[id] = Object.assign({}, existingId ? catalog[existingId] : {}, item, {
-            active: existingId ? catalog[existingId].active !== false : true,
-            updatedAt: firebase.database.ServerValue.TIMESTAMP,
-            updatedBy: user.nama || user.username || ''
-          });
-        });
-        var importButton = document.getElementById('ck-import-catalog-button');
-        importButton.disabled = true;
-        catalogRef.update(updates).then(function() {
-          message('ck-catalog-message', 'Impor berhasil: ' + newCount + ' barang baru, ' + updatedCount + ' diperbarui.');
-        }).catch(function(error) {
-          message('ck-catalog-message', 'Impor gagal: ' + error.message, true);
-        }).finally(function() { importButton.disabled = false; });
-      } catch (error) {
-        message('ck-catalog-message', error.message || 'Format file Excel tidak valid.', true);
-      }
-    };
-    reader.readAsArrayBuffer(file);
   }
   function setupOutletSelect(publicOutlets, locationOutlets) {
     var select = document.getElementById('ck-outlet');
@@ -1136,7 +1182,7 @@
     var userOutlet = String(user.outlet || '');
     canChooseOutlet = role === 'owner' || role === 'developer' || username === 'burhan';
     canDeleteOrders = role === 'owner' || role === 'developer' || username === 'burhan';
-    canEditOrderPrices = role === 'owner' || role === 'developer' || username === 'burhan';
+    canEditOrderPrices = role === 'owner' || role === 'developer' || username === 'burhan' || userOutlet === KITCHEN_ID;
     publicOutlets = publicOutlets.filter(function(id) { return !isTestOutlet(id); });
     if (!publicOutlets.length) publicOutlets = locationOutlets.filter(function(id) { return !isTestOutlet(id); });
     if (!canChooseOutlet && (!userOutlet || userOutlet === 'all' || userOutlet === '*' || isTestOutlet(userOutlet))) {
@@ -1164,10 +1210,29 @@
   }
   function boot() {
     try { user = JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch (error) { user = {}; }
-    if (!user.username) { window.location.href = 'login.html'; return; }
-    if (!window.FirebaseStorage || !FirebaseStorage.init()) throw new Error('Firebase tidak tersedia. Pastikan koneksi database online untuk menggunakan PO bersama.');
-    db = FirebaseStorage.db();
-    if (!db) throw new Error('Database belum siap.');
+    if (standalonePoLinkMode) {
+      showPoLinkView();
+      setPoLinkMessage('Memuat PO...', false);
+    }
+    if (!user.username) {
+      var loginUrl = new URL('login.html', window.location.href);
+      loginUrl.searchParams.set('returnTo', window.location.href);
+      window.location.href = loginUrl.href;
+      return;
+    }
+    try {
+      if (!window.FirebaseStorage || !FirebaseStorage.init()) throw new Error('Firebase tidak tersedia. Pastikan koneksi database online untuk menggunakan PO bersama.');
+      db = FirebaseStorage.db();
+      if (!db) throw new Error('Database belum siap.');
+    } catch (error) {
+      if (standalonePoLinkMode) {
+        showPoLinkView();
+        setPoLinkMessage(error.message || 'Gagal menghubungkan database.', true);
+      } else {
+        message('ck-order-message', error.message || 'Gagal menghubungkan database.', true);
+      }
+      return;
+    }
     Promise.all([FirebaseStorage.getAppState('rbm_outlets'), FirebaseStorage.getAppState('rbm_internal_outlets'), FirebaseStorage.getAppState('rbm_outlet_names'), FirebaseStorage.getAppState('rbm_outlet_locations')]).then(function(values) {
       var publicOutlets = parseList(values[0]);
       var internalOutlets = parseList(values[1]);
@@ -1176,42 +1241,66 @@
       try { names = JSON.parse(values[2] || '{}'); } catch (error) {}
       if (internalOutlets.indexOf(KITCHEN_ID) < 0) internalOutlets.push(KITCHEN_ID);
       names[KITCHEN_ID] = names[KITCHEN_ID] || 'Central Kitchen';
+      if (standalonePoLinkMode && !isCentralKitchenAccount()) return false;
       return Promise.all([
         FirebaseStorage.setAppState('rbm_internal_outlets', JSON.stringify(internalOutlets)),
         FirebaseStorage.setAppState('rbm_outlet_names', JSON.stringify(names))
-      ]).then(function() { setupOutletSelect(publicOutlets, locationOutlets); });
-    }).then(function() {
+      ]).then(function() {
+        setupOutletSelect(publicOutlets, locationOutlets);
+        return true;
+      });
+    }).then(function(authorized) {
+      if (authorized === false) {
+        showPoLinkView();
+        setPoLinkMessage('Link PO ini hanya dapat dibuka setelah login dengan akun Central Kitchen.', true);
+        return;
+      }
       orderRef = db.ref('rbm_pro/central_kitchen/orders');
-      catalogRef = db.ref('rbm_pro/central_kitchen/catalog');
-      catalogRef.on('value', function(snapshot) { catalog = snapshot.val() || {}; renderCatalog(); renderOrderCatalog(); renderOrderLines(); });
+      if (!standalonePoLinkMode) {
+        loadKitchenCatalog();
+        window.setInterval(loadKitchenCatalog, 60000);
+      }
       setCurrentMode();
       var requestedView = new URLSearchParams(window.location.search).get('view');
-      if (requestedPoId) loadSharedOrder(requestedPoId);
+      if (standalonePoLinkMode) {
+        showPoLinkView();
+        if (isCentralKitchenAccount()) loadSharedOrder(requestedPoId);
+        else setPoLinkMessage('Link PO ini hanya dapat dibuka oleh akun Central Kitchen.', true);
+      }
+      else if (requestedPoId && isKitchen) loadSharedOrder(requestedPoId);
+      else if (requestedPoId) {
+        switchView('order-view');
+        message('ck-order-message', 'Link PO Masuk hanya dapat digunakan oleh akun Central Kitchen.', true);
+      }
+      else if (requestedView === 'kitchen' && isKitchen) {
+        switchView('kitchen-view');
+        switchKitchenView('kitchen-orders');
+      }
+      else if (requestedView === 'kitchen') {
+        switchView('order-view');
+        message('ck-order-message', 'Link PO Masuk hanya dapat digunakan oleh akun Central Kitchen.', true);
+      }
       else if (requestedView === 'history') switchView('history-view');
       else if (requestedView === 'order' && !isKitchen) switchView('order-view');
     }).catch(function(error) {
-      message('ck-order-message', error.message || 'Gagal memuat data Central Kitchen.', true);
-      document.getElementById('ck-catalog-message').textContent = error.message || 'Database tidak tersedia.';
-      document.getElementById('ck-submit-order').disabled = true;
-      document.getElementById('ck-save-item').disabled = true;
-      document.getElementById('ck-import-catalog-button').disabled = true;
+      if (standalonePoLinkMode) {
+        showPoLinkView();
+        setPoLinkMessage(error.message || 'Gagal memuat PO.', true);
+      } else {
+        message('ck-order-message', error.message || 'Gagal memuat data Central Kitchen.', true);
+        document.getElementById('ck-catalog-message').textContent = error.message || 'Database tidak tersedia.';
+        document.getElementById('ck-submit-order').disabled = true;
+      }
     });
   }
 
   document.getElementById('ck-add-line').addEventListener('click', addOrderLine);
-  document.getElementById('ck-download-catalog-template').addEventListener('click', downloadCatalogTemplate);
-  document.getElementById('ck-import-catalog-button').addEventListener('click', function() { document.getElementById('ck-import-catalog-file').click(); });
-  document.getElementById('ck-import-catalog-file').addEventListener('change', function(event) {
-    var file = event.target.files && event.target.files[0];
-    if (file) importCatalogFile(file);
-    event.target.value = '';
-  });
+  document.getElementById('ck-refresh-catalog').addEventListener('click', loadKitchenCatalog);
   document.getElementById('ck-order-catalog-search').addEventListener('input', renderOrderCatalog);
-  document.getElementById('ck-copy-ordering-link').addEventListener('click', function() {
-    copyLink(appLink({ view: 'order', outlet: selectedOutlet }), this);
-  });
   document.getElementById('ck-submit-order').addEventListener('click', submitOrder);
-  document.getElementById('ck-save-item').addEventListener('click', saveCatalogItem);
+  document.getElementById('ck-copy-kitchen-link').addEventListener('click', function() {
+    copyLink(appLink({ view: 'kitchen', outlet: KITCHEN_ID }), this);
+  });
   document.getElementById('ck-refresh').addEventListener('click', function() {
     loadOrderPage('history', 'first');
     if (isKitchen) loadOrderPage('incoming', 'first');

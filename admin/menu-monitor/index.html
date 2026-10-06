@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Menu & Kitchen HPP Monitor</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet"><script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script><script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script><script src="../../firebase-storage.js"></script><script src="./hpp-access.js"></script><script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script><script src="./hpp-import-fix.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet"><script src="./hpp-access.js"></script><script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script><script>localStorage.removeItem('rbm_hpp_monitor_imports');</script>
 <style>
 :root{--ink:#172529;--muted:#6b7b7e;--line:#dce7e3;--paper:#f5f8f5;--white:#fff;--teal:#087f75;--teal-dark:#174541;--green:#16805c;--yellow:#c38d1d;--red:#d6544b;--shadow:0 12px 30px #173c3210}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 90% 0,#dbf2e8,transparent 27%),var(--paper);color:var(--ink);font:14px 'DM Sans',sans-serif}h1,h2,h3{font-family:'Space Grotesk',sans-serif;margin:0}button,input,select{font:inherit}.wrap{max-width:1540px;margin:auto;padding:28px 34px 65px}.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:25px}.eyebrow{color:var(--teal);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px}.top h1{font-size:29px}.subtitle,.note{color:var(--muted);font-size:12px;line-height:1.5;margin-top:6px}.live{color:var(--muted);font-size:12px;display:flex;gap:8px;align-items:center}.dot{width:8px;height:8px;border-radius:50%;background:#2aa775}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}.card,.stat{background:var(--white);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}.stat{padding:16px}.stat-label{font-size:12px;color:var(--muted);margin-bottom:12px}.stat-value{font:700 24px 'Space Grotesk'}.stat-detail{font-size:11px;color:var(--muted);margin-top:8px}.alert{color:var(--red)}.danger-pulse{animation:pulse 1.4s infinite}@keyframes pulse{50%{box-shadow:0 0 0 5px #d6544b24}}.controls{padding:14px 16px;margin-bottom:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.search{flex:1;min-width:210px;border:1px solid var(--line);border-radius:7px;padding:10px 12px;background:#fff}.select{border:1px solid var(--line);border-radius:7px;padding:10px 11px;background:#fff;color:var(--ink)}.toggle{display:flex;align-items:center;gap:8px;border:1px solid var(--line);padding:9px 11px;border-radius:7px;background:#fbfdfc;color:#385158;font-size:12px;font-weight:600}.toggle input{accent-color:var(--teal);width:16px;height:16px}.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px;overflow:auto}.tab{border:0;background:none;padding:11px 17px;border-bottom:3px solid transparent;color:var(--muted);font-weight:700;cursor:pointer;white-space:nowrap}.tab.active{color:var(--teal);border-color:var(--teal)}.view{display:none}.view.active{display:block;animation:appear .25s ease}@keyframes appear{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}.card{padding:19px}.card-head{display:flex;justify-content:space-between;gap:15px;align-items:flex-start;margin-bottom:15px}.table-scroll{overflow:auto}table{border-collapse:collapse;width:100%;min-width:1060px}th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 9px;border-bottom:1px solid var(--line);white-space:nowrap}td{padding:12px 9px;border-bottom:1px solid #edf2ef;vertical-align:middle}tr:last-child td{border-bottom:0}.code{color:var(--teal);font-size:11px;font-weight:700}.name{font-weight:700}.money{white-space:nowrap;font-weight:700}.small{font-size:11px;color:var(--muted)}.category{display:inline-block;background:#e8f3ef;color:#27675d;border-radius:5px;padding:4px 7px;font-size:10px;font-weight:700}.badge{display:inline-block;border-radius:99px;padding:5px 8px;font-size:11px;font-weight:700;white-space:nowrap}.safe{color:#087352;background:#d9f2e7}.warn{color:#8b6517;background:#fff0c4}.risk{color:#a63129;background:#ffddd8}.action{border:1px solid var(--teal);background:#fff;color:var(--teal);border-radius:6px;padding:7px 9px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}.action:hover{background:#e8f5ef}.link{border:0;background:none;color:var(--teal);cursor:pointer;font-size:11px;font-weight:700;padding:0}.hidden{display:none!important}.drawer-bg{position:fixed;inset:0;background:#102b2768;z-index:5;opacity:0;pointer-events:none;transition:opacity .2s}.drawer-bg.open{opacity:1;pointer-events:auto}.drawer{position:fixed;z-index:6;right:0;top:0;height:100vh;width:min(560px,100%);background:#fff;transform:translateX(100%);transition:transform .25s ease;box-shadow:-15px 0 40px #143b3020;padding:25px;overflow:auto}.drawer.open{transform:none}.drawer-head{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-bottom:17px;margin-bottom:18px}.close{border:0;background:#edf5f1;border-radius:50%;width:32px;height:32px;cursor:pointer;color:var(--teal);font-size:20px}.recipe-line{display:grid;grid-template-columns:1fr 68px 88px 92px;gap:10px;padding:11px 0;border-bottom:1px solid #edf2ef;align-items:center;font-size:12px}.recipe-head{color:var(--muted);font-size:10px;text-transform:uppercase}.calc{background:var(--teal-dark);color:#effff8;border-radius:9px;padding:18px;margin-top:20px}.calc h3{font-size:16px}.calc-row{display:flex;justify-content:space-between;align-items:center;margin-top:15px}.target{width:95px;border:0;border-radius:5px;padding:8px;text-align:right}.recommend{color:#a2e7c6;font:700 24px 'Space Grotesk'}.apply{border:0;background:#a3e2c3;color:#133f36;border-radius:6px;padding:9px 12px;font-weight:700;cursor:pointer;margin-top:13px}.kitchen table{min-width:850px}.empty{text-align:center;padding:30px;color:var(--muted)}@media(max-width:900px){.wrap{padding:22px 16px 50px}.stats{grid-template-columns:repeat(2,1fr)}.top{display:block}.live{margin-top:12px}.controls{align-items:stretch}.toggle{flex:1}.select{flex:1}}@media(max-width:520px){.stats{grid-template-columns:1fr 1fr}.stat-value{font-size:19px}.controls{display:grid;grid-template-columns:1fr 1fr}.search{grid-column:1/-1}.toggle{font-size:11px}.drawer{padding:18px}}
 </style>
@@ -36,21 +36,21 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body><main class="wrap">
-<header class="top"><div><div class="eyebrow">HPP Resto & Kitchen / September 2026</div><h1>HPP Resto & Kitchen</h1><p class="subtitle">Menu & Kitchen HPP Monitor untuk memantau seluruh menu resto dan produk semi-finished dapur dalam satu layar.</p></div><div class="live"><span class="dot"></span> Simulasi real-time <span>|</span> Data aktif</div></header>
+<header class="top"><div><div class="eyebrow">HPP Resto & Kitchen / September 2026</div><h1>HPP Resto & Kitchen</h1><p class="subtitle">Menu & Kitchen HPP Monitor untuk memantau seluruh menu resto dan produk semi-finished dapur dalam satu layar.</p></div><div class="live"><span class="dot" style="background:#c38d1d"></span> Menghubungkan ke Google Sheets...</div></header>
 <section class="stats"><div class="stat"><div class="stat-label">Total item aktif</div><div class="stat-value" id="total">—</div><div class="stat-detail" id="total-detail">Menu resto + resep dapur</div></div><div class="stat"><div class="stat-label">Rata-rata Food Cost Resto</div><div class="stat-value" id="average">—</div><div class="stat-detail" id="average-detail">Lama vs Baru</div></div><div class="stat danger-pulse"><div class="stat-label">High-risk items alert</div><div class="stat-value alert" id="high-risk">—</div><div class="stat-detail">Food Cost Baru di atas 50%</div></div><div class="stat"><div class="stat-label">Top / lowest margin</div><div class="stat-value" id="top-menu">—</div><div class="stat-detail" id="low-menu">Margin terendah: —</div></div></section>
 <section class="card controls"><input id="search" class="search" placeholder="Cari nama atau kode menu..."><select id="category" class="select"><option>Semua kategori</option><option>ES CAMPUR MONSTERS</option><option>MIE BASAH</option><option>MIE GORENG</option><option>RICE BOWL BEEF</option><option>RICE BOWL CHIKEN</option><option>TAMBAHAN</option></select><select id="health" class="select"><option>Semua status</option><option>Sehat</option><option>Waspada</option><option>Bahaya</option></select><label class="toggle"><input type="checkbox" id="ice"> Simulasikan Pembungkus Es Campur</label><label class="toggle"><input type="checkbox" id="pack"> Simulasikan Pembungkus Rice Bowl & Mie</label><button class="import-button" id="open-import">Import Data</button><button class="import-secondary" id="view-upload">Lihat Data Upload</button><button class="import-secondary" id="open-sheets-settings" type="button">Atur Link Sheets</button></section>
 <section class="packaging-breakdowns" aria-label="Rincian biaya pembungkus"><details class="packaging-breakdown" id="ice-packaging-detail"><summary><span>Pembungkus Es Campur</span><span id="ice-packaging-total"></span></summary><div class="packaging-breakdown-list" id="ice-packaging-rows"></div></details><details class="packaging-breakdown" id="pack-packaging-detail"><summary><span>Pembungkus Rice Bowl & Mie</span><span id="pack-packaging-total"></span></summary><div class="packaging-breakdown-list" id="pack-packaging-rows"></div></details></section>
-<nav class="tabs"><button class="tab active" data-tab="resto">BPP Resto / Finished Menu</button><button class="tab" data-tab="kitchen">BPP Dapur / Central Kitchen</button><button class="tab" data-tab="database">Database Upload</button></nav>
+<nav class="tabs"><button class="tab active" data-tab="resto">BPP Resto / Finished Menu</button><button class="tab" data-tab="kitchen">BPP Dapur / Central Kitchen</button><button class="tab" data-tab="database">Database Google Sheets</button></nav>
 <section id="resto" class="view active card"><div class="card-head"><div><h2>All-menu monitoring</h2><p class="note">HPP per porsi = bahan per porsi + kemasan per porsi.</p></div><span class="small" id="row-count"></span></div><div class="table-scroll"><table><thead><tr><th>Kategori & Kode</th><th>Nama Menu</th><th>Harga Jual</th><th>HPP / porsi</th><th>Food Cost</th><th>Laba / porsi</th><th>Health</th><th>Action</th></tr></thead><tbody id="resto-body"></tbody></table></div></section>
 <section id="kitchen" class="view card kitchen"><div class="card-head"><div><h2>Central kitchen monitor</h2><p class="note">Produk central kitchen menggunakan nama produk tanpa kode. Bahan mengikuti database BPP.</p></div><div class="kitchen-head-actions"><button id="kitchen-pricing-toggle" class="action" type="button" aria-pressed="false">Ikuti HPP untuk semua</button><button id="export-kitchen-pdf" class="action" type="button">Export PDF</button><button id="export-kitchen-jpg" class="action" type="button">Simpan JPG</button><span class="small" id="kitchen-count"></span></div></div><div class="table-scroll"><table><thead><tr><th>Nama Produk</th><th>Batch Yield</th><th>HPP / Satuan Jual</th><th>Harga Jual / Satuan Jual</th><th>Laba Dapur / Satuan Jual</th><th>Linked Resto Menus</th></tr></thead><tbody id="kitchen-body"></tbody></table></div></section>
-<section id="database" class="view card"><div class="card-head"><div><h2>Database dari Excel</h2><p class="note">Semua bahan, menu, resep dapur, dan kemasan dari import terakhir.</p></div><div class="database-actions"><span class="small" id="database-count"></span><button class="action" id="export-database">Export Excel</button></div></div><div class="database-controls"><input id="database-search" class="search" placeholder="Cari kode, nama, kategori, atau detail..."><select id="database-type" class="select"><option value="all">Semua data</option><option value="materials-resto">Bahan baku resto</option><option value="materials-dapur">Bahan baku dapur</option><option value="menus">Resep resto</option><option value="kitchen">Resep dapur</option><option value="packaging">Kemasan</option></select><label class="toggle"><input type="checkbox" id="database-select-all"> Pilih semua</label><button class="import-secondary" id="database-delete-selected">Hapus yang dipilih</button></div><div class="table-scroll"><table><thead><tr><th>Pilih</th><th>Jenis</th><th>Kode / Nama</th><th>Kategori / Detail</th><th>Jumlah / Komponen</th><th>Nilai</th><th>Aksi</th></tr></thead><tbody id="database-body"></tbody></table></div></section>
+<section id="database" class="view card"><div class="card-head"><div><h2>Database dari Google Sheets</h2><p class="note">Semua bahan, menu, resep dapur, dan kemasan dari lima tab Google Sheets.</p></div><div class="database-actions"><span class="small" id="database-count"></span><button class="action" id="export-database">Export Excel</button></div></div><div class="database-controls"><input id="database-search" class="search" placeholder="Cari kode, nama, kategori, atau detail..."><select id="database-type" class="select"><option value="all">Semua data</option><option value="materials-resto">Bahan baku resto</option><option value="materials-dapur">Bahan baku dapur</option><option value="menus">Resep resto</option><option value="kitchen">Resep dapur</option><option value="packaging">Kemasan</option></select><label class="toggle"><input type="checkbox" id="database-select-all"> Pilih semua</label><button class="import-secondary" id="database-delete-selected">Hapus yang dipilih</button></div><div class="table-scroll"><table><thead><tr><th>Pilih</th><th>Jenis</th><th>Kode / Nama</th><th>Kategori / Detail</th><th>Jumlah / Komponen</th><th>Nilai</th><th>Aksi</th></tr></thead><tbody id="database-body"></tbody></table></div></section>
 </main><div class="drawer-bg" id="drawer-bg"></div><aside class="drawer" id="drawer" aria-label="Detail resep"><div class="drawer-head"><div><div class="eyebrow">Recipe detail</div><h2 id="drawer-title">—</h2><p class="note" id="drawer-meta"></p></div><button class="close" id="close" aria-label="Tutup">×</button></div><div class="recipe-line recipe-head"><span>Bahan</span><span>Qty</span><span>SHS Baru</span><span>Subtotal</span></div><div id="recipe-lines"></div><div class="calc"><h3>Smart Price Calculator</h3><div class="calc-row"><label for="target">Target Food Cost (%)</label><input id="target" class="target" type="number" min="1" max="100" value="35"></div><div class="calc-row"><label for="custom-price">Harga Jual Custom (Rp)</label><input id="custom-price" class="target" type="number" min="0" step="500" placeholder="Kosongkan untuk pakai target food cost"></div><div class="calc-row"><span>Harga jual baru disarankan</span><strong class="recommend" id="recommend">—</strong></div><button class="apply" id="apply">Terapkan Harga Baru</button></div></aside><section class="import-panel" id="import-panel" aria-label="Import data"><div class="import-box"><div class="card-head"><div><div class="eyebrow">Data intake</div><h2>Import data HPP</h2><p class="note">Pilih format, unggah CSV, atau tempel data dari Excel.</p></div><button class="close" id="close-import" aria-label="Tutup">×</button></div><select id="import-type" class="select"><option value="materials">Harga bahan baku</option><option value="menus">Resep menu resto</option><option value="kitchen">Resep dapur</option><option value="packaging">Packaging</option></select><input id="csv-file" type="file" accept=".csv,text/csv"><textarea id="csv-text" placeholder="Header CSV akan muncul di sini..."></textarea><p class="note">Template: klik download template untuk melihat kolom wajib. Pemisah kolom: koma.</p><p class="import-error" id="import-error"></p><div class="import-actions"><button class="import-secondary" id="download-template">Download template</button><button class="import-secondary" id="cancel-import">Batal</button><button class="import-button" id="apply-import">Terapkan import</button></div></div></section>
 <script>
 const materials=[];
 const packaging={ice:0,pack:0,items:[]};
 const menus=[];
 const kitchen=[];
-let kitchenPricingMode='custom';
+let kitchenPricingMode='bpp';
 const money=n=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(n);const unitFactor={gr:1,gram:1,grams:1,kg:1000,pcs:1,pc:1,buah:1,ml:1,liter:1000,l:1000,ltr:1000,btl:1,botol:1,pack:1,porsi:1};const normalizeUnit=value=>{const unit=String(value||'gr').trim().toLowerCase().replace(/[.\s]+/g,'');return unit==='g'||unit==='gram'?'gram':unit==='kilogram'?'kg':unit==='milliliter'?'ml':unit==='liter'?'liter':unit==='pcs.'?'pcs':unit};const gramMoney=n=>new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',minimumFractionDigits:3,maximumFractionDigits:3}).format(n);
 const isKitchenMaterial=x=>/^BB\.DAPUR\./i.test(String(x.code||''));const mat=(code,name,source)=>{const matches=materials.filter(x=>!source||(source==='dapur'?isKitchenMaterial(x):!isKitchenMaterial(x)));if(source==='dapur')return name?matches.find(x=>String(x.name).trim().toLowerCase()===String(name).trim().toLowerCase()):null;if(source==='resto')return code?matches.find(x=>String(x.code||'').trim().toLowerCase()===String(code).trim().toLowerCase()):null;return matches.find(x=>x.code===code)||(name?matches.find(x=>String(x.name).trim().toLowerCase()===String(name).trim().toLowerCase()):null)};const priceUnit=(code,name,qtyUnit,source)=>{const x=mat(code,name,source);if(!x)return 0;const materialUnit=normalizeUnit(x.unit||'gr'),recipeUnit=normalizeUnit(qtyUnit||materialUnit),unitPrice=Number(x.new??x.price??0);return unitPrice*Number(qtyUnit?((unitFactor[recipeUnit]||1)/(unitFactor[materialUnit]||1)):1)};const kitchenRecipeCost=x=>{if(!x.items?.length)return Number(x.cost)||0;return x.items.reduce((total,[code,name,qty,unit])=>total+Number(qty||0)*priceUnit(code,name,unit,'dapur'),0)/Number(x.yield||1)};const kitchenBppSalePrice=x=>{const batchCost=kitchenRecipeCost(x)*Number(x.yield||0),batchUnit=normalizeUnit(x.yieldUnit||'gr'),saleUnit=normalizeUnit(x.saleUnit||x.yieldUnit||'gr'),saleQuantity=Number(x.yield||0)*(unitFactor[batchUnit]||1)/(unitFactor[saleUnit]||1);return saleQuantity>0?Math.ceil((batchCost/saleQuantity)/1000)*1000:0};const kitchenSalePrice=x=>kitchenPricingMode==='bpp'?kitchenBppSalePrice(x):Number(x.customTransfer??x.newTransfer)||0;function setKitchenPricingMode(mode){kitchenPricingMode=mode==='bpp'?'bpp':'custom';if(kitchenPricingMode==='bpp')kitchen.forEach(item=>{if(item.customTransfer===undefined)item.customTransfer=Number(item.newTransfer)||0});else kitchen.forEach(item=>{item.newTransfer=Number(item.customTransfer??item.newTransfer)||0;delete item.transferMode});saveImportedData();renderKitchen();renderDatabase()}
 const isIcePackagingType=value=>/\b(?:es|ice|campur)\b/i.test(String(value||''));const isPackMenuCategory=value=>/\b(?:mie|rice|bowl|bungkus|pack)\b/i.test(String(value||''));
@@ -422,7 +422,7 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 			const quantity = row.cells[4];
 			const actions = row.cells[6];
 			if (!quantity || !actions) return;
-			if (row.dataset.kind === 'materials-dapur') {
+			if (row.dataset.kind === 'materials-dapur' || row.dataset.kind === 'materials-resto') {
 				row.cells[0].replaceChildren();
 				actions.textContent = 'Edit melalui Google Sheets';
 				row.dataset.actionsReady = 'true';
@@ -788,46 +788,120 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 	});
 })();
 </script><script>
-window.getKitchenMaterialsForSheets = function () {
-	return materials.filter(isKitchenMaterial).map(function (item) {
-		return { code: item.code, name: item.name, category: item.category || '', unit: item.unit || '', price: Number(item.new ?? item.price ?? item.old ?? 0) };
+function sheetsNumber(value) {
+	if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+	let text = String(value == null ? '' : value).trim().replace(/^rp\.?\s*/i, '').replace(/\s/g, '');
+	if (!text) return 0;
+	if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(text)) text = text.replace(/\./g, '').replace(',', '.');
+	else if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(text)) text = text.replace(/,/g, '');
+	else text = text.replace(/[^0-9.,-]/g, '').replace(',', '.');
+	const parsed = Number(text);
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+function sheetsCode(value, prefix) {
+	const code = String(value || '').trim();
+	return prefix && code && !/^BB\.DAPUR\./i.test(code) ? 'BB.DAPUR.' + code : code;
+}
+function sheetsMaterial(row, kitchenMaterial) {
+	const price = sheetsNumber(kitchenMaterial ? row.harga_standar : row.harga);
+	return {
+		code: sheetsCode(row.kode_bahan, kitchenMaterial ? 'kitchen' : ''),
+		name: String(row.nama_bahan || '').trim(),
+		category: String(row.kategori || '').trim(),
+		unit: String(kitchenMaterial ? (row.satuan_2 || row.satuan) : row.satuan || 'gr').trim(),
+		old: kitchenMaterial ? sheetsNumber(row.harga) : price,
+		new: price
+	};
+}
+function sheetsGroups(rows, keyName, createGroup) {
+	const groups = new Map();
+	rows.forEach(function (row) {
+		const key = String(row[keyName] || '').trim();
+		if (!key) return;
+		if (!groups.has(key)) groups.set(key, createGroup(row));
+		const group = groups.get(key);
+		if (row.kode_bahan || row.nama_bahan || row.nama_bahan_baku) {
+			group.items.push([
+				String(row.kode_bahan || '').trim(),
+				String(row.nama_bahan || row.nama_bahan_baku || '').trim(),
+				sheetsNumber(row.qty == null ? row.qty_bahan : row.qty),
+				String(row.satuan || row.satuan_bahan || 'gr').trim()
+			]);
+		}
 	});
+	return Array.from(groups.values());
+}
+window.applyAllHppDataFromSheets = function (data) {
+	const kitchenMaterials = data.kitchenMaterials.map(function (row) { return sheetsMaterial(row, true); }).filter(function (item) { return item.code && item.name; });
+	const restoMaterials = data.restoMaterials.map(function (row) { return sheetsMaterial(row, false); }).filter(function (item) { return item.code && item.name; });
+	const nextMenus = sheetsGroups(data.restoRecipes, 'kode_menu', function (row) {
+		return { code: String(row.kode_menu || '').trim(), name: String(row.nama_menu || '').trim(), category: String(row.kategori || '').trim(), price: sheetsNumber(row.harga_jual), items: [] };
+	});
+	const nextKitchen = sheetsGroups(data.kitchenRecipes, 'nama_produk', function (row) {
+		const transfer = sheetsNumber(row.harga_jual_satuan);
+		return {
+			name: String(row.nama_produk || '').trim(),
+			yield: sheetsNumber(row.qty_barang_jadi),
+			yieldUnit: String(row.satuan_barang || 'gr').trim(),
+			saleUnit: String(row.satuan_harga_jual || row.satuan_barang || 'gr').trim(),
+			cost: 0,
+			customTransfer: transfer,
+			newTransfer: transfer,
+			items: []
+		};
+	});
+	const restoPrices = new Map(restoMaterials.map(function (item) { return [item.code.trim().toLowerCase(), sheetsNumber(item.new)]; }));
+	const nextPackagingItems = data.packaging.map(function (row) {
+		const code = String(row.kode || row.kode_bahan || '').trim();
+		const qty = sheetsNumber(row.qty);
+		const material = restoMaterials.find(function (item) { return item.code.trim().toLowerCase() === code.toLowerCase(); });
+		const type = String(row.jenis || row.kategori || row.nama_1 || row.nama || 'lainnya').trim();
+		return {
+			type: type,
+			code: code,
+			name: String(row.nama_2 || row.nama_bahan || ((row.jenis || row.kategori) ? row.nama : row.nama_1 || '')).trim(),
+			qty: qty,
+			unit: String(row.satuan || 'pcs').trim(),
+			cost: qty * (material ? (restoPrices.get(material.code.trim().toLowerCase()) || 0) : 0)
+		};
+	}).filter(function (item) { return item.code || item.name; });
+	const nextPackaging = {
+		items: nextPackagingItems,
+		ice: nextPackagingItems.filter(function (item) { return isIcePackagingType(item.type); }).reduce(function (sum, item) { return sum + item.cost; }, 0),
+		pack: nextPackagingItems.filter(function (item) { return !isIcePackagingType(item.type); }).reduce(function (sum, item) { return sum + item.cost; }, 0)
+	};
+	materials.splice(0, materials.length, ...kitchenMaterials, ...restoMaterials);
+	menus.splice(0, menus.length, ...nextMenus);
+	kitchen.splice(0, kitchen.length, ...nextKitchen);
+	packaging.items = nextPackaging.items;
+	packaging.ice = nextPackaging.ice;
+	packaging.pack = nextPackaging.pack;
+	renderStats();
+	renderResto();
+	renderKitchen();
+	renderDatabase();
 };
-const kitchenMaterialImportOption = document.querySelector('#import-type option[value="kitchenMaterials"]');
-if (kitchenMaterialImportOption) kitchenMaterialImportOption.remove();
 const databaseHelp = document.querySelector('#database .card-head .note');
-if (databaseHelp) databaseHelp.textContent = 'Master bahan baku dapur hanya dapat diubah melalui Google Sheets. Perubahan bahan lain tetap dikelola di web.';
-window.withoutKitchenMaterialsForPersistence = function (save) {
-	const retained = materials.filter(function (item) { return !isKitchenMaterial(item); });
-	const kitchenItems = materials.filter(isKitchenMaterial);
-	materials.splice(0, materials.length, ...retained);
-	try { return save(); } finally { materials.push(...kitchenItems); }
-};
-window.filterKitchenMaterialsFromSavedData = function (saved) {
-	if (!saved || saved.source !== 'excel-import' || !Array.isArray(saved.materials)) return saved;
-	const filteredMaterials = saved.materials.filter(function (item) { return !isKitchenMaterial(item); });
-	return filteredMaterials.length === saved.materials.length ? saved : Object.assign({}, saved, { materials: filteredMaterials });
-};
-window.removeKitchenMaterialsFromMemory = function () {
-	const hasKitchenMaterials = materials.some(isKitchenMaterial);
-	if (hasKitchenMaterials) materials.splice(0, materials.length, ...materials.filter(function (item) { return !isKitchenMaterial(item); }));
-	return hasKitchenMaterials;
-};
-window.applyKitchenMaterialsFromSheets = function (items) {
-	const updated = items.map(function (item) {
-		const existing = materials.find(function (entry) { return entry.code === item.code; });
-		const price = Number(item.price) || 0;
-		return Object.assign({}, existing || {}, {
-			code: item.code,
-			name: item.name,
-			category: item.category || '',
-			unit: item.unit || 'gr',
-			old: existing ? existing.old : price,
-			new: price
-		});
-	});
-	materials.splice(0, materials.length, ...materials.filter(function (item) { return !isKitchenMaterial(item); }), ...updated);
-	saveImportedData();
-	renderStats(); renderResto(); renderKitchen(); renderDatabase();
-};
+if (databaseHelp) databaseHelp.textContent = 'Bahan, resep resto, resep dapur, dan kemasan dimuat dari lima tab Google Sheets. Ubah data langsung di spreadsheet.';
+(function lockKitchenPriceToHpp() {
+	kitchenPricingMode = 'bpp';
+	setKitchenPricingMode = function () {
+		kitchenPricingMode = 'bpp';
+		renderKitchen();
+		renderDatabase();
+	};
+	const renderKitchenWithHppPrice = renderKitchen;
+	renderKitchen = function () {
+		renderKitchenWithHppPrice();
+		const toggle = document.querySelector('#kitchen-pricing-toggle');
+		if (toggle) {
+			toggle.textContent = 'Harga Jual Mengikuti HPP';
+			toggle.disabled = true;
+			toggle.setAttribute('aria-pressed', 'true');
+			toggle.title = 'Harga jual dihitung dari HPP resep dan hanya berubah mengikuti biaya bahan.';
+		}
+		document.querySelectorAll('.kitchen-price-edit').forEach(function (button) { button.remove(); });
+	};
+	renderKitchen();
+})();
 </script><script src="./google-sheets-sync-config.js"></script><script src="./google-sheets-sync.js"></script></body></html>

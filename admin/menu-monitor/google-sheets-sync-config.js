@@ -1,2 +1,2 @@
-window.HPP_KITCHEN_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzBGH4N49fPVLk6NauFiLXqip0YFB-So2ZkFAUF1C91ts21pCgTvQcE66bflg4PSFDa/exec';
+window.HPP_KITCHEN_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbz_ufGEQt6LOOtRk6QjMpgAf-31-9P2d3ikPm3y5AUbZRO6asdFKp1_aNQSsIVByyfP/exec';
 window.HPP_KITCHEN_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1EL2qiwT5INX_ncuKEA1SoGfdZJawk_Vwxz2v-DPk2wY/edit';

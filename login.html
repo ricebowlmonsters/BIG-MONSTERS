@@ -56,15 +56,25 @@
       };
       const username = document.getElementById('login-username');
       const password = document.getElementById('login-password');
-      const getPostLoginUrl = () => {
+      const getPostLoginUrl = user => {
         const returnTo = new URLSearchParams(window.location.search).get('returnTo');
-        if (!returnTo) return 'index.html';
+        const isCentralKitchenUser = String(user && user.outlet || '').trim().toLowerCase() === 'central-kitchen';
+        if (!returnTo && !isCentralKitchenUser) return 'index.html';
         try {
-          const target = new URL(returnTo, window.location.href);
           const loginUrl = new URL(window.location.href);
           const directory = loginUrl.pathname.slice(0, loginUrl.pathname.lastIndexOf('/') + 1);
-          if (target.origin === loginUrl.origin && target.pathname.toLowerCase() === (directory + 'rbm-central-kitchen.html').toLowerCase()) return target.href;
+          const target = returnTo
+            ? new URL(returnTo, window.location.href)
+            : new URL(directory + 'rbm-central-kitchen.html', loginUrl.origin);
+          if (target.origin === loginUrl.origin && target.pathname.toLowerCase() === (directory + 'rbm-central-kitchen.html').toLowerCase()) {
+            if (isCentralKitchenUser) {
+              target.searchParams.set('view', 'kitchen');
+              target.searchParams.set('outlet', 'central-kitchen');
+            }
+            return target.href;
+          }
         } catch (error) {}
+        if (isCentralKitchenUser) return 'rbm-central-kitchen.html?view=kitchen&outlet=central-kitchen';
         return 'index.html';
       };
       const submit = async () => {
@@ -89,10 +99,10 @@
             const welcomeScreen = document.getElementById('owner-welcome');
             if (welcomeScreen) {
               welcomeScreen.style.display = 'flex';
-              setTimeout(() => { window.top.location.href = getPostLoginUrl(); }, 7000);
+              setTimeout(() => { window.top.location.href = getPostLoginUrl(hiddenUser); }, 7000);
             } else {
               show('Login berhasil', 'success');
-              setTimeout(() => { window.top.location.href = getPostLoginUrl(); }, 500);
+              setTimeout(() => { window.top.location.href = getPostLoginUrl(hiddenUser); }, 500);
             }
             return;
           }
@@ -111,7 +121,7 @@
               FirebaseStorage.setActiveSession(user.username, sessionId).then(() => {});
             }
             show('Login berhasil', 'success');
-            setTimeout(() => { window.top.location.href = getPostLoginUrl(); }, 500);
+            setTimeout(() => { window.top.location.href = getPostLoginUrl(user); }, 500);
           } else {
             show('Username atau password salah', 'error');
           }
