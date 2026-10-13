@@ -57,6 +57,7 @@
   const baseOpenKitchenRecipe = window.openKitchenRecipe;
   const baseOpenKitchenMenus = window.openKitchenMenus;
   const baseCreateKitchenReport = window.createKitchenReport;
+  const baseRenderPackagingDetails = window.renderPackagingDetails;
   const baseDatabaseRows = window.databaseRows;
 
   window.databaseRows = function () {
@@ -68,6 +69,54 @@
 
   function noteKey(kind, identifier) {
     return JSON.stringify([kind, String(identifier || '').trim()]);
+  }
+
+  function addPackagingUnitPrices() {
+    document.querySelectorAll('.packaging-item').forEach(function (row) {
+      const action = row.querySelector('[data-edit-packaging], [data-delete-packaging]');
+      const item = action ? packaging.items[Number(action.dataset.editPackaging || action.dataset.deletePackaging)] : null;
+      if (!item) return;
+
+      const description = row.querySelector('span');
+      const quantity = Number(item.qty);
+      const unit = String(item.unit || 'pcs');
+      const detail = description?.querySelector('small');
+      if (!description || !detail) return;
+
+      let unitCost = item.unitCost;
+      if (unitCost === null || unitCost === undefined || !Number.isFinite(Number(unitCost))) {
+        const material = packagingMasterForItem(item);
+        const source = item.source || (material && isKitchenMaterial(material) ? 'dapur' : 'resto');
+        const hasPrice = material && [material.new, material.old, material.price].some(function (value) {
+          return value !== undefined && value !== null && Number.isFinite(Number(value));
+        });
+        unitCost = hasPrice ? priceUnit(material.code, material.name, unit, source) : null;
+      }
+
+      detail.textContent = `Qty: ${quantity.toLocaleString('id-ID')} ${unit}`;
+      let price = description.querySelector('.packaging-unit-price');
+      if (!price) {
+        price = document.createElement('small');
+        price.className = 'packaging-unit-price';
+        description.appendChild(price);
+      }
+      const hasUnitCost = unitCost !== null && unitCost !== undefined && Number.isFinite(Number(unitCost));
+      price.textContent = hasUnitCost ? `SHS: ${money(Number(unitCost))} / ${unit}` : 'SHS: Harga belum tersedia';
+
+      const subtotal = row.querySelector(':scope > strong');
+      if (subtotal) {
+        const subtotalAmount = Number.isFinite(Number(item.cost)) ? Number(item.cost) : hasUnitCost ? Number(unitCost) * quantity : null;
+        subtotal.textContent = subtotalAmount === null ? 'Subtotal: Harga belum tersedia' : `Subtotal: ${money(subtotalAmount)}`;
+      }
+    });
+  }
+
+  if (baseRenderPackagingDetails) {
+    window.renderPackagingDetails = function () {
+      baseRenderPackagingDetails();
+      addPackagingUnitPrices();
+    };
+    window.renderPackagingDetails();
   }
 
   function appendNoteControl(cell, kind, identifier) {
