@@ -869,11 +869,12 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 	const pdfButton = document.querySelector('#export-resto-pdf');
 	const overlay = document.createElement('div');
 	overlay.className = 'jpg-preview-overlay';
-	overlay.innerHTML = '<section class="jpg-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="resto-jpg-preview-title"><header class="jpg-preview-head"><div><h2 id="resto-jpg-preview-title">Preview BPP Resto</h2><p class="note">Pilih isi JPG, lalu periksa preview sebelum menyimpan.</p></div><label for="resto-jpg-preview-mode">Isi JPG <select id="resto-jpg-preview-mode" class="select"><option value="with-prices">Resep + harga</option><option value="recipes-only">Resep saja</option></select></label><button class="close" type="button" data-resto-preview-close aria-label="Tutup preview">×</button></header><div class="jpg-preview-body"><p class="jpg-preview-message" data-resto-preview-message>Menyiapkan preview...</p><img data-resto-preview-image alt="Preview laporan BPP Resto" hidden></div><footer class="jpg-preview-actions"><button class="import-secondary" type="button" data-resto-preview-close>Tutup</button><button class="action" type="button" data-resto-preview-save disabled>Simpan JPG</button></footer></section>';
+	overlay.innerHTML = '<section class="jpg-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="resto-jpg-preview-title"><header class="jpg-preview-head"><div><h2 id="resto-jpg-preview-title">Preview BPP Resto</h2><p class="note">Pilih isi laporan, lalu periksa preview sebelum diekspor.</p></div><label for="resto-jpg-preview-mode">Isi laporan <select id="resto-jpg-preview-mode" class="select"><option value="with-prices">Resep + harga</option><option value="recipes-only">Resep saja</option></select></label><button class="close" type="button" data-resto-preview-close aria-label="Tutup preview">×</button></header><div class="jpg-preview-body"><p class="jpg-preview-message" data-resto-preview-message>Menyiapkan preview...</p><img data-resto-preview-image alt="Preview laporan BPP Resto" hidden></div><footer class="jpg-preview-actions"><button class="import-secondary" type="button" data-resto-preview-close>Tutup</button><button class="action" type="button" data-resto-preview-pdf hidden disabled>Export PDF</button><button class="action" type="button" data-resto-preview-save disabled>Simpan JPG</button></footer></section>';
 	document.body.appendChild(overlay);
 	let previewBlob = null;
 	let previewUrl = '';
 	let previewGeneration = 0;
+	let outputFormat = 'jpg';
 
 	function visibleMenus() {
 		const query = document.querySelector('#search').value.toLowerCase();
@@ -891,7 +892,7 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 		report.className = 'jpg-report';
 		report.style.cssText = 'position:fixed;left:-20000px;top:0;width:1600px;padding:56px;background:#f2f6f5;color:#172529;font-family:Arial,Helvetica,sans-serif';
 		const style = document.createElement('style');
-		style.textContent = '.jpg-report{box-sizing:border-box}.jpg-report-head{padding:30px 34px;background:#174541;color:#fff;border-radius:10px 10px 0 0;-webkit-print-color-adjust:exact;print-color-adjust:exact}.jpg-report-eyebrow{font-size:13px;font-weight:700;letter-spacing:2px;color:#a8d9c7}.jpg-report-title{font-size:32px;margin:10px 0 6px}.jpg-report-subtitle{font-size:15px;color:#d8e9e2}.jpg-report-meta{display:flex;gap:18px;padding:16px 34px;background:#fff;border:1px solid #dce7e3;border-top:0;color:#53656a;font-size:14px}.jpg-report-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #dce7e3}.jpg-report-table th{padding:12px 10px;background:#e7f0ed;color:#174541;text-align:left;font-size:11px;text-transform:uppercase;border-bottom:2px solid #bfd1ca;-webkit-print-color-adjust:exact;print-color-adjust:exact}.jpg-report-table td{padding:11px 10px;border-bottom:1px solid #e4ebe8;font-size:12px;vertical-align:top}.jpg-report-table tbody tr:nth-child(even){background:#f7faf9}.jpg-report-footer{padding:16px 34px;color:#738286;font-size:11px;background:#fff;border:1px solid #dce7e3;border-top:0;border-radius:0 0 10px 10px}.jpg-recipes-title{margin:30px 0 14px;color:#174541;font-size:22px}.jpg-recipe-card{margin:0 0 18px;background:#fff;border:1px solid #dce7e3;border-radius:8px;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.jpg-recipe-head{padding:14px 18px;background:#e7f0ed;border-bottom:1px solid #cbdad5;-webkit-print-color-adjust:exact;print-color-adjust:exact}.jpg-recipe-name{margin:0 0 5px;color:#174541;font-size:17px}.jpg-recipe-meta{color:#5f7074;font-size:12px}.jpg-recipe-table{width:100%;border-collapse:collapse}.jpg-recipe-table th{padding:9px 12px;background:#f7faf9;color:#53656a;text-align:left;font-size:10px;text-transform:uppercase;border-bottom:1px solid #dce7e3}.jpg-recipe-table td{padding:9px 12px;border-bottom:1px solid #edf2ef;font-size:12px}.jpg-recipe-empty{padding:15px 18px;color:#738286;font-size:12px}.jpg-report-empty{padding:24px;background:#fff;color:#738286;text-align:center}';
+		style.textContent = '.jpg-report{box-sizing:border-box}.jpg-report-head{padding:30px 34px;background:#174541;color:#fff;border-radius:10px 10px 0 0;-webkit-print-color-adjust:exact;print-color-adjust:exact}.jpg-report-eyebrow{font-size:13px;font-weight:700;letter-spacing:2px;color:#a8d9c7}.jpg-report-title{font-size:32px;margin:10px 0 6px}.jpg-report-subtitle{font-size:15px;color:#d8e9e2}.jpg-report-meta{display:flex;gap:18px;padding:16px 34px;background:#fff;border:1px solid #dce7e3;border-top:0;color:#53656a;font-size:14px}.jpg-report-table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #dce7e3}.jpg-report-table th{padding:12px 10px;background:#e7f0ed;color:#174541;text-align:left;font-size:11px;text-transform:uppercase;border-bottom:2px solid #bfd1ca;-webkit-print-color-adjust:exact;print-color-adjust:exact}.jpg-report-table td{padding:11px 10px;border-bottom:1px solid #e4ebe8;font-size:12px;vertical-align:top}.jpg-report-table tbody tr:nth-child(even){background:#f7faf9}.jpg-report-footer{padding:16px 34px;color:#738286;font-size:11px;background:#fff;border:1px solid #dce7e3;border-top:0;border-radius:0 0 10px 10px}.jpg-recipes-title{margin:30px 0 14px;color:#174541;font-size:22px}.jpg-recipe-card{margin:0 0 18px;background:#fff;border:1px solid #dce7e3;border-radius:8px;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.jpg-recipe-head{padding:14px 18px;background:#e7f0ed;border-bottom:1px solid #cbdad5;-webkit-print-color-adjust:exact;print-color-adjust:exact}.jpg-recipe-name{margin:0 0 5px;color:#174541;font-size:17px}.jpg-recipe-meta{color:#5f7074;font-size:12px}.jpg-recipe-cost-breakdown{display:flex;flex-wrap:wrap;gap:8px 18px;padding:9px 18px;background:#fbfcfc;color:#53656a;font-size:11px;border-bottom:1px solid #edf2ef}.jpg-recipe-cost-breakdown strong{color:#172529}.jpg-recipe-table{width:100%;border-collapse:collapse}.jpg-recipe-table th{padding:9px 12px;background:#f7faf9;color:#53656a;text-align:left;font-size:10px;text-transform:uppercase;border-bottom:1px solid #dce7e3}.jpg-recipe-table td{padding:9px 12px;border-bottom:1px solid #edf2ef;font-size:12px}.jpg-recipe-empty{padding:15px 18px;color:#738286;font-size:12px}.jpg-report-empty{padding:24px;background:#fff;color:#738286;text-align:center}';
 		report.appendChild(style);
 		const items = visibleMenus();
 		const head = document.createElement('header');
@@ -940,6 +941,23 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 			meta.textContent = menu.category + ' · ' + menu.code + ' · HPP ' + money(menu.total) + ' / porsi · Harga jual ' + money(menu.price);
 			recipeHead.append(name, meta);
 			card.appendChild(recipeHead);
+			const costBreakdown = document.createElement('div');
+			costBreakdown.className = 'jpg-recipe-cost-breakdown';
+			const ingredientsCost = Number(menu.ingredientsTotal) || 0;
+			const packagingCost = Number(menu.packagingCost) || 0;
+			const operationalCost = Number(menu.operationalCost) || 0;
+			const costParts = [
+				'Bahan: ' + money(ingredientsCost),
+				'Biaya operasional: ' + money(operationalCost)
+			];
+			if (packagingCost > 0) costParts.push('Pembungkus: ' + money(packagingCost));
+			costParts.push('Total HPP: ' + money(menu.total) + ' / porsi');
+			costParts.forEach(function (part) {
+				const label = document.createElement('span');
+				label.textContent = part;
+				costBreakdown.appendChild(label);
+			});
+			card.appendChild(costBreakdown);
 			if (!menu.items || !menu.items.length) {
 				const empty = document.createElement('div');
 				empty.className = 'jpg-recipe-empty';
@@ -976,6 +994,49 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 		return report;
 	}
 
+	function applyRestoReportMode(report, mode) {
+		if (mode === 'recipes-only') {
+			const title = report.querySelector('.jpg-report-title');
+			if (title) title.textContent = 'Resep BPP Resto';
+			const subtitle = report.querySelector('.jpg-report-subtitle');
+			if (subtitle) subtitle.textContent = 'Daftar bahan dan takaran resep tanpa informasi harga.';
+			report.querySelector('.jpg-report-table')?.remove();
+			report.querySelectorAll('.jpg-recipe-cost-breakdown').forEach(function (breakdown) {
+				breakdown.remove();
+			});
+			report.querySelectorAll('.jpg-recipe-meta').forEach(function (meta) {
+				meta.textContent = meta.textContent.split(' · HPP ')[0];
+			});
+			return;
+		}
+
+		report.querySelectorAll('.jpg-recipe-card').forEach(function (card, menuIndex) {
+			const menu = visibleMenus()[menuIndex];
+			const recipeTable = card.querySelector('.jpg-recipe-table');
+			if (!menu || !recipeTable) return;
+			const header = recipeTable.querySelector('thead tr');
+			['Harga Satuan SHS', 'Subtotal'].forEach(function (label) {
+				const cell = document.createElement('th');
+				cell.textContent = label;
+				header.appendChild(cell);
+			});
+			recipeTable.querySelectorAll('tbody tr').forEach(function (row, itemIndex) {
+				const item = menu.items[itemIndex];
+				if (!item) return;
+				const code = item[0] || '';
+				const name = item[1] || '';
+				const qty = Number(item[2]) || 0;
+				const unit = item[3] || mat(code, name, 'dapur')?.unit || 'gr';
+				const unitPrice = priceUnit(code, name, unit, 'dapur');
+				const priceCell = document.createElement('td');
+				priceCell.textContent = money(unitPrice) + ' / ' + unit;
+				const subtotalCell = document.createElement('td');
+				subtotalCell.textContent = money(qty * unitPrice);
+				row.append(priceCell, subtotalCell);
+			});
+		});
+	}
+
 	function closePreview() {
 		previewGeneration++;
 		overlay.classList.remove('open');
@@ -987,8 +1048,13 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 		previewUrl = '';
 		overlay.querySelector('[data-resto-preview-message]').hidden = false;
 		overlay.querySelector('[data-resto-preview-save]').disabled = true;
+		overlay.querySelector('[data-resto-preview-pdf]').disabled = true;
+		overlay.querySelector('[data-resto-preview-pdf]').hidden = true;
+		overlay.querySelector('[data-resto-preview-save]').hidden = false;
 		overlay.querySelector('#resto-jpg-preview-mode').disabled = false;
+		overlay.querySelector('#resto-jpg-preview-title').textContent = 'Preview BPP Resto';
 		previewButton.disabled = false;
+		outputFormat = 'jpg';
 	}
 
 	async function generatePreview() {
@@ -1015,41 +1081,7 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 		overlay.classList.add('open');
 		const now = new Date();
 		const report = createRestoReport(now);
-		if (mode === 'recipes-only') {
-			report.querySelector('.jpg-report-title').textContent = 'Resep BPP Resto';
-			report.querySelector('.jpg-report-subtitle').textContent = 'Daftar bahan dan takaran resep tanpa informasi harga.';
-			const table = report.querySelector('.jpg-report-table');
-			if (table) table.remove();
-			report.querySelectorAll('.jpg-recipe-meta').forEach(function (meta) {
-				meta.textContent = meta.textContent.split(' · HPP ')[0];
-			});
-		} else {
-			report.querySelectorAll('.jpg-recipe-card').forEach(function (card, menuIndex) {
-				const menu = visibleMenus()[menuIndex];
-				const recipeTable = card.querySelector('.jpg-recipe-table');
-				if (!menu || !recipeTable) return;
-				const header = recipeTable.querySelector('thead tr');
-				['Harga Satuan SHS', 'Subtotal'].forEach(function (label) {
-					const cell = document.createElement('th');
-					cell.textContent = label;
-					header.appendChild(cell);
-				});
-				recipeTable.querySelectorAll('tbody tr').forEach(function (row, itemIndex) {
-					const item = menu.items[itemIndex];
-					if (!item) return;
-					const code = item[0] || '';
-					const name = item[1] || '';
-					const qty = Number(item[2]) || 0;
-					const unit = item[3] || mat(code, name, 'dapur')?.unit || 'gr';
-					const unitPrice = priceUnit(code, name, unit, 'dapur');
-					const priceCell = document.createElement('td');
-					priceCell.textContent = money(unitPrice) + ' / ' + unit;
-					const subtotalCell = document.createElement('td');
-					subtotalCell.textContent = money(qty * unitPrice);
-					row.append(priceCell, subtotalCell);
-				});
-			});
-		}
+		applyRestoReportMode(report, mode);
 		document.body.appendChild(report);
 		try {
 			const canvas = await window.html2canvas(report, { scale: 2, backgroundColor: '#f2f6f5', width: 1600, useCORS: true });
@@ -1070,6 +1102,9 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 				closePreview();
 			};
 			overlay.querySelector('[data-resto-preview-save]').disabled = false;
+			overlay.querySelector('[data-resto-preview-save]').hidden = outputFormat === 'pdf';
+			overlay.querySelector('[data-resto-preview-pdf]').hidden = outputFormat !== 'pdf';
+			overlay.querySelector('[data-resto-preview-pdf]').disabled = outputFormat !== 'pdf';
 		} catch (error) {
 			if (generation !== previewGeneration) return;
 			message.hidden = false;
@@ -1083,9 +1118,10 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 		}
 	}
 
-	function exportPdf() {
+	function exportPdf(mode) {
 		const previousTitle = document.title;
 		const report = createRestoReport(new Date());
+		applyRestoReportMode(report, mode);
 		const cleanup = function () {
 			document.body.classList.remove('print-resto-report');
 			report.remove();
@@ -1098,13 +1134,24 @@ document.querySelector('#save-manual-packaging').addEventListener('click',functi
 		report.style.padding = '0';
 		report.style.background = '#fff';
 		document.querySelector('#resto').appendChild(report);
-		document.title = 'Laporan BPP Resto - Finished Menu';
+		document.title = 'Laporan BPP Resto - Finished Menu' + (mode === 'recipes-only' ? ' - Resep' : '');
 		document.body.classList.add('print-resto-report');
 		window.addEventListener('afterprint', cleanup, { once: true });
 		window.print();
 	}
 
-	pdfButton.addEventListener('click', exportPdf);
+	pdfButton.addEventListener('click', function () {
+		outputFormat = 'pdf';
+		overlay.querySelector('#resto-jpg-preview-title').textContent = 'Export PDF BPP Resto';
+		overlay.querySelector('[data-resto-preview-pdf]').hidden = false;
+		overlay.querySelector('[data-resto-preview-save]').hidden = true;
+		generatePreview();
+	});
+	overlay.querySelector('[data-resto-preview-pdf]').addEventListener('click', function () {
+		const mode = overlay.querySelector('#resto-jpg-preview-mode').value;
+		closePreview();
+		exportPdf(mode);
+	});
 	previewButton.addEventListener('click', generatePreview);
 	overlay.querySelectorAll('[data-resto-preview-close]').forEach(button => button.addEventListener('click', closePreview));
 	overlay.addEventListener('click', event => { if (event.target === overlay) closePreview(); });
