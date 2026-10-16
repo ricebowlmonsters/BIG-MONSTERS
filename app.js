@@ -5,7 +5,7 @@
 
 // Konfigurasi
 const CONFIG = {
-  SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzhhEssVNQBCRip4OVNh2rIOB9ToRiTad7tmZgjUTsmxgN4gT9x2LCINvvD2YD4tK5K/exec',
+  SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzdh5OZ5Te2P-1YlsctrnV6ByWvOvQetGuzr2WUmseJf5WTUatTZ2Yeh7hGPJCobkhJ6g/exec',
   STORAGE_KEYS: {
     USER: 'rbm_user',
     POINTS_HISTORY: 'rbm_points_history',
