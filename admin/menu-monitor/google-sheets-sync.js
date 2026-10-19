@@ -1,7 +1,8 @@
 (function () {
   'use strict';
 
-  var endpoint = String(localStorage.getItem('hpp_kitchen_sheets_url') || window.HPP_KITCHEN_SHEETS_URL || '').trim();
+  var endpoint = String(window.HPP_KITCHEN_SHEETS_URL || '').trim();
+  var spreadsheetId = String(window.HPP_KITCHEN_SPREADSHEET_ID || '').trim();
   var lastSynced = null;
   var currentStatus = '';
   var currentConnected = false;
@@ -54,7 +55,6 @@
       finish(null, result);
     };
     script.onerror = function () { finish(new Error('Web App mengalihkan ke halaman login/menolak akses. Di Deploy > Manage deployments, pilih Execute as: Me dan Who has access: Anyone (bukan Anyone with Google account), lalu deploy New version.')); };
-    var spreadsheetId = localStorage.getItem('hpp_kitchen_spreadsheet_id') || '';
     script.src = requestedEndpoint + (requestedEndpoint.indexOf('?') === -1 ? '?' : '&') +
       'action=getHppData&callback=' + callbackName +
       (spreadsheetId ? '&spreadsheetId=' + encodeURIComponent(spreadsheetId) : '') +
@@ -94,10 +94,15 @@
         setStatus('Google Sheets: format lima tab tidak lengkap; data halaman tidak diubah.', false);
         return;
       }
+      if (result.version !== 'hpp-five-tabs-2026-10-06-5') {
+        setStatus('Google Sheets mengembalikan versi Apps Script ' + (result.version || 'tanpa versi') +
+          '. Deployment ini perlu diperbarui ke hpp-five-tabs-2026-10-06-5 agar sinkronisasi harga kolom D tersedia.', false);
+        return;
+      }
       if (!result.priceSync || typeof result.priceSync.updatedRows !== 'number' ||
           typeof result.priceSync.unchangedRows !== 'number' || typeof result.priceSync.skippedRows !== 'number' ||
           typeof result.priceSync.unpricedIngredientRows !== 'number') {
-        setStatus('Data terbaca dari Google Sheets, tetapi deployment Apps Script belum mengirim hasil sinkronisasi harga kolom D. Deploy versi terbaru hpp-five-tabs-2026-10-06-4.', false);
+        setStatus('Data terbaca dari Google Sheets, tetapi respons Apps Script versi terbaru tidak menyertakan hasil sinkronisasi harga kolom D. Pastikan isi Code.gs berasal dari google-sheets-sync.gs, lalu deploy New version.', false);
         return;
       }
       var remoteFingerprint = JSON.stringify(result.data);
@@ -134,7 +139,7 @@
 
   function setupUrlSettings() {
     var trigger = document.querySelector('#open-sheets-settings');
-    if (!trigger) return;
+    if (!trigger || trigger.disabled) return;
 
     var panel = document.createElement('section');
     panel.className = 'import-panel';

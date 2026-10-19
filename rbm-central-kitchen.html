@@ -594,7 +594,7 @@ var user = {};
   }
   function loadKitchenCatalog() {
     if (catalogLoading) return;
-    var endpoint = String(localStorage.getItem('hpp_kitchen_sheets_url') || window.HPP_KITCHEN_SHEETS_URL || '').trim();
+    var endpoint = String(window.HPP_KITCHEN_SHEETS_URL || '').trim();
     if (!endpoint) {
       message('ck-catalog-message', 'URL Google Sheets belum dikonfigurasi.', true);
       return;
@@ -628,7 +628,9 @@ var user = {};
         renderOrderCatalog();
         return;
       }
-      if (result.version !== 'hpp-five-tabs-2026-10-06-5') {
+      var legacyCatalogResponse = !result.version && result.materials.length > 0 &&
+        result.materials.every(function(row) { return row && typeof row.aktif === 'boolean'; });
+      if (result.version !== 'hpp-five-tabs-2026-10-06-5' && !legacyCatalogResponse) {
         message('ck-catalog-message', 'Apps Script perlu diperbarui untuk membaca checkbox kolom I. Versi yang dibutuhkan: hpp-five-tabs-2026-10-06-5.', true);
         renderCatalog();
         renderOrderCatalog();
@@ -653,7 +655,7 @@ var user = {};
           category: String(row.kategori || '').trim(),
           price: price,
           active: true,
-          showInPo: row.tampil_di_po === true
+          showInPo: typeof row.tampil_di_po === 'boolean' ? row.tampil_di_po : row.aktif === true
         };
       });
       if (invalidItem) {
@@ -672,7 +674,7 @@ var user = {};
     script.onerror = function() {
       finish(new Error('Web App menolak akses. Periksa deployment Google Apps Script.'));
     };
-    var spreadsheetId = localStorage.getItem('hpp_kitchen_spreadsheet_id') || '';
+    var spreadsheetId = String(window.HPP_KITCHEN_SPREADSHEET_ID || '').trim();
     script.src = endpoint + (endpoint.indexOf('?') === -1 ? '?' : '&') +
       'action=getKitchenMaterials&callback=' + callbackName +
       (spreadsheetId ? '&spreadsheetId=' + encodeURIComponent(spreadsheetId) : '') +
