@@ -148,6 +148,11 @@
     .ck-item-head { padding-top: 0; color: #75857e; font-size: 10px; font-weight: 800; text-transform: uppercase; }
     .ck-item-name { min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
     .ck-item-value { text-align: right; white-space: nowrap; }
+    .ck-edit-item-row { grid-template-columns: minmax(150px, 1.4fr) minmax(75px, .6fr) minmax(110px, .8fr) minmax(125px, .8fr) 38px; }
+    .ck-edit-item-row input { width: 100%; min-height: 34px; padding: 5px 7px; border: 1px solid #cbd7d2; border-radius: 4px; box-sizing: border-box; }
+    .ck-edit-item-row .ck-item-value { min-width: 0; }
+    .ck-edit-item-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-top: 12px; }
+    .ck-edit-item-add .ck-field { flex: 1 1 220px; }
     .ck-requested-row { grid-template-columns: minmax(180px, 1fr) minmax(100px, 160px); }
     .ck-fulfill-row { grid-template-columns: minmax(160px, 1.5fr) minmax(100px, .6fr) minmax(140px, .8fr); }
     .ck-fulfill-price-row { grid-template-columns: minmax(150px, 1.2fr) minmax(88px, .65fr) minmax(125px, .8fr) minmax(125px, .8fr); }
@@ -177,6 +182,19 @@
     .ck-po-link-mode .ck-kitchen-heading h2 { margin: 0 0 12px; }
     .ck-po-link-mode #ck-incoming-list { min-height: 48px; }
     .ck-po-link-mode .ck-incoming-card .ck-order-head { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ck-kitchen-queue-link-mode .rbm-page-header, .ck-kitchen-queue-link-mode .ck-toolbar,
+    .ck-kitchen-queue-link-mode .ck-tabs, .ck-kitchen-queue-link-mode .ck-kitchen-tabs,
+    .ck-kitchen-queue-link-mode .ck-share-panel, .ck-kitchen-queue-link-mode #order-view,
+    .ck-kitchen-queue-link-mode #history-view, .ck-kitchen-queue-link-mode #kitchen-catalog,
+    .ck-kitchen-queue-link-mode .ck-kitchen-heading p { display: none !important; }
+    .ck-kitchen-queue-link-mode .ck-wrap { max-width: 900px; padding: 16px; }
+    .ck-kitchen-queue-link-mode .ck-panel { min-height: 0; }
+    .ck-kitchen-queue-link-mode #kitchen-view, .ck-kitchen-queue-link-mode #kitchen-orders {
+      display: block !important; min-height: 0; padding: 16px;
+    }
+    .ck-kitchen-queue-link-mode .ck-kitchen-heading h2 { margin: 0 0 12px; }
+    .ck-kitchen-queue-link-mode #ck-incoming-list { min-height: 48px; }
+    .ck-kitchen-queue-link-mode .ck-incoming-card .ck-order-head { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ck-po-link-status { margin: 0 0 12px; color: var(--ck-muted); font-size: 14px; }
     .ck-po-link-status.error { color: #b42318; }
     @media (max-width: 680px) {
@@ -219,6 +237,7 @@
       .ck-order-footer > .ck-button { width: 100%; }
       .ck-item-head { display: none; }
       .ck-item-row, .ck-requested-row, .ck-fulfill-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 2px; }
+      .ck-edit-item-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 2px; }
       .ck-item-name { grid-column: 1 / -1; }
       .ck-item-value { text-align: left; white-space: normal; }
       .ck-item-value::before { content: attr(data-label); display: block; margin-bottom: 3px; color: #75857e; font-size: 10px; font-weight: 700; }
@@ -248,7 +267,9 @@
 <body>
 <script>
 (function() {
-if (new URLSearchParams(window.location.search).has('po')) document.body.classList.add('ck-po-link-mode');
+var params = new URLSearchParams(window.location.search);
+if (params.has('po')) document.body.classList.add('ck-po-link-mode');
+if (params.get('view') === 'kitchen' && params.get('mode') === 'incoming') document.body.classList.add('ck-kitchen-queue-link-mode');
 var user = {};
   try { user = JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch (error) {}
   if (!user.username) {
@@ -299,7 +320,7 @@ var user = {};
       <p id="ck-order-message" class="ck-message" role="status"></p>
     </section>
     <section class="ck-view" id="history-view" hidden>
-      <div class="ck-title-row"><div><h2>Riwayat Purchase Order</h2><p>Jumlah terkirim dan nilai nota memakai kuantitas aktual dari Central Kitchen.</p></div><div class="ck-actions"><label class="ck-muted" for="ck-paper-width" style="align-self:center">Thermal</label><select id="ck-paper-width" aria-label="Lebar kertas thermal" style="min-height:38px;padding:6px;border:1px solid #cbd7d2;border-radius:5px"><option value="80">80 mm</option><option value="58">58 mm</option></select><button type="button" class="ck-button secondary" id="ck-refresh">Refresh</button></div></div>
+      <div class="ck-title-row"><div><h2>Riwayat Purchase Order</h2><p>Jumlah terkirim dan nilai nota memakai kuantitas aktual Central Kitchen. Owner dan Developer dapat mengedit PO yang sudah dikirim.</p></div><div class="ck-actions"><label class="ck-muted" for="ck-paper-width" style="align-self:center">Thermal</label><select id="ck-paper-width" aria-label="Lebar kertas thermal" style="min-height:38px;padding:6px;border:1px solid #cbd7d2;border-radius:5px"><option value="80">80 mm</option><option value="58">58 mm</option></select><button type="button" class="ck-button secondary" id="ck-refresh">Refresh</button></div></div>
         <div class="ck-history-tools">
         <div class="ck-field" id="ck-history-outlet-wrap" hidden><label for="ck-history-outlet">Filter outlet</label><select id="ck-history-outlet"><option value="">Semua outlet</option></select></div>
         <div class="ck-field"><label for="ck-order-search">Cari nota pada halaman ini</label><input id="ck-order-search" type="search" placeholder="Nomor PO atau catatan" autocomplete="off"></div>
@@ -353,6 +374,7 @@ var user = {};
   var orders = {};
   var incomingOrders = {};
   var processingOrderIds = {};
+  var editingOrderIds = {};
   var orderPages = {
     history: { rows: [], page: 1, hasOlder: false, hasNewer: false, requestId: 0 },
     incoming: { rows: [], page: 1, hasOlder: false, hasNewer: false, requestId: 0 }
@@ -363,12 +385,15 @@ var user = {};
   var canChooseOutlet = false;
   var canDeleteOrders = false;
   var canEditOrderPrices = false;
+  var canEditHistoryOrders = false;
   var isKitchen = false;
   var catalogLoading = false;
   var orderEntryDisplayMode = 'cashier';
   var selectedOrderCategory = 'all';
   var requestedPoId = new URLSearchParams(window.location.search).get('po') || '';
   var standalonePoLinkMode = Boolean(requestedPoId);
+  var kitchenQueueParams = new URLSearchParams(window.location.search);
+  var standaloneKitchenQueueMode = kitchenQueueParams.get('view') === 'kitchen' && kitchenQueueParams.get('mode') === 'incoming';
   var orderRef;
 
   function parseList(raw) {
@@ -435,6 +460,11 @@ var user = {};
     switchView('kitchen-view');
     switchKitchenView('kitchen-orders');
   }
+  function showKitchenQueueLinkView() {
+    document.body.classList.add('ck-kitchen-queue-link-mode');
+    switchView('kitchen-view');
+    switchKitchenView('kitchen-orders');
+  }
   function formatDate(value) {
     var date = new Date(Number(value) || value || Date.now());
     return isNaN(date.getTime()) ? '-' : date.toLocaleString('id-ID');
@@ -468,7 +498,7 @@ var user = {};
     if (!isKitchen && document.getElementById('kitchen-view').hidden === false) switchView('order-view');
     renderOrderLines();
     if (!requestedPoId) loadOrderPage('history', 'first');
-    if (isKitchen && !standalonePoLinkMode) loadOrderPage('incoming', 'first');
+    if (isKitchen && !standalonePoLinkMode && !standaloneKitchenQueueMode) loadOrderPage('incoming', 'first');
     else {
       orderPages.incoming.rows = [];
       incomingOrders = {};
@@ -785,6 +815,29 @@ var user = {};
     document.querySelectorAll('#ck-order-list [data-delete-order]').forEach(function(button) {
       button.addEventListener('click', function() { deleteOrder(button.dataset.deleteOrder, button); });
     });
+    document.querySelectorAll('#ck-order-list [data-edit-order]').forEach(function(button) {
+      button.addEventListener('click', function() {
+        editingOrderIds[button.dataset.editOrder] = true;
+        renderOrders();
+      });
+    });
+    document.querySelectorAll('#ck-order-list [data-cancel-edit-order]').forEach(function(button) {
+      button.addEventListener('click', function() {
+        delete editingOrderIds[button.dataset.cancelEditOrder];
+        renderOrders();
+      });
+    });
+    document.querySelectorAll('#ck-order-list [data-save-edit-order]').forEach(function(button) {
+      button.addEventListener('click', function() { saveEditedOrder(button.dataset.saveEditOrder, button); });
+    });
+    document.querySelectorAll('#ck-order-list [data-add-edit-item]').forEach(function(button) {
+      button.addEventListener('click', function() { addEditedOrderItem(button.dataset.addEditItem); });
+    });
+    document.querySelectorAll('#ck-order-list [data-remove-edit-item]').forEach(function(button) {
+      button.addEventListener('click', function() {
+        button.closest('.ck-edit-item-row').remove();
+      });
+    });
   }
   function renderIncomingOrders() {
     incomingOrders = {};
@@ -853,7 +906,10 @@ var user = {};
       if (type === 'history') renderOrders();
       else renderIncomingOrders();
     }).catch(function(error) {
-      if (requestId === page.requestId) message('ck-order-message', 'Gagal memuat PO: ' + error.message, true);
+      if (requestId === page.requestId) {
+        if (standaloneKitchenQueueMode) setPoLinkMessage('Gagal memuat PO masuk: ' + error.message, true);
+        else message('ck-order-message', 'Gagal memuat PO: ' + error.message, true);
+      }
     });
   }
   function makeOrderTable(list, kitchenQueue) {
@@ -863,18 +919,22 @@ var user = {};
   function makeCashierTable(list, kitchenQueue) {
     var rows = list.map(function(order) {
       var fulfilled = order.status === 'fulfilled';
+      var editing = !kitchenQueue && fulfilled && canEditHistoryOrders && editingOrderIds[order.id];
       var status = fulfilled ? '<span class="ck-badge done">Dikirim</span>' : '<span class="ck-badge">Menunggu</span>';
       var total = fulfilled ? order.actualTotal : order.requestTotal;
-      var items = kitchenQueue && !fulfilled ? renderFulfillInputs(order) : (fulfilled ? renderItems(order.items || [], true) : renderRequestedItems(order));
+      var items = kitchenQueue && !fulfilled ? renderFulfillInputs(order) : (editing ? renderEditableFulfilledItems(order) : (fulfilled ? renderItems(order.items || [], true) : renderRequestedItems(order)));
       var deleteButton = canDeleteOrders ? '<button type="button" class="ck-button danger" data-delete-order="' + safe(order.id) + '">Hapus PO</button>' : '';
       var reprintButton = fulfilled ? '<button type="button" class="ck-button secondary" data-print-fulfilled-order="' + safe(order.id) + '">Cetak Ulang 3 SJ + 3 Nota</button>' : '';
+      var editButton = canEditHistoryOrders && fulfilled ? (editing
+        ? '<div class="ck-actions"><button type="button" class="ck-button" data-save-edit-order="' + safe(order.id) + '">Simpan Perubahan</button><button type="button" class="ck-button secondary" data-cancel-edit-order="' + safe(order.id) + '">Batal</button></div>'
+        : '<button type="button" class="ck-button secondary" data-edit-order="' + safe(order.id) + '">Edit PO</button>') : '';
       var actions = kitchenQueue && !fulfilled
         ? '<div class="ck-actions"><button type="button" class="ck-button" data-fulfill-order="' + safe(order.id) + '">Simpan &amp; Proses</button>' + deleteButton + '</div>'
-        : '<div class="ck-print-actions">' + (fulfilled ? printButtons(order.id) + reprintButton : '') + deleteButton + '</div>';
+        : (editing ? editButton + deleteButton : '<div class="ck-print-actions">' + (fulfilled ? printButtons(order.id) + reprintButton : '') + editButton + deleteButton + '</div>');
       if (kitchenQueue && (standalonePoLinkMode || !fulfilled)) {
         return '<article class="ck-order-card ck-incoming-card"><header class="ck-order-head"><div><span class="ck-order-label">Nomor PO</span><strong class="ck-order-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></div><div><span class="ck-order-label">Outlet</span><strong class="ck-order-outlet">' + safe(labelForOutlet(order.outletId)) + '</strong></div><div><span class="ck-order-label">Status</span>' + status + '</div><div><span class="ck-order-label">Nilai PO</span><strong class="ck-order-amount">' + money(total) + '</strong></div></header><div class="ck-order-body"><details class="ck-order-details" open><summary>' + (fulfilled ? 'Rincian PO' : 'Periksa barang dan isi jumlah aktual') + '</summary>' + items + actions + '</details></div></article>';
       }
-      return '<tr><td><strong class="ck-cashier-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></td><td>' + safe(labelForOutlet(order.outletId)) + '</td><td>' + status + '</td><td class="numeric"><strong>' + money(total) + '</strong></td><td><details class="ck-cashier-details"><summary>Detail &amp; aksi</summary><div class="ck-cashier-detail-body">' + items + actions + '</div></details></td></tr>';
+      return '<tr><td><strong class="ck-cashier-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></td><td>' + safe(labelForOutlet(order.outletId)) + '</td><td>' + status + '</td><td class="numeric"><strong>' + money(total) + '</strong></td><td><details class="ck-cashier-details" data-edit-order-details="' + safe(order.id) + '"' + (editing ? ' open' : '') + '><summary>Detail &amp; aksi</summary><div class="ck-cashier-detail-body">' + items + actions + '</div></details></td></tr>';
     }).join('');
     if (kitchenQueue) return '<div class="ck-incoming-cards">' + rows + '</div>';
     return '<div class="ck-cashier-wrap"><table class="ck-cashier-table"><thead><tr><th>Nomor PO</th><th>Outlet</th><th>Status</th><th class="numeric">Nilai</th><th>Rincian</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
@@ -886,6 +946,97 @@ var user = {};
       var priceInput = canEditOrderPrices ? '<span class="ck-item-value" data-label="Harga satuan"><span class="ck-price-control"><span>Rp</span><input class="ck-actual-price" type="text" inputmode="decimal" value="' + formatPriceInput(item.unitPrice) + '" data-price-order="' + safe(order.id) + '" data-price-index="' + index + '" aria-label="Harga satuan ' + safe(item.name) + '"></span></span>' : '';
       return '<div class="ck-item-row ' + rowClass + '"><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity).toLocaleString('id-ID') + ' ' + safe(item.unit) + '</span><span class="ck-item-value" data-label="Jumlah aktual"><input class="ck-actual" type="number" min="0" step="any" value="" placeholder="0" data-actual-order="' + safe(order.id) + '" data-actual-index="' + index + '" aria-label="Jumlah aktual ' + safe(item.name) + ' yang dikirim"></span>' + priceInput + '</div>';
     }).join('') + '</div>';
+  }
+  function renderEditableFulfilledItems(order) {
+    var items = order.items || [];
+    var rows = items.map(function(item, index) {
+      return '<div class="ck-item-row ck-edit-item-row" data-edit-item-row><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity || 0).toLocaleString('id-ID') + ' ' + safe(item.unit) + '</span><span class="ck-item-value" data-label="Dikirim"><input type="number" min="0" step="any" value="' + safe(item.shippedQuantity == null ? item.quantity : item.shippedQuantity) + '" data-edit-shipped aria-label="Jumlah dikirim ' + safe(item.name) + '"></span><span class="ck-item-value" data-label="Harga satuan"><span class="ck-price-control"><span>Rp</span><input class="ck-actual-price" type="text" inputmode="decimal" value="' + safe(formatPriceInput(item.unitPrice)) + '" data-edit-price aria-label="Harga satuan ' + safe(item.name) + '"></span></span><button type="button" class="ck-button secondary" data-remove-edit-item title="Hapus barang" aria-label="Hapus ' + safe(item.name) + '">×</button><input type="hidden" value="' + safe(item.itemId || '') + '" data-edit-item-id><input type="hidden" value="' + safe(item.name || '') + '" data-edit-name><input type="hidden" value="' + safe(item.unit || '') + '" data-edit-unit><input type="hidden" value="' + safe(item.quantity || 0) + '" data-edit-requested></div>';
+    }).join('');
+    var options = Object.keys(catalog).filter(function(id) { return catalog[id].active !== false && catalog[id].showInPo === true; }).sort(function(a, b) {
+      return (catalog[a].name || '').localeCompare(catalog[b].name || '');
+    }).map(function(id) {
+      return '<option value="' + safe(id) + '">' + safe(catalog[id].name) + ' (' + safe(catalog[id].unit) + ')</option>';
+    }).join('');
+    return '<div class="ck-fulfill-help">Ubah jumlah yang dikirim dan harga satuan, atau tambahkan/hapus barang. Jumlah PO awal tetap dicatat.</div><div class="ck-item-list ck-fulfilled-list"><div class="ck-item-row ck-item-head ck-edit-item-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span><span class="ck-item-value">Dikirim</span><span class="ck-item-value">Harga satuan</span><span></span></div>' + rows + '</div><div class="ck-edit-item-add"><div class="ck-field"><label>Tambah barang dari katalog</label><select data-edit-item-select><option value="">Pilih barang</option>' + options + '</select></div><button type="button" class="ck-button secondary" data-add-edit-item="' + safe(order.id) + '">Tambah Barang</button></div>';
+  }
+  function addEditedOrderItem(orderId) {
+    var order = orders[orderId];
+    var details = document.querySelector('[data-edit-order-details="' + CSS.escape(orderId) + '"]');
+    var select = details && details.querySelector('[data-edit-item-select]');
+    var itemId = select && select.value;
+    var item = itemId && catalog[itemId];
+    if (!order || !item) return;
+    var rows = details.querySelectorAll('[data-edit-item-row]');
+    var duplicate = Array.from(rows).some(function(row) {
+      return row.querySelector('[data-edit-item-id]').value === itemId;
+    });
+    if (duplicate) {
+      window.alert('Barang tersebut sudah ada di rincian PO.');
+      return;
+    }
+    var row = document.createElement('div');
+    row.className = 'ck-item-row ck-edit-item-row';
+    row.setAttribute('data-edit-item-row', '');
+    row.innerHTML = '<strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">Barang baru</span><span class="ck-item-value" data-label="Dikirim"><input type="number" min="0" step="any" value="1" data-edit-shipped aria-label="Jumlah dikirim ' + safe(item.name) + '"></span><span class="ck-item-value" data-label="Harga satuan"><span class="ck-price-control"><span>Rp</span><input class="ck-actual-price" type="text" inputmode="decimal" value="' + safe(formatPriceInput(item.price)) + '" data-edit-price aria-label="Harga satuan ' + safe(item.name) + '"></span></span><button type="button" class="ck-button secondary" data-remove-edit-item title="Hapus barang" aria-label="Hapus ' + safe(item.name) + '">×</button><input type="hidden" value="' + safe(itemId) + '" data-edit-item-id><input type="hidden" value="' + safe(item.name) + '" data-edit-name><input type="hidden" value="' + safe(item.unit) + '" data-edit-unit><input type="hidden" value="0" data-edit-requested>';
+    row.querySelector('[data-remove-edit-item]').addEventListener('click', function() { row.remove(); });
+    details.querySelector('.ck-fulfilled-list').appendChild(row);
+    select.value = '';
+  }
+  function saveEditedOrder(orderId, button) {
+    var order = orders[orderId];
+    var details = document.querySelector('[data-edit-order-details="' + CSS.escape(orderId) + '"]');
+    if (!order || !details || !canEditHistoryOrders) return;
+    var rows = Array.from(details.querySelectorAll('[data-edit-item-row]'));
+    if (!rows.length) {
+      window.alert('PO harus memiliki minimal satu barang.');
+      return;
+    }
+    var items = [];
+    var invalid = false;
+    rows.forEach(function(row) {
+      var itemId = row.querySelector('[data-edit-item-id]').value;
+      var itemName = row.querySelector('[data-edit-name]').value;
+      var itemUnit = row.querySelector('[data-edit-unit]').value;
+      var original = (order.items || []).find(function(item) {
+        return itemId ? String(item.itemId || '') === itemId : item.name === itemName && item.unit === itemUnit;
+      });
+      var shippedQuantity = Number(row.querySelector('[data-edit-shipped]').value);
+      var unitPrice = parsePriceInput(row.querySelector('[data-edit-price]').value);
+      if (!Number.isFinite(shippedQuantity) || shippedQuantity < 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+        invalid = true;
+        return;
+      }
+      var product = itemId && catalog[itemId];
+      var requestedQuantity = row.querySelector('[data-edit-requested]').value;
+      items.push(Object.assign({}, original || {}, {
+        itemId: itemId || (original && original.itemId) || '',
+        name: product ? product.name : itemName,
+        unit: product ? product.unit : itemUnit,
+        quantity: Number(requestedQuantity) || 0,
+        shippedQuantity: shippedQuantity,
+        unitPrice: unitPrice
+      }));
+    });
+    if (invalid) {
+      window.alert('Jumlah dikirim dan harga satuan harus berupa angka valid dan tidak boleh negatif.');
+      return;
+    }
+    var actualTotal = items.reduce(function(sum, item) { return sum + item.shippedQuantity * item.unitPrice; }, 0);
+    var updates = {};
+    var orderPath = 'rbm_pro/central_kitchen/orders/' + orderId;
+    updates[orderPath + '/items'] = items;
+    updates[orderPath + '/actualTotal'] = actualTotal;
+    updates[orderPath + '/editedAt'] = firebase.database.ServerValue.TIMESTAMP;
+    updates[orderPath + '/editedBy'] = user.nama || user.username || '';
+    button.disabled = true;
+    db.ref().update(updates).then(function() {
+      delete editingOrderIds[orderId];
+      message('ck-order-message', 'Perubahan PO ' + order.number + ' berhasil disimpan.');
+      return loadOrderPage('history', 'first');
+    }).catch(function(error) {
+      button.disabled = false;
+      window.alert('Perubahan PO gagal disimpan: ' + error.message);
+    });
   }
   function printButtons(orderId) {
     return '<button type="button" class="ck-button secondary" data-print-order="' + safe(orderId) + '" data-print-type="delivery">Cetak Surat Jalan</button> <button type="button" class="ck-button secondary" data-print-order="' + safe(orderId) + '" data-print-type="invoice">Cetak Nota</button>';
@@ -1185,6 +1336,7 @@ var user = {};
     canChooseOutlet = role === 'owner' || role === 'developer' || username === 'burhan';
     canDeleteOrders = role === 'owner' || role === 'developer' || username === 'burhan';
     canEditOrderPrices = role === 'owner' || role === 'developer' || username === 'burhan' || userOutlet === KITCHEN_ID;
+    canEditHistoryOrders = role === 'owner' || role === 'developer' || username === 'burhan';
     publicOutlets = publicOutlets.filter(function(id) { return !isTestOutlet(id); });
     if (!publicOutlets.length) publicOutlets = locationOutlets.filter(function(id) { return !isTestOutlet(id); });
     if (!canChooseOutlet && (!userOutlet || userOutlet === 'all' || userOutlet === '*' || isTestOutlet(userOutlet))) {
@@ -1243,7 +1395,7 @@ var user = {};
       try { names = JSON.parse(values[2] || '{}'); } catch (error) {}
       if (internalOutlets.indexOf(KITCHEN_ID) < 0) internalOutlets.push(KITCHEN_ID);
       names[KITCHEN_ID] = names[KITCHEN_ID] || 'Central Kitchen';
-      if (standalonePoLinkMode && !isCentralKitchenAccount()) return false;
+      if ((standalonePoLinkMode || standaloneKitchenQueueMode) && !isCentralKitchenAccount()) return false;
       return Promise.all([
         FirebaseStorage.setAppState('rbm_internal_outlets', JSON.stringify(internalOutlets)),
         FirebaseStorage.setAppState('rbm_outlet_names', JSON.stringify(names))
@@ -1253,12 +1405,13 @@ var user = {};
       });
     }).then(function(authorized) {
       if (authorized === false) {
-        showPoLinkView();
-        setPoLinkMessage('Link PO ini hanya dapat dibuka setelah login dengan akun Central Kitchen.', true);
+        if (standaloneKitchenQueueMode) showKitchenQueueLinkView();
+        else showPoLinkView();
+        setPoLinkMessage('Link ini hanya dapat dibuka setelah login dengan akun Central Kitchen.', true);
         return;
       }
       orderRef = db.ref('rbm_pro/central_kitchen/orders');
-      if (!standalonePoLinkMode) {
+      if (!standalonePoLinkMode && !standaloneKitchenQueueMode) {
         loadKitchenCatalog();
         window.setInterval(loadKitchenCatalog, 60000);
       }
@@ -1268,6 +1421,11 @@ var user = {};
         showPoLinkView();
         if (isCentralKitchenAccount()) loadSharedOrder(requestedPoId);
         else setPoLinkMessage('Link PO ini hanya dapat dibuka oleh akun Central Kitchen.', true);
+      }
+      else if (standaloneKitchenQueueMode) {
+        showKitchenQueueLinkView();
+        if (isCentralKitchenAccount()) loadOrderPage('incoming', 'first');
+        else setPoLinkMessage('Link PO Masuk hanya dapat digunakan oleh akun Central Kitchen.', true);
       }
       else if (requestedPoId && isKitchen) loadSharedOrder(requestedPoId);
       else if (requestedPoId) {
@@ -1288,6 +1446,9 @@ var user = {};
       if (standalonePoLinkMode) {
         showPoLinkView();
         setPoLinkMessage(error.message || 'Gagal memuat PO.', true);
+      } else if (standaloneKitchenQueueMode) {
+        showKitchenQueueLinkView();
+        setPoLinkMessage(error.message || 'Gagal memuat PO masuk.', true);
       } else {
         message('ck-order-message', error.message || 'Gagal memuat data Central Kitchen.', true);
         document.getElementById('ck-catalog-message').textContent = error.message || 'Database tidak tersedia.';
@@ -1301,7 +1462,7 @@ var user = {};
   document.getElementById('ck-order-catalog-search').addEventListener('input', renderOrderCatalog);
   document.getElementById('ck-submit-order').addEventListener('click', submitOrder);
   document.getElementById('ck-copy-kitchen-link').addEventListener('click', function() {
-    copyLink(appLink({ view: 'kitchen', outlet: KITCHEN_ID }), this);
+    copyLink(appLink({ view: 'kitchen', mode: 'incoming', outlet: KITCHEN_ID }), this);
   });
   document.getElementById('ck-refresh').addEventListener('click', function() {
     loadOrderPage('history', 'first');
