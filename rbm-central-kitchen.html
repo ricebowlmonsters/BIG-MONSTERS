@@ -408,9 +408,10 @@ var user = {};
     });
   }
   function labelForOutlet(id) {
+    id = String(id || '');
     var names = {};
     try { names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}'); } catch (error) {}
-    return names[id] || (id === KITCHEN_ID ? 'Central Kitchen' : (id.indexOf(' ') >= 0 ? id : id.replace(/[-_]/g, ' ').replace(/\b\w/g, function(char) { return char.toUpperCase(); })));
+    return names[id] || (id === KITCHEN_ID ? 'Central Kitchen' : (id ? (id.indexOf(' ') >= 0 ? id : id.replace(/[-_]/g, ' ').replace(/\b\w/g, function(char) { return char.toUpperCase(); })) : 'Outlet tidak diketahui'));
   }
   function allocateOrderNumber(timestamp) {
     var date = new Date(timestamp);
@@ -767,14 +768,20 @@ var user = {};
     updateLinePrice(empty);
     updateOrderTotal();
   }
+  function normalizeOrderItems(items) {
+    var values = Array.isArray(items) ? items : (items && typeof items === 'object' ? Object.values(items) : []);
+    return values.filter(function(item) { return item && typeof item === 'object'; });
+  }
   function renderItems(items, actual) {
+    items = normalizeOrderItems(items);
     return '<div class="ck-item-list ck-fulfilled-list"><div class="ck-item-row ck-item-head"><span>Barang</span><span class="ck-item-value">Diminta</span>' + (actual ? '<span class="ck-item-value">Dikirim</span>' : '') + '<span class="ck-item-value">Harga</span>' + (actual ? '<span class="ck-item-value">Subtotal</span>' : '') + '</div>' + items.map(function(item) {
       var shipped = actual && item.shippedQuantity != null ? item.shippedQuantity : item.quantity;
       return '<div class="ck-item-row"><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity || 0).toLocaleString('id-ID') + '</span>' + (actual ? '<span class="ck-item-value" data-label="Dikirim">' + Number(shipped || 0).toLocaleString('id-ID') + '</span>' : '') + '<span class="ck-item-value" data-label="Harga">' + money(item.unitPrice) + '</span>' + (actual ? '<span class="ck-item-value" data-label="Subtotal">' + money(shipped * item.unitPrice) + '</span>' : '') + '</div>';
     }).join('') + '</div>';
   }
   function renderRequestedItems(order) {
-    return '<div class="ck-item-list"><div class="ck-item-row ck-item-head ck-requested-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span></div>' + (order.items || []).map(function(item) {
+    var items = normalizeOrderItems(order.items);
+    return '<div class="ck-item-list"><div class="ck-item-row ck-item-head ck-requested-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span></div>' + items.map(function(item) {
       return '<div class="ck-item-row ck-requested-row"><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity || 0).toLocaleString('id-ID') + ' ' + safe(item.unit) + '</span></div>';
     }).join('') + (order.note ? '<div class="ck-muted" style="padding-top:8px">Catatan outlet: ' + safe(order.note) + '</div>' : '') + '</div>';
   }
@@ -885,24 +892,41 @@ var user = {};
     if (!orderRef) return Promise.resolve();
     var page = orderPages[type];
     if (direction !== 'first' && !page.rows.length) direction = 'first';
-    var boundary = direction === 'older' ? page.rows[page.rows.length - 1] : page.rows[0];
     var requestId = ++page.requestId;
-    return orderPageQuery(type, direction).once('value').then(function(snapshot) {
+    var allOutletHistory = type === 'history' && isKitchen && !document.getElementById('ck-history-outlet').value;
+    var query = allOutletHistory ? orderRef.once('value') : orderPageQuery(type, direction).once('value');
+    return query.then(function(snapshot) {
       if (requestId !== page.requestId) return;
       var values = snapshot.val() || {};
       var rows = Object.keys(values).map(function(id) { return Object.assign({ id: id }, values[id]); });
-      rows.sort(function(a, b) { return String(b.id).localeCompare(String(a.id)); });
-      if (direction === 'first') {
-        page.hasOlder = rows.length > PAGE_SIZE;
-        page.hasNewer = false;
-        page.page = 1;
+
+      if (allOutletHistory) {
+        rows.sort(function(a, b) {
+          return (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0) || String(b.id).localeCompare(String(a.id));
+        });
+        var offset = direction === 'older'
+          ? page.page * PAGE_SIZE
+          : (direction === 'newer' ? Math.max(0, (page.page - 2) * PAGE_SIZE) : 0);
+        page.page = Math.floor(offset / PAGE_SIZE) + 1;
+        page.rows = rows.slice(offset, offset + PAGE_SIZE);
+        page.hasNewer = offset > 0;
+        page.hasOlder = offset + page.rows.length < rows.length;
       } else {
-        rows = rows.filter(function(order) { return order.id !== boundary.id; });
-        page.hasOlder = direction === 'older' ? rows.length > PAGE_SIZE : true;
-        page.hasNewer = direction === 'newer' ? rows.length > PAGE_SIZE : true;
-        page.page += direction === 'older' ? 1 : -1;
+        var boundary = direction === 'older' ? page.rows[page.rows.length - 1] : page.rows[0];
+        rows.sort(function(a, b) { return String(b.id).localeCompare(String(a.id)); });
+        if (direction === 'first') {
+          page.hasOlder = rows.length > PAGE_SIZE;
+          page.hasNewer = false;
+          page.page = 1;
+        } else {
+          rows = rows.filter(function(order) { return order.id !== boundary.id; });
+          page.hasOlder = direction === 'older' ? rows.length > PAGE_SIZE : true;
+          page.hasNewer = direction === 'newer' ? rows.length > PAGE_SIZE : true;
+          page.page += direction === 'older' ? 1 : -1;
+        }
+        page.rows = rows.slice(0, PAGE_SIZE);
       }
-      page.rows = rows.slice(0, PAGE_SIZE);
+
       if (type === 'history') renderOrders();
       else renderIncomingOrders();
     }).catch(function(error) {
@@ -922,7 +946,10 @@ var user = {};
       var editing = !kitchenQueue && fulfilled && canEditHistoryOrders && editingOrderIds[order.id];
       var status = fulfilled ? '<span class="ck-badge done">Dikirim</span>' : '<span class="ck-badge">Menunggu</span>';
       var total = fulfilled ? order.actualTotal : order.requestTotal;
-      var items = kitchenQueue && !fulfilled ? renderFulfillInputs(order) : (editing ? renderEditableFulfilledItems(order) : (fulfilled ? renderItems(order.items || [], true) : renderRequestedItems(order)));
+      var displayOrder = Object.assign({}, order, {
+        items: normalizeOrderItems(order.items)
+      });
+      var items = kitchenQueue && !fulfilled ? renderFulfillInputs(displayOrder) : (editing ? renderEditableFulfilledItems(displayOrder) : (fulfilled ? renderItems(displayOrder.items, true) : renderRequestedItems(displayOrder)));
       var deleteButton = canDeleteOrders ? '<button type="button" class="ck-button danger" data-delete-order="' + safe(order.id) + '">Hapus PO</button>' : '';
       var reprintButton = fulfilled ? '<button type="button" class="ck-button secondary" data-print-fulfilled-order="' + safe(order.id) + '">Cetak Ulang 3 SJ + 3 Nota</button>' : '';
       var editButton = canEditHistoryOrders && fulfilled ? (editing

@@ -13,6 +13,7 @@
       var shipped = fulfilled ? Number(item.shippedQuantity) || 0 : 0;
       return {
         name: item.name || 'Barang',
+        unit: item.unit || item.satuan || '',
         price: Number(item.unitPrice) || 0,
         quantity: fulfilled ? shipped : requested,
         requestedQuantity: requested,

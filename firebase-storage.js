@@ -757,7 +757,8 @@
           if (tglAkhir && d > tglAkhir) return;
           var debit = parseFloat(row.debit || row.keluar || 0) || 0;
           var kredit = parseFloat(row.kredit || row.masuk || 0) || 0;
-          runningSaldo = (parseFloat(row.saldo) || runningSaldo) - debit + kredit;
+          var storedSaldo = row.saldo != null && row.saldo !== '' ? parseFloat(row.saldo) : NaN;
+          runningSaldo = isFinite(storedSaldo) ? storedSaldo : runningSaldo - debit + kredit;
           filtered.push({
             no: filtered.length + 1,
             tanggal: row.tanggalStr || (d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear()),
@@ -805,7 +806,8 @@
           d.setHours(0, 0, 0, 0);
           var debit = parseFloat(row.debit || row.keluar || 0) || 0;
           var kredit = parseFloat(row.kredit || row.masuk || 0) || 0;
-          runningSaldo = (parseFloat(row.saldo) || runningSaldo) - debit + kredit;
+          var storedSaldo = row.saldo != null && row.saldo !== '' ? parseFloat(row.saldo) : NaN;
+          runningSaldo = isFinite(storedSaldo) ? storedSaldo : runningSaldo - debit + kredit;
           filtered.push({
             no: filtered.length + 1,
             tanggal: row.tanggalStr || (d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear()),
@@ -948,7 +950,8 @@
             var namaLower = ((r.nama || '') + '').toLowerCase();
             var debit = parseFloat(r.debit || r.keluar || 0) || 0;
             var kredit = parseFloat(r.kredit || r.masuk || 0) || 0;
-            runningSaldo = (parseFloat(r.saldo) || runningSaldo) - debit + kredit;
+            var storedSaldo = r.saldo != null && r.saldo !== '' ? parseFloat(r.saldo) : NaN;
+            runningSaldo = isFinite(storedSaldo) ? storedSaldo : runningSaldo - debit + kredit;
             totalDebit += debit;
             totalKredit += kredit;
 
@@ -1002,6 +1005,61 @@
         var saldoAwal = parseFloat(sumObj.saldoAwal) || 0;
         var runningSaldo = saldoAwal;
         var finalSaldoAkhir = saldoAwal;
+        var indexTotalDebit = 0, indexTotalKredit = 0;
+        keys.forEach(function(key) {
+          var row = obj[key] || {};
+          indexTotalDebit += parseFloat(row.debit || 0) || 0;
+          indexTotalKredit += parseFloat(row.kredit || 0) || 0;
+        });
+
+        var summaryTotalDebit = parseFloat(sumObj.totalDebit) || 0;
+        var summaryTotalKredit = parseFloat(sumObj.totalKredit) || 0;
+        var indexOutOfSync = Math.abs(indexTotalDebit - summaryTotalDebit) > 0.01
+          || Math.abs(indexTotalKredit - summaryTotalKredit) > 0.01;
+        if (indexOutOfSync && !search && !params._skipIndexRepair) {
+          var ledgerPath = getPettyCashPath(outletId);
+          var from = ym + '-01';
+          var endDay = new Date(parseInt(ym.slice(0, 4), 10), parseInt(ym.slice(5, 7), 10), 0).getDate();
+          var to = ym + '-' + ('0' + endDay).slice(-2);
+          return db.ref(ledgerPath).orderByKey().startAt(from).endAt(to).once('value').then(function(ledgerSnap) {
+            var root = ledgerSnap.val() || {};
+            if (outletId && root[outletId] && typeof root[outletId] === 'object') root = root[outletId];
+
+            var rebuiltIndex = {};
+            Object.keys(root).sort().forEach(function(dateKey) {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+              var node = root[dateKey];
+              var transactions = node && Array.isArray(node.transactions)
+                ? node.transactions
+                : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
+              transactions.forEach(function(transaction, index) {
+                var row = transaction || {};
+                var key = dateKey + '_' + ('000000' + index).slice(-6);
+                var indexRow = {
+                  tanggal: dateKey,
+                  nama: (row.nama || '').toString(),
+                  jumlah: row.jumlah != null ? row.jumlah : '',
+                  satuan: row.satuan || '',
+                  debit: parseFloat(row.debit || row.keluar || 0) || 0,
+                  kredit: parseFloat(row.kredit || row.masuk || 0) || 0,
+                  refDate: dateKey,
+                  refIndex: index
+                };
+                if (row.harga != null) indexRow.harga = row.harga;
+                rebuiltIndex[key] = indexRow;
+              });
+            });
+            return db.ref(idxPath).set(rebuiltIndex).then(function() {
+              return buildPettyCashMonthSummary(ym, outletId, 0);
+            }).then(function() {
+              var retryParams = Object.assign({}, params, { _skipIndexRepair: true });
+              return getPettyCashPage(retryParams);
+            });
+          }).catch(function(error) {
+            console.warn('Petty cash month index repair failed', error);
+            return runSlowPath();
+          });
+        }
         
         var allRows = [];
         var totalDebit = 0, totalKredit = 0;
@@ -1165,7 +1223,8 @@
           var r = arr[i] || {};
           var debit = parseFloat(r.debit || r.keluar || 0) || 0;
           var kredit = parseFloat(r.kredit || r.masuk || 0) || 0;
-          runningSaldo = (parseFloat(r.saldo) || runningSaldo) - debit + kredit;
+          var storedSaldo = r.saldo != null && r.saldo !== '' ? parseFloat(r.saldo) : NaN;
+          runningSaldo = isFinite(storedSaldo) ? storedSaldo : runningSaldo - debit + kredit;
 
           // Idempotent & urut: pad angka biar lexicographic == chronological
           var refIndexPadded = ('000000' + i).slice(-6);
@@ -1478,7 +1537,14 @@
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
         var node = root[dateKey];
         var arr = node && Array.isArray(node.transactions) ? node.transactions : (node && node.transactions && typeof node.transactions === 'object' ? Object.values(node.transactions) : []);
-        arr.forEach(function(row) { list.push(row); });
+        arr.forEach(function(row, index) {
+          row = row && typeof row === 'object' ? row : {};
+          list.push(Object.assign({}, row, {
+            tanggal: row.tanggal || dateKey,
+            date: row.date || dateKey,
+            _firebaseIndexInDate: index
+          }));
+        });
       });
       return list;
     });
@@ -1597,15 +1663,12 @@
       var trx = normalized[x];
       var debit = parseNumber(trx.debit || trx.keluar || 0);
       var kredit = parseNumber(trx.kredit || trx.masuk || 0);
+      var saldoSebelumTransaksi = runningSaldo;
       runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
       
       if (lastKreditTxIndex >= 0 && x === lastKreditTxIndex) {
-        if (x > 0 && normalized[x - 1]) {
-          saldoSebelumLastKredit = roundCurrencyValue(parseNumber(normalized[x - 1].saldo || 0));
-        } else {
-          saldoSebelumLastKredit = 0;
-        }
-        saldoAtLastKredit = roundCurrencyValue(saldoSebelumLastKredit + kredit);
+        saldoSebelumLastKredit = roundCurrencyValue(saldoSebelumTransaksi);
+        saldoAtLastKredit = runningSaldo;
       }
     }
 
@@ -1652,8 +1715,30 @@
   function buildAndSavePettyCashRecapSnapshot(outletId) {
     return getPettyCashFullList(outletId).then(function(list) {
       var recap = buildPettyCashRecapSnapshotFromList(list);
-      return savePettyCashRecapSnapshot(outletId, recap);
-    }).catch(function() { return null; });
+      var latestDate = '';
+      list.forEach(function(row) {
+        var date = normalizeDateKeyToYyyyMmDd(row && (row.tanggal || row.date));
+        if (date > latestDate) latestDate = date;
+      });
+      var latestMonth = latestDate ? latestDate.slice(0, 7) : '';
+      if (!latestMonth) return savePettyCashRecapSnapshot(outletId, recap);
+      return getPettyCashMonthSummary(latestMonth, outletId).then(function(summary) {
+        if (summary && summary.saldoAkhir != null) {
+          recap.sisa = parseFloat(summary.saldoAkhir) || 0;
+          if (recap.lastKredit) {
+            recap.saldoAtLastKredit = recap.sisa + (parseFloat(recap.totalDebitSince) || 0);
+            recap.saldoSebelumLastKredit = recap.saldoAtLastKredit - (parseFloat(recap.lastKredit) || 0);
+          }
+        }
+        return savePettyCashRecapSnapshot(outletId, recap);
+      }).catch(function(error) {
+        console.warn('getPettyCashMonthSummary for recap snapshot failed', error);
+        return savePettyCashRecapSnapshot(outletId, recap);
+      });
+    }).catch(function(error) {
+      console.warn('buildAndSavePettyCashRecapSnapshot failed', error);
+      return null;
+    });
   }
 
   function updatePettyCashTransactionByDateAndIndex(dateStr, indexInDate, data, outletId) {

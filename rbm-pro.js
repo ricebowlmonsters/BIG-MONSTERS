@@ -2412,16 +2412,13 @@ function getPettyCashRecapForPengajuan(cb) {
             var trx = list[i];
             var debit = parseNumber(trx.debit || trx.keluar || 0);
             var kredit = parseNumber(trx.kredit || trx.masuk || 0);
+            var saldoSebelumTransaksi = runningSaldo;
             runningSaldo = roundCurrencyValue(runningSaldo - debit + kredit);
             
-            // Jika ini kredit terakhir, gunakan saldo yang disimpan dari transaksi sebelumnya
+            // Use the same running ledger balance as the petty cash book, not a possibly stale stored row balance.
             if (lastKreditTxIndex >= 0 && i === lastKreditTxIndex) {
-                if (lastKreditTxIndex > 0 && list[lastKreditTxIndex - 1]) {
-                    saldoSebelumLastKredit = roundCurrencyValue(parseNumber(list[lastKreditTxIndex - 1].saldo || 0));
-                } else {
-                    saldoSebelumLastKredit = 0;
-                }
-                saldoAtLastKredit = roundCurrencyValue(saldoSebelumLastKredit + kredit);
+                saldoSebelumLastKredit = roundCurrencyValue(saldoSebelumTransaksi);
+                saldoAtLastKredit = runningSaldo;
             }
         }
 
@@ -2454,10 +2451,31 @@ function getPettyCashRecapForPengajuan(cb) {
                 : ' (Tgl ' + unreimbursedDates[0] + ' s/d ' + unreimbursedDates[unreimbursedDates.length - 1] + ')';
         }
         var computedRecap = { lastKredit: lastKredit, lastKreditDate: lastKreditDate, totalDebitSince: totalDebitSince, sisa: sisa, detailsSince: detailsSince, saldoAtLastKredit: saldoAtLastKredit, saldoSebelumLastKredit: saldoSebelumLastKredit, unreimbursedDateRange: rangeStr };
-        if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.savePettyCashRecapSnapshot) {
-            FirebaseStorage.savePettyCashRecapSnapshot(outlet, computedRecap).catch(function() {});
+        var latestTransaction = list.length ? list[list.length - 1] : null;
+        var latestTime = latestTransaction ? parseDateValue(latestTransaction.tanggal || latestTransaction.date) : 0;
+        var latestDate = latestTime ? new Date(latestTime) : null;
+        var latestMonth = latestDate ? latestDate.getFullYear() + '-' + ('0' + (latestDate.getMonth() + 1)).slice(-2) : '';
+        var finish = function(monthSummary) {
+            if (monthSummary && monthSummary.saldoAkhir != null) {
+                computedRecap.sisa = roundCurrencyValue(parseNumber(monthSummary.saldoAkhir));
+                if (lastKreditTx) {
+                    computedRecap.saldoAtLastKredit = roundCurrencyValue(computedRecap.sisa + totalDebitSince);
+                    computedRecap.saldoSebelumLastKredit = roundCurrencyValue(computedRecap.saldoAtLastKredit - lastKredit);
+                }
+            }
+            if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.savePettyCashRecapSnapshot) {
+                FirebaseStorage.savePettyCashRecapSnapshot(outlet, computedRecap).catch(function() {});
+            }
+            cb(computedRecap);
+        };
+        if (latestMonth && useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.getPettyCashMonthSummary) {
+            FirebaseStorage.getPettyCashMonthSummary(latestMonth, outlet).then(finish).catch(function(error) {
+                console.warn('getPettyCashMonthSummary for recap failed', error);
+                finish(null);
+            });
+        } else {
+            finish(null);
         }
-        cb(computedRecap);
     }
     
     getAllTransactions().then(processTransactions).catch(() => processTransactions([]));

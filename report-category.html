@@ -12,6 +12,26 @@
     .table th { background: #f9fafb; font-weight: 600; color: #374151; }
     .muted { color: #6b7280; }
     .filter-info { background: #eef2ff; padding: 10px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; color: #4C2A85; border: 1px solid #e6e0ff; }
+    .report-mode-switch { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .report-mode-switch[hidden] { display: none; }
+    .report-mode-button { padding: 9px 14px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; color: #374151; cursor: pointer; font-weight: 600; }
+    .report-mode-button.active { border-color: #4C2A85; background: #4C2A85; color: #fff; }
+    .report-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 14px; padding: 12px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; }
+    .filter-control { display: flex; flex-direction: column; gap: 6px; }
+    .filter-control label { font-size: 12px; font-weight: 700; color: #374151; }
+    .filter-control select { width: 100%; min-height: 92px; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; font-size: 12px; }
+    .filter-actions { display: flex; align-items: end; }
+    .mini-btn { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; background: #f3f4f6; color: #374151; font-weight: 600; cursor: pointer; }
+    .summary-row { cursor: pointer; }
+    .summary-row:hover { background: #f9fafb; }
+    .summary-row .expand-indicator { display: inline-block; width: 14px; text-align: center; color: #6b7280; font-weight: 700; }
+    .detail-row td { background: #fafbff; }
+    .detail-box { padding: 10px 12px; }
+    .detail-box-title { font-size: 12px; font-weight: 700; color: #4C2A85; margin-bottom: 8px; }
+    .detail-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .detail-table th, .detail-table td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    .detail-table th { background: #f3f4f6; font-weight: 700; color: #374151; }
+    .detail-table td:nth-child(2), .detail-table th:nth-child(2) { text-align: right; }
   </style>
 </head>
 <body>
@@ -22,13 +42,31 @@
     </header>
     <main class="content">
       <div id="filter-info" class="filter-info">Memuat filter...</div>
+      <div id="report-mode-switch" class="report-mode-switch" role="group" aria-label="Pilih pengelompokan laporan" hidden>
+        <button type="button" class="report-mode-button active" data-report-mode="category" aria-pressed="true">Berdasarkan Kategori</button>
+        <button type="button" class="report-mode-button" data-report-mode="outlet" aria-pressed="false">Berdasarkan Outlet Tujuan</button>
+      </div>
+
+      <div id="report-filters" class="report-filters" hidden>
+        <div class="filter-control">
+          <label for="outlet-filter">Outlet</label>
+          <select id="outlet-filter" multiple size="6"></select>
+        </div>
+        <div class="filter-control">
+          <label for="category-filter">Kategori</label>
+          <select id="category-filter" multiple size="6"></select>
+        </div>
+        <div class="filter-actions">
+          <button type="button" id="apply-report-filters" class="mini-btn">Terapkan Filter</button>
+        </div>
+      </div>
 
       <section class="card">
         <table class="table" id="category-sales-table">
           <thead>
             <tr>
               <th>Kategori</th>
-              <th style="text-align:center;">Terjual (Qty)</th>
+              <th style="text-align:center;">Terjual (Qty / Satuan)</th>
               <th>Total (Sebelum PPN)</th>
               <th>Total (Sesudah PPN)</th>
             </tr>
@@ -47,6 +85,8 @@
   <!-- <script src="menu.js"></script> --> <!-- [DIHAPUS] Tidak lagi menggunakan data statis -->
   <script>
     function formatRupiah(n) { return 'Rp ' + Math.round(n).toLocaleString('id-ID'); }
+    function formatQuantity(value) { return Number(value || 0).toLocaleString('id-ID'); }
+    function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])); }
     function toStartOfDay(date) { const d = new Date(date); d.setHours(0,0,0,0); return d.getTime(); }
     function toEndOfDay(date) { const d = new Date(date); d.setHours(23,59,59,999); return d.getTime(); }
 
@@ -62,15 +102,61 @@
       const useMonthToDate = isCentralKitchen && ((!requestedFrom && !requestedTo) || (requestedFrom === todayStr && requestedTo === todayStr));
       const dateFrom = useMonthToDate ? monthStartStr : (requestedFrom || todayStr);
       const dateTo = requestedTo || todayStr;
+      let reportMode = 'category';
 
       document.getElementById('filter-info').innerHTML = `\n        <strong>Outlet:</strong> ${outlet.toUpperCase()} &nbsp;|&nbsp; \n        <strong>Tanggal:</strong> ${dateFrom} s/d ${dateTo}\n      `;
 
       const tbody = document.querySelector('#category-sales-table tbody');
       const tableHead = document.querySelector('#category-sales-table thead');
+      const modeSwitch = document.getElementById('report-mode-switch');
+      const reportFilters = document.getElementById('report-filters');
+      const outletFilter = document.getElementById('outlet-filter');
+      const categoryFilter = document.getElementById('category-filter');
+      const applyReportFilters = document.getElementById('apply-report-filters');
+      let selectedOutletFilter = [];
+      let selectedCategoryFilter = [];
+
+      function populateFilterOptions(groups) {
+        const outletMap = new Map();
+        const categorySet = new Set();
+
+        groups.forEach(group => {
+          const outletValue = String(group.outletId || group.outletName || '').trim();
+          const outletName = group.outletName || group.outletId || 'Outlet';
+          if (outletValue) outletMap.set(outletValue, outletName);
+          if (group.category) categorySet.add(group.category);
+        });
+
+        outletFilter.innerHTML = '';
+        [...outletMap.entries()].sort((a, b) => a[1].localeCompare(b[1], 'id')).forEach(([value, label]) => {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = label;
+          option.selected = selectedOutletFilter.includes(value);
+          outletFilter.appendChild(option);
+        });
+
+        categoryFilter.innerHTML = '';
+        [...categorySet].sort((a, b) => a.localeCompare(b, 'id')).forEach(value => {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = value;
+          option.selected = selectedCategoryFilter.includes(value);
+          categoryFilter.appendChild(option);
+        });
+      }
+
+      function syncSelectedFilters() {
+        selectedOutletFilter = Array.from(outletFilter.selectedOptions).map(option => option.value);
+        selectedCategoryFilter = Array.from(categoryFilter.selectedOptions).map(option => option.value);
+      }
+
       if (isCentralKitchen) {
         document.querySelector('.page-title').textContent = 'Laporan Pembelian Central Kitchen per Kategori';
-        document.getElementById('filter-info').innerHTML = `<strong>Sumber:</strong> Central Kitchen &nbsp;|&nbsp; <strong>Tujuan:</strong> Dipisahkan per outlet &nbsp;|&nbsp; <strong>Tanggal kirim:</strong> ${dateFrom} s/d ${dateTo}`;
-        tableHead.innerHTML = '<tr><th>Outlet Tujuan</th><th>Kategori</th><th style="text-align:center;">Dikirim (Qty)</th><th>Nilai Barang</th><th>Nilai Nota</th></tr>';
+        modeSwitch.hidden = false;
+        reportFilters.hidden = false;
+        document.getElementById('filter-info').innerHTML = `<strong>Sumber:</strong> Central Kitchen &nbsp;|&nbsp; <strong>Pengelompokan:</strong> Berdasarkan kategori &nbsp;|&nbsp; <strong>Tanggal kirim:</strong> ${dateFrom} s/d ${dateTo}`;
+        tableHead.innerHTML = '<tr><th>Outlet Tujuan</th><th>Kategori</th><th style="text-align:center;">Dikirim (Qty / Satuan)</th><th>Nilai Barang</th><th>Nilai Nota</th></tr>';
       }
 
       const firebaseConfig = {
@@ -108,14 +194,20 @@
         return parseFloat(str) || 0;
       };
 
+      function formatQuantityWithUnits(quantityByUnit) {
+        return Object.entries(quantityByUnit)
+          .map(([unit, qty]) => `${formatQuantity(qty)}${unit ? ` ${escapeHtml(unit)}` : ''}`)
+          .join(', ');
+      }
+
       async function loadData() {
         const start = toStartOfDay(dateFrom);
         const end = toEndOfDay(dateTo);
 
-        tbody.innerHTML = '<tr><td colspan="' + (isCentralKitchen ? '5' : '4') + '" class="muted">Memuat data...</td></tr>';
+        const columnCount = isCentralKitchen ? (reportMode === 'outlet' ? 4 : 5) : 4;
+        tbody.innerHTML = '<tr><td colspan="' + columnCount + '" class="muted">Memuat data...</td></tr>';
 
         try {
-          // [BARU] Bangun lookup kategori dari data produk live di Firebase
           const nameToCategory = outlet === CentralKitchenReports.outletId
             ? await CentralKitchenReports.readCatalogCategories(db)
             : await buildCategoryLookup(outlet);
@@ -134,11 +226,8 @@
           orders.forEach(o => {
             const items = o.items ? (Array.isArray(o.items) ? o.items : Object.values(o.items)) : [];
             const grandTotal = parseNumber(o.payment?.total);
-
-            // Calculate gross item total for distribution
             let orderItemGross = 0;
             items.forEach(i => { orderItemGross += parseNumber(i.price) * parseNumber(i.quantity); });
-
             const distributionRatio = orderItemGross > 0 ? (grandTotal / orderItemGross) : 0;
 
             items.forEach(i => {
@@ -147,67 +236,157 @@
               const qty = parseNumber(i.quantity);
               const gross = parseNumber(i.price) * qty;
               const after = distributionRatio ? (gross * distributionRatio) : gross;
-
               const category = nameToCategory[keyName] || 'Lainnya';
-              const groupKey = isCentralKitchen ? String(o.outletId || '') + '|' + category : category;
-              if (!categories[groupKey]) categories[groupKey] = {
-                outletId: o.outletId || '',
-                outletName: o.outletName || o.outletId || 'Outlet tidak diketahui',
-                category: category,
-                qty: 0,
-                totalBefore: 0,
-                totalAfter: 0
-              };
+              const groupKey = isCentralKitchen
+                ? (reportMode === 'outlet' ? String(o.outletId || '') : String(o.outletId || '') + '|' + category)
+                : category;
+
+              if (!categories[groupKey]) {
+                categories[groupKey] = {
+                  outletId: o.outletId || '',
+                  outletName: o.outletName || o.outletId || 'Outlet tidak diketahui',
+                  category: category,
+                  qty: 0,
+                  quantityByUnit: {},
+                  totalBefore: 0,
+                  totalAfter: 0,
+                  items: {}
+                };
+              }
 
               categories[groupKey].qty += qty;
+              const unit = String(i.unit || i.satuan || '').trim();
+              categories[groupKey].quantityByUnit[unit] = (categories[groupKey].quantityByUnit[unit] || 0) + qty;
               categories[groupKey].totalBefore += gross;
               categories[groupKey].totalAfter += after;
+
+              const itemKey = `${name.toLowerCase()}|${unit.toLowerCase()}`;
+              if (!categories[groupKey].items[itemKey]) {
+                categories[groupKey].items[itemKey] = { name, unit, qty: 0, total: 0 };
+              }
+              categories[groupKey].items[itemKey].qty += qty;
+              categories[groupKey].items[itemKey].total += gross;
             });
           });
 
-          // [BARU] Ambil daftar kategori dari Firebase untuk nama yang lebih baik
           const categoriesSnap = await db.ref(`categories/${outlet}`).once('value');
           const categoryData = categoriesSnap.val() || [];
           const categoryMap = {};
-          if(Array.isArray(categoryData)) {
+          if (Array.isArray(categoryData)) {
             categoryData.forEach(c => { categoryMap[c.value] = c.name; });
           }
 
-          tbody.innerHTML = '';
-          const sorted = Object.keys(categories).sort((a,b) => categories[b].qty - categories[a].qty);
+          const rows = Object.values(categories).map(d => ({
+            ...d,
+            categoryLabel: categoryMap[d.category] || d.category
+          }));
 
-          if (sorted.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="' + (isCentralKitchen ? '5' : '4') + '" class="muted" style="text-align:center;">Tidak ada data pada rentang tanggal ini.</td></tr>';
+          populateFilterOptions(rows);
+
+          tbody.innerHTML = '';
+          const filteredRows = rows.filter(d => {
+            const outletOk = !selectedOutletFilter.length || selectedOutletFilter.includes(String(d.outletId || d.outletName || ''));
+            const categoryOk = !selectedCategoryFilter.length || selectedCategoryFilter.includes(d.category || 'Lainnya');
+            return outletOk && categoryOk;
+          });
+
+          if (!filteredRows.length) {
+            tbody.innerHTML = '<tr><td colspan="' + columnCount + '" class="muted" style="text-align:center;">Tidak ada data pada rentang tanggal ini.</td></tr>';
             return;
           }
 
-          let totalQty = 0, totalBefore = 0, totalAfter = 0;
-          sorted.forEach(groupKey => {
-            const d = categories[groupKey];
-            totalQty += d.qty;
+          let totalBefore = 0, totalAfter = 0;
+          const totalQuantityByUnit = {};
+          filteredRows.forEach(d => {
+            Object.entries(d.quantityByUnit).forEach(([unit, qty]) => {
+              totalQuantityByUnit[unit] = (totalQuantityByUnit[unit] || 0) + qty;
+            });
             totalBefore += d.totalBefore;
             totalAfter += d.totalAfter;
 
-            const categoryDisplayName = categoryMap[d.category] || d.category;
+            const itemDetails = Object.values(d.items).sort((a, b) => b.qty - a.qty || b.total - a.total);
+            const detailRowsHtml = itemDetails.length ? `
+              <div class="detail-box">
+                <div class="detail-box-title">Detail Barang</div>
+                <table class="detail-table">
+                  <thead>
+                    <tr><th>Barang</th><th>Qty / Satuan</th><th>Total</th></tr>
+                  </thead>
+                  <tbody>
+                    ${itemDetails.map(item => `
+                      <tr>
+                        <td>${escapeHtml(item.name)}</td>
+                        <td>${formatQuantity(item.qty)}${item.unit ? ` ${escapeHtml(item.unit)}` : ''}</td>
+                        <td>${formatRupiah(item.total)}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            ` : '<div class="detail-box"><div class="detail-box-title">Detail Barang</div><div class="muted">Tidak ada rincian item.</div></div>';
 
             const tr = document.createElement('tr');
+            tr.className = 'summary-row';
             tr.innerHTML = isCentralKitchen
-              ? `<td>${d.outletName}</td><td>${categoryDisplayName}</td><td style="text-align:center;">${d.qty}</td><td>${formatRupiah(d.totalBefore)}</td><td>${formatRupiah(d.totalAfter)}</td>`
-              : `<td>${categoryDisplayName}</td><td style="text-align:center;">${d.qty}</td><td>${formatRupiah(d.totalBefore)}</td><td>${formatRupiah(d.totalAfter)}</td>`;
+              ? (reportMode === 'outlet'
+                ? `<td><span class="expand-indicator">▸</span> ${escapeHtml(d.outletName)}</td><td style="text-align:center;">${formatQuantityWithUnits(d.quantityByUnit)}</td><td>${formatRupiah(d.totalBefore)}</td><td>${formatRupiah(d.totalAfter)}</td>`
+                : `<td><span class="expand-indicator">▸</span> ${escapeHtml(d.outletName)}</td><td>${escapeHtml(d.categoryLabel)}</td><td style="text-align:center;">${formatQuantityWithUnits(d.quantityByUnit)}</td><td>${formatRupiah(d.totalBefore)}</td><td>${formatRupiah(d.totalAfter)}</td>`)
+              : `<td><span class="expand-indicator">▸</span> ${escapeHtml(d.categoryLabel)}</td><td style="text-align:center;">${formatQuantityWithUnits(d.quantityByUnit)}</td><td>${formatRupiah(d.totalBefore)}</td><td>${formatRupiah(d.totalAfter)}</td>`;
             tbody.appendChild(tr);
+
+            const detailTr = document.createElement('tr');
+            detailTr.className = 'detail-row';
+            detailTr.style.display = 'none';
+            detailTr.innerHTML = `<td colspan="${isCentralKitchen ? (reportMode === 'outlet' ? 4 : 5) : 4}">${detailRowsHtml}</td>`;
+            tbody.appendChild(detailTr);
+
+            tr.addEventListener('click', () => {
+              const isHidden = detailTr.style.display === 'none';
+              detailTr.style.display = isHidden ? '' : 'none';
+              const indicator = tr.querySelector('.expand-indicator');
+              if (indicator) indicator.textContent = isHidden ? '▾' : '▸';
+            });
           });
 
           const trTotal = document.createElement('tr');
           trTotal.style.cssText = 'font-weight:bold; background-color:#f3f4f6; border-top:2px solid #e5e7eb;';
           trTotal.innerHTML = isCentralKitchen
-            ? `<td colspan="2">TOTAL KESELURUHAN</td><td style="text-align:center;">${totalQty}</td><td>${formatRupiah(totalBefore)}</td><td>${formatRupiah(totalAfter)}</td>`
-            : `<td>TOTAL KESELURUHAN</td><td style="text-align:center;">${totalQty}</td><td>${formatRupiah(totalBefore)}</td><td>${formatRupiah(totalAfter)}</td>`;
+            ? `<td colspan="${reportMode === 'outlet' ? '1' : '2'}">TOTAL KESELURUHAN</td><td style="text-align:center;">${formatQuantityWithUnits(totalQuantityByUnit)}</td><td>${formatRupiah(totalBefore)}</td><td>${formatRupiah(totalAfter)}</td>`
+            : `<td>TOTAL KESELURUHAN</td><td style="text-align:center;">${formatQuantityWithUnits(totalQuantityByUnit)}</td><td>${formatRupiah(totalBefore)}</td><td>${formatRupiah(totalAfter)}</td>`;
           tbody.appendChild(trTotal);
 
         } catch (err) {
           console.error(err);
-          tbody.innerHTML = `<tr><td colspan="${isCentralKitchen ? 5 : 4}" style="color:red;">Error: ${err.message}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="${columnCount}" style="color:red;">Error: ${err.message}</td></tr>`;
         }
+      }
+
+      applyReportFilters.addEventListener('click', () => {
+        syncSelectedFilters();
+        loadData();
+      });
+
+      if (isCentralKitchen) {
+        modeSwitch.addEventListener('click', event => {
+          const button = event.target.closest('[data-report-mode]');
+          if (!button || button.dataset.reportMode === reportMode) return;
+
+          reportMode = button.dataset.reportMode;
+          modeSwitch.querySelectorAll('[data-report-mode]').forEach(modeButton => {
+            const isActive = modeButton === button;
+            modeButton.classList.toggle('active', isActive);
+            modeButton.setAttribute('aria-pressed', String(isActive));
+          });
+
+          const isCategoryMode = reportMode === 'category';
+          document.querySelector('.page-title').textContent = `Laporan Pembelian Central Kitchen ${isCategoryMode ? 'per Kategori' : 'per Outlet Tujuan'}`;
+          document.getElementById('filter-info').innerHTML = `<strong>Sumber:</strong> Central Kitchen &nbsp;|&nbsp; <strong>Pengelompokan:</strong> Berdasarkan ${isCategoryMode ? 'kategori' : 'outlet tujuan'} &nbsp;|&nbsp; <strong>Tanggal kirim:</strong> ${dateFrom} s/d ${dateTo}`;
+          tableHead.innerHTML = isCategoryMode
+            ? '<tr><th>Outlet Tujuan</th><th>Kategori</th><th style="text-align:center;">Dikirim (Qty / Satuan)</th><th>Nilai Barang</th><th>Nilai Nota</th></tr>'
+            : '<tr><th>Outlet Tujuan</th><th style="text-align:center;">Dikirim (Qty / Satuan)</th><th>Nilai Barang</th><th>Nilai Nota</th></tr>';
+          syncSelectedFilters();
+          loadData();
+        });
       }
 
       loadData();
