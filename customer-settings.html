@@ -404,24 +404,12 @@
                 <p style="font-size: 10px; color: #6b7280; margin: 4px 0 0 24px;">Jika dimatikan, outlet ini tidak akan muncul di daftar lokasi pelanggan.</p>
             </div>
 
-            <div style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Gambar Outlet (Max 3)</div>
+            <div style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Gambar Outlet (1 gambar)</div>
             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-                <input type="file" id="outlet-img1-file" class="form-input" accept="image/*" style="font-size: 11px;">
-                <input type="hidden" id="outlet-img1-base64">
-                <img id="outlet-img1-preview" src="" style="width: 40px; height: 40px; object-fit: cover; display: none;">
-                <button id="btn-clear-img1" style="font-size: 10px; cursor: pointer;">X</button>
-            </div>
-            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-                <input type="file" id="outlet-img2-file" class="form-input" accept="image/*" style="font-size: 11px;">
-                <input type="hidden" id="outlet-img2-base64">
-                <img id="outlet-img2-preview" src="" style="width: 40px; height: 40px; object-fit: cover; display: none;">
-                <button id="btn-clear-img2" style="font-size: 10px; cursor: pointer;">X</button>
-            </div>
-            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-                <input type="file" id="outlet-img3-file" class="form-input" accept="image/*" style="font-size: 11px;">
-                <input type="hidden" id="outlet-img3-base64">
-                <img id="outlet-img3-preview" src="" style="width: 40px; height: 40px; object-fit: cover; display: none;">
-                <button id="btn-clear-img3" style="font-size: 10px; cursor: pointer;">X</button>
+                <input type="file" id="outlet-image-file" class="form-input" accept="image/*" style="font-size: 11px;">
+                <input type="hidden" id="outlet-image-base64">
+                <img id="outlet-image-preview" src="" alt="Pratinjau gambar outlet" style="width: 64px; height: 64px; object-fit: cover; display: none;">
+                <button id="btn-clear-outlet-image" type="button" style="font-size: 10px; cursor: pointer;">Hapus</button>
             </div>
 
             <div style="display: flex; gap: 8px; margin-top: 12px;">
@@ -654,15 +642,9 @@
       const outletLink2Input = document.getElementById('outlet-link-2');
       const outletLink3Input = document.getElementById('outlet-link-3');
       const outletOrderingEnabledInput = document.getElementById('outlet-ordering-enabled');
-      const outletImg1File = document.getElementById('outlet-img1-file');
-      const outletImg1Base64 = document.getElementById('outlet-img1-base64');
-      const outletImg1Preview = document.getElementById('outlet-img1-preview');
-      const outletImg2File = document.getElementById('outlet-img2-file');
-      const outletImg2Base64 = document.getElementById('outlet-img2-base64');
-      const outletImg2Preview = document.getElementById('outlet-img2-preview');
-      const outletImg3File = document.getElementById('outlet-img3-file');
-      const outletImg3Base64 = document.getElementById('outlet-img3-base64');
-      const outletImg3Preview = document.getElementById('outlet-img3-preview');
+      const outletImageFile = document.getElementById('outlet-image-file');
+      const outletImageBase64 = document.getElementById('outlet-image-base64');
+      const outletImagePreview = document.getElementById('outlet-image-preview');
 
       // [BARU] Element Toggle Ordering
       const custEnableAiChat = document.getElementById('cust-enable-ai-chat');
@@ -716,9 +698,7 @@
       setupImageUpload(offer1File, offer1Base64, offer1Preview, 300, 'image/png', 'btn-clear-offer1');
       setupImageUpload(offer2File, offer2Base64, offer2Preview, 300, 'image/png', 'btn-clear-offer2');
       setupImageUpload(offer3File, offer3Base64, offer3Preview, 300, 'image/png', 'btn-clear-offer3');
-      setupImageUpload(outletImg1File, outletImg1Base64, outletImg1Preview, 400, 'image/png');
-      setupImageUpload(outletImg2File, outletImg2Base64, outletImg2Preview, 400, 'image/png');
-      setupImageUpload(outletImg3File, outletImg3Base64, outletImg3Preview, 400, 'image/png');
+      setupImageUpload(outletImageFile, outletImageBase64, outletImagePreview, 400, 'image/webp', null, 0.78);
 
       let currentOutlets = [];
 
@@ -821,10 +801,8 @@
               outletOrderingEnabledInput.checked = outlet.ordering_enabled !== false; // Default true
               document.getElementById('outlet-is-active').checked = outlet.is_active !== false; // Default true
               outletIdInput.dataset.auto = 'false'; // [BARU] Jangan auto-update saat edit
-              const imgs = outlet.images || [];
-              setImgState(outletImg1Base64, outletImg1Preview, imgs[0]);
-              setImgState(outletImg2Base64, outletImg2Preview, imgs[1]);
-              setImgState(outletImg3Base64, outletImg3Preview, imgs[2]);
+              const outletImage = outlet.image || (Array.isArray(outlet.images) ? outlet.images[0] : '');
+              setImgState(outletImageBase64, outletImagePreview, outletImage);
           } else {
               outletIndexInput.value = '-1';
               outletIdInput.value = '';
@@ -841,9 +819,8 @@
               outletOrderingEnabledInput.checked = true;
               document.getElementById('outlet-is-active').checked = true;
               outletIdInput.dataset.auto = 'true'; // [BARU] Aktifkan auto-update untuk item baru
-              setImgState(outletImg1Base64, outletImg1Preview, null);
-              setImgState(outletImg2Base64, outletImg2Preview, null);
-              setImgState(outletImg3Base64, outletImg3Preview, null);
+              outletImageFile.value = '';
+              setImgState(outletImageBase64, outletImagePreview, null);
           }
       }
 
@@ -879,10 +856,7 @@
 
       btnSaveOutletItem.addEventListener('click', () => {
           const idx = parseInt(outletIndexInput.value);
-          const images = [];
-          if (outletImg1Base64.value) images.push(outletImg1Base64.value);
-          if (outletImg2Base64.value) images.push(outletImg2Base64.value);
-          if (outletImg3Base64.value) images.push(outletImg3Base64.value);
+          const image = outletImageBase64.value;
 
           let id = outletIdInput.value.trim();
           // Jika ID kosong, generate dari nama
@@ -907,7 +881,8 @@
               },
               ordering_enabled: outletOrderingEnabledInput.checked,
               is_active: document.getElementById('outlet-is-active').checked,
-              images: images
+              image: image,
+              images: image ? [image] : []
           };
 
           if (!newOutlet.id || !newOutlet.name) { alert('ID dan Nama Outlet wajib diisi'); return; }
@@ -928,18 +903,12 @@
       });
 
       // Clear image buttons
-      [
-        {btn: 'btn-clear-img1', input: outletImg1File, base64: outletImg1Base64, prev: outletImg1Preview},
-        {btn: 'btn-clear-img2', input: outletImg2File, base64: outletImg2Base64, prev: outletImg2Preview},
-        {btn: 'btn-clear-img3', input: outletImg3File, base64: outletImg3Base64, prev: outletImg3Preview}
-      ].forEach(item => {
-          document.getElementById(item.btn).addEventListener('click', (e) => {
-              e.preventDefault();
-              item.input.value = '';
-              item.base64.value = '';
-              item.prev.src = '';
-              item.prev.style.display = 'none';
-          });
+      document.getElementById('btn-clear-outlet-image').addEventListener('click', (e) => {
+          e.preventDefault();
+          outletImageFile.value = '';
+          outletImageBase64.value = '';
+          outletImagePreview.src = '';
+          outletImagePreview.style.display = 'none';
       });
 
       // [BARU] Clear buttons for main settings

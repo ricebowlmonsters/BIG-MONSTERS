@@ -428,24 +428,12 @@
                 <p style="font-size: 10px; color: #6b7280; margin: 4px 0 0 24px;">Jika dimatikan, tombol reservasi akan disembunyikan di aplikasi customer.</p>
             </div>
             
-            <div style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Gambar Outlet (Max 3)</div>
+            <div style="font-size: 12px; font-weight: 600; margin-bottom: 4px; display: block;">Gambar Outlet (1 gambar)</div>
             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-                <input type="file" id="outlet-img1-file" class="form-input" accept="image/*" style="font-size: 11px;">
-                <input type="hidden" id="outlet-img1-base64">
-                <img id="outlet-img1-preview" src="" style="width: 40px; height: 40px; object-fit: cover; display: none;">
-                <button id="btn-clear-img1" style="font-size: 10px; cursor: pointer;">X</button>
-            </div>
-            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-                <input type="file" id="outlet-img2-file" class="form-input" accept="image/*" style="font-size: 11px;">
-                <input type="hidden" id="outlet-img2-base64">
-                <img id="outlet-img2-preview" src="" style="width: 40px; height: 40px; object-fit: cover; display: none;">
-                <button id="btn-clear-img2" style="font-size: 10px; cursor: pointer;">X</button>
-            </div>
-            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
-                <input type="file" id="outlet-img3-file" class="form-input" accept="image/*" style="font-size: 11px;">
-                <input type="hidden" id="outlet-img3-base64">
-                <img id="outlet-img3-preview" src="" style="width: 40px; height: 40px; object-fit: cover; display: none;">
-                <button id="btn-clear-img3" style="font-size: 10px; cursor: pointer;">X</button>
+                <input type="file" id="outlet-image-file" class="form-input" accept="image/*" style="font-size: 11px;">
+                <input type="hidden" id="outlet-image-base64">
+                <img id="outlet-image-preview" src="" alt="Pratinjau gambar outlet" style="width: 64px; height: 64px; object-fit: cover; display: none;">
+                <button id="btn-clear-outlet-image" type="button" style="font-size: 10px; cursor: pointer;">Hapus</button>
             </div>
 
             <div style="display: flex; gap: 8px; margin-top: 12px;">
@@ -524,6 +512,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js"></script>
   <script src="custom-ui.js"></script>
   <script src="firebase-storage.js"></script>
   <script>
@@ -678,15 +667,9 @@
       const outletLink2Input = document.getElementById('outlet-link-2');
       const outletLink3Input = document.getElementById('outlet-link-3');
       const outletOrderingEnabledInput = document.getElementById('outlet-ordering-enabled');
-      const outletImg1File = document.getElementById('outlet-img1-file');
-      const outletImg1Base64 = document.getElementById('outlet-img1-base64');
-      const outletImg1Preview = document.getElementById('outlet-img1-preview');
-      const outletImg2File = document.getElementById('outlet-img2-file');
-      const outletImg2Base64 = document.getElementById('outlet-img2-base64');
-      const outletImg2Preview = document.getElementById('outlet-img2-preview');
-      const outletImg3File = document.getElementById('outlet-img3-file');
-      const outletImg3Base64 = document.getElementById('outlet-img3-base64');
-      const outletImg3Preview = document.getElementById('outlet-img3-preview');
+      const outletImageFile = document.getElementById('outlet-image-file');
+      const outletImageBase64 = document.getElementById('outlet-image-base64');
+      const outletImagePreview = document.getElementById('outlet-image-preview');
       const outletBankInput = document.getElementById('outlet-bank');
       const outletRekeningInput = document.getElementById('outlet-rekening');
       const outletAtasnamaInput = document.getElementById('outlet-atasnama');
@@ -704,7 +687,64 @@
       const custScriptUrl = document.getElementById('cust-script-url');
       const saveCustSettingsBtn = document.getElementById('save-cust-settings-btn');
 
-      function setupImageUpload(fileInput, base64Input, previewImg, maxWidth, format = 'image/png', clearBtnId = null) {
+      function compressImageForStorage(dataUrl) {
+          return new Promise((resolve, reject) => {
+              const image = new Image();
+              image.onload = () => {
+                  const maxDimension = 1200;
+                  const scale = Math.min(1, maxDimension / image.width, maxDimension / image.height);
+                  const canvas = document.createElement('canvas');
+                  canvas.width = Math.max(1, Math.round(image.width * scale));
+                  canvas.height = Math.max(1, Math.round(image.height * scale));
+                  const context = canvas.getContext('2d');
+                  if (!context) {
+                      reject(new Error('Browser tidak dapat memproses gambar.'));
+                      return;
+                  }
+                  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                  const optimized = canvas.toDataURL('image/webp', 0.72);
+                  resolve(optimized.startsWith('data:image/webp,') ? optimized : dataUrl);
+              };
+              image.onerror = () => reject(new Error('Gambar gagal dibaca untuk diunggah.'));
+              image.src = dataUrl;
+          });
+      }
+
+      const imageUploadCache = new Map();
+
+      async function moveImagesToStorage(value, path = 'customer_app_settings') {
+          if (typeof value === 'string' && value.startsWith('data:image/')) {
+              if (!firebase.storage) {
+                  throw new Error('Firebase Storage tidak tersedia. Aktifkan Storage dan periksa konfigurasi Firebase.');
+              }
+              if (!imageUploadCache.has(value)) {
+                  imageUploadCache.set(value, (async () => {
+                      const optimized = await compressImageForStorage(value);
+                      const mimeType = optimized.slice(5, optimized.indexOf(';'));
+                      const extension = mimeType === 'image/webp' ? 'webp' : 'img';
+                      const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${extension}`;
+                      const imageRef = firebase.storage().ref(`${path}/${fileName}`);
+                      await imageRef.putString(optimized, 'data_url', { contentType: mimeType });
+                      return imageRef.getDownloadURL();
+                  })());
+              }
+              return imageUploadCache.get(value);
+          }
+
+          if (Array.isArray(value)) {
+              return Promise.all(value.map((item, index) => moveImagesToStorage(item, `${path}/${index}`)));
+          }
+          if (value && typeof value === 'object') {
+              const entries = await Promise.all(Object.entries(value).map(async ([key, item]) => {
+                  const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, '_');
+                  return [key, await moveImagesToStorage(item, `${path}/${safeKey}`)];
+              }));
+              return Object.fromEntries(entries);
+          }
+          return value;
+      }
+
+      function setupImageUpload(fileInput, base64Input, previewImg, maxWidth, format = 'image/png', clearBtnId = null, quality = 0.82) {
           if(!fileInput) return;
           fileInput.addEventListener('change', function() {
               if (this.files && this.files[0]) {
@@ -715,14 +755,15 @@
                       img.onload = function() {
                           const canvas = document.createElement('canvas');
                           const ctx = canvas.getContext('2d');
-                          const scale = maxWidth / img.width;
-                          const width = (img.width > maxWidth) ? maxWidth : img.width;
-                          const height = (img.width > maxWidth) ? img.height * scale : img.height;
+                          const maxHeight = maxWidth;
+                          const scale = Math.min(1, maxWidth / img.width, maxHeight / img.height);
+                          const width = Math.max(1, Math.round(img.width * scale));
+                          const height = Math.max(1, Math.round(img.height * scale));
                           canvas.width = width;
                           canvas.height = height;
                           ctx.clearRect(0, 0, width, height); // Pastikan canvas bersih/transparan
                           ctx.drawImage(img, 0, 0, width, height);
-                          const dataUrl = canvas.toDataURL(format); // Hapus parameter quality untuk PNG
+                          const dataUrl = canvas.toDataURL(format, quality);
                           previewImg.src = dataUrl;
                           previewImg.style.display = 'block';
                           base64Input.value = dataUrl;
@@ -738,16 +779,14 @@
       setupImageUpload(custLoginLogoFile, custLoginLogoBase64, custLoginLogoPreview, 200, 'image/png', 'btn-clear-login-logo');
       setupImageUpload(custPointIconFile, custPointIconBase64, custPointIconPreview, 100, 'image/png');
       setupImageUpload(custExchangeIconFile, custExchangeIconBase64, custExchangeIconPreview, 100, 'image/png');
-      setupImageUpload(custPromoFile, custPromoBase64, custPromoPreview, 500, 'image/png', 'btn-clear-promo');
-      setupImageUpload(banner1File, banner1Base64, banner1Preview, 800, 'image/png', 'btn-clear-banner1');
-      setupImageUpload(banner2File, banner2Base64, banner2Preview, 800, 'image/png', 'btn-clear-banner2');
-      setupImageUpload(banner3File, banner3Base64, banner3Preview, 800, 'image/png', 'btn-clear-banner3');
-      setupImageUpload(offer1File, offer1Base64, offer1Preview, 300, 'image/png', 'btn-clear-offer1');
-      setupImageUpload(offer2File, offer2Base64, offer2Preview, 300, 'image/png', 'btn-clear-offer2');
-      setupImageUpload(offer3File, offer3Base64, offer3Preview, 300, 'image/png', 'btn-clear-offer3');
-      setupImageUpload(outletImg1File, outletImg1Base64, outletImg1Preview, 400, 'image/png');
-      setupImageUpload(outletImg2File, outletImg2Base64, outletImg2Preview, 400, 'image/png');
-      setupImageUpload(outletImg3File, outletImg3Base64, outletImg3Preview, 400, 'image/png');
+      setupImageUpload(custPromoFile, custPromoBase64, custPromoPreview, 500, 'image/webp', 'btn-clear-promo', 0.78);
+      setupImageUpload(banner1File, banner1Base64, banner1Preview, 800, 'image/webp', 'btn-clear-banner1', 0.78);
+      setupImageUpload(banner2File, banner2Base64, banner2Preview, 800, 'image/webp', 'btn-clear-banner2', 0.78);
+      setupImageUpload(banner3File, banner3Base64, banner3Preview, 800, 'image/webp', 'btn-clear-banner3', 0.78);
+      setupImageUpload(offer1File, offer1Base64, offer1Preview, 300, 'image/webp', 'btn-clear-offer1', 0.78);
+      setupImageUpload(offer2File, offer2Base64, offer2Preview, 300, 'image/webp', 'btn-clear-offer2', 0.78);
+      setupImageUpload(offer3File, offer3Base64, offer3Preview, 300, 'image/webp', 'btn-clear-offer3', 0.78);
+      setupImageUpload(outletImageFile, outletImageBase64, outletImagePreview, 400, 'image/webp', null, 0.78);
 
       let currentOutlets = [];
 
@@ -836,10 +875,8 @@
               outletOrderingEnabledInput.checked = outlet.ordering_enabled !== false; // Default true
               document.getElementById('outlet-reservation-enabled').checked = outlet.reservation_enabled !== false;
               outletIdInput.dataset.auto = 'false'; // [BARU] Jangan auto-update saat edit
-              const imgs = outlet.images || [];
-              setImgState(outletImg1Base64, outletImg1Preview, imgs[0]);
-              setImgState(outletImg2Base64, outletImg2Preview, imgs[1]);
-              setImgState(outletImg3Base64, outletImg3Preview, imgs[2]);
+              const outletImage = outlet.image || (Array.isArray(outlet.images) ? outlet.images[0] : '');
+              setImgState(outletImageBase64, outletImagePreview, outletImage);
               outletBankInput.value = outlet.bank || '';
               outletRekeningInput.value = outlet.rekening || '';
               outletAtasnamaInput.value = outlet.atasnama || '';
@@ -861,9 +898,8 @@
               outletOrderingEnabledInput.checked = true;
               document.getElementById('outlet-reservation-enabled').checked = true;
               outletIdInput.dataset.auto = 'true'; // [BARU] Aktifkan auto-update untuk item baru
-              setImgState(outletImg1Base64, outletImg1Preview, null);
-              setImgState(outletImg2Base64, outletImg2Preview, null);
-              setImgState(outletImg3Base64, outletImg3Preview, null);
+              outletImageFile.value = '';
+              setImgState(outletImageBase64, outletImagePreview, null);
               outletBankInput.value = '';
               outletRekeningInput.value = '';
               outletAtasnamaInput.value = '';
@@ -904,10 +940,7 @@
 
       btnSaveOutletItem.addEventListener('click', () => {
           const idx = parseInt(outletIndexInput.value);
-          const images = [];
-          if (outletImg1Base64.value) images.push(outletImg1Base64.value);
-          if (outletImg2Base64.value) images.push(outletImg2Base64.value);
-          if (outletImg3Base64.value) images.push(outletImg3Base64.value);
+          const image = outletImageBase64.value;
 
           let id = outletIdInput.value.trim();
           // Jika ID kosong, generate dari nama
@@ -932,7 +965,8 @@
               },
               ordering_enabled: outletOrderingEnabledInput.checked,
               reservation_enabled: document.getElementById('outlet-reservation-enabled').checked,
-              images: images,
+              image: image,
+              images: image ? [image] : [],
               bank: outletBankInput.value.trim(),
               rekening: outletRekeningInput.value.trim(),
               atasnama: outletAtasnamaInput.value.trim(),
@@ -958,18 +992,12 @@
       });
 
       // Clear image buttons
-      [
-        {btn: 'btn-clear-img1', input: outletImg1File, base64: outletImg1Base64, prev: outletImg1Preview},
-        {btn: 'btn-clear-img2', input: outletImg2File, base64: outletImg2Base64, prev: outletImg2Preview},
-        {btn: 'btn-clear-img3', input: outletImg3File, base64: outletImg3Base64, prev: outletImg3Preview}
-      ].forEach(item => {
-          document.getElementById(item.btn).addEventListener('click', (e) => {
-              e.preventDefault();
-              item.input.value = '';
-              item.base64.value = '';
-              item.prev.src = '';
-              item.prev.style.display = 'none';
-          });
+      document.getElementById('btn-clear-outlet-image').addEventListener('click', (e) => {
+          e.preventDefault();
+          outletImageFile.value = '';
+          outletImageBase64.value = '';
+          outletImagePreview.src = '';
+          outletImagePreview.style.display = 'none';
       });
 
       // [BARU] Clear buttons for main settings
@@ -1149,6 +1177,9 @@
       }
 
       saveCustSettingsBtn.addEventListener('click', async () => {
+        const originalButtonText = saveCustSettingsBtn.textContent;
+        saveCustSettingsBtn.disabled = true;
+        imageUploadCache.clear();
         try {
           // Collect banners
           const banners = [];
@@ -1189,8 +1220,10 @@
               enable_game: custEnableGame.checked,
               enable_global_chat: custEnableGlobalChat.checked
           };
-          // [FIX] Gunakan update() bukan set() agar tidak menghapus data lain (outlets, dll)
-          await db.ref('customer_app_settings').update(settings);
+          saveCustSettingsBtn.textContent = 'Mengunggah gambar...';
+          const settingsWithImageUrls = await moveImagesToStorage(settings);
+          saveCustSettingsBtn.textContent = 'Menyimpan pengaturan...';
+          await db.ref('customer_app_settings').update(settingsWithImageUrls);
               
               // [DIUBAH] Full Sync Outlet ke System (rbm_outlets)
               const systemOutlets = currentOutlets.map(o => o.id).filter(id => id);
@@ -1207,6 +1240,9 @@
               CustomUI.success('Pengaturan Web Customer berhasil disimpan & Outlet disinkronkan!');
           } catch (e) {
               CustomUI.error('Gagal menyimpan: ' + e.message);
+          } finally {
+              saveCustSettingsBtn.disabled = false;
+              saveCustSettingsBtn.textContent = originalButtonText;
           }
       });
 
