@@ -305,6 +305,7 @@ var user = {};
           <div class="ck-cart-table-head"><span>Item</span><span>Qty</span><span>Satuan</span></div>
           <div id="ck-order-lines" class="ck-lines"></div>
           <div class="ck-actions"><button type="button" class="ck-button secondary" id="ck-add-line">Tambah Barang</button></div>
+          <div class="ck-field" id="ck-po-date-field" style="margin-top:14px" hidden><label for="ck-po-date">Tanggal PO</label><input id="ck-po-date" type="datetime-local"></div>
           <div class="ck-field" style="margin-top:14px"><label for="ck-note">Catatan outlet</label><input id="ck-note" maxlength="300" placeholder="Catatan pengiriman (opsional)"></div>
           <div id="ck-order-total" class="ck-total">Total: Rp 0</div>
           <button type="button" class="ck-button" id="ck-submit-order">Kirim PO</button>
@@ -386,6 +387,7 @@ var user = {};
   var canDeleteOrders = false;
   var canEditOrderPrices = false;
   var canEditHistoryOrders = false;
+  var canEditPoDate = false;
   var isKitchen = false;
   var catalogLoading = false;
   var orderEntryDisplayMode = 'cashier';
@@ -425,6 +427,12 @@ var user = {};
       var sequence = String(result.snapshot.val()).padStart(3, '0');
       return 'RBM-' + day + month + year.slice(-2) + sequence;
     });
+  }
+  function orderNumberDatePrefix(timestamp) {
+    var date = new Date(timestamp);
+    return String(date.getDate()).padStart(2, '0') +
+      String(date.getMonth() + 1).padStart(2, '0') +
+      String(date.getFullYear()).slice(-2);
   }
   function isTestOutlet(id) {
     return /\btest\b/i.test(String(id) + ' ' + labelForOutlet(id));
@@ -469,6 +477,12 @@ var user = {};
   function formatDate(value) {
     var date = new Date(Number(value) || value || Date.now());
     return isNaN(date.getTime()) ? '-' : date.toLocaleString('id-ID');
+  }
+  function formatDateTimeLocal(value) {
+    var date = new Date(Number(value) || value || '');
+    if (isNaN(date.getTime())) return '';
+    function pad(number) { return String(number).padStart(2, '0'); }
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes());
   }
   function buildWhatsAppOrderMessage(order, createdAt) {
     var itemLines = (order.items || []).map(function(item, index) {
@@ -959,9 +973,9 @@ var user = {};
         ? '<div class="ck-actions"><button type="button" class="ck-button" data-fulfill-order="' + safe(order.id) + '">Simpan &amp; Proses</button>' + deleteButton + '</div>'
         : (editing ? editButton + deleteButton : '<div class="ck-print-actions">' + (fulfilled ? printButtons(order.id) + reprintButton : '') + editButton + deleteButton + '</div>');
       if (kitchenQueue && (standalonePoLinkMode || !fulfilled)) {
-        return '<article class="ck-order-card ck-incoming-card"><header class="ck-order-head"><div><span class="ck-order-label">Nomor PO</span><strong class="ck-order-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></div><div><span class="ck-order-label">Outlet</span><strong class="ck-order-outlet">' + safe(labelForOutlet(order.outletId)) + '</strong></div><div><span class="ck-order-label">Status</span>' + status + '</div><div><span class="ck-order-label">Nilai PO</span><strong class="ck-order-amount">' + money(total) + '</strong></div></header><div class="ck-order-body"><details class="ck-order-details" open><summary>' + (fulfilled ? 'Rincian PO' : 'Periksa barang dan isi jumlah aktual') + '</summary>' + items + actions + '</details></div></article>';
+        return '<article class="ck-order-card ck-incoming-card"><header class="ck-order-head"><div><span class="ck-order-label">Nomor PO</span><strong class="ck-order-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(fulfilled ? order.invoiceAt || order.createdAt : order.createdAt)) + '</time></div><div><span class="ck-order-label">Outlet</span><strong class="ck-order-outlet">' + safe(labelForOutlet(order.outletId)) + '</strong></div><div><span class="ck-order-label">Status</span>' + status + '</div><div><span class="ck-order-label">Nilai PO</span><strong class="ck-order-amount">' + money(total) + '</strong></div></header><div class="ck-order-body"><details class="ck-order-details" open><summary>' + (fulfilled ? 'Rincian PO' : 'Periksa barang dan isi jumlah aktual') + '</summary>' + items + actions + '</details></div></article>';
       }
-      return '<tr><td><strong class="ck-cashier-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(order.createdAt)) + '</time></td><td>' + safe(labelForOutlet(order.outletId)) + '</td><td>' + status + '</td><td class="numeric"><strong>' + money(total) + '</strong></td><td><details class="ck-cashier-details" data-edit-order-details="' + safe(order.id) + '"' + (editing ? ' open' : '') + '><summary>Detail &amp; aksi</summary><div class="ck-cashier-detail-body">' + items + actions + '</div></details></td></tr>';
+      return '<tr><td><strong class="ck-cashier-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(fulfilled ? order.invoiceAt || order.createdAt : order.createdAt)) + '</time></td><td>' + safe(labelForOutlet(order.outletId)) + '</td><td>' + status + '</td><td class="numeric"><strong>' + money(total) + '</strong></td><td><details class="ck-cashier-details" data-edit-order-details="' + safe(order.id) + '"' + (editing ? ' open' : '') + '><summary>Detail &amp; aksi</summary><div class="ck-cashier-detail-body">' + items + actions + '</div></details></td></tr>';
     }).join('');
     if (kitchenQueue) return '<div class="ck-incoming-cards">' + rows + '</div>';
     return '<div class="ck-cashier-wrap"><table class="ck-cashier-table"><thead><tr><th>Nomor PO</th><th>Outlet</th><th>Status</th><th class="numeric">Nilai</th><th>Rincian</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
@@ -984,7 +998,7 @@ var user = {};
     }).map(function(id) {
       return '<option value="' + safe(id) + '">' + safe(catalog[id].name) + ' (' + safe(catalog[id].unit) + ')</option>';
     }).join('');
-    return '<div class="ck-fulfill-help">Ubah jumlah yang dikirim dan harga satuan, atau tambahkan/hapus barang. Jumlah PO awal tetap dicatat.</div><div class="ck-item-list ck-fulfilled-list"><div class="ck-item-row ck-item-head ck-edit-item-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span><span class="ck-item-value">Dikirim</span><span class="ck-item-value">Harga satuan</span><span></span></div>' + rows + '</div><div class="ck-edit-item-add"><div class="ck-field"><label>Tambah barang dari katalog</label><select data-edit-item-select><option value="">Pilih barang</option>' + options + '</select></div><button type="button" class="ck-button secondary" data-add-edit-item="' + safe(order.id) + '">Tambah Barang</button></div>';
+    return '<div class="ck-fulfill-help">Ubah tanggal nota, jumlah yang dikirim dan harga satuan, atau tambahkan/hapus barang. Jumlah PO awal tetap dicatat.</div><div class="ck-field" style="max-width:320px;margin-bottom:12px"><label for="ck-invoice-date-' + safe(order.id) + '">Tanggal nota</label><input id="ck-invoice-date-' + safe(order.id) + '" type="datetime-local" value="' + safe(formatDateTimeLocal(order.invoiceAt || order.shippedAt || order.createdAt)) + '" data-edit-invoice-date></div><div class="ck-item-list ck-fulfilled-list"><div class="ck-item-row ck-item-head ck-edit-item-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span><span class="ck-item-value">Dikirim</span><span class="ck-item-value">Harga satuan</span><span></span></div>' + rows + '</div><div class="ck-edit-item-add"><div class="ck-field"><label>Tambah barang dari katalog</label><select data-edit-item-select><option value="">Pilih barang</option>' + options + '</select></div><button type="button" class="ck-button secondary" data-add-edit-item="' + safe(order.id) + '">Tambah Barang</button></div>';
   }
   function addEditedOrderItem(orderId) {
     var order = orders[orderId];
@@ -1020,6 +1034,12 @@ var user = {};
     }
     var items = [];
     var invalid = false;
+    var invoiceDateInput = details.querySelector('[data-edit-invoice-date]');
+    var invoiceDate = new Date(invoiceDateInput.value);
+    if (!invoiceDateInput.value || isNaN(invoiceDate.getTime())) {
+      window.alert('Tanggal nota harus diisi dengan tanggal dan waktu yang valid.');
+      return;
+    }
     rows.forEach(function(row) {
       var itemId = row.querySelector('[data-edit-item-id]').value;
       var itemName = row.querySelector('[data-edit-name]').value;
@@ -1053,12 +1073,20 @@ var user = {};
     var orderPath = 'rbm_pro/central_kitchen/orders/' + orderId;
     updates[orderPath + '/items'] = items;
     updates[orderPath + '/actualTotal'] = actualTotal;
+    updates[orderPath + '/invoiceAt'] = invoiceDate.getTime();
     updates[orderPath + '/editedAt'] = firebase.database.ServerValue.TIMESTAMP;
     updates[orderPath + '/editedBy'] = user.nama || user.username || '';
+    var expectedNumberDate = orderNumberDatePrefix(invoiceDate.getTime());
+    var currentNumberDate = String(order.number || '').match(/^RBM-(\d{6})/);
+    var numberDateMismatch = !currentNumberDate || currentNumberDate[1] !== expectedNumberDate;
     button.disabled = true;
-    db.ref().update(updates).then(function() {
+    var numberPromise = numberDateMismatch ? allocateOrderNumber(invoiceDate.getTime()) : Promise.resolve(order.number);
+    numberPromise.then(function(number) {
+      if (number !== order.number) updates[orderPath + '/number'] = number;
+      return db.ref().update(updates).then(function() { return number; });
+    }).then(function(number) {
       delete editingOrderIds[orderId];
-      message('ck-order-message', 'Perubahan PO ' + order.number + ' berhasil disimpan.');
+      message('ck-order-message', 'Perubahan PO ' + number + ' berhasil disimpan.');
       return loadOrderPage('history', 'first');
     }).catch(function(error) {
       button.disabled = false;
@@ -1161,7 +1189,7 @@ var user = {};
       separator,
       'No. PO: ' + cleanPrintText(order.number),
       'Outlet: ' + cleanPrintText(labelForOutlet(order.outletId)),
-      'Tanggal: ' + cleanPrintText(formatDate(order.shippedAt)),
+      'Tanggal: ' + cleanPrintText(formatDate(documentType === 'invoice' ? order.invoiceAt || order.shippedAt : order.shippedAt)),
       'Diproses: ' + cleanPrintText(order.processedBy || '-'),
       separator
     ];
@@ -1288,7 +1316,7 @@ var user = {};
     if (!order || order.status !== 'fulfilled') return;
     var shippedItems = (order.items || []).filter(function(item) { return Number(item.shippedQuantity) > 0; });
     var paperWidth = document.getElementById('ck-paper-width').value === '58' ? 58 : 80;
-    var details = '<div class="details"><strong>No. PO:</strong> ' + safe(order.number) + '<br><strong>Outlet:</strong> ' + safe(labelForOutlet(order.outletId)) + '<br><strong>Tanggal:</strong> ' + safe(formatDate(order.shippedAt)) + '</div>';
+    var details = '<div class="details"><strong>No. PO:</strong> ' + safe(order.number) + '<br><strong>Outlet:</strong> ' + safe(labelForOutlet(order.outletId)) + '<br><strong>Tanggal:</strong> ' + safe(formatDate(documentType === 'invoice' ? order.invoiceAt || order.shippedAt : order.shippedAt)) + '</div>';
     var userDetails = '<div class="details"><strong>Dibuat oleh:</strong> ' + safe(order.createdBy || '-') + '<br><strong>Diproses oleh:</strong> ' + safe(order.processedBy || '-') + '</div>';
     var itemLines = shippedItems.map(function(item) {
       var quantity = Number(item.shippedQuantity).toLocaleString('id-ID');
@@ -1319,17 +1347,28 @@ var user = {};
     var duplicates = items.map(function(item) { return item.itemId; }).filter(function(id, index, all) { return all.indexOf(id) !== index; });
     if (duplicates.length) { message('ck-order-message', 'Pilih barang yang sama satu kali saja; ubah jumlah pada baris barang tersebut.', true); return; }
     var now = Date.now();
+    var createdAt = now;
+    if (canEditPoDate) {
+      var poDateValue = document.getElementById('ck-po-date').value;
+      var selectedPoDate = new Date(poDateValue);
+      if (!poDateValue || isNaN(selectedPoDate.getTime())) {
+        message('ck-order-message', 'Tanggal PO harus diisi dengan tanggal dan waktu yang valid.', true);
+        return;
+      }
+      createdAt = selectedPoDate.getTime();
+    }
     var whatsappWindow = window.open('about:blank', '_blank');
     document.getElementById('ck-submit-order').disabled = true;
-    allocateOrderNumber(now).then(function(number) {
+    allocateOrderNumber(createdAt).then(function(number) {
       var ref = orderRef.push();
-      var payload = { number: number, outletId: selectedOutlet, outletName: labelForOutlet(selectedOutlet), items: items, requestTotal: items.reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0), note: document.getElementById('ck-note').value.trim(), status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP, createdBy: user.nama || user.username || '' };
+      var payload = { number: number, outletId: selectedOutlet, outletName: labelForOutlet(selectedOutlet), items: items, requestTotal: items.reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0), note: document.getElementById('ck-note').value.trim(), status: 'pending', createdAt: canEditPoDate ? createdAt : firebase.database.ServerValue.TIMESTAMP, createdBy: user.nama || user.username || '' };
       return ref.set(payload).then(function() { return { number: number, payload: payload }; });
     }).then(function(result) {
       document.getElementById('ck-note').value = '';
+      if (canEditPoDate) document.getElementById('ck-po-date').value = formatDateTimeLocal(Date.now());
       document.getElementById('ck-order-lines').innerHTML = '';
       addOrderLine();
-      var whatsappText = buildWhatsAppOrderMessage(result.payload, now);
+      var whatsappText = buildWhatsAppOrderMessage(result.payload, createdAt);
       if (whatsappWindow && !whatsappWindow.closed) {
         whatsappWindow.location.href = 'https://wa.me/?text=' + encodeURIComponent(whatsappText);
         message('ck-order-message', 'PO ' + result.number + ' tersimpan. Pilih grup WhatsApp lalu tekan Kirim.');
@@ -1358,8 +1397,12 @@ var user = {};
   function setupOutletSelect(publicOutlets, locationOutlets) {
     var select = document.getElementById('ck-outlet');
     var role = String(user.role || '').toLowerCase();
+    var normalizedRole = role.replace(/[_-]+/g, ' ').trim();
     var username = String(user.username || '').toLowerCase();
     var userOutlet = String(user.outlet || '');
+    canEditPoDate = normalizedRole === 'owner' || normalizedRole === 'developer' || normalizedRole === 'manager regional';
+    document.getElementById('ck-po-date-field').hidden = !canEditPoDate;
+    document.getElementById('ck-po-date').value = formatDateTimeLocal(Date.now());
     canChooseOutlet = role === 'owner' || role === 'developer' || username === 'burhan';
     canDeleteOrders = role === 'owner' || role === 'developer' || username === 'burhan';
     canEditOrderPrices = role === 'owner' || role === 'developer' || username === 'burhan' || userOutlet === KITCHEN_ID;

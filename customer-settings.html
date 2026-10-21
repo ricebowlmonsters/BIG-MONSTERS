@@ -488,6 +488,7 @@
 
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js"></script>
   <script src="custom-ui.js"></script>
   <script src="firebase-storage.js"></script>
   <script>
@@ -656,6 +657,21 @@
       const custRunningText = document.getElementById('cust-running-text');
       const custScriptUrl = document.getElementById('cust-script-url');
       const saveCustSettingsBtn = document.getElementById('save-cust-settings-btn');
+
+      async function uploadOutletImage(image, outletId) {
+          if (!image || !image.startsWith('data:image/')) return image;
+          if (typeof firebase === 'undefined' || !firebase.storage) {
+              throw new Error('Firebase Storage tidak tersedia. Aktifkan Firebase Storage sebelum menyimpan foto outlet.');
+          }
+
+          const mimeType = image.slice(5, image.indexOf(';'));
+          const extension = mimeType === 'image/webp' ? 'webp' : 'img';
+          const safeOutletId = String(outletId || 'outlet').replace(/[^a-zA-Z0-9_-]/g, '_');
+          const fileName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${extension}`;
+          const imageRef = firebase.storage().ref(`customer_app_settings/outlets/${safeOutletId}/${fileName}`);
+          await imageRef.putString(image, 'data_url', { contentType: mimeType });
+          return imageRef.getDownloadURL();
+      }
 
       function setupImageUpload(fileInput, base64Input, previewImg, maxWidth, format = 'image/png', clearBtnId = null) {
           if(!fileInput) return;
@@ -1087,6 +1103,8 @@
       }
 
       saveCustSettingsBtn.addEventListener('click', async () => {
+        const originalButtonText = saveCustSettingsBtn.textContent;
+        saveCustSettingsBtn.disabled = true;
         try {
           // Collect banners
           const banners = [];
@@ -1099,6 +1117,19 @@
           if (offer1Base64.value) specialOffers.push({ image: offer1Base64.value, link: offer1Link.value });
           if (offer2Base64.value) specialOffers.push({ image: offer2Base64.value, link: offer2Link.value });
           if (offer3Base64.value) specialOffers.push({ image: offer3Base64.value, link: offer3Link.value });
+
+          const canUploadOutletImages = window.location.protocol !== 'file:';
+          if (canUploadOutletImages) {
+              saveCustSettingsBtn.textContent = 'Mengunggah foto outlet...';
+          }
+          const outletsWithImageUrls = await Promise.all(currentOutlets.map(async outlet => {
+              const legacyImages = Array.isArray(outlet.images) ? outlet.images : [];
+              const image = outlet.image || legacyImages[0] || '';
+              const imageUrl = canUploadOutletImages
+                  ? await uploadOutletImage(image, outlet.id)
+                  : image;
+              return { ...outlet, image: imageUrl, images: imageUrl ? [imageUrl] : [] };
+          }));
 
           const settings = {
               logo: custLogoBase64.value,
@@ -1120,15 +1151,17 @@
                   image: custPromoBase64.value
               },
               promo_slider: banners,
-              outlets: currentOutlets,
+              outlets: outletsWithImageUrls,
               special_offers: specialOffers,
               enable_ai_chat: custEnableAiChat.checked,
               reservation_enabled: document.getElementById('cust-enable-reservation').checked,
               enable_game: custEnableGame.checked,
               enable_global_chat: custEnableGlobalChat.checked
           };
+          saveCustSettingsBtn.textContent = 'Menyimpan pengaturan...';
           // [FIX] Gunakan update() bukan set() agar tidak menghapus data lain (outlets, dll)
           await db.ref('customer_app_settings').update(settings);
+          currentOutlets = outletsWithImageUrls;
               
               // [DIUBAH] Full Sync Outlet ke System (rbm_outlets)
               const systemOutlets = currentOutlets.map(o => o.id).filter(id => id);
@@ -1141,9 +1174,14 @@
               });
               localStorage.setItem('rbm_outlet_locations', JSON.stringify(rbmOutletLocations));
 
-              CustomUI.success('Pengaturan Web Customer berhasil disimpan & Outlet disinkronkan!');
+              CustomUI.success(canUploadOutletImages
+                  ? 'Pengaturan Web Customer berhasil disimpan & Outlet disinkronkan!'
+                  : 'Pengaturan tersimpan. Foto masih disimpan seperti sebelumnya; buka halaman melalui localhost atau situs untuk memindahkannya ke Storage dan mempercepat pemuatan.');
           } catch (e) {
               CustomUI.error('Gagal menyimpan: ' + e.message);
+          } finally {
+              saveCustSettingsBtn.disabled = false;
+              saveCustSettingsBtn.textContent = originalButtonText;
           }
       });
 
