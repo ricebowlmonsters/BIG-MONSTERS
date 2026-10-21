@@ -482,6 +482,9 @@ var user = {};
     var date = new Date(Number(value) || value || Date.now());
     return isNaN(date.getTime()) ? '-' : date.toLocaleString('id-ID');
   }
+  function orderDate(order) {
+    return order.status === 'fulfilled' ? order.invoiceAt || order.createdAt : order.createdAt;
+  }
   function formatDateTimeLocal(value) {
     var date = new Date(Number(value) || value || '');
     if (isNaN(date.getTime())) return '';
@@ -1024,9 +1027,9 @@ var user = {};
         ? '<div class="ck-actions"><button type="button" class="ck-button" data-fulfill-order="' + safe(order.id) + '">Simpan &amp; Proses</button>' + deleteButton + '</div>'
         : (editing ? editButton + deleteButton : '<div class="ck-print-actions">' + (fulfilled ? printButtons(order.id) + reprintButton : '') + editButton + deleteButton + '</div>');
       if (kitchenQueue && (standalonePoLinkMode || !fulfilled)) {
-        return '<article class="ck-order-card ck-incoming-card"><header class="ck-order-head"><div><span class="ck-order-label">Nomor PO</span><strong class="ck-order-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(fulfilled ? order.invoiceAt || order.createdAt : order.createdAt)) + '</time></div><div><span class="ck-order-label">Outlet</span><strong class="ck-order-outlet">' + safe(labelForOutlet(order.outletId)) + '</strong></div><div><span class="ck-order-label">Status</span>' + status + '</div><div><span class="ck-order-label">Nilai PO</span><strong class="ck-order-amount">' + money(total) + '</strong></div></header><div class="ck-order-body"><details class="ck-order-details" open><summary>' + (fulfilled ? 'Rincian PO' : 'Periksa barang dan isi jumlah aktual') + '</summary>' + items + actions + '</details></div></article>';
+        return '<article class="ck-order-card ck-incoming-card"><header class="ck-order-head"><div><span class="ck-order-label">Nomor PO</span><strong class="ck-order-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(orderDate(order))) + '</time></div><div><span class="ck-order-label">Outlet</span><strong class="ck-order-outlet">' + safe(labelForOutlet(order.outletId)) + '</strong></div><div><span class="ck-order-label">Status</span>' + status + '</div><div><span class="ck-order-label">Nilai PO</span><strong class="ck-order-amount">' + money(total) + '</strong></div></header><div class="ck-order-body"><details class="ck-order-details" open><summary>' + (fulfilled ? 'Rincian PO' : 'Periksa barang dan isi jumlah aktual') + '</summary>' + items + actions + '</details></div></article>';
       }
-      return '<tr><td><strong class="ck-cashier-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(fulfilled ? order.invoiceAt || order.createdAt : order.createdAt)) + '</time></td><td>' + safe(labelForOutlet(order.outletId)) + '</td><td>' + status + '</td><td class="numeric"><strong>' + money(total) + '</strong></td><td><details class="ck-cashier-details" data-edit-order-details="' + safe(order.id) + '"' + (editing ? ' open' : '') + '><summary>Detail &amp; aksi</summary><div class="ck-cashier-detail-body">' + items + actions + '</div></details></td></tr>';
+      return '<tr><td><strong class="ck-cashier-number">' + safe(order.number) + '</strong><time class="ck-order-date">' + safe(formatDate(orderDate(order))) + '</time></td><td>' + safe(labelForOutlet(order.outletId)) + '</td><td>' + status + '</td><td class="numeric"><strong>' + money(total) + '</strong></td><td><details class="ck-cashier-details" data-edit-order-details="' + safe(order.id) + '"' + (editing ? ' open' : '') + '><summary>Detail &amp; aksi</summary><div class="ck-cashier-detail-body">' + items + actions + '</div></details></td></tr>';
     }).join('');
     if (kitchenQueue) return '<div class="ck-incoming-cards">' + rows + '</div>';
     return '<div class="ck-cashier-wrap"><table class="ck-cashier-table"><thead><tr><th>Nomor PO</th><th>Outlet</th><th>Status</th><th class="numeric">Nilai</th><th>Rincian</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
@@ -1241,7 +1244,7 @@ var user = {};
       separator,
       'No. PO: ' + cleanPrintText(order.number),
       'Outlet: ' + cleanPrintText(labelForOutlet(order.outletId)),
-      'Tanggal: ' + cleanPrintText(formatDate(documentType === 'invoice' ? order.invoiceAt || order.shippedAt : order.shippedAt)),
+      'Tanggal: ' + cleanPrintText(formatDate(orderDate(order))),
       'Diproses: ' + cleanPrintText(order.processedBy || '-'),
       separator
     ];
@@ -1368,7 +1371,7 @@ var user = {};
     if (!order || order.status !== 'fulfilled') return;
     var shippedItems = (order.items || []).filter(function(item) { return Number(item.shippedQuantity) > 0; });
     var paperWidth = document.getElementById('ck-paper-width').value === '58' ? 58 : 80;
-    var details = '<div class="details"><strong>No. PO:</strong> ' + safe(order.number) + '<br><strong>Outlet:</strong> ' + safe(labelForOutlet(order.outletId)) + '<br><strong>Tanggal:</strong> ' + safe(formatDate(documentType === 'invoice' ? order.invoiceAt || order.shippedAt : order.shippedAt)) + '</div>';
+    var details = '<div class="details"><strong>No. PO:</strong> ' + safe(order.number) + '<br><strong>Outlet:</strong> ' + safe(labelForOutlet(order.outletId)) + '<br><strong>Tanggal:</strong> ' + safe(formatDate(orderDate(order))) + '</div>';
     var userDetails = '<div class="details"><strong>Dibuat oleh:</strong> ' + safe(order.createdBy || '-') + '<br><strong>Diproses oleh:</strong> ' + safe(order.processedBy || '-') + '</div>';
     var itemLines = shippedItems.map(function(item) {
       var quantity = Number(item.shippedQuantity).toLocaleString('id-ID');

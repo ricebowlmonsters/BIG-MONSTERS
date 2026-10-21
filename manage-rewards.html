@@ -55,7 +55,7 @@
                     </div>
                     <div class="form-group">
                         <label>Poin Dibutuhkan</label>
-                        <input type="number" id="rewardPoints" class="form-control" placeholder="Contoh: 300" required>
+                        <input type="number" id="rewardPoints" class="form-control" placeholder="Contoh: 300" min="1" step="1" required>
                     </div>
                 </div>
                 <div class="form-grid">
@@ -131,6 +131,12 @@
                         document.getElementById('imagePreview').style.display = 'block';
                         document.getElementById('rewardImageBase64').value = dataUrl;
                     }
+                    img.onerror = function() {
+                        alert('Foto tidak dapat dibaca. Silakan pilih file gambar lain.');
+                    };
+                };
+                reader.onerror = function() {
+                    alert('Gagal membaca file foto. Silakan coba lagi.');
                 };
                 reader.readAsDataURL(this.files[0]);
             }
@@ -141,10 +147,15 @@
             e.preventDefault();
             
             const name = document.getElementById('rewardName').value;
-            const points = parseInt(document.getElementById('rewardPoints').value);
+            const points = Number(document.getElementById('rewardPoints').value);
             const type = document.getElementById('rewardType').value;
             const image = document.getElementById('rewardImageBase64').value;
             const submitBtn = e.target.querySelector('button[type="submit"]');
+
+            if (!name.trim() || !Number.isSafeInteger(points) || points <= 0) {
+                alert('Masukkan nama hadiah dan jumlah poin berupa bilangan bulat lebih dari 0.');
+                return;
+            }
 
             if (!image) {
                 alert('Mohon upload foto hadiah terlebih dahulu.');
@@ -222,11 +233,18 @@
             } else {
                 list.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #6b7280;">Belum ada hadiah yang ditambahkan.</p>';
             }
+        }, (error) => {
+            console.error('Gagal memuat hadiah dari Firebase:', error);
+            document.getElementById('rewardsList').innerHTML =
+                '<p style="grid-column: 1/-1; text-align: center; color: #b91c1c;">Gagal memuat daftar hadiah. Periksa koneksi atau izin Firebase.</p>';
         });
 
         window.deleteReward = function(key) {
             if(confirm('Yakin ingin menghapus hadiah ini?')) {
-                rewardsRef.child(key).remove();
+                rewardsRef.child(key).remove().catch((error) => {
+                    console.error('Gagal menghapus hadiah:', error);
+                    alert('Gagal menghapus hadiah: ' + error.message);
+                });
             }
         }
     </script>
