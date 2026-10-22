@@ -162,6 +162,11 @@
                 return;
             }
 
+            if (image.startsWith('data:image') && window.location.protocol === 'file:') {
+                alert('Upload foto tidak bisa dilakukan saat halaman dibuka langsung dari file lokal (file://). Buka halaman ini dari website HTTPS atau server lokal HTTP. Jika upload masih gagal setelah memakai HTTP/HTTPS, origin website harus diizinkan pada konfigurasi CORS bucket Firebase Storage.');
+                return;
+            }
+
             submitBtn.disabled = true;
             submitBtn.textContent = 'Menyimpan & Mengunggah Foto...';
 
@@ -176,7 +181,7 @@
                     const fileRef = storageRef.child(fileName);
                     
                     // Unggah string Base64 ke Firebase Storage
-                    await fileRef.putString(image, 'data_url');
+                    await fileRef.putString(image, 'data_url', { contentType: 'image/png' });
                     imageUrl = await fileRef.getDownloadURL();
                 }
 
@@ -195,7 +200,14 @@
                 document.getElementById('rewardImageBase64').value = '';
             } catch (err) {
                 console.error(err);
-                alert('Terjadi kesalahan: ' + err.message);
+                const detail = err && err.message ? err.message : 'Kesalahan tidak diketahui.';
+                const isStorageCorsError = detail.toLowerCase().includes('cors') ||
+                    detail.toLowerCase().includes('preflight') ||
+                    detail.toLowerCase().includes('xmlhttprequest');
+                const guidance = isStorageCorsError
+                    ? '\n\nUpload gambar belum berhasil dan hadiah belum disimpan. Buka halaman ini dari origin HTTPS yang diizinkan Firebase Storage. Jika sudah memakai HTTPS, tambahkan origin website tersebut ke konfigurasi CORS bucket dan periksa aturan Firebase Storage.'
+                    : '';
+                alert('Gagal menyimpan hadiah: ' + detail + guidance);
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Simpan Hadiah';
