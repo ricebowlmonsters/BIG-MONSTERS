@@ -48,7 +48,7 @@ function findUserRowByPhone(phone) {
   const lastRow = sh.getLastRow();
   const headerMap = readHeaderMap(sh);
 
-  if (lastRow < 2) return { row: -1, data: null, sheet: sh, headerMap: headerMap };
+  if (lastRow < 2)   return { row: -1, data: null, sheet: sh, headerMap: headerMap };
   
   // [FIX] Deteksi kolom Phone
   const phoneCol = headerMap['phone'] || headerMap['no hp'] || headerMap['no telepon'] || 2;
@@ -105,6 +105,29 @@ function findUserRowByPhone(phone) {
   }
 
   return { row: -1, data: null, headerMap, sheet: sh };
+}
+
+function ensureRedemptionLogHeaders(sheet) {
+  const headers = ['TIMESTAMP', 'PHONE', 'NAMA', 'REWARD', 'COST', 'CODE'];
+  if (sheet.getLastRow() === 0 || sheet.getLastColumn() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+
+  let currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const normalizedHeaders = currentHeaders.map(value => String(value).trim().toLowerCase());
+  ['status', 'validatedat', 'validatedby'].forEach(header => {
+    if (!normalizedHeaders.includes(header)) {
+      sheet.getRange(1, currentHeaders.length + 1).setValue(header.toUpperCase());
+      currentHeaders.push(header.toUpperCase());
+      normalizedHeaders.push(header);
+    }
+  });
+
+  const headerMap = {};
+  currentHeaders.forEach((header, index) => {
+    headerMap[String(header).trim().toLowerCase()] = index + 1;
+  });
+  return headerMap;
 }
 
 function getDataFromSheet(sheetName, requiredColumns) {
@@ -303,7 +326,6 @@ function handleRedeemReward(requestData) {
 
   if (currentPoints >= rewardCost) {
     const newPoints = currentPoints - rewardCost;
-    sheet.getRange(row, pointsCol).setValue(newPoints);
     
     const customerName = nama || data.nama || '';
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -311,13 +333,37 @@ function handleRedeemReward(requestData) {
     
     if (!logSheet) {
       logSheet = ss.insertSheet(SHEET_LOG_TUKAR_POIN);
-      logSheet.appendRow(['TIMESTAMP', 'PHONE', 'NAMA', 'REWARD', 'COST', 'CODE']); 
-    } else if (logSheet.getLastRow() === 0) {
-      logSheet.appendRow(['TIMESTAMP', 'PHONE', 'NAMA', 'REWARD', 'COST', 'CODE']);
+    }
+    const logHeaders = ensureRedemptionLogHeaders(logSheet);
+
+    const prefix = String(reward).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3).padEnd(3, 'X');
+    const existingCodes = logSheet.getLastRow() > 1
+      ? logSheet.getRange(2, logHeaders.code, logSheet.getLastRow() - 1, 1).getValues().flat().map(code => String(code).toUpperCase())
+      : [];
+    let uniqueCode = '';
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const suffix = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+      const candidate = `${prefix}-${suffix}`;
+      if (!existingCodes.includes(candidate)) {
+        uniqueCode = candidate;
+        break;
+      }
+    }
+    if (!uniqueCode) {
+      return createJsonResponse({ status: 'error', message: 'Tidak dapat membuat kode klaim unik. Silakan coba lagi.' });
     }
 
-    const uniqueCode = reward.substring(0,3).toUpperCase() + '-' + Math.floor(Math.random() * 10000);
-    logSheet.appendRow([new Date(), phone, customerName, reward, rewardCost, uniqueCode]);
+    const logRow = [];
+    logRow[logHeaders.timestamp - 1] = new Date();
+    logRow[logHeaders.phone - 1] = phone;
+    logRow[logHeaders.nama - 1] = customerName;
+    logRow[logHeaders.reward - 1] = reward;
+    logRow[logHeaders.cost - 1] = rewardCost;
+    logRow[logHeaders.code - 1] = uniqueCode;
+    logRow[logHeaders.status - 1] = 'active';
+    logRow[logHeaders.validatedat - 1] = '';
+    logSheet.appendRow(logRow);
+    sheet.getRange(row, pointsCol).setValue(newPoints);
 
     writePointHistory({
       phone: phone,
@@ -364,7 +410,107 @@ function handleAddPoints(requestData) {
 }
 
 function handleValidateClaimCode(data) {
-  return createJsonResponse({ status: 'success', message: 'Fitur validasi belum diaktifkan sepenuhnya.' });
+  const code = String(data.code || '').trim().toUpperCase();
+  const operator = data.operator || 'unknown';
+  if (!/^[A-Z0-9]{3}-[0-9]{1,4}$/.test(code)) {
+    return createJsonResponse({
+      status: 'error',
+      message: 'Format kode tidak valid. Gunakan format seperti DIS-9845.',
+      code: 'INVALID_FORMAT'
+    });
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    return createJsonResponse({ status: 'error', message: 'Server sedang memproses klaim lain. Coba lagi sebentar.' });
+  }
+
+  try {
+    const logSheet = getSheet(SHEET_LOG_TUKAR_POIN);
+    const headerMap = ensureRedemptionLogHeaders(logSheet);
+    const lastRow = logSheet.getLastRow();
+    if (lastRow < 2) {
+      return createJsonResponse({ status: 'error', message: 'Kode klaim tidak ditemukan.', code: 'CODE_NOT_FOUND' });
+    }
+
+    const values = logSheet.getRange(2, 1, lastRow - 1, logSheet.getLastColumn()).getValues();
+    let activeMatch = null;
+    let usedMatch = null;
+    for (let index = 0; index < values.length; index++) {
+      const row = values[index];
+      if (String(row[headerMap.code - 1] || '').trim().toUpperCase() !== code) continue;
+
+      const status = String(row[headerMap.status - 1] || 'active').trim().toLowerCase();
+      const match = { row, sheetRow: index + 2 };
+      if (status === 'used') {
+        usedMatch = match;
+      } else {
+        activeMatch = match;
+        break;
+      }
+    }
+
+    if (!activeMatch) {
+      if (usedMatch) {
+        const row = usedMatch.row;
+        return createJsonResponse({
+          status: 'error',
+          message: 'Kode sudah pernah digunakan.',
+          code: 'ALREADY_USED',
+          data: {
+            itemName: row[headerMap.reward - 1] || '',
+            userPhone: row[headerMap.phone - 1] || '',
+            userName: row[headerMap.nama - 1] || '',
+            usedBy: row[headerMap.validatedby - 1] || '',
+            usedAt: row[headerMap.validatedat - 1] || ''
+          }
+        });
+      }
+      return createJsonResponse({ status: 'error', message: 'Kode klaim tidak ditemukan.', code: 'CODE_NOT_FOUND' });
+    }
+
+    const row = activeMatch.row;
+    const claimTime = row[headerMap.timestamp - 1];
+    const rewardName = row[headerMap.reward - 1];
+    const customerPhone = row[headerMap.phone - 1];
+    const customerName = row[headerMap.nama - 1];
+    if (!rewardName || !customerPhone || !customerName || !claimTime) {
+      return createJsonResponse({
+        status: 'error',
+        message: 'Data hadiah pada log klaim tidak lengkap. Periksa baris kode ini di sheet Log Tukar Poin.',
+        code: 'INCOMPLETE_DATA'
+      });
+    }
+
+    const claimDate = claimTime instanceof Date ? claimTime : new Date(claimTime);
+    if (!isNaN(claimDate.getTime())) {
+      const ageInDays = (Date.now() - claimDate.getTime()) / (1000 * 60 * 60 * 24);
+      if (ageInDays > 30) {
+        return createJsonResponse({ status: 'error', message: 'Kode klaim sudah kedaluwarsa.', code: 'EXPIRED' });
+      }
+    }
+
+    const validatedAt = new Date();
+    logSheet.getRange(activeMatch.sheetRow, headerMap.status).setValue('used');
+    logSheet.getRange(activeMatch.sheetRow, headerMap.validatedat).setValue(validatedAt);
+    logSheet.getRange(activeMatch.sheetRow, headerMap.validatedby).setValue(operator);
+
+    return createJsonResponse({
+      status: 'success',
+      message: 'Kode valid. Voucher dapat digunakan.',
+      data: {
+        code: code,
+        itemName: rewardName,
+        userPhone: customerPhone,
+        userName: customerName,
+        claimTime: claimTime,
+        validatedAt: validatedAt,
+        validatedBy: operator
+      }
+    });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleGetMenuData() {

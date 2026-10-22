@@ -39,14 +39,14 @@
     <main class="content" id="main-content">
       <section class="scanner-container" id="scanner-container">
         <h3 class="scanner-title">Validasi Kode Klaim</h3>
-        <p class="scanner-subtitle">Masukkan kode 5 karakter dari pelanggan</p>
+        <p class="scanner-subtitle">Masukkan kode klaim dari pelanggan (contoh: DIS-9845)</p>
         <div style="margin-top: 24px;">
           <input 
             type="text" 
             id="claim-code-input" 
-            placeholder="Contoh: A3B7X" 
-            maxlength="5" 
-            style="width: 100%; padding: 16px; font-size: 24px; text-align: center; letter-spacing: 8px; font-weight: 700; border: 2px solid #ccc; border-radius: 8px; text-transform: uppercase; font-family: 'Courier New', monospace;"
+            placeholder="DIS-9845" 
+            maxlength="8" 
+            style="width: 100%; padding: 16px; font-size: 24px; text-align: center; letter-spacing: 4px; font-weight: 700; border: 2px solid #ccc; border-radius: 8px; text-transform: uppercase; font-family: 'Courier New', monospace;"
             autocomplete="off"
           />
         </div>
@@ -62,7 +62,7 @@
     // Fungsi validasi kode
     class ClaimCodeValidator {
       /**
-       * Validasi format kode (5 karakter)
+       * Validasi format kode yang dibuat saat penukaran hadiah.
        */
       static validateFormat(code) {
         if (!code || typeof code !== 'string') {
@@ -71,14 +71,9 @@
 
         const trimmedCode = code.trim().toUpperCase();
         
-        if (trimmedCode.length !== 5) {
-          return { valid: false, message: 'Kode harus 5 karakter', code: 'INVALID_LENGTH' };
-        }
-
-        // Validasi karakter (hanya huruf dan angka, tanpa I, O, 0, 1)
-        const validPattern = /^[A-HJ-NP-Z2-9]{5}$/;
+        const validPattern = /^[A-Z0-9]{3}-[0-9]{1,4}$/;
         if (!validPattern.test(trimmedCode)) {
-          return { valid: false, message: 'Kode mengandung karakter yang tidak valid', code: 'INVALID_CHARS' };
+          return { valid: false, message: 'Format kode harus seperti DIS-9845.', code: 'INVALID_FORMAT' };
         }
 
         return { valid: true, message: 'Format valid', normalizedCode: trimmedCode };
@@ -122,19 +117,15 @@
       // Auto uppercase dan filter karakter tidak valid
       if (codeInput) {
         codeInput.addEventListener('input', (e) => {
-          let value = e.target.value.toUpperCase();
-          // Hapus karakter yang tidak valid (hanya A-H, J-N, P-Z, 2-9)
-          value = value.replace(/[^A-HJ-NP-Z2-9]/g, '');
-          // Batasi 5 karakter
-          value = value.slice(0, 5);
+          let value = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 8);
           e.target.value = value;
           
           // Update button state
-          validateBtn.disabled = value.length !== 5;
+          validateBtn.disabled = !/^[A-Z0-9]{3}-[0-9]{1,4}$/.test(value);
         });
 
         codeInput.addEventListener('keypress', (e) => {
-          if (e.key === 'Enter' && codeInput.value.length === 5) {
+          if (e.key === 'Enter' && /^[A-Z0-9]{3}-[0-9]{1,4}$/.test(codeInput.value)) {
             validateCode();
           }
         });
@@ -196,8 +187,22 @@
             return;
           }
 
+          const validationData = dbValidation.data;
+          const requiredDetails = ['itemName', 'userPhone', 'userName', 'claimTime', 'validatedAt'];
+          if (!validationData || requiredDetails.some(key => !validationData[key])) {
+            handleValidationError({
+              status: 'error',
+              code: 'INCOMPLETE_DATA',
+              message: 'Server mengembalikan sukses tanpa detail klaim. Perbarui dan deploy ulang Apps Script, lalu coba lagi. Kode belum dapat dipastikan sebagai tervalidasi.'
+            });
+            isValidating = false;
+            validateBtn.disabled = false;
+            validateBtn.textContent = '✓ Validasi Kode';
+            return;
+          }
+
           // Validasi Berhasil
-          handleValidationSuccess(code, dbValidation.data);
+          handleValidationSuccess(code, validationData);
           isValidating = false;
 
         } catch (error) {
@@ -215,62 +220,14 @@
 
       if (validateBtn) {
         validateBtn.addEventListener('click', validateCode);
-        validateBtn.disabled = true; // Disable sampai input 5 karakter
+        validateBtn.disabled = true;
       }
 
       if (clearBtn) {
         clearBtn.addEventListener('click', () => {
           codeInput.value = '';
           validateBtn.disabled = true;
-          mainContent.innerHTML = `
-            <section class="scanner-container" id="scanner-container">
-              <h3 class="scanner-title">Validasi Kode Klaim</h3>
-              <p class="scanner-subtitle">Masukkan kode 5 karakter dari pelanggan</p>
-              <div style="margin-top: 24px;">
-                <input 
-                  type="text" 
-                  id="claim-code-input" 
-                  placeholder="Contoh: A3B7X" 
-                  maxlength="5" 
-                  style="width: 100%; padding: 16px; font-size: 24px; text-align: center; letter-spacing: 8px; font-weight: 700; border: 2px solid #ccc; border-radius: 8px; text-transform: uppercase; font-family: 'Courier New', monospace;"
-                  autocomplete="off"
-                />
-              </div>
-              <button id="validate-code-btn" class="btn" style="margin-top: 20px;">✓ Validasi Kode</button>
-              <button id="clear-btn" class="btn btn-secondary" style="margin-top: 12px;">🗑️ Hapus</button>
-            </section>
-          `;
-          
-          // Re-initialize setelah clear
-          setTimeout(() => {
-            const newInput = document.getElementById('claim-code-input');
-            const newValidateBtn = document.getElementById('validate-code-btn');
-            const newClearBtn = document.getElementById('clear-btn');
-            
-            if (newInput) {
-              newInput.addEventListener('input', (e) => {
-                let value = e.target.value.toUpperCase();
-                value = value.replace(/[^A-HJ-NP-Z2-9]/g, '');
-                value = value.slice(0, 5);
-                e.target.value = value;
-                newValidateBtn.disabled = value.length !== 5;
-              });
-              
-              newInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter' && newInput.value.length === 5) {
-                  validateCode();
-                }
-              });
-            }
-            
-            if (newValidateBtn) {
-              newValidateBtn.addEventListener('click', validateCode);
-            }
-            
-            if (newClearBtn) {
-              newClearBtn.addEventListener('click', clearBtn.onclick);
-            }
-          }, 100);
+          codeInput.focus();
         });
       }
 
@@ -317,7 +274,7 @@
       function handleValidationError(error) {
         const errorMessages = {
           'INVALID_FORMAT': 'Format QR Code tidak valid',
-          'INCOMPLETE_DATA': 'Data QR Code tidak lengkap',
+          'INCOMPLETE_DATA': 'Data klaim dari server tidak lengkap',
           'INVALID_CLAIM_ID': 'ID klaim tidak valid',
           'INVALID_DATE': 'Format tanggal tidak valid',
           'FUTURE_DATE': 'Tanggal tidak boleh di masa depan',
@@ -329,15 +286,33 @@
         };
 
         const errorTitle = errorMessages[error.code] || 'Gagal Validasi';
-        let errorDetails = error.message || 'Terjadi kesalahan saat validasi voucher.';
+        const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        })[character]);
+        let errorDetails = escapeHtml(error.message || 'Terjadi kesalahan saat validasi voucher.');
 
         // Tambahkan info tambahan untuk error tertentu
         if (error.code === 'EXPIRED' && error.daysExpired) {
-          errorDetails += ` (Kadaluarsa ${error.daysExpired} hari yang lalu)`;
+          errorDetails += ` (Kadaluarsa ${escapeHtml(error.daysExpired)} hari yang lalu)`;
+        }
+
+        if (error.code === 'ALREADY_USED') {
+          const usedData = error.data || {};
+          const usedBy = usedData.usedBy
+            ? escapeHtml(usedData.usedBy)
+            : 'Tidak tercatat (kode digunakan sebelum pencatatan kasir diaktifkan)';
+          const usedAt = usedData.usedAt
+            ? escapeHtml(new Date(usedData.usedAt).toLocaleString('id-ID'))
+            : 'Tidak tercatat';
+          errorDetails += `<br><br><strong>Nama Hadiah:</strong> ${escapeHtml(usedData.itemName || '-')}<br><strong>Nomor Pelanggan:</strong> ${escapeHtml(usedData.userPhone || '-')}<br><strong>Nama Pelanggan:</strong> ${escapeHtml(usedData.userName || '-')}<br><strong>Digunakan oleh:</strong> ${usedBy}<br><strong>Waktu digunakan:</strong> ${usedAt}`;
         }
 
         if (error.code === 'ALREADY_USED' && error.firstClaim) {
-          errorDetails += `<br><small>Digunakan pertama kali: ${new Date(error.firstClaim.claimedAt).toLocaleString('id-ID')}</small>`;
+          errorDetails += `<br><small>Digunakan pertama kali: ${escapeHtml(new Date(error.firstClaim.claimedAt).toLocaleString('id-ID'))}</small>`;
         }
 
         mainContent.innerHTML = `

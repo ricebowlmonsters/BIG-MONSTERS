@@ -49,6 +49,13 @@
         </div>
 
         <div class="form-group">
+          <label class="form-label" for="outletSelect">Outlet QR ini</label>
+          <select id="outletSelect" class="form-input" required>
+            <option value="">Memuat daftar outlet...</option>
+          </select>
+        </div>
+
+        <div class="form-group">
           <label class="form-label" for="custom-logo">Logo (Upload jika logo tidak muncul/gagal)</label>
           <input type="file" id="custom-logo" accept="image/*" class="form-input">
         </div>
@@ -108,14 +115,69 @@
     }
     const db = firebase.database();
     const qrHistoryRef = db.ref('qr_history');
+    const outletSelect = document.getElementById('outletSelect');
 
-    function generateQRCode(mejaFromHistory = null, isRedownload = false) {
+    function getSelectedOutlet() {
+      const option = outletSelect.options[outletSelect.selectedIndex];
+      return option && outletSelect.value
+        ? { id: outletSelect.value, name: option.textContent.trim() }
+        : null;
+    }
+
+    function buildCustomerUrl(baseUrl, nomorMeja, outlet) {
+      if (!outlet || !outlet.id || !outlet.name) {
+        throw new Error('Outlet QR belum dipilih.');
+      }
+      const target = new URL(baseUrl);
+      target.searchParams.set('meja', nomorMeja);
+      target.searchParams.set('outlet', outlet.id);
+      target.searchParams.set('outletName', outlet.name);
+      return target.toString();
+    }
+
+    db.ref('customer_app_settings/outlets').on('value', snapshot => {
+      const selectedId = outletSelect.value;
+      const rawOutlets = snapshot.val();
+      const outlets = Array.isArray(rawOutlets)
+        ? rawOutlets.map((outlet, index) => [String(index), outlet])
+        : Object.entries(rawOutlets || {});
+      const validOutlets = outlets
+        .filter(([, outlet]) => outlet && (outlet.id !== undefined || outlet.name || outlet.nama))
+        .map(([key, outlet]) => ({
+          id: String(outlet.id || key),
+          name: String(outlet.name || outlet.nama || '').trim()
+        }))
+        .filter(outlet => outlet.id && outlet.name);
+
+      outletSelect.replaceChildren();
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = validOutlets.length ? 'Pilih outlet untuk QR ini' : 'Outlet belum tersedia';
+      outletSelect.appendChild(placeholder);
+      validOutlets.forEach(outlet => {
+        const option = document.createElement('option');
+        option.value = outlet.id;
+        option.textContent = outlet.name;
+        outletSelect.appendChild(option);
+      });
+      if (validOutlets.some(outlet => outlet.id === selectedId)) outletSelect.value = selectedId;
+    }, error => {
+      console.error('Gagal memuat outlet untuk QR:', error);
+      outletSelect.replaceChildren(new Option('Gagal memuat outlet. Muat ulang halaman.', ''));
+    });
+
+    function generateQRCode(mejaFromHistory = null, isRedownload = false, outletFromHistory = null) {
       const baseUrl = document.getElementById('baseUrl').value.trim();
       const nomorMeja = mejaFromHistory || document.getElementById('nomorMeja').value.trim();
+      const outlet = outletFromHistory && outletFromHistory.id ? outletFromHistory : getSelectedOutlet();
       const qrCodeContainer = document.getElementById('qrcode-container');
 
       if (!nomorMeja) {
         CustomUI.alert("Nomor Meja tidak boleh kosong!");
+        return;
+      }
+      if (!outlet) {
+        CustomUI.alert("Pilih outlet untuk QR ini terlebih dahulu.");
         return;
       }
 
@@ -124,8 +186,13 @@
       
       qrCodeContainer.innerHTML = ""; // Hapus QR code dan tombol download lama
 
-      // Membuat URL dengan query parameter: https://website.com?meja=NILAI
-      const targetURL = `${baseUrl}?meja=${encodeURIComponent(nomorMeja)}`;
+      let targetURL;
+      try {
+        targetURL = buildCustomerUrl(baseUrl, nomorMeja, outlet);
+      } catch (error) {
+        CustomUI.alert("Link Web App Customer tidak valid. Periksa kembali URL.");
+        return;
+      }
 
       // Membuat QR Code baru
       new QRCode(qrCodeContainer, {
@@ -139,7 +206,7 @@
 
       // Simpan/Update riwayat HANYA jika bukan download ulang (agar urutan tidak berubah)
       if (!isRedownload) {
-        saveTableToHistory(nomorMeja);
+        saveTableToHistory(nomorMeja, outlet);
       }
 
       // Tambahkan tombol download setelah beberapa saat agar QR code selesai di-render
@@ -214,17 +281,22 @@
       }, 100);
     }
 
-    function saveTableToHistory(nomorMeja) {
-      // [DIUBAH] Simpan ke Firebase (Cek duplikat dulu)
+    function saveTableToHistory(nomorMeja, outlet) {
       qrHistoryRef.orderByChild('nomor').equalTo(nomorMeja).once('value', snapshot => {
-        if (snapshot.exists()) {
-          // Jika sudah ada, update timestamp agar naik ke atas
-          snapshot.forEach(child => {
-            child.ref.update({ timestamp: firebase.database.ServerValue.TIMESTAMP });
+        let matchingEntry = null;
+        snapshot.forEach(child => {
+          if (String(child.val().outletId || '') === outlet.id) matchingEntry = child.ref;
+        });
+        if (matchingEntry) {
+          matchingEntry.update({
+            outletName: outlet.name,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
           });
         } else {
           qrHistoryRef.push({
             nomor: nomorMeja,
+            outletId: outlet.id,
+            outletName: outlet.name,
             timestamp: firebase.database.ServerValue.TIMESTAMP
           });
         }
@@ -239,20 +311,35 @@
     }
 
     // [BARU] Fungsi Preview QR
-    function showPreview(nomorMeja) {
+    function showPreview(nomorMeja, outletFromHistory = null) {
       const modal = document.getElementById('preview-modal');
       const container = document.getElementById('preview-qr-container');
       const label = document.getElementById('preview-label');
       const baseUrl = document.getElementById('baseUrl').value.trim();
       
       container.innerHTML = '';
-      label.textContent = `Meja: ${nomorMeja}`;
+      const outlet = outletFromHistory && outletFromHistory.id ? outletFromHistory : getSelectedOutlet();
+      if (!outlet) {
+        CustomUI.alert("Pilih outlet untuk QR ini terlebih dahulu.");
+        return;
+      }
+      label.textContent = `Meja: ${nomorMeja} · ${outlet.name}`;
       
       // [BARU] Simpan nomor meja di tombol download
       const downloadBtn = document.getElementById('btn-download-preview');
-      if(downloadBtn) downloadBtn.dataset.nomor = nomorMeja;
+      if(downloadBtn) {
+        downloadBtn.dataset.nomor = nomorMeja;
+        downloadBtn.dataset.outletId = outlet.id;
+        downloadBtn.dataset.outletName = outlet.name;
+      }
 
-      const targetURL = `${baseUrl}?meja=${encodeURIComponent(nomorMeja)}`;
+      let targetURL;
+      try {
+        targetURL = buildCustomerUrl(baseUrl, nomorMeja, outlet);
+      } catch (error) {
+        CustomUI.alert("Link Web App Customer tidak valid. Periksa kembali URL.");
+        return;
+      }
       
       new QRCode(container, {
         text: targetURL,
@@ -330,7 +417,10 @@
                 // Regenerate clean QR
                 container.innerHTML = "";
                 const baseUrl = document.getElementById('baseUrl').value.trim();
-                const targetURL = `${baseUrl}?meja=${encodeURIComponent(nomorMeja)}`;
+                const targetURL = buildCustomerUrl(baseUrl, nomorMeja, {
+                  id: btnDownloadPreview.dataset.outletId,
+                  name: btnDownloadPreview.dataset.outletName
+                });
                 
                 new QRCode(container, {
                     text: targetURL, width: 1000, height: 1000, // [DIUBAH] Resolusi tinggi
@@ -385,7 +475,9 @@
         listItem.style.borderBottom = '1px solid #e5e7eb';
 
         const text = document.createElement('span');
-        text.textContent = `Meja: ${nomor}`;
+        text.textContent = item.outletName
+          ? `Meja: ${nomor} · ${item.outletName}`
+          : `Meja: ${nomor} · Outlet belum ditentukan`;
         text.style.fontWeight = '600';
 
         const btnGroup = document.createElement('div');
@@ -397,7 +489,9 @@
         button.className = 'btn'; // Menggunakan style .btn yang lebih sederhana
         button.style.padding = '6px 12px';
         button.style.fontSize = '12px';
-        button.onclick = () => generateQRCode(nomor, true); // true = isRedownload
+        button.onclick = () => generateQRCode(nomor, true, item.outletId
+          ? { id: item.outletId, name: item.outletName || item.outletId }
+          : getSelectedOutlet());
 
         const previewBtn = document.createElement('button');
         previewBtn.textContent = '👁️';
@@ -408,7 +502,9 @@
         previewBtn.style.color = '#1e40af';
         previewBtn.style.border = 'none';
         previewBtn.title = 'Lihat QR';
-        previewBtn.onclick = () => showPreview(nomor);
+        previewBtn.onclick = () => showPreview(nomor, item.outletId
+          ? { id: item.outletId, name: item.outletName || item.outletId }
+          : getSelectedOutlet());
 
         const deleteBtn = document.createElement('button');
         deleteBtn.textContent = '🗑️';
