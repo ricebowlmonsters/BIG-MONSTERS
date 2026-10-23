@@ -79,6 +79,8 @@
     .ck-pos-product-name { font-size: 13px; font-weight: 800; line-height: 1.3; overflow-wrap: anywhere; }
     .ck-pos-product-meta { margin-top: 10px; font-size: 11px; opacity: .9; }
     .ck-pos-product-price { align-self: flex-end; margin-top: 8px; font-size: 12px; font-weight: 800; }
+    .ck-order-catalog-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+    .ck-order-catalog-status .ck-message { flex: 1 1 260px; margin: 0; }
     .ck-button { border: 1px solid var(--ck-green); border-radius: 5px; background: var(--ck-green); color: #fff; font: inherit; font-weight: 700; padding: 9px 13px; cursor: pointer; }
     .ck-button.secondary { background: #fff; color: var(--ck-green); }
     .ck-button.danger { border-color: #b42318; background: #b42318; }
@@ -318,6 +320,10 @@ var user = {};
             <div id="ck-order-categories" class="ck-pos-categories" role="group" aria-label="Kategori barang"></div>
           </div>
           <div id="ck-order-products" class="ck-pos-product-grid"></div>
+          <div class="ck-order-catalog-status">
+            <p id="ck-order-catalog-message" class="ck-message" role="status" aria-live="polite"></p>
+            <button type="button" class="ck-button secondary" id="ck-order-refresh-catalog">Muat ulang katalog</button>
+          </div>
         </section>
       </div>
       <p id="ck-order-message" class="ck-message" role="status"></p>
@@ -461,6 +467,10 @@ var user = {};
     var element = document.getElementById(id);
     element.textContent = text || '';
     element.className = 'ck-message' + (text ? (isError ? ' error' : ' success') : '');
+  }
+  function setKitchenCatalogMessage(text, isError) {
+    message('ck-catalog-message', text, isError);
+    message('ck-order-catalog-message', text, isError);
   }
   function setPoLinkMessage(text, isError) {
     var element = document.getElementById('ck-po-link-message');
@@ -650,13 +660,13 @@ var user = {};
     if (catalogLoading) return;
     var endpoint = String(window.HPP_KITCHEN_SHEETS_URL || '').trim();
     if (!endpoint) {
-      message('ck-catalog-message', 'URL Google Sheets belum dikonfigurasi.', true);
+      setKitchenCatalogMessage('URL Google Sheets belum dikonfigurasi.', true);
       return;
     }
     catalogLoading = true;
     renderCatalog();
     renderOrderCatalog();
-    message('ck-catalog-message', 'Memuat katalog dari Google Sheets…');
+    setKitchenCatalogMessage('Memuat katalog dari Google Sheets…');
     var callbackName = '__ckKitchenCatalog' + Date.now() + Math.floor(Math.random() * 1000);
     var script = document.createElement('script');
     var settled = false;
@@ -671,13 +681,14 @@ var user = {};
       delete window[callbackName];
       catalogLoading = false;
       if (error) {
-        message('ck-catalog-message', 'Gagal memuat katalog Google Sheets: ' + error.message, true);
+        setKitchenCatalogMessage('Gagal memuat katalog Google Sheets: ' + error.message + ' Klik “Muat ulang katalog” untuk mencoba lagi.', true);
         renderCatalog();
         renderOrderCatalog();
         return;
       }
       if (!result || result.status !== 'success' || !Array.isArray(result.materials)) {
-        message('ck-catalog-message', 'Google Sheets mengembalikan data katalog dengan format tidak valid.', true);
+        var responseError = result && result.message ? ' ' + result.message : '';
+        setKitchenCatalogMessage('Google Sheets mengembalikan data katalog dengan format tidak valid.' + responseError, true);
         renderCatalog();
         renderOrderCatalog();
         return;
@@ -685,7 +696,7 @@ var user = {};
       var legacyCatalogResponse = !result.version && result.materials.length > 0 &&
         result.materials.every(function(row) { return row && typeof row.aktif === 'boolean'; });
       if (result.version !== 'hpp-five-tabs-2026-10-06-5' && !legacyCatalogResponse) {
-        message('ck-catalog-message', 'Apps Script perlu diperbarui untuk membaca checkbox kolom I. Versi yang dibutuhkan: hpp-five-tabs-2026-10-06-5.', true);
+        setKitchenCatalogMessage('Apps Script perlu diperbarui untuk membaca checkbox kolom I. Versi yang dibutuhkan: hpp-five-tabs-2026-10-06-5.', true);
         renderCatalog();
         renderOrderCatalog();
         return;
@@ -713,20 +724,22 @@ var user = {};
         };
       });
       if (invalidItem) {
-        message('ck-catalog-message', 'Data "' + invalidItem + '" pada tab Bahan Baku Dapur harus memiliki satuan di kolom D dan harga valid di kolom E.', true);
+        setKitchenCatalogMessage('Data "' + invalidItem + '" pada tab Bahan Baku Dapur harus memiliki satuan di kolom D dan harga valid di kolom E.', true);
         renderCatalog();
         renderOrderCatalog();
         return;
       }
       catalog = nextCatalog;
-      message('ck-catalog-message', 'Katalog dimuat dari tab Bahan Baku Dapur Google Sheets.');
+      setKitchenCatalogMessage(Object.keys(nextCatalog).length === 0
+        ? 'Google Sheets berhasil dihubungi, tetapi tidak ada data bahan baku. Periksa tab Bahan Baku Dapur pada spreadsheet.'
+        : 'Katalog dimuat dari tab Bahan Baku Dapur Google Sheets.');
       renderCatalog();
       renderOrderCatalog();
       renderOrderLines();
     }
     window[callbackName] = function(result) { finish(null, result); };
     script.onerror = function() {
-      finish(new Error('Web App menolak akses. Periksa deployment Google Apps Script.'));
+      finish(new Error('Web App menolak akses atau deployment tidak tersedia. Di Apps Script, pastikan deployment dijalankan sebagai pemilik dan akses diatur ke siapa saja, lalu deploy versi baru.'));
     };
     var spreadsheetId = String(window.HPP_KITCHEN_SPREADSHEET_ID || '').trim();
     script.src = endpoint + (endpoint.indexOf('?') === -1 ? '?' : '&') +
@@ -761,7 +774,7 @@ var user = {};
     });
     var container = document.getElementById('ck-order-products');
     if (!products.length) {
-      container.innerHTML = '<div class="ck-empty">' + (ids.length ? 'Barang tidak ditemukan.' : (catalogLoading ? 'Memuat katalog dari Google Sheets…' : Object.keys(catalog).length ? 'Belum ada barang yang dicentang di kolom I.' : 'Katalog barang belum tersedia. Periksa koneksi Google Sheets.')) + '</div>';
+      container.innerHTML = '<div class="ck-empty">' + (ids.length ? 'Barang tidak ditemukan.' : (catalogLoading ? 'Memuat katalog dari Google Sheets…' : Object.keys(catalog).length ? 'Belum ada barang yang dicentang di kolom I.' : 'Katalog barang belum tersedia. Periksa status Google Sheets di bawah.')) + '</div>';
       return;
     }
     container.innerHTML = products.map(function(id) {
@@ -1171,6 +1184,7 @@ var user = {};
     var expectedNumberDate = orderNumberDatePrefix(invoiceDate.getTime());
     var currentNumberDate = String(order.number || '').match(/^RBM-(\d{6})/);
     var numberDateMismatch = !currentNumberDate || currentNumberDate[1] !== expectedNumberDate;
+    var printWindow = window.open('', '_blank', 'width=900,height=700');
     button.disabled = true;
     var numberPromise = numberDateMismatch ? allocateOrderNumber(invoiceDate.getTime()) : Promise.resolve(order.number);
     numberPromise.then(function(number) {
@@ -1178,9 +1192,26 @@ var user = {};
       return db.ref().update(updates).then(function() { return number; });
     }).then(function(number) {
       delete editingOrderIds[orderId];
-      message('ck-order-message', 'Perubahan PO ' + number + ' berhasil disimpan.');
+      order.number = number;
+      order.items = items;
+      order.actualTotal = actualTotal;
+      order.invoiceAt = invoiceDate.getTime();
+      order.editedAt = Date.now();
+      order.editedBy = user.nama || user.username || '';
+      message('ck-order-message', 'Perubahan PO ' + number + ' berhasil disimpan. Nota sedang dicetak.');
+      if (printWindow) {
+        try {
+          printOrder(order, 'invoice', printWindow);
+        } catch (error) {
+          printWindow.close();
+          window.alert('Perubahan PO berhasil disimpan, tetapi nota gagal dicetak: ' + error.message);
+        }
+      } else {
+        window.alert('Perubahan PO berhasil disimpan, tetapi jendela cetak diblokir browser. Izinkan pop-up lalu cetak nota dari riwayat PO.');
+      }
       return loadOrderPage('history', 'first');
     }).catch(function(error) {
+      if (printWindow && !printWindow.closed) printWindow.close();
       button.disabled = false;
       window.alert('Perubahan PO gagal disimpan: ' + error.message);
     });
@@ -1405,7 +1436,7 @@ var user = {};
       button.disabled = false;
     });
   }
-  function printOrder(order, documentType) {
+  function printOrder(order, documentType, printWindow) {
     if (!order || order.status !== 'fulfilled') return;
     var shippedItems = (order.items || []).filter(function(item) { return Number(item.shippedQuantity) > 0; });
     var paperWidth = document.getElementById('ck-paper-width').value === '58' ? 58 : 80;
@@ -1427,12 +1458,12 @@ var user = {};
     };
     var invoice = '<article class="paper"><h1>NOTA</h1><h2>Central Kitchen</h2>' + details + userDetails + itemLines + '<p class="total">TOTAL ' + money(order.actualTotal) + '</p><p class="note">Catatan: ' + safe(order.note || '-') + '</p><div class="sign"><span>Central Kitchen</span><span>Penerima</span></div></article>';
     var printContent = documentType === 'delivery' ? deliveryDoc('Central Kitchen') + deliveryDoc('Outlet') : invoice;
-    var win = window.open('', '_blank', 'width=900,height=700');
+    var win = printWindow || window.open('', '_blank', 'width=900,height=700');
     if (!win) { window.alert('Izinkan pop-up untuk mencetak dokumen.'); return; }
+    win.onload = function() { win.print(); };
     win.document.write('<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>' + (documentType === 'delivery' ? 'Surat Jalan' : 'Nota') + ' ' + safe(order.number) + '</title><style>@page{size:' + paperWidth + 'mm auto;margin:2mm}*{box-sizing:border-box}body{width:' + (paperWidth - 4) + 'mm;margin:0 auto;font:12px Arial,Helvetica,sans-serif;line-height:1.45;color:#111}.paper{width:100%;padding:3mm 0 6mm;page-break-after:always;break-after:page}.paper:last-child{page-break-after:auto;break-after:auto}h1{text-align:center;font-size:17px;font-weight:700;margin:0 0 3px}h2{text-align:center;font-size:12px;font-weight:700;margin:0 0 9px}.details{font-size:11px;line-height:1.5;border-bottom:1px dashed #333;padding-bottom:7px;margin-bottom:8px}.copy{text-align:center;font-weight:bold;margin:7px 0}.item{padding:5px 0;border-bottom:1px dashed #999}.item-name{font-size:12px;font-weight:700;line-height:1.4;overflow-wrap:anywhere}.item-meta{display:flex;justify-content:space-between;gap:3px;font-size:10px;line-height:1.45}.item-meta strong{white-space:nowrap}.total{text-align:right;font-size:14px;font-weight:bold;margin:9px 0}.note{font-size:11px;line-height:1.45;overflow-wrap:anywhere}.sign{display:flex;justify-content:space-between;gap:8px;margin-top:32px}.sign span{width:48%;text-align:center;border-top:1px solid #555;padding-top:5px;font-size:10px}@media print{html,body{width:' + (paperWidth - 4) + 'mm}.paper:last-child{page-break-after:auto;break-after:auto}}</style></head><body>' + printContent + '</body></html>');
     win.document.close();
     win.focus();
-    win.onload = function() { win.print(); };
   }
   function submitOrder() {
     var items = getOrderItems();
@@ -1622,6 +1653,7 @@ var user = {};
 
   document.getElementById('ck-add-line').addEventListener('click', addOrderLine);
   document.getElementById('ck-refresh-catalog').addEventListener('click', loadKitchenCatalog);
+  document.getElementById('ck-order-refresh-catalog').addEventListener('click', loadKitchenCatalog);
   document.getElementById('ck-order-catalog-search').addEventListener('input', renderOrderCatalog);
   document.getElementById('ck-submit-order').addEventListener('click', submitOrder);
   document.getElementById('ck-copy-kitchen-link').addEventListener('click', function() {
