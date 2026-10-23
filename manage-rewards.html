@@ -86,7 +86,6 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js"></script>
 
     <script>
         const firebaseConfig = {
@@ -157,35 +156,16 @@
                 return;
             }
 
-            if (image && image.startsWith('data:image') && window.location.protocol === 'file:') {
-                alert('Upload foto tidak bisa dilakukan saat halaman dibuka langsung dari file lokal (file://). Buka halaman ini dari website HTTPS atau server lokal HTTP. Jika upload masih gagal setelah memakai HTTP/HTTPS, origin website harus diizinkan pada konfigurasi CORS bucket Firebase Storage.');
-                return;
-            }
-
             submitBtn.disabled = true;
             submitBtn.textContent = 'Menyimpan Hadiah...';
 
             try {
-                let imageUrl = image;
-                
-                // Cek apakah image masih berupa Base64 (data:image/...)
-                if (image.startsWith('data:image')) {
-                    const storageRef = firebase.storage().ref();
-                    // Buat nama file unik
-                    const fileName = 'rewards/' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.png';
-                    const fileRef = storageRef.child(fileName);
-                    
-                    // Unggah string Base64 ke Firebase Storage
-                    await fileRef.putString(image, 'data_url', { contentType: 'image/png' });
-                    imageUrl = await fileRef.getDownloadURL();
-                }
-
                 const newRewardRef = rewardsRef.push();
                 await newRewardRef.set({
                     nama: name,
                     point: points,
                     type: type,
-                    foto: imageUrl || '',
+                    foto: image || '',
                     createdAt: firebase.database.ServerValue.TIMESTAMP
                 });
 
@@ -196,13 +176,7 @@
             } catch (err) {
                 console.error(err);
                 const detail = err && err.message ? err.message : 'Kesalahan tidak diketahui.';
-                const isStorageCorsError = detail.toLowerCase().includes('cors') ||
-                    detail.toLowerCase().includes('preflight') ||
-                    detail.toLowerCase().includes('xmlhttprequest');
-                const guidance = isStorageCorsError
-                    ? '\n\nUpload gambar belum berhasil dan hadiah belum disimpan. Buka halaman ini dari origin HTTPS yang diizinkan Firebase Storage. Jika sudah memakai HTTPS, tambahkan origin website tersebut ke konfigurasi CORS bucket dan periksa aturan Firebase Storage.'
-                    : '';
-                alert('Gagal menyimpan hadiah: ' + detail + guidance);
+                alert('Gagal menyimpan hadiah: ' + detail);
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Simpan Hadiah';
