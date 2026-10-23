@@ -138,7 +138,9 @@ Aplikasi menggunakan localStorage untuk menyimpan:
 - Coba refresh halaman
 
 ### Klaim Hadiah Tidak Muncul di Perangkat Lain
-Daftar klaim di halaman Tukar Poin disinkronkan dari sheet `Log Tukar Poin` melalui action `getRedemptionHistory`. Setelah memperbarui `google-apps-script-enhanced.js`, deploy versi baru pada Web App Google Apps Script yang digunakan aplikasi (pertahankan URL deployment yang sama). Klaim hanya dapat disinkronkan jika penukaran tercatat di sheet tersebut.
+Daftar klaim di halaman Tukar Poin disinkronkan dari sheet `Log Tukar Poin` melalui action `getRedemptionHistory`. ID hadiah disimpan pada kolom `REWARDID`, kemudian halaman mengambil foto dari data hadiah Firebase. Klaim lama tanpa ID hadiah dicocokkan berdasarkan nama dan poin.
+
+Setelah memperbarui `google-apps-script-enhanced.js`, deploy versi baru pada Web App Google Apps Script yang digunakan aplikasi (pertahankan URL deployment yang sama). Klaim hanya dapat disinkronkan jika penukaran tercatat di sheet tersebut.
 
 ## Development
 

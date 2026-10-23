@@ -115,7 +115,7 @@ function ensureRedemptionLogHeaders(sheet) {
 
   let currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const normalizedHeaders = currentHeaders.map(value => String(value).trim().toLowerCase());
-  ['status', 'validatedat', 'validatedby'].forEach(header => {
+  ['status', 'validatedat', 'validatedby', 'rewardid'].forEach(header => {
     if (!normalizedHeaders.includes(header)) {
       sheet.getRange(1, currentHeaders.length + 1).setValue(header.toUpperCase());
       currentHeaders.push(header.toUpperCase());
@@ -231,6 +231,7 @@ function handleGetRedemptionHistory(phone) {
       nama: reward,
       point: Number(row[headerMap.cost - 1]) || 0,
       status: rawStatus === 'used' ? 'used' : 'unclaimed',
+      rewardId: String(row[headerMap.rewardid - 1] || ''),
       claimTime: claimTime instanceof Date ? claimTime.toISOString() : String(claimTime || ''),
       usedDate: usedDate instanceof Date ? usedDate.toISOString() : String(usedDate || '')
     });
@@ -379,7 +380,7 @@ function handleGetLocations() {
 }
 
 function handleRedeemReward(requestData) {
-  const { phone, reward, cost, nama } = requestData;
+  const { phone, reward, cost, nama, rewardId } = requestData;
   const rewardCost = parseInt(cost);
 
   if (!phone || !reward || isNaN(rewardCost)) {
@@ -430,6 +431,7 @@ function handleRedeemReward(requestData) {
     logRow[logHeaders.code - 1] = uniqueCode;
     logRow[logHeaders.status - 1] = 'active';
     logRow[logHeaders.validatedat - 1] = '';
+    logRow[logHeaders.rewardid - 1] = String(rewardId || '');
     logSheet.appendRow(logRow);
     sheet.getRange(row, pointsCol).setValue(newPoints);
 
