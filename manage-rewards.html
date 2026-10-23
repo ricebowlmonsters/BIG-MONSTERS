@@ -67,7 +67,7 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Foto Hadiah</label>
+                        <label>Foto Hadiah (Opsional)</label>
                         <input type="file" id="rewardImageFile" class="form-control" accept="image/*">
                         <input type="hidden" id="rewardImageBase64">
                         <img id="imagePreview" class="preview-img" alt="Preview">
@@ -157,18 +157,13 @@
                 return;
             }
 
-            if (!image) {
-                alert('Mohon upload foto hadiah terlebih dahulu.');
-                return;
-            }
-
-            if (image.startsWith('data:image') && window.location.protocol === 'file:') {
+            if (image && image.startsWith('data:image') && window.location.protocol === 'file:') {
                 alert('Upload foto tidak bisa dilakukan saat halaman dibuka langsung dari file lokal (file://). Buka halaman ini dari website HTTPS atau server lokal HTTP. Jika upload masih gagal setelah memakai HTTP/HTTPS, origin website harus diizinkan pada konfigurasi CORS bucket Firebase Storage.');
                 return;
             }
 
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Menyimpan & Mengunggah Foto...';
+            submitBtn.textContent = 'Menyimpan Hadiah...';
 
             try {
                 let imageUrl = image;
@@ -190,7 +185,7 @@
                     nama: name,
                     point: points,
                     type: type,
-                    foto: imageUrl, // Simpan URL, bukan base64
+                    foto: imageUrl || '',
                     createdAt: firebase.database.ServerValue.TIMESTAMP
                 });
 
@@ -229,7 +224,7 @@
                     el.className = 'reward-item';
                     el.innerHTML = `
                         <span class="reward-badge ${badgeClass}">${item.type}</span>
-                        <img src="${item.foto}" alt="${item.nama}" class="reward-img" onerror="this.src='https://placehold.co/300x200?text=No+Image'">
+                        <img src="${item.foto || 'https://placehold.co/300x200?text=No+Image'}" alt="${item.nama}" class="reward-img" onerror="this.src='https://placehold.co/300x200?text=No+Image'">
                         <div class="reward-info">
                             <div class="reward-name">${item.nama}</div>
                             <div class="reward-meta">
