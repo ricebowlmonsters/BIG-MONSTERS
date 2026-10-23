@@ -1198,16 +1198,16 @@ var user = {};
       order.invoiceAt = invoiceDate.getTime();
       order.editedAt = Date.now();
       order.editedBy = user.nama || user.username || '';
-      message('ck-order-message', 'Perubahan PO ' + number + ' berhasil disimpan. Nota sedang dicetak.');
       if (printWindow) {
         try {
           printOrder(order, 'invoice', printWindow);
+          message('ck-order-message', 'Perubahan PO ' + number + ' berhasil disimpan. Dialog cetak nota dibuka.');
         } catch (error) {
           printWindow.close();
-          window.alert('Perubahan PO berhasil disimpan, tetapi nota gagal dicetak: ' + error.message);
+          window.alert('Perubahan PO berhasil disimpan, tetapi halaman cetak nota gagal dibuka: ' + error.message);
         }
       } else {
-        window.alert('Perubahan PO berhasil disimpan, tetapi jendela cetak diblokir browser. Izinkan pop-up lalu cetak nota dari riwayat PO.');
+        window.alert('Perubahan PO berhasil disimpan, tetapi pop-up cetak diblokir browser. Izinkan pop-up untuk halaman ini lalu coba lagi.');
       }
       return loadOrderPage('history', 'first');
     }).catch(function(error) {
@@ -1301,14 +1301,15 @@ var user = {};
   function cleanPrintText(value) {
     return String(value == null ? '' : value).replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
   }
-  function buildThermalCopy(order, documentType, copyNumber) {
+  function buildThermalCopy(order, documentType, copyNumber, copyCount) {
     var title = documentType === 'delivery' ? 'SURAT JALAN' : 'NOTA';
     var columns = document.getElementById('ck-paper-width').value === '58' ? 32 : 48;
     var separator = new Array(columns + 1).join('-');
+    copyCount = copyCount || 3;
     var lines = [
       '\x1b@\x1ba\x01\x1bE\x01\x1d!\x01' + title + '\x1d!\x00\n',
       'CENTRAL KITCHEN',
-      'Salinan ' + copyNumber + ' dari 3',
+      'Salinan ' + copyNumber + ' dari ' + copyCount,
       '\x1bE\x00\x1ba\x00',
       separator,
       'No. PO: ' + cleanPrintText(order.number),
@@ -1460,10 +1461,10 @@ var user = {};
     var printContent = documentType === 'delivery' ? deliveryDoc('Central Kitchen') + deliveryDoc('Outlet') : invoice;
     var win = printWindow || window.open('', '_blank', 'width=900,height=700');
     if (!win) { window.alert('Izinkan pop-up untuk mencetak dokumen.'); return; }
-    win.onload = function() { win.print(); };
     win.document.write('<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>' + (documentType === 'delivery' ? 'Surat Jalan' : 'Nota') + ' ' + safe(order.number) + '</title><style>@page{size:' + paperWidth + 'mm auto;margin:2mm}*{box-sizing:border-box}body{width:' + (paperWidth - 4) + 'mm;margin:0 auto;font:12px Arial,Helvetica,sans-serif;line-height:1.45;color:#111}.paper{width:100%;padding:3mm 0 6mm;page-break-after:always;break-after:page}.paper:last-child{page-break-after:auto;break-after:auto}h1{text-align:center;font-size:17px;font-weight:700;margin:0 0 3px}h2{text-align:center;font-size:12px;font-weight:700;margin:0 0 9px}.details{font-size:11px;line-height:1.5;border-bottom:1px dashed #333;padding-bottom:7px;margin-bottom:8px}.copy{text-align:center;font-weight:bold;margin:7px 0}.item{padding:5px 0;border-bottom:1px dashed #999}.item-name{font-size:12px;font-weight:700;line-height:1.4;overflow-wrap:anywhere}.item-meta{display:flex;justify-content:space-between;gap:3px;font-size:10px;line-height:1.45}.item-meta strong{white-space:nowrap}.total{text-align:right;font-size:14px;font-weight:bold;margin:9px 0}.note{font-size:11px;line-height:1.45;overflow-wrap:anywhere}.sign{display:flex;justify-content:space-between;gap:8px;margin-top:32px}.sign span{width:48%;text-align:center;border-top:1px solid #555;padding-top:5px;font-size:10px}@media print{html,body{width:' + (paperWidth - 4) + 'mm}.paper:last-child{page-break-after:auto;break-after:auto}}</style></head><body>' + printContent + '</body></html>');
     win.document.close();
     win.focus();
+    win.setTimeout(function() { win.print(); }, 250);
   }
   function submitOrder() {
     var items = getOrderItems();
