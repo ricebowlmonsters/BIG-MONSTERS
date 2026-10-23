@@ -182,6 +182,7 @@ function doGet(e) {
     if (action === 'getLocations') return handleGetLocations();
     if (action === 'getMenuData') return handleGetMenuData();
     if (action === 'getGoogleReviews') return handleGetGoogleReviews();
+    if (action === 'getRedemptionHistory') return handleGetRedemptionHistory(e.parameter.phone);
 
     const phoneNumber = (e.parameter.phone || '').trim();
     if (phoneNumber) {
@@ -193,6 +194,53 @@ function doGet(e) {
   } catch (error) {
     return createJsonResponse({ status: 'error', message: 'Server error: ' + error.message });
   }
+}
+
+function handleGetRedemptionHistory(phone) {
+  const cleanPhone = String(phone || '').trim();
+  const phoneDigits = cleanPhone.replace(/\D+/g, '');
+  if (!phoneDigits) {
+    return createJsonResponse({ status: 'error', message: 'Phone number is required.' });
+  }
+
+  const { data: user } = findUserRowByPhone(cleanPhone);
+  if (!user) {
+    return createJsonResponse({ status: 'error', message: 'Customer not found.' });
+  }
+
+  const sheet = getSheet(SHEET_LOG_TUKAR_POIN);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return createJsonResponse({ status: 'success', data: [] });
+
+  const headerMap = ensureRedemptionLogHeaders(sheet);
+  const rows = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  const history = rows.reduce(function(items, row) {
+    const rowPhone = String(row[headerMap.phone - 1] || '').replace(/\D+/g, '');
+    if (rowPhone !== phoneDigits) return items;
+
+    const code = String(row[headerMap.code - 1] || '').trim().toUpperCase();
+    const reward = String(row[headerMap.reward - 1] || '').trim();
+    if (!code || !reward) return items;
+
+    const rawStatus = String(row[headerMap.status - 1] || 'active').trim().toLowerCase();
+    const claimTime = row[headerMap.timestamp - 1];
+    const usedDate = row[headerMap.validatedat - 1];
+    items.push({
+      id: code,
+      code: code,
+      nama: reward,
+      point: Number(row[headerMap.cost - 1]) || 0,
+      status: rawStatus === 'used' ? 'used' : 'unclaimed',
+      claimTime: claimTime instanceof Date ? claimTime.toISOString() : String(claimTime || ''),
+      usedDate: usedDate instanceof Date ? usedDate.toISOString() : String(usedDate || '')
+    });
+    return items;
+  }, []);
+
+  history.sort(function(a, b) {
+    return new Date(b.claimTime).getTime() - new Date(a.claimTime).getTime();
+  });
+  return createJsonResponse({ status: 'success', data: history });
 }
 
 function handleGetGoogleReviews() {
@@ -250,6 +298,7 @@ function doPost(e) {
     switch (action) {
       case 'register': return handleRegister(requestData);
       case 'getUserData': return handleGetUserData(requestData);
+      case 'updateUserData': return handleUpdateUserData(requestData);
       case 'getMenuItems': return handleGetMenuItems();
       case 'getVoucherData': return handleGetVoucherData();
       case 'getMerchandiseData': return handleGetMerchandiseData();
@@ -286,6 +335,25 @@ function handleGetUserData(requestData) {
   const { data } = findUserRowByPhone(phone);
   if (data) return createJsonResponse({ status: 'success', user: data });
   return createJsonResponse({ status: 'error', message: 'User not found.' });
+}
+
+function handleUpdateUserData(requestData) {
+  const phone = String(requestData.phone || '').trim();
+  const newName = String(requestData.newName || '').trim();
+  if (!phone || !newName) {
+    return createJsonResponse({ status: 'error', message: 'Phone number and name are required.' });
+  }
+
+  const { row, data, headerMap, sheet } = findUserRowByPhone(phone);
+  if (!data) return createJsonResponse({ status: 'error', message: 'Customer not found.' });
+
+  const nameColumn = headerMap['nama'] || headerMap['name'] || headerMap['customer'] || 1;
+  sheet.getRange(row, nameColumn).setValue(newName);
+  return createJsonResponse({
+    status: 'success',
+    message: 'Nama berhasil diperbarui.',
+    data: { phone: data.phone, nama: newName }
+  });
 }
 
 function handleGetMenuItems() {

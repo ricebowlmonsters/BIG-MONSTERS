@@ -137,6 +137,9 @@ Aplikasi menggunakan localStorage untuk menyimpan:
 - Pastikan Google Apps Script API aktif
 - Coba refresh halaman
 
+### Klaim Hadiah Tidak Muncul di Perangkat Lain
+Daftar klaim di halaman Tukar Poin disinkronkan dari sheet `Log Tukar Poin` melalui action `getRedemptionHistory`. Setelah memperbarui `google-apps-script-enhanced.js`, deploy versi baru pada Web App Google Apps Script yang digunakan aplikasi (pertahankan URL deployment yang sama). Klaim hanya dapat disinkronkan jika penukaran tercatat di sheet tersebut.
+
 ## Development
 
 ### Menambah Fitur Baru
