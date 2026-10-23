@@ -151,6 +151,8 @@
     .ck-edit-item-row { grid-template-columns: minmax(150px, 1.4fr) minmax(75px, .6fr) minmax(110px, .8fr) minmax(125px, .8fr) 38px; }
     .ck-edit-item-row input { width: 100%; min-height: 34px; padding: 5px 7px; border: 1px solid #cbd7d2; border-radius: 4px; box-sizing: border-box; }
     .ck-edit-item-row .ck-item-value { min-width: 0; }
+    .ck-edit-price-sources { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+    .ck-edit-price-sources .ck-button[aria-pressed="true"] { background: var(--ck-green); color: #fff; }
     .ck-edit-item-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-top: 12px; }
     .ck-edit-item-add .ck-field { flex: 1 1 220px; }
     .ck-requested-row { grid-template-columns: minmax(180px, 1fr) minmax(100px, 160px); }
@@ -908,6 +910,11 @@ var user = {};
     document.querySelectorAll('#ck-order-list [data-add-edit-item]').forEach(function(button) {
       button.addEventListener('click', function() { addEditedOrderItem(button.dataset.addEditItem); });
     });
+    document.querySelectorAll('#ck-order-list [data-edit-price-source]').forEach(function(button) {
+      button.addEventListener('click', function() {
+        applyEditedOrderPriceSource(button.dataset.editPriceSourceOrder, button.dataset.editPriceSource);
+      });
+    });
     document.querySelectorAll('#ck-order-list [data-remove-edit-item]').forEach(function(button) {
       button.addEventListener('click', function() {
         button.closest('.ck-edit-item-row').remove();
@@ -1045,14 +1052,14 @@ var user = {};
   function renderEditableFulfilledItems(order) {
     var items = order.items || [];
     var rows = items.map(function(item, index) {
-      return '<div class="ck-item-row ck-edit-item-row" data-edit-item-row><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity || 0).toLocaleString('id-ID') + ' ' + safe(item.unit) + '</span><span class="ck-item-value" data-label="Dikirim"><input type="number" min="0" step="any" value="' + safe(item.shippedQuantity == null ? item.quantity : item.shippedQuantity) + '" data-edit-shipped aria-label="Jumlah dikirim ' + safe(item.name) + '"></span><span class="ck-item-value" data-label="Harga satuan"><span class="ck-price-control"><span>Rp</span><input class="ck-actual-price" type="text" inputmode="decimal" value="' + safe(formatPriceInput(item.unitPrice)) + '" data-edit-price aria-label="Harga satuan ' + safe(item.name) + '"></span></span><button type="button" class="ck-button secondary" data-remove-edit-item title="Hapus barang" aria-label="Hapus ' + safe(item.name) + '">×</button><input type="hidden" value="' + safe(item.itemId || '') + '" data-edit-item-id><input type="hidden" value="' + safe(item.name || '') + '" data-edit-name><input type="hidden" value="' + safe(item.unit || '') + '" data-edit-unit><input type="hidden" value="' + safe(item.quantity || 0) + '" data-edit-requested></div>';
+      return '<div class="ck-item-row ck-edit-item-row" data-edit-item-row><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity || 0).toLocaleString('id-ID') + ' ' + safe(item.unit) + '</span><span class="ck-item-value" data-label="Dikirim"><input type="number" min="0" step="any" value="' + safe(item.shippedQuantity == null ? item.quantity : item.shippedQuantity) + '" data-edit-shipped aria-label="Jumlah dikirim ' + safe(item.name) + '"></span><span class="ck-item-value" data-label="Harga satuan"><span class="ck-price-control"><span>Rp</span><input class="ck-actual-price" type="text" inputmode="decimal" value="' + safe(formatPriceInput(item.unitPrice)) + '" data-edit-price data-po-price="' + safe(item.unitPrice == null ? '' : item.unitPrice) + '" aria-label="Harga satuan ' + safe(item.name) + '"></span></span><button type="button" class="ck-button secondary" data-remove-edit-item title="Hapus barang" aria-label="Hapus ' + safe(item.name) + '">×</button><input type="hidden" value="' + safe(item.itemId || '') + '" data-edit-item-id><input type="hidden" value="' + safe(item.name || '') + '" data-edit-name><input type="hidden" value="' + safe(item.unit || '') + '" data-edit-unit><input type="hidden" value="' + safe(item.quantity || 0) + '" data-edit-requested></div>';
     }).join('');
     var options = Object.keys(catalog).filter(function(id) { return catalog[id].active !== false && catalog[id].showInPo === true; }).sort(function(a, b) {
       return (catalog[a].name || '').localeCompare(catalog[b].name || '');
     }).map(function(id) {
       return '<option value="' + safe(id) + '">' + safe(catalog[id].name) + ' (' + safe(catalog[id].unit) + ')</option>';
     }).join('');
-    return '<div class="ck-fulfill-help">Ubah tanggal nota, jumlah yang dikirim dan harga satuan, atau tambahkan/hapus barang. Jumlah PO awal tetap dicatat.</div><div class="ck-field" style="max-width:320px;margin-bottom:12px"><label for="ck-invoice-date-' + safe(order.id) + '">Tanggal nota</label><input id="ck-invoice-date-' + safe(order.id) + '" type="datetime-local" value="' + safe(formatDateTimeLocal(order.invoiceAt || order.shippedAt || order.createdAt)) + '" data-edit-invoice-date></div><div class="ck-item-list ck-fulfilled-list"><div class="ck-item-row ck-item-head ck-edit-item-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span><span class="ck-item-value">Dikirim</span><span class="ck-item-value">Harga satuan</span><span></span></div>' + rows + '</div><div class="ck-edit-item-add"><div class="ck-field"><label>Tambah barang dari katalog</label><select data-edit-item-select><option value="">Pilih barang</option>' + options + '</select></div><button type="button" class="ck-button secondary" data-add-edit-item="' + safe(order.id) + '">Tambah Barang</button></div>';
+    return '<div class="ck-fulfill-help">Ubah tanggal nota, jumlah yang dikirim dan harga satuan, atau tambahkan/hapus barang. Jumlah PO awal tetap dicatat.</div><div class="ck-field" style="max-width:320px;margin-bottom:12px"><label for="ck-invoice-date-' + safe(order.id) + '">Tanggal nota</label><input id="ck-invoice-date-' + safe(order.id) + '" type="datetime-local" value="' + safe(formatDateTimeLocal(order.invoiceAt || order.shippedAt || order.createdAt)) + '" data-edit-invoice-date></div><div class="ck-fulfill-help">Pilih sumber harga untuk menerapkan harga ke barang yang tersedia. Harga tetap bisa diubah manual; barang baru memakai harga Sheets.</div><div class="ck-edit-price-sources"><button type="button" class="ck-button secondary" data-edit-price-source-order="' + safe(order.id) + '" data-edit-price-source="po" aria-pressed="true">Gunakan harga tersimpan di PO</button><button type="button" class="ck-button secondary" data-edit-price-source-order="' + safe(order.id) + '" data-edit-price-source="sheets" aria-pressed="false">Gunakan harga dari Sheets</button></div><div class="ck-item-list ck-fulfilled-list"><div class="ck-item-row ck-item-head ck-edit-item-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span><span class="ck-item-value">Dikirim</span><span class="ck-item-value">Harga satuan</span><span></span></div>' + rows + '</div><div class="ck-edit-item-add"><div class="ck-field"><label>Tambah barang dari katalog</label><select data-edit-item-select><option value="">Pilih barang</option>' + options + '</select></div><button type="button" class="ck-button secondary" data-add-edit-item="' + safe(order.id) + '">Tambah Barang</button></div>';
   }
   function addEditedOrderItem(orderId) {
     var order = orders[orderId];
@@ -1072,10 +1079,41 @@ var user = {};
     var row = document.createElement('div');
     row.className = 'ck-item-row ck-edit-item-row';
     row.setAttribute('data-edit-item-row', '');
-    row.innerHTML = '<strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">Barang baru</span><span class="ck-item-value" data-label="Dikirim"><input type="number" min="0" step="any" value="1" data-edit-shipped aria-label="Jumlah dikirim ' + safe(item.name) + '"></span><span class="ck-item-value" data-label="Harga satuan"><span class="ck-price-control"><span>Rp</span><input class="ck-actual-price" type="text" inputmode="decimal" value="' + safe(formatPriceInput(item.price)) + '" data-edit-price aria-label="Harga satuan ' + safe(item.name) + '"></span></span><button type="button" class="ck-button secondary" data-remove-edit-item title="Hapus barang" aria-label="Hapus ' + safe(item.name) + '">×</button><input type="hidden" value="' + safe(itemId) + '" data-edit-item-id><input type="hidden" value="' + safe(item.name) + '" data-edit-name><input type="hidden" value="' + safe(item.unit) + '" data-edit-unit><input type="hidden" value="0" data-edit-requested>';
+    row.innerHTML = '<strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">Barang baru</span><span class="ck-item-value" data-label="Dikirim"><input type="number" min="0" step="any" value="1" data-edit-shipped aria-label="Jumlah dikirim ' + safe(item.name) + '"></span><span class="ck-item-value" data-label="Harga satuan"><span class="ck-price-control"><span>Rp</span><input class="ck-actual-price" type="text" inputmode="decimal" value="' + safe(formatPriceInput(item.price)) + '" data-edit-price data-po-price="" aria-label="Harga satuan ' + safe(item.name) + '"></span></span><button type="button" class="ck-button secondary" data-remove-edit-item title="Hapus barang" aria-label="Hapus ' + safe(item.name) + '">×</button><input type="hidden" value="' + safe(itemId) + '" data-edit-item-id><input type="hidden" value="' + safe(item.name) + '" data-edit-name><input type="hidden" value="' + safe(item.unit) + '" data-edit-unit><input type="hidden" value="0" data-edit-requested>';
     row.querySelector('[data-remove-edit-item]').addEventListener('click', function() { row.remove(); });
     details.querySelector('.ck-fulfilled-list').appendChild(row);
     select.value = '';
+  }
+  function applyEditedOrderPriceSource(orderId, source) {
+    var details = document.querySelector('[data-edit-order-details="' + CSS.escape(orderId) + '"]');
+    if (!details || (source !== 'po' && source !== 'sheets')) return;
+    var rows = Array.from(details.querySelectorAll('[data-edit-item-row]'));
+    var prices = rows.map(function(row) {
+      var input = row.querySelector('[data-edit-price]');
+      if (source === 'po') {
+        return input.dataset.poPrice === '' ? null : Number(input.dataset.poPrice);
+      }
+      var itemId = row.querySelector('[data-edit-item-id]').value;
+      var itemName = row.querySelector('[data-edit-name]').value;
+      var itemUnit = row.querySelector('[data-edit-unit]').value;
+      var product = catalog[itemId] || Object.keys(catalog).map(function(id) {
+        return catalog[id];
+      }).find(function(candidate) {
+        return candidate.name === itemName && candidate.unit === itemUnit;
+      });
+      return product ? product.price : null;
+    });
+    if (source === 'sheets' && prices.some(function(price) { return price === null; })) {
+      window.alert('Harga Sheets tidak ditemukan untuk semua barang PO. Tidak ada harga yang diubah.');
+      return;
+    }
+    rows.forEach(function(row, index) {
+      if (prices[index] !== null) row.querySelector('[data-edit-price]').value = formatPriceInput(prices[index]);
+    });
+    details.querySelectorAll('[data-edit-price-source]').forEach(function(button) {
+      var selected = button.dataset.editPriceSource === source;
+      button.setAttribute('aria-pressed', String(selected));
+    });
   }
   function saveEditedOrder(orderId, button) {
     var order = orders[orderId];
