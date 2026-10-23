@@ -127,6 +127,18 @@ Aplikasi menggunakan localStorage untuk menyimpan:
 - Coba gunakan input manual sebagai alternatif
 - Restart browser jika diperlukan
 
+### Upload Foto Hadiah Gagal dengan Error CORS
+Upload foto hadiah menggunakan Firebase Storage. Izinkan origin website pada konfigurasi CORS bucket:
+
+1. Pastikan Google Cloud CLI sudah terpasang dan login ke project `ricebowlmonst`.
+2. Dari folder proyek, jalankan:
+   ```sh
+   gcloud storage buckets update gs://ricebowlmonst.firebasestorage.app --cors-file=storage.cors.json
+   ```
+3. Tunggu konfigurasi diterapkan, lalu muat ulang halaman Kelola Hadiah.
+
+File `storage.cors.json` mengizinkan `https://bigmonsters.vercel.app`. Jika website memakai domain produksi lain, tambahkan origin persisnya ke daftar `origin` sebelum menerapkan konfigurasi. CORS tidak menggantikan Firebase Storage Security Rules; aturan akses bucket tetap harus mengizinkan pengguna yang berhak mengunggah.
+
 ### QR Code Tidak Terdeteksi
 - Pastikan QR code dalam kondisi baik
 - Pastikan pencahayaan cukup
@@ -154,4 +166,3 @@ Edit file `qr-scanner.js` untuk:
 ## Support
 
 Untuk pertanyaan atau masalah teknis, hubungi tim development Rice Bowl Monster.
-
