@@ -13410,10 +13410,31 @@ async function loadEmployeeAbsensiRequests() {
 
 async function loadAbsensiRequests() {
     const tbody = document.getElementById('absensi-requests-tbody');
-    if (!tbody || typeof firebase === 'undefined' || !firebase.database) return;
+    const feedback = document.getElementById('absensi-requests-feedback');
+    const loadButton = document.getElementById('btn-load-absensi-requests');
+    if (!tbody) return;
+    if (typeof firebase === 'undefined' || !firebase.database) {
+        const message = 'Firebase belum tersedia. Periksa koneksi internet lalu coba lagi.';
+        tbody.innerHTML = '<tr><td colspan="6" class="table-empty">' + message + '</td></tr>';
+        if (feedback) {
+            feedback.textContent = message;
+            feedback.style.color = '#b91c1c';
+        }
+        return;
+    }
+    if (loadButton) {
+        loadButton.disabled = true;
+        loadButton.textContent = 'Memuat...';
+    }
+    if (feedback) {
+        feedback.textContent = 'Sedang memuat pengajuan...';
+        feedback.style.color = '#64748b';
+    }
     try {
         const snap = await firebase.database().ref('rbm_pro/pengajuan_absensi/' + getAbsensiRequestOutlet()).once('value');
-        const entries = Object.entries(snap.val() || {}).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+        const entries = Object.entries(snap.val() || {})
+            .filter(([, request]) => request && typeof request === 'object')
+            .sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
         const role = absensiRequestRole(getAbsensiRequestUser());
         const raiseForm = document.getElementById('gaji-kenaikan-form');
         const raiseEmployeeSelect = document.getElementById('gaji-kenaikan-employee');
@@ -13443,7 +13464,25 @@ async function loadAbsensiRequests() {
             const summary = requestApprovalSummary(r);
             return `<tr><td>${r.name || '-'}</td><td>${r.type || '-'}${detailSummary}</td><td>${r.startDate || '-'} s/d ${r.endDate || '-'}</td><td>${r.reason || '-'}</td><td>${requestStatusText(r)}${summary ? '<br><span style="font-size:11px;color:#64748b;">' + summary + '</span>' : ''}</td><td>${action}</td></tr>`;
         }).join('') : '<tr><td colspan="6" class="table-empty">Belum ada pengajuan.</td></tr>';
-    } catch (error) { tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Gagal memuat pengajuan.</td></tr>'; }
+        if (feedback) {
+            feedback.textContent = entries.length
+                ? 'Berhasil memuat ' + entries.length + ' pengajuan.'
+                : 'Tidak ada pengajuan untuk outlet ini.';
+            feedback.style.color = '#166534';
+        }
+    } catch (error) {
+        const message = 'Gagal memuat pengajuan: ' + (error && error.message ? error.message : 'Periksa koneksi dan izin Firebase.');
+        tbody.innerHTML = '<tr><td colspan="6" class="table-empty">' + message + '</td></tr>';
+        if (feedback) {
+            feedback.textContent = message;
+            feedback.style.color = '#b91c1c';
+        }
+    } finally {
+        if (loadButton) {
+            loadButton.disabled = false;
+            loadButton.textContent = 'Muat Pengajuan';
+        }
+    }
 }
 
 async function approveAbsensiRequest(requestId) {

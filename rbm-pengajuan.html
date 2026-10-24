@@ -540,6 +540,14 @@
 })();
 
 
+function canDeletePengajuan() {
+  const user = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+  const role = String(user.role || '').trim().toLowerCase();
+  const username = String(user.username || '').trim().toLowerCase();
+  return role === 'owner' || username === 'burhan' ||
+    ['manager', 'manager outlet', 'supervisor regional'].includes(role);
+}
+
 function openOwnerPengajuanModal(id) {
   const sub = window._pengajuanDataMap[id];
   const d = sub.data;
@@ -819,7 +827,7 @@ function openOwnerPengajuanModal(id) {
       btnLaporan.style.display = 'none';
   }
 
-  if (isOwnerOrDev) {
+  if (canDeletePengajuan()) {
       deleteBtn.style.display = 'inline-block';
       deleteBtn.onclick = () => deletePengajuan(sub.type, sub.id);
   } else {
@@ -2656,6 +2664,11 @@ window.printSlipSatuanOwner = function(subId, empIdx) {
 };
 
 window.deletePengajuan = function(type, id) {
+    if (!canDeletePengajuan()) {
+        AppPopup.error('Akses ditolak. Hanya Owner/Developer, Manager Outlet, dan Supervisor Regional yang dapat menghapus pengajuan.');
+        return;
+    }
+
     AppPopup.confirm(`Yakin ingin menghapus permanen pengajuan ini?`, 'Konfirmasi Hapus', function() {
         let dbPath = '';
         if (type === 'tf') {
