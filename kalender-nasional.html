@@ -348,19 +348,6 @@
       border-radius: 9px;
     }
 
-    .request-item[role="button"] {
-      cursor: pointer;
-    }
-
-    .request-item[role="button"]:hover {
-      background: #eff6ff;
-    }
-
-    .request-item[role="button"]:focus-visible {
-      outline: 3px solid #93c5fd;
-      outline-offset: 2px;
-    }
-
     .calendar-request-modal {
       position: fixed;
       inset: 0;
@@ -396,6 +383,26 @@
       font-weight: 700;
     }
 
+    .request-item-title-button {
+      padding: 0;
+      background: none;
+      border: 0;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .request-item-title-button:hover {
+      color: #1d4ed8;
+    }
+
+    .request-item-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
     .request-item-outlet,
     .request-item-meta {
       margin-top: 5px;
@@ -421,6 +428,40 @@
     .request-status.rejected {
       color: #991b1b;
       background: #fee2e2;
+    }
+
+    @media print {
+      body * {
+        visibility: hidden !important;
+      }
+
+      #calendar-request-modal,
+      #calendar-request-modal * {
+        visibility: visible !important;
+      }
+
+      #calendar-request-modal {
+        position: absolute;
+        inset: 0;
+        display: block !important;
+        padding: 0;
+        background: #fff;
+      }
+
+      .calendar-request-dialog {
+        width: 100%;
+        max-height: none;
+        overflow: visible;
+        padding: 0;
+        box-shadow: none;
+      }
+
+      #calendar-request-close,
+      #calendar-request-open,
+      #calendar-request-approve,
+      #calendar-request-print {
+        display: none !important;
+      }
     }
 
     .request-empty,
@@ -584,7 +625,9 @@
       <button type="button" class="calendar-button" id="calendar-request-close" style="float:right;">Tutup</button>
       <h3 id="calendar-request-title" style="margin:0 70px 16px 0; color:#1e293b; font-size:18px;">Detail Pengajuan</h3>
       <div id="calendar-request-details"></div>
-      <div style="display:flex; justify-content:flex-end; margin-top:18px;">
+      <div style="display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:18px;">
+        <button type="button" class="calendar-button" id="calendar-request-print" style="display:none;">Print</button>
+        <button type="button" class="calendar-button today-button" id="calendar-request-approve" style="display:none;">Setujui</button>
         <button type="button" class="calendar-button today-button" id="calendar-request-open" style="display:none;">Buka untuk tindakan</button>
       </div>
     </div>
@@ -633,6 +676,8 @@
       var requestModalTitle = document.getElementById('calendar-request-title');
       var requestModalDetails = document.getElementById('calendar-request-details');
       var requestModalOpen = document.getElementById('calendar-request-open');
+      var requestModalApprove = document.getElementById('calendar-request-approve');
+      var requestModalPrint = document.getElementById('calendar-request-print');
       var requestModalClose = document.getElementById('calendar-request-close');
       var user = {};
       var requests = [];
@@ -729,13 +774,13 @@
         var found = [];
         function walk(node, path) {
           if (!node || typeof node !== 'object') return;
-          if (Array.isArray(node) || Object.prototype.hasOwnProperty.call(node, 'createdAt') ||
+          if (!Array.isArray(node) && (Object.prototype.hasOwnProperty.call(node, 'createdAt') ||
               Object.prototype.hasOwnProperty.call(node, 'requestDate') ||
               Object.prototype.hasOwnProperty.call(node, 'startDate') ||
               Object.prototype.hasOwnProperty.call(node, 'periodStart') ||
-              Object.prototype.hasOwnProperty.call(node, 'tanggalPengajuan')) {
+              Object.prototype.hasOwnProperty.call(node, 'tanggalPengajuan'))) {
             var outlet = node.outlet || node.outletId || node._outlet || outletFromPath ||
-              (type === 'absensi' || type === 'gaji' ? path[0] : '');
+              (type === 'absensi' || (type === 'gaji' && path.length > 2) ? path[0] : '');
             var start = requestDateKey(type === 'absensi'
               ? (node.requestDate || node.startDate || node.createdAt)
               : (node.createdAt || node.tanggalPengajuan || node.tanggal || node.periodStart));
@@ -823,6 +868,78 @@
         return '';
       }
 
+      function approveFinanceRequest(item) {
+        if (!canApproveFinanceRequest(item)) return;
+        if (!window.confirm('Setujui ' + getSubmissionTitle(item) + '?')) return;
+        var dbPath;
+        var payload;
+        var approverName = user.nama || user.username || 'Owner';
+        if (item.type === 'tf') {
+          dbPath = 'rbm_pro/pengajuan_tf/' + item.requestId;
+          payload = {
+            status: 'approved',
+            viewedByManager: false,
+            updatedAt: firebase.database.ServerValue.TIMESTAMP,
+            approvedBy: approverName
+          };
+        } else if (item.type === 'pc') {
+          dbPath = 'rbm_pro/petty_cash/pengajuan/' + item.requestId;
+          payload = {
+            status: 'approved',
+            viewedByManager: false,
+            updatedAt: firebase.database.ServerValue.TIMESTAMP,
+            approvedBy: approverName
+          };
+        } else {
+          dbPath = 'rbm_pro/gaji_pengajuan/' + item.outlet + '/' + item.monthKey + '/' + item.requestId;
+          payload = {
+            statusOwner: 'approved',
+            viewedByManager: false,
+            updatedAt: firebase.database.ServerValue.TIMESTAMP,
+            approvedOwnerBy: approverName
+          };
+        }
+        requestModalApprove.disabled = true;
+        requestModalApprove.textContent = 'Memproses...';
+
+        firebase.database().ref(dbPath).update(payload).then(function () {
+          if (item.type === 'gaji') {
+            item.data.statusOwner = 'approved';
+            item.data.approvedOwnerBy = approverName;
+          } else {
+            item.data.status = 'approved';
+            item.data.approvedBy = approverName;
+          }
+          item.data.viewedByManager = false;
+          item.data.updatedAt = Date.now();
+          renderRequests();
+          openRequestDetails(item);
+        }).catch(function (error) {
+          console.error('Gagal menyetujui pengajuan dana:', error);
+          window.alert('Gagal menyetujui pengajuan: ' + (error.message || error));
+          requestModalApprove.disabled = false;
+          requestModalApprove.textContent = 'Setujui';
+        });
+      }
+
+      function canApproveFinanceRequest(item) {
+        if (!item || !item.requestId || getCalendarRole() !== 'Owner/Developer') return false;
+        var data = item.data || {};
+        if (item.type === 'gaji') {
+          return String(data.statusOwner || data.status || 'pending').toLowerCase() === 'pending' &&
+            (!Object.prototype.hasOwnProperty.call(data, 'statusManager') ||
+             String(data.statusManager).toLowerCase() === 'approved') &&
+            !!item.outlet && !!item.monthKey;
+        }
+        return (item.type === 'tf' || item.type === 'pc') &&
+          String(data.status || 'pending').toLowerCase() === 'pending';
+      }
+
+      function printFinanceRequest(item) {
+        openRequestDetails(item);
+        window.setTimeout(function () { window.print(); }, 0);
+      }
+
       function openRequestDetails(item) {
         var data = item.data || {};
         requestModalTitle.textContent = getSubmissionTitle(item);
@@ -851,6 +968,14 @@
 
         var role = getCalendarRole();
         var isPrivileged = role === 'Owner/Developer';
+        var isFinanceRequest = ['tf', 'pc', 'gaji'].indexOf(item.type) >= 0;
+        requestModalPrint.style.display = isFinanceRequest ? '' : 'none';
+        requestModalPrint.onclick = function () { window.print(); };
+        requestModalApprove.style.display =
+          canApproveFinanceRequest(item) ? '' : 'none';
+        requestModalApprove.disabled = false;
+        requestModalApprove.textContent = 'Setujui';
+        requestModalApprove.onclick = function () { approveFinanceRequest(item); };
         var canApproveAbsensi = item.type === 'absensi' && data.status === 'pending' && data.currentStep === role;
         var canOpenAbsensi = item.type === 'absensi' &&
           (canApproveAbsensi || isPrivileged || data.createdBy === user.username);
@@ -904,21 +1029,17 @@
         items.forEach(function (item) {
           var card = document.createElement('article');
           card.className = 'request-item';
-          card.tabIndex = 0;
-          card.setAttribute('role', 'button');
-          card.setAttribute('aria-label', 'Buka detail ' + getSubmissionTitle(item));
           card.addEventListener('click', function () { openRequestDetails(item); });
-          card.addEventListener('keydown', function (event) {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              openRequestDetails(item);
-            }
-          });
           var top = document.createElement('div');
           top.className = 'request-item-top';
-          var title = document.createElement('div');
-          title.className = 'request-item-title';
+          var title = document.createElement('button');
+          title.type = 'button';
+          title.className = 'request-item-title request-item-title-button';
           title.textContent = getSubmissionTitle(item);
+          title.addEventListener('click', function (event) {
+            event.stopPropagation();
+            openRequestDetails(item);
+          });
           var status = getRequestStatus(item);
           var badge = document.createElement('span');
           badge.className = 'request-status' + (status.className ? ' ' + status.className : '');
@@ -963,6 +1084,27 @@
           if (details.length) appendRequestText(card, 'request-item-meta', details.join(' · '));
           var approvalSummary = getApprovalSummary(data);
           if (approvalSummary) appendRequestText(card, 'request-item-meta', approvalSummary);
+
+          if (['tf', 'pc', 'gaji'].indexOf(item.type) >= 0) {
+            var actions = document.createElement('div');
+            actions.className = 'request-item-actions';
+            actions.addEventListener('click', function (event) { event.stopPropagation(); });
+            if (canApproveFinanceRequest(item)) {
+              var approveButton = document.createElement('button');
+              approveButton.type = 'button';
+              approveButton.className = 'calendar-button today-button';
+              approveButton.textContent = 'Setujui';
+              approveButton.addEventListener('click', function () { approveFinanceRequest(item); });
+              actions.appendChild(approveButton);
+            }
+            var printButton = document.createElement('button');
+            printButton.type = 'button';
+            printButton.className = 'calendar-button';
+            printButton.textContent = 'Print';
+            printButton.addEventListener('click', function () { printFinanceRequest(item); });
+            actions.appendChild(printButton);
+            card.appendChild(actions);
+          }
           requestList.appendChild(card);
         });
       }

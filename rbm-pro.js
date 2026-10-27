@@ -11921,6 +11921,14 @@ function getBreakStats(logs, name, date) {
         return { total: Math.round(total), lastOut }; // Total waktu dikunci ke angka bulat
 }
 
+function isRegionalManagerOrSupervisor(jabatan) {
+    const normalizedJabatan = String(jabatan || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return normalizedJabatan.includes('manager regional') ||
+        normalizedJabatan.includes('supervisor regional') ||
+        normalizedJabatan.includes('regional manager') ||
+        normalizedJabatan.includes('regional supervisor');
+}
+
 async function loadRekapAbsensiGPS(skipRemoteReload) {
     const tglAwal = document.getElementById("rekap_gps_start").value;
     const tglAkhir = document.getElementById("rekap_gps_end").value;
@@ -12022,13 +12030,14 @@ async function loadRekapAbsensiGPS(skipRemoteReload) {
                 const emp = empMap[item.name];
                 const jabatan = emp ? (emp.jabatan || '').toLowerCase() : '';
                 const isManagerOrSpv = jabatan.includes('manager') || jabatan.includes('spv') || jabatan.includes('supervisor') || jabatan.includes('menejer');
+                const isRegionalManagerOrSpv = isRegionalManagerOrSupervisor(jabatan);
 
                 if (!item.masuk) lupa.push('Masuk');
                 if (!isManagerOrSpv) {
                     if (item.breakOuts.length === 0) lupa.push('Istirahat Keluar');
                     if (item.breakIns.length === 0) lupa.push('Istirahat Kembali');
                 }
-                if (!item.pulang) lupa.push('Pulang');
+                if (!item.pulang && !isRegionalManagerOrSpv) lupa.push('Pulang');
                 if (lupa.length === 0) return '-';
                 return 'Lupa ' + lupa.join(' & ');
             }
@@ -12040,7 +12049,9 @@ async function loadRekapAbsensiGPS(skipRemoteReload) {
                     if (showEmpty) {
                         const emptyShift = item.shift || '';
                         const emptyLabel = emptyShift ? ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(emptyShift) : null) || emptyShift) : '';
-                        const emptyMessage = emptyShift && ['Off', 'PH', 'AL', 'DP'].includes(emptyShift) ? `Jadwal ${emptyLabel}` : 'Tidak ada data absensi (Belum Absen)';
+                        const emptyMessage = emptyShift && ['Off', 'PH', 'AL', 'DP'].includes(emptyShift)
+                            ? `Jadwal ${emptyLabel}`
+                            : (isRegionalManagerOrSupervisor(empMap[item.name] && empMap[item.name].jabatan) ? 'Belum Absen Masuk' : 'Tidak ada data absensi (Belum Absen)');
                         html += `<tr style="background:#f8fafc; color:#94a3b8;"><td>${item.date}</td><td>${item.name}</td><td>${emptyLabel || '-'}</td><td colspan="7" style="text-align:center; font-style:italic; font-size:12px;">${emptyMessage}</td></tr>`;
                     }
                     else if (item.shift && ['Off', 'PH', 'AL', 'DP'].includes(item.shift)) {
@@ -12081,9 +12092,10 @@ async function loadRekapAbsensiGPS(skipRemoteReload) {
                 const empLupa = empMap[item.name];
                 const jabLupa = empLupa ? (empLupa.jabatan || '').toLowerCase() : '';
                 const isMgrSpvLupa = jabLupa.includes('manager') || jabLupa.includes('spv') || jabLupa.includes('supervisor') || jabLupa.includes('menejer');
+                const isRegionalManagerOrSpv = isRegionalManagerOrSupervisor(jabLupa);
 
                 const lupaMasuk = !item.masuk;
-                const lupaPulang = !item.pulang;
+                const lupaPulang = !item.pulang && !isRegionalManagerOrSpv;
                 const lupaBreakOut = !isMgrSpvLupa && item.breakOuts.length === 0;
                 const lupaBreakIn = !isMgrSpvLupa && item.breakIns.length === 0;
                 const detailTelatEsc = JSON.stringify({ lines: detailTelat.lines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
@@ -12308,14 +12320,14 @@ function addRekapGpsManualName() {
 if (typeof addRekapGpsManualName !== 'undefined') window.addRekapGpsManualName = addRekapGpsManualName;
 
 // Data rekap GPS untuk export (Excel/PDF) - sama filter dengan tampilan
-function getRekapAbsensiGpsDataForExport() {
+function getRekapAbsensiGpsDataForExport(includeEmptyRows) {
     const tglAwal = document.getElementById("rekap_gps_start").value;
     const tglAkhir = document.getElementById("rekap_gps_end").value;
     const filterNama = document.getElementById("rekap_gps_filter_nama").value;
     const logs = getCachedParsedStorage(getRbmStorageKey('RBM_GPS_LOGS'), []);
-    let filtered = logs.filter(l => l.date >= tglAwal && l.date <= tglAkhir);
-    if (filterNama) filtered = filtered.filter(l => l.name === filterNama);
-    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const filtered = logs.filter(l => l.date >= tglAwal && l.date <= tglAkhir && (!filterNama || l.name === filterNama));
+    let employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    if (!employees.length) employees = getCachedParsedStorage('RBM_EMPLOYEES', []);
     const jadwalData = getCachedParsedStorage(getRbmStorageKey('RBM_JADWAL_DATA'), {});
     const empMap = {};
     employees.forEach(e => empMap[e.name] = e);
@@ -12323,7 +12335,7 @@ function getRekapAbsensiGpsDataForExport() {
     const grouped = {};
     filtered.forEach(log => {
         const key = `${log.date}_${log.name}`;
-        if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null };
+        if (!grouped[key]) grouped[key] = { date: log.date, name: log.name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: true };
         if (log.type === 'Masuk') {
             if (!grouped[key].masuk || parseTimeToMinutes(log.time) < parseTimeToMinutes(grouped[key].masuk.time)) grouped[key].masuk = log;
         }
@@ -12333,7 +12345,43 @@ function getRekapAbsensiGpsDataForExport() {
         else if (log.type === 'Istirahat Keluar') grouped[key].breakOuts.push(log);
         else if (log.type === 'Istirahat Kembali') grouped[key].breakIns.push(log);
     });
-    const keys = Object.keys(grouped).sort().reverse();
+
+    if (includeEmptyRows && tglAwal && tglAkhir && tglAwal <= tglAkhir) {
+        const names = [];
+        const seenNames = new Set();
+        const addName = name => {
+            const normalizedName = String(name || '').trim();
+            if (normalizedName && !seenNames.has(normalizedName)) {
+                seenNames.add(normalizedName);
+                names.push(normalizedName);
+            }
+        };
+        if (filterNama) {
+            addName(filterNama);
+        } else {
+            employees.forEach(emp => addName(emp && emp.name));
+            const manualNames = safeParse(localStorage.getItem(getRbmStorageKey('RBM_REKAP_GPS_MANUAL_NAMES')), []);
+            if (Array.isArray(manualNames)) manualNames.forEach(addName);
+            filtered.forEach(log => addName(log.name));
+        }
+
+        const startDate = new Date(tglAwal + 'T12:00:00');
+        const endDate = new Date(tglAkhir + 'T12:00:00');
+        if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+            for (const date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+                const dateKey = getLocalDateKey(date);
+                names.forEach(name => {
+                    const key = `${dateKey}_${name}`;
+                    if (!grouped[key]) grouped[key] = { date: dateKey, name, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: false };
+                });
+            }
+        }
+    }
+
+    const keys = Object.keys(grouped).sort((a, b) => {
+        if (grouped[a].date !== grouped[b].date) return grouped[b].date.localeCompare(grouped[a].date);
+        return grouped[a].name.localeCompare(grouped[b].name);
+    });
     const rows = [];
     keys.forEach(k => {
         const item = grouped[k];
@@ -12343,6 +12391,7 @@ function getRekapAbsensiGpsDataForExport() {
         const empLupa = empMap[item.name];
         const jabLupa = empLupa ? (empLupa.jabatan || '').toLowerCase() : '';
         const isMgrSpvLupa = jabLupa.includes('manager') || jabLupa.includes('spv') || jabLupa.includes('supervisor') || jabLupa.includes('menejer');
+        const isRegionalManagerOrSpv = isRegionalManagerOrSupervisor(jabLupa);
 
         let lupa = [];
         if (!item.masuk) lupa.push('Masuk');
@@ -12350,10 +12399,12 @@ function getRekapAbsensiGpsDataForExport() {
             if (item.breakOuts.length === 0) lupa.push('Istirahat Keluar');
             if (item.breakIns.length === 0) lupa.push('Istirahat Kembali');
         }
-        if (!item.pulang) lupa.push('Pulang');
-        const lupaAbsen = lupa.length ? 'Lupa ' + lupa.join(' & ') : '-';
+        if (!item.pulang && !isRegionalManagerOrSpv) lupa.push('Pulang');
+        const lupaAbsen = !item.hasLog
+            ? (isRegionalManagerOrSpv ? 'Lupa Masuk' : 'Belum Absen')
+            : (lupa.length ? 'Lupa ' + lupa.join(' & ') : '-');
         const foto = [item.masuk, ...item.breakOuts, ...item.breakIns, item.pulang].filter(Boolean).length ? 'Ada' : '-';
-        const breakStats = getBreakStats(filtered, item.name, item.date);
+        const breakStats = item.hasLog ? getBreakStats(filtered, item.name, item.date) : { total: 0 };
         const empJadwal = empMap[item.name];
         const empJadwalId = empJadwal ? (empJadwal.id != null ? empJadwal.id : employees.indexOf(empJadwal)) : null;
         const shift = empJadwalId !== null ? jadwalData[`${item.date}_${empJadwalId}`] : '';
@@ -12424,7 +12475,7 @@ function exportRekapAbsensiGpsToExcel() {
 }
 
 function printRekapAbsensiGpsPdf() {
-    const data = getRekapAbsensiGpsDataForExport();
+    const data = getRekapAbsensiGpsDataForExport(true);
     if (data.rows.length === 0) {
         alert('Tidak ada data untuk dicetak. Pilih periode dan klik Tampilkan terlebih dahulu.');
         return;
