@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#1e40af">
   <title>Kalender Nasional Indonesia 2026</title>
   <link rel="stylesheet" href="rbm-pro.css">
+  <script src="national-holidays.js"></script>
   <script defer src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script defer src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
   <script defer src="firebase-storage.js"></script>
@@ -637,24 +638,7 @@
     (function () {
       'use strict';
 
-      var NATIONAL_HOLIDAYS = {
-        '2026-01-01': 'Tahun Baru 2026 Masehi',
-        '2026-01-16': 'Isra Mikraj Nabi Muhammad SAW',
-        '2026-02-17': 'Tahun Baru Imlek 2577 Kongzili',
-        '2026-03-19': 'Hari Suci Nyepi Tahun Baru Saka 1948',
-        '2026-03-21': 'Hari Raya Idul Fitri 1447 H',
-        '2026-03-22': 'Hari Raya Idul Fitri 1447 H',
-        '2026-04-03': 'Wafat Yesus Kristus',
-        '2026-05-01': 'Hari Buruh Internasional',
-        '2026-05-14': 'Kenaikan Yesus Kristus',
-        '2026-05-27': 'Hari Raya Idul Adha 1447 H',
-        '2026-05-31': 'Hari Raya Waisak 2570 BE',
-        '2026-06-01': 'Hari Lahir Pancasila',
-        '2026-06-16': 'Tahun Baru Islam 1448 H',
-        '2026-08-17': 'Proklamasi Kemerdekaan Republik Indonesia',
-        '2026-08-25': 'Maulid Nabi Muhammad SAW',
-        '2026-12-25': 'Kelahiran Yesus Kristus'
-      };
+      var NATIONAL_HOLIDAYS = window.RBM_NATIONAL_HOLIDAYS || {};
       var MONTHS = [
         'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
         'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
@@ -936,8 +920,13 @@
       }
 
       function printFinanceRequest(item) {
-        openRequestDetails(item);
-        window.setTimeout(function () { window.print(); }, 0);
+        var params = new URLSearchParams();
+        params.set('calendarRequestId', item.requestId);
+        params.set('calendarRequestType', item.type);
+        params.set('calendarReport', '1');
+        params.set('outlet', item.outlet);
+        var reportWindow = window.open('rbm-pengajuan.html?' + params.toString(), '_blank');
+        if (!reportWindow) window.alert('Preview laporan tidak dapat dibuka. Izinkan pop-up lalu coba lagi.');
       }
 
       function openRequestDetails(item) {
@@ -970,7 +959,7 @@
         var isPrivileged = role === 'Owner/Developer';
         var isFinanceRequest = ['tf', 'pc', 'gaji'].indexOf(item.type) >= 0;
         requestModalPrint.style.display = isFinanceRequest ? '' : 'none';
-        requestModalPrint.onclick = function () { window.print(); };
+        requestModalPrint.onclick = function () { printFinanceRequest(item); };
         requestModalApprove.style.display =
           canApproveFinanceRequest(item) ? '' : 'none';
         requestModalApprove.disabled = false;

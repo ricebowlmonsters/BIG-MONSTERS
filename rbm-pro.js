@@ -5163,6 +5163,14 @@ function processInventarisUpdate(nama, tanggal, jumlah) {
 // ================= ABSENSI LOGIC =================
 const ABSENSI_CODES = ['H', 'R', 'O', 'S', 'I', 'A', 'DP', 'PH', 'AL', ''];
 const JADWAL_CODES = ['P', 'M', 'S', 'Off', 'PH', 'AL', 'DP', ''];
+const PH_AUTO_BALANCE_START_DATE = '2026-10-27';
+const DP_AUTO_START_DATE = '2026-11-02';
+function getAbsensiCodesList() {
+    return canEditGajiPokokManual()
+        ? ABSENSI_CODES
+        : ABSENSI_CODES.filter(function(code) { return code !== 'PH' && code !== 'AL' && code !== 'DP'; });
+}
+
 function getJadwalCodesList() {
     var c = typeof getGpsJamConfig === 'function' ? getGpsJamConfig() : {};
     if (c.shifts && Array.isArray(c.shifts) && c.shifts.length > 0) {
@@ -5170,6 +5178,303 @@ function getJadwalCodesList() {
         return codes.concat(['Off', 'PH', 'AL', 'DP', '']);
     }
     return JADWAL_CODES;
+}
+
+function getEditableJadwalCodesList() {
+    var codes = getJadwalCodesList();
+    return canEditGajiPokokManual()
+        ? codes
+        : codes.filter(function(code) { return code !== 'PH' && code !== 'AL' && code !== 'DP'; });
+}
+
+function getAnniversaryDate(joinDate, year) {
+    var match = String(joinDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return '';
+    var month = Number(match[2]) - 1;
+    var day = Number(match[3]);
+    var lastDay = new Date(year, month + 1, 0).getDate();
+    return String(year) + '-' + String(month + 1).padStart(2, '0') + '-' + String(Math.min(day, lastDay)).padStart(2, '0');
+}
+
+function isDeveloperEmployee(employee) {
+    if (!employee) return false;
+    var username = String(employee.username || '').toLowerCase();
+    var name = String(employee.name || '').trim().toLowerCase();
+    var role = String(employee.jabatan || employee.role || '').toLowerCase();
+    return username === 'burhan' || username === 'developer' || name === 'burhan' || role.indexOf('developer') >= 0;
+}
+
+function getLastCompletedAnniversary(joinDate, today) {
+    var match = String(joinDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return '';
+    var joinYear = Number(match[1]);
+    var joinMonth = Number(match[2]);
+    var joinDay = Number(match[3]);
+    var joinDateValue = new Date(joinYear, joinMonth - 1, joinDay);
+    if (getLocalDateKey(joinDateValue) !== joinDate) return '';
+    var years = Number(today.slice(0, 4)) - joinYear;
+    if (years < 0) return '';
+    var anniversary = getAnniversaryDate(joinDate, joinYear + years);
+    if (anniversary > today) years--;
+    return years < 0 ? joinDate : getAnniversaryDate(joinDate, joinYear + years);
+}
+
+function reconcileALBalance() {
+    var today = getLocalDateKey(new Date());
+    var employeesKey = getRbmStorageKey('RBM_EMPLOYEES');
+    var outlet = getRbmOutlet() || 'default';
+    var employeeRef = useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.database
+        ? firebase.database().ref('rbm_pro/employees/' + outlet)
+        : null;
+
+    function updateEmployeeBalances(employees) {
+        var changed = false;
+        if (!Array.isArray(employees)) return employees;
+        employees.forEach(function(employee) {
+            if (!employee || isDeveloperEmployee(employee) || !employee.joinDate) return;
+            var joinDate = String(employee.joinDate);
+            var lastDate = getLastCompletedAnniversary(joinDate, today);
+            if (!lastDate) return;
+            if (employee.alAutoJoinDate !== joinDate || !employee.alAutoLastAccrualDate) {
+                employee.alAutoJoinDate = joinDate;
+                employee.alAutoLastAccrualDate = lastDate;
+                changed = true;
+                return;
+            }
+            var lastAccrual = employee.alAutoLastAccrualDate;
+            while (lastAccrual < today) {
+                var nextAnniversary = getAnniversaryDate(joinDate, Number(lastAccrual.slice(0, 4)) + 1);
+                if (!nextAnniversary || nextAnniversary > today) break;
+                employee.sisaAL = (Number(employee.sisaAL) || 0) + 12;
+                employee.alAutoLastAccrualDate = nextAnniversary;
+                lastAccrual = nextAnniversary;
+                changed = true;
+            }
+        });
+        return { employees: employees, changed: changed };
+    }
+
+    if (!employeeRef) {
+        var localEmployees = getCachedParsedStorage(employeesKey, []);
+        var localUpdate = updateEmployeeBalances(localEmployees);
+        if (!localUpdate.changed) return Promise.resolve(false);
+        window._rbmParsedCache[employeesKey] = { data: localEmployees };
+        try { localStorage.setItem(employeesKey, JSON.stringify(localEmployees)); } catch (error) {}
+        return Promise.resolve(RBMStorage.setItem(employeesKey, JSON.stringify(localEmployees))).then(function() {
+            if (!window._absensiEmployeesDirty) window._absensiViewEmployees = localEmployees;
+            return true;
+        });
+    }
+
+    return employeeRef.transaction(function(current) {
+        if (!current) return current;
+        var changed = false;
+        var isArray = Array.isArray(current);
+        var employees = isArray ? current : Object.keys(current).map(function(key) { return current[key]; });
+        var update = updateEmployeeBalances(employees);
+        changed = update.changed;
+        if (!changed) return;
+        if (isArray) return employees;
+        var updated = {};
+        Object.keys(current).forEach(function(key, index) { updated[key] = employees[index]; });
+        return updated;
+    }).then(function(result) {
+        if (!result.committed) return;
+        var updatedValue = result.snapshot.val() || [];
+        var updatedEmployees = Array.isArray(updatedValue)
+            ? updatedValue
+            : Object.keys(updatedValue).map(function(key) { return updatedValue[key]; });
+        window._rbmParsedCache[employeesKey] = { data: updatedEmployees };
+        if (!window._absensiEmployeesDirty) window._absensiViewEmployees = updatedEmployees;
+        try { localStorage.setItem(employeesKey, JSON.stringify(updatedEmployees)); } catch (error) {}
+        return true;
+    }).then(function(updated) {
+        return updated === true;
+    });
+}
+
+function getLastCompletedDPWeekEnd(today) {
+    var date = new Date(today + 'T00:00:00');
+    var monday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    monday.setDate(monday.getDate() - 1);
+    return getLocalDateKey(monday);
+}
+
+function reconcileDPBalance(outlet) {
+    var endDate = getLastCompletedDPWeekEnd(getLocalDateKey(new Date()));
+    if (endDate < DP_AUTO_START_DATE) return Promise.resolve(false);
+
+    var employeesKey = getRbmStorageKey('RBM_EMPLOYEES');
+    var absensiKey = getRbmStorageKey('RBM_ABSENSI_DATA');
+    var jadwalKey = getRbmStorageKey('RBM_JADWAL_DATA');
+    var loadData = useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadAbsensiJadwal
+        ? Promise.all([
+            FirebaseStorage.loadAbsensiJadwal(outlet, 'absensi', DP_AUTO_START_DATE, endDate),
+            FirebaseStorage.loadAbsensiJadwal(outlet, 'jadwal', DP_AUTO_START_DATE, endDate)
+        ])
+        : Promise.resolve([
+            getCachedParsedStorage(absensiKey, {}),
+            getCachedParsedStorage(jadwalKey, {})
+        ]);
+
+    return loadData.then(function(results) {
+        var attendanceData = results[0] || {};
+        var scheduleData = results[1] || {};
+        var weeks = [];
+        var weekStart = new Date(DP_AUTO_START_DATE + 'T00:00:00');
+        while (getLocalDateKey(weekStart) <= endDate) {
+            var weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6);
+            var weekEndKey = getLocalDateKey(weekEnd);
+            if (weekEndKey > endDate) break;
+            var dates = [];
+            for (var dayIndex = 0; dayIndex < 7; dayIndex++) {
+                dates.push(getLocalDateKey(new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + dayIndex)));
+            }
+            weeks.push({ start: getLocalDateKey(weekStart), dates: dates });
+            weekStart.setDate(weekStart.getDate() + 7);
+        }
+
+        var employeeRef = useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.database
+            ? firebase.database().ref('rbm_pro/employees/' + (outlet || getRbmOutlet() || 'default'))
+            : null;
+
+        function applyCredits(employees) {
+            var changed = false;
+            if (!Array.isArray(employees)) return { employees: employees, changed: false };
+            employees.forEach(function(employee, index) {
+                if (!employee) return;
+                var processedWeeks = employee.dpAutoProcessedWeeks && typeof employee.dpAutoProcessedWeeks === 'object'
+                    ? employee.dpAutoProcessedWeeks
+                    : {};
+                weeks.forEach(function(week) {
+                    if (processedWeeks[week.start]) return;
+                    var hasOff = false;
+                    var complete = true;
+                    week.dates.forEach(function(date) {
+                        var key = date + '_' + (employee.id || index);
+                        var attendance = String(attendanceData[key] || '').trim().toLowerCase();
+                        var schedule = String(scheduleData[key] || '').trim().toLowerCase();
+                        if (!attendance && !schedule) complete = false;
+                        if (attendance === 'off' || attendance === 'o' || schedule === 'off') hasOff = true;
+                    });
+                    if (!complete) return;
+                    if (!hasOff) employee.sisaDP = (Number(employee.sisaDP) || 0) + 1;
+                    processedWeeks[week.start] = hasOff ? 'off' : 'credited';
+                    changed = true;
+                });
+                if (Object.keys(processedWeeks).length) employee.dpAutoProcessedWeeks = processedWeeks;
+            });
+            return { employees: employees, changed: changed };
+        }
+
+        if (!employeeRef) {
+            var localEmployees = getCachedParsedStorage(employeesKey, []);
+            var localUpdate = applyCredits(localEmployees);
+            if (!localUpdate.changed) return false;
+            window._rbmParsedCache[employeesKey] = { data: localEmployees };
+            try { localStorage.setItem(employeesKey, JSON.stringify(localEmployees)); } catch (error) {}
+            return Promise.resolve(RBMStorage.setItem(employeesKey, JSON.stringify(localEmployees))).then(function() {
+                if (!window._absensiEmployeesDirty) window._absensiViewEmployees = localEmployees;
+                return true;
+            });
+        }
+
+        return employeeRef.transaction(function(current) {
+            if (!current) return;
+            var isArray = Array.isArray(current);
+            var employees = isArray ? current : Object.keys(current).map(function(key) { return current[key]; });
+            var update = applyCredits(employees);
+            if (!update.changed) return;
+            if (isArray) return employees;
+            var updated = {};
+            Object.keys(current).forEach(function(key, index) { updated[key] = employees[index]; });
+            return updated;
+        }).then(function(result) {
+            if (!result.committed) return false;
+            var updatedValue = result.snapshot.val() || [];
+            var updatedEmployees = Array.isArray(updatedValue)
+                ? updatedValue
+                : Object.keys(updatedValue).map(function(key) { return updatedValue[key]; });
+            window._rbmParsedCache[employeesKey] = { data: updatedEmployees };
+            if (!window._absensiEmployeesDirty) window._absensiViewEmployees = updatedEmployees;
+            try { localStorage.setItem(employeesKey, JSON.stringify(updatedEmployees)); } catch (error) {}
+            return true;
+        });
+    });
+}
+
+function getNationalHolidayDates(startDate, endDate) {
+    var holidays = window.RBM_NATIONAL_HOLIDAYS || {};
+    return Object.keys(holidays).filter(function(date) {
+        return date >= startDate && date <= endDate;
+    }).sort();
+}
+
+function reconcilePHBalanceFromAttendance(outlet, attendanceData, startDate, endDate) {
+    var holidayDates = getNationalHolidayDates(startDate, endDate);
+    if (!holidayDates.length) return Promise.resolve();
+
+    var employeesKey = getRbmStorageKey('RBM_EMPLOYEES');
+    var employeeRef = useFirebaseBackend() && typeof firebase !== 'undefined' && firebase.database
+        ? firebase.database().ref('rbm_pro/employees/' + outlet)
+        : null;
+
+    function updateEmployeeBalances(employees) {
+        if (!Array.isArray(employees)) return employees;
+        employees.forEach(function(employee, index) {
+            if (!employee || isDeveloperEmployee(employee)) return;
+            if (!employee.phAutoStartDate) employee.phAutoStartDate = PH_AUTO_BALANCE_START_DATE;
+            var credits = employee.phAutoCreditDates && typeof employee.phAutoCreditDates === 'object'
+                ? employee.phAutoCreditDates
+                : {};
+            holidayDates.forEach(function(date) {
+                if (date < employee.phAutoStartDate) return;
+                var key = date + '_' + (employee.id || index);
+                var worked = attendanceData[key] === 'H';
+                var credited = credits[date] === true;
+                if (worked && !credited) {
+                    employee.sisaPH = (Number(employee.sisaPH) || 0) + 1;
+                    credits[date] = true;
+                } else if (!worked && credited) {
+                    employee.sisaPH = Math.max(0, (Number(employee.sisaPH) || 0) - 1);
+                    delete credits[date];
+                }
+            });
+            employee.phAutoCreditDates = credits;
+        });
+        return employees;
+    }
+
+    if (!employeeRef) {
+        var localEmployees = getCachedParsedStorage(employeesKey, []);
+        updateEmployeeBalances(localEmployees);
+        window._rbmParsedCache[employeesKey] = { data: localEmployees };
+        try { localStorage.setItem(employeesKey, JSON.stringify(localEmployees)); } catch (error) {}
+        return RBMStorage.setItem(employeesKey, JSON.stringify(localEmployees));
+    }
+
+    return employeeRef.transaction(function(current) {
+        if (!current) return current;
+        var isArray = Array.isArray(current);
+        var employees = isArray ? current : Object.keys(current).map(function(key) { return current[key]; });
+        updateEmployeeBalances(employees);
+        if (!isArray) {
+            var updated = {};
+            Object.keys(current).forEach(function(key, index) { updated[key] = employees[index]; });
+            return updated;
+        }
+        return employees;
+    }).then(function(result) {
+        if (!result.committed) return;
+        var updatedValue = result.snapshot.val() || [];
+        var updatedEmployees = Array.isArray(updatedValue)
+            ? updatedValue
+            : Object.keys(updatedValue).map(function(key) { return updatedValue[key]; });
+        window._rbmParsedCache[employeesKey] = { data: updatedEmployees };
+        window._absensiViewEmployees = updatedEmployees;
+        try { localStorage.setItem(employeesKey, JSON.stringify(updatedEmployees)); } catch (error) {}
+    });
 }
 
 function updateJadwalLegend() {
@@ -5274,11 +5579,13 @@ function syncAbsensiPeriodAndRefresh() {
     // lalu paksa render ulang agar nama karyawan lintas-device langsung sinkron.
     if (window.RBMStorage && typeof window.RBMStorage.loadFromFirebase === 'function') {
         window.RBMStorage.loadFromFirebase().then(function() {
-            try {
-                var empKey = getRbmStorageKey('RBM_EMPLOYEES');
-                if (window._rbmParsedCache && window._rbmParsedCache[empKey]) {
-                    delete window._rbmParsedCache[empKey];
-                }
+            var empKey = getRbmStorageKey('RBM_EMPLOYEES');
+            if (window._rbmParsedCache && window._rbmParsedCache[empKey]) {
+                delete window._rbmParsedCache[empKey];
+            }
+            return reconcileALBalance().then(function() {
+                return reconcileDPBalance(getRbmOutlet() || 'default');
+            }).then(function() {
                 window._absensiViewEmployees = undefined;
                 if (activeAbsensiMode === 'absensi' || activeAbsensiMode === 'jadwal') {
                     renderAbsensiTable(activeAbsensiMode);
@@ -5289,8 +5596,13 @@ function syncAbsensiPeriodAndRefresh() {
                 } else if (activeAbsensiMode === 'bonus' && typeof renderBonusTab === 'function') {
                     renderBonusTab();
                 }
-            } catch (e) {}
-        }).catch(function(){});
+            }).catch(function(error) {
+                console.error('Gagal sinkronisasi saldo cuti otomatis:', error);
+                showCustomAlert('Gagal memperbarui saldo cuti otomatis: ' + (error && error.message ? error.message : error), 'Sinkronisasi Gagal', 'error');
+            });
+        }).catch(function(error) {
+            console.warn('Gagal memuat data karyawan dari Firebase:', error);
+        });
     }
 
     if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadAbsensiJadwal) {
@@ -5552,6 +5864,15 @@ function renderAbsensiTable(mode) {
         if (emp.jabatan && emp.jabatan !== '-' && !isMatched) {
             jabOpts += `<option value="${emp.jabatan}" selected>${emp.jabatan}</option>`;
         }
+        const sisaALCell = canEditGajiPokokManual()
+            ? `<input type="number" name="emp_sisaAL_${index}" aria-label="Sisa Cuti AL" value="${emp.sisaAL||0}" onchange="updateEmployee(${index}, 'sisaAL', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">`
+            : `<span title="Saldo AL dihitung otomatis">${emp.sisaAL||0}</span>`;
+        const sisaPHCell = canEditGajiPokokManual()
+            ? `<input type="number" name="emp_sisaPH_${index}" aria-label="Sisa Cuti PH" value="${emp.sisaPH||0}" onchange="updateEmployee(${index}, 'sisaPH', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">`
+            : `<span title="Saldo PH dihitung otomatis">${emp.sisaPH||0}</span>`;
+        const sisaDPCell = canEditGajiPokokManual()
+            ? `<input type="number" name="emp_sisaDP_${index}" aria-label="Sisa Cuti DP" value="${emp.sisaDP||0}" onchange="updateEmployee(${index}, 'sisaDP', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">`
+            : `<span title="Saldo DP dihitung otomatis">${emp.sisaDP||0}</span>`;
 
         // Static Info (Email dihapus; Jabatan, Join Date, Sisa Cuti bisa dilipat via icon di samping Save/Print Jadwal)
         let rowHtml = `<tr>
@@ -5568,13 +5889,13 @@ function renderAbsensiTable(mode) {
                 <input type="date" name="emp_joindate_${index}" aria-label="Tanggal Masuk" value="${emp.joinDate || ''}" onchange="updateEmployee(${index}, 'joinDate', this.value)" style="border:none; width:100px; padding:0; font-size:11px;">
             </td>
             <td class="col-sisa-cuti">
-                <input type="number" name="emp_sisaAL_${index}" aria-label="Sisa Cuti AL" value="${emp.sisaAL||0}" onchange="updateEmployee(${index}, 'sisaAL', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">
+                ${sisaALCell}
             </td>
             <td class="col-sisa-cuti">
-                <input type="number" name="emp_sisaDP_${index}" aria-label="Sisa Cuti DP" value="${emp.sisaDP||0}" onchange="updateEmployee(${index}, 'sisaDP', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">
+                ${sisaDPCell}
             </td>
             <td class="col-sisa-cuti">
-                <input type="number" name="emp_sisaPH_${index}" aria-label="Sisa Cuti PH" value="${emp.sisaPH||0}" onchange="updateEmployee(${index}, 'sisaPH', this.value)" style="width:50px; padding:5px; border:1px solid #eee; text-align:center;">
+                ${sisaPHCell}
             </td>
         `;
 
@@ -5618,7 +5939,9 @@ function renderAbsensiTable(mode) {
             : { totalMenit: 0 };
         const totalMenitTelatGaji = detailTelatGaji.totalMenit || 0;
         const calcGpsJam = totalMenitTelatGaji >= configTelat ? Math.round((totalMenitTelatGaji / configTelat) * 10) / 10 : 0;
-        const jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+        const jamTerlambat = canEditGajiPokokManual() && pData.jamTerlambatManual !== undefined
+            ? parseFloat(pData.jamTerlambatManual)
+            : calcGpsJam;
         const gajiPokok = parseInt(emp.gajiPokok) || 0;
         const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
         const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
@@ -5665,11 +5988,15 @@ function cycleAbsensiStatus(cell, key) {
     const isJadwal = activeAbsensiMode === 'jadwal';
     const outlet = getRbmOutlet() || 'default';
     const dateKey = String(key || '').substring(0, 10);
+    if (!canEditGajiPokokManual() && ['PH', 'AL', 'DP'].includes(cell.innerText.trim())) {
+        showCustomAlert('Status PH/AL/DP hanya dapat dibuat atau diubah melalui pengajuan yang disetujui Supervisor Regional.', 'Akses Ditolak', 'error');
+        return;
+    }
     if (!isOfficeInternalAbsensiOutlet(outlet) && isPastAbsensiDate(dateKey) && !canEditPastAbsensi()) {
         showCustomAlert('Tanggal lampau hanya dapat diubah Developer/Owner, Manager Regional, atau Supervisor Regional.', 'Akses Ditolak', 'error');
         return;
     }
-    const codes = isJadwal ? (typeof getJadwalCodesList === 'function' ? getJadwalCodesList() : JADWAL_CODES) : ABSENSI_CODES;
+    const codes = isJadwal ? getEditableJadwalCodesList() : getAbsensiCodesList();
     const current = cell.innerText;
     let nextIdx = codes.indexOf(current) + 1;
     if (nextIdx >= codes.length) nextIdx = 0;
@@ -5706,6 +6033,11 @@ function updateEmployee(index, field, value) {
         window._absensiViewEmployees = safeParse(RBMStorage.getItem(getRbmStorageKey('RBM_EMPLOYEES')), []);
     }
     const employees = window._absensiViewEmployees;
+    if (['sisaPH', 'sisaAL', 'sisaDP'].includes(field) && !canEditGajiPokokManual()) {
+        showCustomAlert('Saldo PH/AL/DP dihitung otomatis dan tidak dapat diubah manual.', 'Akses Ditolak', 'error');
+        renderAbsensiTable();
+        return;
+    }
     if (field === 'jabatan') {
         const actorRole = absensiRequestRole(getAbsensiRequestUser());
         const rank = { Supervisor: 1, 'Manager Outlet': 2, Admin: 3, 'Supervisor Regional': 4, 'Manager Regional': 5, 'Owner/Developer': 99 };
@@ -5769,6 +6101,8 @@ function saveAbsensiToFirebase(silent) {
     var isJadwal = activeAbsensiMode === 'jadwal';
     var type = isJadwal ? 'jadwal' : 'absensi';
     var outlet = getRbmOutlet() || 'default';
+    var startDate = document.getElementById('absensi_tgl_awal').value;
+    var endDate = document.getElementById('absensi_tgl_akhir').value;
     var editScope = absensiDateEditScope(outlet, type);
     var editedDates = window._absensiEditedDates && window._absensiEditedDates[editScope] || {};
     if (!isOfficeInternalAbsensiOutlet(outlet) && !canEditPastAbsensi() && Object.keys(editedDates).some(isPastAbsensiDate)) {
@@ -5785,12 +6119,13 @@ function saveAbsensiToFirebase(silent) {
             if (!silent) alert('Data tersimpan.');
         }
     }
-    function showError() {
+    function showError(error) {
+        var detail = error && error.message ? error.message : 'cek koneksi';
         if (msg) {
-            msg.textContent = 'Gagal menyimpan. Cek koneksi internet.';
+            msg.textContent = 'Gagal menyimpan: ' + detail;
             msg.style.color = '#dc2626';
         } else {
-            if (!silent) alert('Gagal menyimpan. Cek koneksi internet.');
+            if (!silent) alert('Gagal menyimpan: ' + detail);
         }
     }
     if (msg && !silent) msg.textContent = 'Menyimpan...';
@@ -5813,13 +6148,21 @@ function saveAbsensiToFirebase(silent) {
     }
 
     Promise.all(promises).then(function() {
+        if (!isJadwal) {
+            return reconcilePHBalanceFromAttendance(outlet, data, startDate, endDate)
+                .catch(function(error) {
+                    throw new Error('Data absensi tersimpan, tetapi saldo PH gagal diperbarui: ' + (error && error.message ? error.message : error));
+                });
+        }
+    }).then(function() {
         window._absensiEmployeesDirty = false;
         if (window._absensiEditedDates) delete window._absensiEditedDates[editScope];
         if (msg && !silent) msg.textContent = 'Data tersimpan.';
         showSuccess();
+        if (!isJadwal) renderAbsensiTable(activeAbsensiMode);
         try {
             if (useFirebaseBackend() && typeof FirebaseStorage !== 'undefined' && FirebaseStorage.syncGpsKioskAfterAbsensiSave) {
-                FirebaseStorage.syncGpsKioskAfterAbsensiSave(outlet, type, data, employees);
+                FirebaseStorage.syncGpsKioskAfterAbsensiSave(outlet, type, data, window._absensiViewEmployees || employees);
             }
         } catch (eGps) {}
     }).catch(function(err) {
@@ -5829,7 +6172,7 @@ function saveAbsensiToFirebase(silent) {
             msg.textContent = 'Gagal menyimpan: ' + ((err && err.message) ? err.message : 'cek koneksi');
             msg.style.color = '#dc2626';
         }
-        showError();
+        showError(err);
     });
 }
 
@@ -6259,7 +6602,9 @@ function renderRekapGaji() {
         const totalMenitTelatGps = detailTelatGaji.totalMenit;
         const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
         const detailTelatEsc = JSON.stringify({ lines: detailTelatGaji.detailLines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+        let jamTerlambat = canEditGajiPokokManual() && pData.jamTerlambatManual !== undefined
+            ? parseFloat(pData.jamTerlambatManual)
+            : calcGpsJam;
         
         // Static Data (Save to Employee Object)
         const bank = emp.bank || '';
@@ -6314,6 +6659,9 @@ function renderRekapGaji() {
         const gajiPokokCell = canEditGajiPokokManual()
             ? `<input type="text" data-field="gajiPokok" value="${formatRupiah(gajiPokok)}" oninput="resizeInput(this)" style="width:${wGP}px; text-align:right; padding:5px;">`
             : `<span title="Hanya Developer yang dapat mengubah gaji pokok">${formatRupiah(gajiPokok)}</span>`;
+        const jamTerlambatCell = canEditGajiPokokManual()
+            ? `<input type="number" data-field="jamTerlambat" value="${jamTerlambat}" onclick="event.stopPropagation()" oninput="resizeInput(this); this.setAttribute('data-edited', 'true');" style="width:${wJam}px; text-align:center; padding:5px; cursor:pointer;" placeholder="0">`
+            : `<span title="Dihitung otomatis dari absensi GPS">${jamTerlambat}</span>`;
         html += `<tr data-emp-index="${idx}" data-emp-id="${empKeyAttr}">
             <td style="text-align:center; position:sticky; left:0; background:white; z-index:5; border:1px solid #ccc;">${idx + 1}</td>
             <td style="position:sticky; left:40px; background:white; z-index:5; border:1px solid #ccc;">${emp.name}</td>
@@ -6343,7 +6691,7 @@ function renderRekapGaji() {
 
             <!-- Keterlambatan -->
             <td onclick="showDetailTelatModal('Periode ${tglAwal} - ${tglAkhir}', '${(emp.name || '').replace(/'/g, "\\'")}', '${detailTelatEsc}')" style="cursor:pointer; text-decoration:underline; color:#b91c1c;">
-                <input type="number" data-field="jamTerlambat" value="${jamTerlambat}" oninput="resizeInput(this); this.setAttribute('data-edited', 'true');" style="width:${wJam}px; text-align:center; padding:5px; cursor:pointer;" placeholder="0">
+                ${jamTerlambatCell}
             </td>
             <td style="text-align:right; font-size:9px;">${formatRupiah(potTerlambatPerJam)}</td>
             <td style="text-align:right;">${formatRupiah(totalPotTerlambat)}</td>
@@ -6423,7 +6771,7 @@ async function saveRekapGajiData() {
         if (!gajiData[empId]) gajiData[empId] = {};
         if (inpHkTarget) gajiData[empId].hkTarget = parseInt(inpHkTarget.value, 10) || 0;
         if (inpPotHari) gajiData[empId].potHari = parseFloat(inpPotHari.value) || 0;
-        if (inpJamTerlambat) {
+        if (inpJamTerlambat && canEditGajiPokokManual()) {
             // Simpan nilai hasil kalkulasi yang tampil sebagai satu sumber untuk semua slip.
             var valStr = inpJamTerlambat.value.trim();
             if (valStr === '') delete gajiData[empId].jamTerlambatManual;
@@ -6619,7 +6967,7 @@ async function submitGajiPengajuan() {
                 const hkTarget = pData.hkTarget !== undefined ? parseInt(pData.hkTarget) : 26;
                 const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
         const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-                let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+                let jamTerlambat = canEditGajiPokokManual() && pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
                 const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
                 const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
             const parkir = enableParkir ? jumlahH * 5000 : 0;
@@ -6981,7 +7329,7 @@ function generateAndShowSlip(idx) {
     const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
     const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
     const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-    let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+    let jamTerlambat = canEditGajiPokokManual() && pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
     const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
     const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
@@ -7098,7 +7446,7 @@ function sendSlipEmail(idx) {
     const potHari = parseFloat(pData.potHari) || 0;
     const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
     const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-    let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+    let jamTerlambat = canEditGajiPokokManual() && pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
     const hutang = parseInt(pData.hutang) || 0;
     const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
@@ -7357,7 +7705,7 @@ function exportCompleteAbsensiExcel() {
         const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
         const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
         const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-        let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+        let jamTerlambat = canEditGajiPokokManual() && pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
         xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${potHari}</Data></Cell>\n`;
         xml += `<Cell ss:StyleID="sCenter"><Data ss:Type="Number">${jamTerlambat}</Data></Cell>\n`;
@@ -7591,7 +7939,7 @@ function exportCompleteAbsensiPDF() {
         const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
         const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
         const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-        let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+        let jamTerlambat = canEditGajiPokokManual() && pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
         htmlLaporanAbsen += `<td>${counts.H}</td><td>${totalSisaCuti}</td><td>${counts.A}</td><td>${counts.I}</td><td>${counts.S}</td><td>${counts.OFF}</td><td>${counts.DP}</td><td>${counts.PH}</td><td>${counts.AL}</td><td>${dates.length}</td><td>${potHari || '-'}</td><td>${jamTerlambat || '-'}</td></tr>`;
     });
@@ -7619,7 +7967,7 @@ function exportCompleteAbsensiPDF() {
         const potHari = parseFloat(pData.potHari) || 0;
         const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || idx, emp.name, tglAwal, tglAkhir) : 0;
         const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-        let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+        let jamTerlambat = canEditGajiPokokManual() && pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
         const hutang = parseInt(pData.hutang) || 0;
             const parkir = enableParkir ? counts.H * 5000 : 0;
@@ -7976,7 +8324,7 @@ async function downloadAllSlipsAsZip(event) {
             const potHari = pData.potHari !== undefined ? parseFloat(pData.potHari) : 0;
             const totalMenitTelatGps = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(emp.id || i, emp.name, tglAwal, tglAkhir) : 0;
             const calcGpsJam = totalMenitTelatGps >= configTelat ? Math.round((totalMenitTelatGps / configTelat) * 10) / 10 : 0;
-            let jamTerlambat = pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
+            let jamTerlambat = canEditGajiPokokManual() && pData.jamTerlambatManual !== undefined ? parseFloat(pData.jamTerlambatManual) : calcGpsJam;
 
             const hutang = pData.hutang !== undefined ? parseInt(pData.hutang) : 0;
             const potonganBpjs = pData.potonganBpjs !== undefined ? parseInt(pData.potonganBpjs) : (parseInt(pData.bpjs) || 0);
@@ -10906,6 +11254,13 @@ function getJadwalLabelFromConfig(shiftCode) {
     return (typeof JADWAL_LABEL !== 'undefined' && JADWAL_LABEL[shiftCode]) ? JADWAL_LABEL[shiftCode] : (shiftCode || '');
 }
 
+function isJadwalBebasAbsen(shiftCode) {
+    var code = String(shiftCode || '').trim().toLowerCase();
+    var label = String(getJadwalLabelFromConfig(shiftCode) || '').trim().toLowerCase();
+    var freeAttendanceCodes = ['off', 'ph', 'al', 'dp', 'libur', 'cuti'];
+    return freeAttendanceCodes.includes(code) || freeAttendanceCodes.includes(label);
+}
+
 function getDurasiIstirahatMenitFromConfig(shift) {
     var s = getShiftByCodeFromConfig(shift);
     if (s && s.durasiIstirahat != null) return parseInt(s.durasiIstirahat, 10) || 60;
@@ -11686,7 +12041,9 @@ async function continueAbsensiWithPassword() {
         const lemburMinggu = parseInt(periodData.lemburMinggu, 10) || 0;
         const totalMenitTelat = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(employeeId, selectedEmployee.name, periodStartText, periodEndText, gpsLogs, jadwalData) : 0;
         const menitPerJam = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
-        const jamTerlambat = periodData.jamTerlambatManual !== undefined ? parseFloat(periodData.jamTerlambatManual) : (totalMenitTelat >= menitPerJam ? Math.round((totalMenitTelat / menitPerJam) * 10) / 10 : 0);
+        const jamTerlambat = canEditGajiPokokManual() && periodData.jamTerlambatManual !== undefined
+            ? parseFloat(periodData.jamTerlambatManual)
+            : (totalMenitTelat >= menitPerJam ? Math.round((totalMenitTelat / menitPerJam) * 10) / 10 : 0);
         const gajiPerHari = Math.round(gajiPokok / 30);
         const totalPotKehadiran = Math.round((periodData.potHari !== undefined ? parseFloat(periodData.potHari) : 0) * gajiPerHari);
         const totalPotTerlambat = Math.round(jamTerlambat * Math.round(gajiPokok / 240));
@@ -11819,7 +12176,9 @@ async function downloadEmployeeSlipGaji() {
     const transport = jamConfig.enableTransport === true && data.transport != null ? Number(data.transport) : 0;
     const configTelat = typeof getMenitTelatPerJamGajiFromConfig === 'function' ? getMenitTelatPerJamGajiFromConfig() : 10;
     const totalMenitTelat = typeof getTotalMenitTelatFromGps === 'function' ? getTotalMenitTelatFromGps(employeeId, employee.name, start, endKey, gpsLogs, jadwalData) : 0;
-    const jamTerlambat = data.jamTerlambatManual !== undefined ? parseFloat(data.jamTerlambatManual) : (totalMenitTelat >= configTelat ? Math.round((totalMenitTelat / configTelat) * 10) / 10 : 0);
+    const jamTerlambat = canEditGajiPokokManual() && data.jamTerlambatManual !== undefined
+        ? parseFloat(data.jamTerlambatManual)
+        : (totalMenitTelat >= configTelat ? Math.round((totalMenitTelat / configTelat) * 10) / 10 : 0);
     const gajiPerHari = Math.round(gajiPokok / 30);
     const totalPotKehadiran = Math.round((data.potHari !== undefined ? parseFloat(data.potHari) : 0) * gajiPerHari);
     const potonganTerlambat = Math.round(jamTerlambat * Math.round(gajiPokok / 240));
@@ -12005,7 +12364,7 @@ async function loadRekapAbsensiGPS(skipRemoteReload) {
                     if (!name) return;
                     const empId = emp.id != null ? emp.id : employees.indexOf(emp);
                     const shift = jadwalData[`${d}_${empId}`] || '';
-                    if (!['Off', 'PH', 'AL', 'DP'].includes(shift)) return;
+                    if (!isJadwalBebasAbsen(shift)) return;
                     const key = `${d}_${name}`;
                     if (!grouped[key]) grouped[key] = { date: d, name: name, shift: shift, masuk: null, breakOuts: [], breakIns: [], pulang: null, hasLog: false };
                     if (keys.indexOf(key) < 0) keys.push(key);
@@ -12025,7 +12384,8 @@ async function loadRekapAbsensiGPS(skipRemoteReload) {
             const empMap = {};
             employees.forEach(e => { empMap[e.name] = e; });
 
-            function getLupaAbsen(item) {
+            function getLupaAbsen(item, shift) {
+                if (isJadwalBebasAbsen(shift)) return '-';
                 const lupa = [];
                 const emp = empMap[item.name];
                 const jabatan = emp ? (emp.jabatan || '').toLowerCase() : '';
@@ -12049,12 +12409,12 @@ async function loadRekapAbsensiGPS(skipRemoteReload) {
                     if (showEmpty) {
                         const emptyShift = item.shift || '';
                         const emptyLabel = emptyShift ? ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(emptyShift) : null) || emptyShift) : '';
-                        const emptyMessage = emptyShift && ['Off', 'PH', 'AL', 'DP'].includes(emptyShift)
+                        const emptyMessage = isJadwalBebasAbsen(emptyShift)
                             ? `Jadwal ${emptyLabel}`
                             : (isRegionalManagerOrSupervisor(empMap[item.name] && empMap[item.name].jabatan) ? 'Belum Absen Masuk' : 'Tidak ada data absensi (Belum Absen)');
                         html += `<tr style="background:#f8fafc; color:#94a3b8;"><td>${item.date}</td><td>${item.name}</td><td>${emptyLabel || '-'}</td><td colspan="7" style="text-align:center; font-style:italic; font-size:12px;">${emptyMessage}</td></tr>`;
                     }
-                    else if (item.shift && ['Off', 'PH', 'AL', 'DP'].includes(item.shift)) {
+                    else if (isJadwalBebasAbsen(item.shift)) {
                         const emptyLabel = (typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(item.shift) : null) || item.shift;
                         html += `<tr style="background:#f8fafc; color:#64748b;"><td>${item.date}</td><td>${item.name}</td><td>${emptyLabel}</td><td colspan="7" style="text-align:center; font-style:italic; font-size:12px;">Jadwal ${emptyLabel}</td></tr>`;
                     }
@@ -12087,26 +12447,25 @@ async function loadRekapAbsensiGPS(skipRemoteReload) {
                 };
                 const detailTelat = getDetailTelatUntukRekap(item.date, item.name, item, employees, jadwalData, empMap);
                 const isBenarBenarTelat = detailTelat.totalMenit > 0;
-                const lupaAbsen = getLupaAbsen(item);
-                
                 const empLupa = empMap[item.name];
+                const empJadwalId = empLupa ? (empLupa.id != null ? empLupa.id : employees.indexOf(empLupa)) : null;
+                const shift = empJadwalId !== null ? jadwalData[`${item.date}_${empJadwalId}`] || item.shift || '' : item.shift || '';
+                const lupaAbsen = getLupaAbsen(item, shift);
                 const jabLupa = empLupa ? (empLupa.jabatan || '').toLowerCase() : '';
                 const isMgrSpvLupa = jabLupa.includes('manager') || jabLupa.includes('spv') || jabLupa.includes('supervisor') || jabLupa.includes('menejer');
                 const isRegionalManagerOrSpv = isRegionalManagerOrSupervisor(jabLupa);
 
-                const lupaMasuk = !item.masuk;
-                const lupaPulang = !item.pulang && !isRegionalManagerOrSpv;
-                const lupaBreakOut = !isMgrSpvLupa && item.breakOuts.length === 0;
-                const lupaBreakIn = !isMgrSpvLupa && item.breakIns.length === 0;
+                const jadwalBebasAbsen = isJadwalBebasAbsen(shift);
+                const lupaMasuk = !jadwalBebasAbsen && !item.masuk;
+                const lupaPulang = !jadwalBebasAbsen && !item.pulang && !isRegionalManagerOrSpv;
+                const lupaBreakOut = !jadwalBebasAbsen && !isMgrSpvLupa && item.breakOuts.length === 0;
+                const lupaBreakIn = !jadwalBebasAbsen && !isMgrSpvLupa && item.breakIns.length === 0;
                 const detailTelatEsc = JSON.stringify({ lines: detailTelat.lines }).replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const telatHtml = isBenarBenarTelat ? '<span style="color:#b91c1c; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailTelatModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', \'' + detailTelatEsc + '\')">Ya (' + detailTelat.totalMenit + 'm)</span>' : '-';
                 const lupaHtml = lupaAbsen !== '-' ? '<span style="color:#b45309; font-weight:bold; cursor:pointer; text-decoration:underline;" onclick="showDetailLupaModal(\'' + item.date + '\', \'' + (item.name || '').replace(/'/g, "\\'") + '\', ' + lupaMasuk + ', ' + lupaPulang + ', ' + lupaBreakOut + ', ' + lupaBreakIn + ')">' + lupaAbsen + '</span>' : '-';
 
                 const breakStats = getBreakStats(filtered, item.name, item.date);
                 const totalIstirahat = breakStats.total > 0 ? breakStats.total + ' menit' : '-';
-                const empJadwal = empMap[item.name];
-                const empJadwalId = empJadwal ? (empJadwal.id != null ? empJadwal.id : employees.indexOf(empJadwal)) : null;
-                const shift = empJadwalId !== null ? jadwalData[`${item.date}_${empJadwalId}`] : '';
                 const jadwalLabel = shift ? ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || shift) : '-';
                 html += `<tr${isBenarBenarTelat || lupaAbsen !== '-' ? ' style="background:#fef2f2;"' : ''}>
                     <td>${item.date}</td>
@@ -12392,22 +12751,25 @@ function getRekapAbsensiGpsDataForExport(includeEmptyRows) {
         const jabLupa = empLupa ? (empLupa.jabatan || '').toLowerCase() : '';
         const isMgrSpvLupa = jabLupa.includes('manager') || jabLupa.includes('spv') || jabLupa.includes('supervisor') || jabLupa.includes('menejer');
         const isRegionalManagerOrSpv = isRegionalManagerOrSupervisor(jabLupa);
+        const empJadwal = empMap[item.name];
+        const empJadwalId = empJadwal ? (empJadwal.id != null ? empJadwal.id : employees.indexOf(empJadwal)) : null;
+        const shift = empJadwalId !== null ? jadwalData[`${item.date}_${empJadwalId}`] : '';
+        const jadwalBebasAbsen = isJadwalBebasAbsen(shift);
 
         let lupa = [];
-        if (!item.masuk) lupa.push('Masuk');
-        if (!isMgrSpvLupa) {
+        if (!jadwalBebasAbsen && !item.masuk) lupa.push('Masuk');
+        if (!jadwalBebasAbsen && !isMgrSpvLupa) {
             if (item.breakOuts.length === 0) lupa.push('Istirahat Keluar');
             if (item.breakIns.length === 0) lupa.push('Istirahat Kembali');
         }
-        if (!item.pulang && !isRegionalManagerOrSpv) lupa.push('Pulang');
-        const lupaAbsen = !item.hasLog
+        if (!jadwalBebasAbsen && !item.pulang && !isRegionalManagerOrSpv) lupa.push('Pulang');
+        const lupaAbsen = jadwalBebasAbsen
+            ? '-'
+            : !item.hasLog
             ? (isRegionalManagerOrSpv ? 'Lupa Masuk' : 'Belum Absen')
             : (lupa.length ? 'Lupa ' + lupa.join(' & ') : '-');
         const foto = [item.masuk, ...item.breakOuts, ...item.breakIns, item.pulang].filter(Boolean).length ? 'Ada' : '-';
         const breakStats = item.hasLog ? getBreakStats(filtered, item.name, item.date) : { total: 0 };
-        const empJadwal = empMap[item.name];
-        const empJadwalId = empJadwal ? (empJadwal.id != null ? empJadwal.id : employees.indexOf(empJadwal)) : null;
-        const shift = empJadwalId !== null ? jadwalData[`${item.date}_${empJadwalId}`] : '';
         const jadwalLabel = shift ? ((typeof getJadwalLabelFromConfig === 'function' ? getJadwalLabelFromConfig(shift) : null) || shift) : '-';
         rows.push({
             date: item.date,
@@ -12487,6 +12849,7 @@ function printRekapAbsensiGpsPdf() {
         tableRows += `<tr>
             <td>${r.date}</td>
             <td>${r.name}</td>
+            <td>${r.jadwal}</td>
             <td>${r.masuk}</td>
             <td>${r.breakOut}</td>
             <td>${r.breakIn}</td>
@@ -12514,7 +12877,7 @@ function printRekapAbsensiGpsPdf() {
     <p class="period">Riwayat absensi foto dan lokasi. Periode: ${data.tglAwal} s/d ${data.tglAkhir}</p>
     <table>
     <thead><tr>
-      <th>Tanggal</th><th>Nama</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Total Istirahat</th><th>Pulang</th><th>Telat</th><th>Lupa Absen</th>
+      <th>Tanggal</th><th>Nama</th><th>Jadwal</th><th>Masuk</th><th>Istirahat Keluar</th><th>Istirahat Kembali</th><th>Total Istirahat</th><th>Pulang</th><th>Telat</th><th>Lupa Absen</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
     </table>
@@ -13155,7 +13518,7 @@ async function loadShiftSwapEmployeesForOutlet(outlet) {
 }
 
 function getAbsensiRequestEmployeeKey(employee, index) {
-    return String(employee && employee.id || index);
+    return String(employee && employee.id != null && employee.id !== '' ? employee.id : index);
 }
 
 async function populateShiftSwapEmployees() {
@@ -13227,6 +13590,88 @@ async function updateShiftSwapPreview() {
     }
 }
 
+async function consumeLeaveBalanceForRequest(request, requestId, leaveType) {
+    var balanceField = leaveType === 'AL' ? 'sisaAL' : (leaveType === 'DP' ? 'sisaDP' : 'sisaPH');
+    var requestsField = leaveType === 'AL' ? 'alAutoSpentRequests' : (leaveType === 'DP' ? 'dpAutoSpentRequests' : 'phAutoSpentRequests');
+    if (!request || !request.startDate || !requestId) throw new Error('Data pengajuan ' + leaveType + ' tidak lengkap.');
+    var start = String(request.startDate).split('-').map(Number);
+    var end = String(request.endDate || request.startDate).split('-').map(Number);
+    if (start.length !== 3 || end.length !== 3 || start.some(isNaN) || end.some(isNaN)) {
+        throw new Error('Tanggal pengajuan ' + leaveType + ' tidak valid.');
+    }
+    var startUtc = Date.UTC(start[0], start[1] - 1, start[2]);
+    var endUtc = Date.UTC(end[0], end[1] - 1, end[2]);
+    var days = Math.floor((endUtc - startUtc) / 86400000) + 1;
+    if (days < 1) throw new Error('Rentang tanggal pengajuan ' + leaveType + ' tidak valid.');
+
+    var outlet = request.outlet || getAbsensiRequestOutlet();
+    var employeesKey = getRbmStorageKey('RBM_EMPLOYEES');
+    if (typeof firebase === 'undefined' || !firebase.database) throw new Error('Koneksi Firebase diperlukan untuk mengurangi saldo ' + leaveType + '.');
+    var employeeRef = firebase.database().ref('rbm_pro/employees/' + outlet);
+    var employeeFound = false;
+    var alreadyConsumed = false;
+    var developerExempt = false;
+    var insufficientBalance = false;
+    var availableBalance = 0;
+
+    var result = await employeeRef.transaction(function(current) {
+        employeeFound = false;
+        alreadyConsumed = false;
+        developerExempt = false;
+        insufficientBalance = false;
+        availableBalance = 0;
+        if (!current) return;
+        var isArray = Array.isArray(current);
+        var employees = isArray ? current : Object.keys(current).map(function(key) { return current[key]; });
+        var employee = employees.find(function(item, index) {
+            if (!item) return false;
+            if (request.employeeId != null) return String(item.id != null && item.id !== '' ? item.id : index) === String(request.employeeId);
+            return item.name === request.name;
+        });
+        if (!employee) return;
+        employeeFound = true;
+        if (isDeveloperEmployee(employee) && leaveType !== 'DP') {
+            developerExempt = true;
+            return;
+        }
+        var appliedRequests = employee[requestsField] && typeof employee[requestsField] === 'object'
+            ? employee[requestsField]
+            : {};
+        if (appliedRequests[requestId]) {
+            alreadyConsumed = true;
+            return;
+        }
+        var balance = Number(employee[balanceField]) || 0;
+        availableBalance = balance;
+        if (balance < days) {
+            insufficientBalance = true;
+            return;
+        }
+        employee[balanceField] = balance - days;
+        appliedRequests[requestId] = days;
+        employee[requestsField] = appliedRequests;
+        if (isArray) return employees;
+        var updated = {};
+        Object.keys(current).forEach(function(key, index) { updated[key] = employees[index]; });
+        return updated;
+    });
+
+    if (insufficientBalance) throw new Error('Saldo ' + leaveType + ' tidak cukup. Saldo tersedia: ' + availableBalance + ' hari; pengajuan: ' + days + ' hari.');
+    if (developerExempt) return;
+    if (!result.committed && !alreadyConsumed) {
+        throw new Error(employeeFound ? 'Saldo ' + leaveType + ' gagal diperbarui.' : 'Data karyawan pengaju tidak ditemukan.');
+    }
+    if (result.committed) {
+        var updatedValue = result.snapshot.val() || [];
+        var updatedEmployees = Array.isArray(updatedValue)
+            ? updatedValue
+            : Object.keys(updatedValue).map(function(key) { return updatedValue[key]; });
+        window._rbmParsedCache[employeesKey] = { data: updatedEmployees };
+        window._absensiViewEmployees = updatedEmployees;
+        try { localStorage.setItem(employeesKey, JSON.stringify(updatedEmployees)); } catch (error) {}
+    }
+}
+
 async function applyApprovedAbsensiRequest(request) {
     if (request && request.type === 'Tukar Jadwal Shift') {
         var outletForSwap = request.outlet || getAbsensiRequestOutlet();
@@ -13263,7 +13708,9 @@ async function applyApprovedAbsensiRequest(request) {
     }
     if (!request || !['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur'].includes(request.type)) return;
     const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
-    const employee = employees.find(e => e && e.name === request.name);
+    const employee = employees.find((e, index) => e && (request.employeeId != null
+        ? String(e.id != null && e.id !== '' ? e.id : index) === String(request.employeeId)
+        : e.name === request.name));
     if (!employee) throw new Error('Karyawan pengaju tidak ditemukan');
     const empId = employee.id != null ? employee.id : employees.indexOf(employee);
     if (request.type === 'Pengajuan Lembur') {
@@ -13346,6 +13793,9 @@ async function submitEmployeeAbsensiRequest() {
     const partnerIndex = requestEmployees.findIndex(function(employee, index) { return type === 'Tukar Jadwal Shift' && getAbsensiRequestEmployeeKey(employee, index) === swapWithEmployeeId; });
     if (type === 'Tukar Jadwal Shift' && (requesterIndex < 0 || partnerIndex < 0 || requesterIndex === partnerIndex)) { if (feedback) feedback.textContent = 'Nama karyawan untuk tukar jadwal tidak valid.'; return; }
     const payload = { name, outlet, type, requestDate, startDate: requestDate, endDate: requestDate, reason, lemburHours: type === 'Pengajuan Lembur' ? Number(lemburHours) : 0, attendanceDetails: type === 'Lupa Absen' ? attendanceDetails : [], currentStep: ABSENSI_REQUEST_STEPS[0], status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP, createdBy: user.username || name };
+    if (['PH', 'AL', 'DP'].includes(type) && requesterIndex >= 0) {
+        payload.employeeId = getAbsensiRequestEmployeeKey(requestEmployees[requesterIndex], requesterIndex);
+    }
     if (type === 'Tukar Jadwal Shift') {
         payload.employeeId = getAbsensiRequestEmployeeKey(requestEmployees[requesterIndex], requesterIndex);
         payload.swapWithEmployeeId = getAbsensiRequestEmployeeKey(requestEmployees[partnerIndex], partnerIndex);
@@ -13642,11 +14092,23 @@ async function approveAbsensiRequest(requestId) {
     const stepIndex = ABSENSI_REQUEST_STEPS.indexOf(role);
     const nextStep = ABSENSI_REQUEST_STEPS[stepIndex + 1];
     if (role === 'Supervisor Regional' && ['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur', 'Tukar Jadwal Shift'].includes(request.type)) {
-        await applyApprovedAbsensiRequest(request);
-        request.appliedToAttendance = true;
+        try {
+            if (['PH', 'AL', 'DP'].includes(request.type) && !request.appliedToAttendance) {
+                await consumeLeaveBalanceForRequest(request, requestId, request.type);
+            }
+            await applyApprovedAbsensiRequest(request);
+            request.appliedToAttendance = true;
+        } catch (error) {
+            alert('Gagal menerapkan pengajuan: ' + (error && error.message ? error.message : error));
+            return;
+        }
     }
     const approver = user.nama || user.username || role;
-    await ref.update(nextStep ? { currentStep: nextStep, ['approvedBy_' + role.replace(/\//g, '_').replace(/ /g, '_')]: approver } : { status: 'approved', currentStep: '', approvedBy_Owner_Developer: approver });
+    const approvalUpdate = nextStep
+        ? { currentStep: nextStep, ['approvedBy_' + role.replace(/\//g, '_').replace(/ /g, '_')]: approver }
+        : { status: 'approved', currentStep: '', approvedBy_Owner_Developer: approver };
+    if (role === 'Supervisor Regional' && request.appliedToAttendance) approvalUpdate.appliedToAttendance = true;
+    await ref.update(approvalUpdate);
     loadAbsensiRequests();
 }
 

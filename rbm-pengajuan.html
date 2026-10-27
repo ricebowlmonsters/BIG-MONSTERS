@@ -105,6 +105,16 @@
     <button id="tab-history" class="btn btn-secondary" onclick="switchOwnerTab('history')" style="width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;">Riwayat Persetujuan</button>
     <button id="tab-create" class="btn btn-secondary" onclick="switchOwnerTab('create')" style="width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;">Buat Pengajuan</button>
     <button id="btn-refresh-owner" class="btn btn-secondary" onclick="fetchSubmissionsForOwner()" style="width: auto; margin-left: auto;">🔄 Refresh</button>
+    <button id="btn-toggle-pengajuan-selection" class="btn btn-secondary" onclick="togglePengajuanSelectionMode()" style="display: none; width: auto;">Pilih untuk Hapus</button>
+  </div>
+  <div style="display: flex; align-items: center; gap: 10px; margin: -8px 0 16px; flex-wrap: wrap;">
+    <label for="pengajuan-filter-month" style="font-size: 14px; font-weight: 600; color: #374151;">Filter bulan pengajuan:</label>
+    <input id="pengajuan-filter-month" type="month" aria-label="Filter bulan pengajuan" style="padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+  </div>
+  <div id="pengajuan-bulk-actions" style="display: none; align-items: center; gap: 8px; flex-wrap: wrap; margin: -8px 0 16px;">
+    <button id="btn-select-all-pengajuan" class="btn btn-secondary" onclick="toggleSelectAllPengajuan()" style="width: auto;">Pilih Semua</button>
+    <span id="pengajuan-selection-count" style="color: #475569; font-size: 13px;">0 dipilih</span>
+    <button id="btn-delete-selected-pengajuan" class="btn btn-danger" onclick="deleteSelectedPengajuan()" disabled style="width: auto; margin-left: auto;">Hapus Dipilih</button>
   </div>
 
   <div id="pengajuan-pending-list">
@@ -124,6 +134,53 @@
     var outlets = Array.from(new Set(publicOutlets.concat(internalOutlets)));
   var names = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
   var sel = document.getElementById('rbm-outlet-select');
+  var ownerSelectionMode = false;
+  var selectedPengajuanKeys = new Set();
+  var ownerActiveTab = 'pending';
+  var ownerVisiblePengajuanItems = { pending: [], history: [] };
+  var ownerSelectedMonth = '';
+
+  function getCurrentMonthKey() {
+      const now = new Date();
+      return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  }
+
+  function getMonthTimestampRange(monthKey) {
+      const match = /^(\d{4})-(\d{2})$/.exec(monthKey || '');
+      if (!match) return null;
+      const year = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10);
+      if (month < 1 || month > 12) return null;
+      return {
+          start: new Date(year, month - 1, 1).getTime(),
+          end: new Date(year, month, 1).getTime() - 1
+      };
+  }
+
+  function isInSelectedSubmissionMonth(createdAt) {
+      if (createdAt === null || createdAt === undefined || createdAt === '') return false;
+      const timestamp = typeof createdAt === 'number' ? createdAt : Date.parse(createdAt);
+      if (!Number.isFinite(timestamp)) return false;
+      const date = new Date(timestamp);
+      const monthKey = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+      return monthKey === ownerSelectedMonth;
+  }
+
+  const monthFilter = document.getElementById('pengajuan-filter-month');
+  if (monthFilter) {
+      ownerSelectedMonth = getCurrentMonthKey();
+      monthFilter.value = ownerSelectedMonth;
+      monthFilter.addEventListener('change', function() {
+          const monthRange = getMonthTimestampRange(monthFilter.value);
+          if (!monthRange) {
+              monthFilter.value = ownerSelectedMonth;
+              AppPopup.error('Pilih bulan pengajuan yang valid.');
+              return;
+          }
+          ownerSelectedMonth = monthFilter.value;
+          if (typeof fetchSubmissionsForOwner === 'function') fetchSubmissionsForOwner();
+      });
+  }
 
   function parseCurrencyValue(value) {
       if (value == null || value === '') return 0;
@@ -152,6 +209,7 @@
       const pendingList = document.getElementById('pengajuan-pending-list');
       const historyList = document.getElementById('pengajuan-history-list');
       const createView = document.getElementById('pengajuan-view');
+      ownerActiveTab = tab;
   
       if (pendingBtn) { pendingBtn.className = 'btn btn-secondary'; pendingBtn.style.cssText = 'width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;'; }
       if (historyBtn) { historyBtn.className = 'btn btn-secondary'; historyBtn.style.cssText = 'width: auto; background: white; color: #374151; border: 1px solid #e5e7eb;'; }
@@ -171,6 +229,121 @@
           if (createBtn) { createBtn.className = 'btn btn-primary'; createBtn.style.cssText = 'width: auto;'; }
           if (createView) createView.style.display = 'block';
       }
+      updatePengajuanBulkActions();
+  };
+
+  function updatePengajuanBulkActions() {
+      const toggleButton = document.getElementById('btn-toggle-pengajuan-selection');
+      const actions = document.getElementById('pengajuan-bulk-actions');
+      const selectAllButton = document.getElementById('btn-select-all-pengajuan');
+      const selectionCount = document.getElementById('pengajuan-selection-count');
+      const deleteButton = document.getElementById('btn-delete-selected-pengajuan');
+      const canShowActions = canDeletePengajuan() && (ownerActiveTab === 'pending' || ownerActiveTab === 'history');
+      const visibleItems = ownerVisiblePengajuanItems[ownerActiveTab] || [];
+      const selectedCount = selectedPengajuanKeys.size;
+      const allVisibleSelected = visibleItems.length > 0 && visibleItems.every(function(item) {
+          return selectedPengajuanKeys.has(item.type + ':' + item.id);
+      });
+
+      if (toggleButton) {
+          toggleButton.style.display = canDeletePengajuan() ? 'inline-block' : 'none';
+          toggleButton.textContent = ownerSelectionMode ? 'Batal Pilih' : 'Pilih untuk Hapus';
+      }
+      if (actions) actions.style.display = ownerSelectionMode && canShowActions ? 'flex' : 'none';
+      if (selectAllButton) selectAllButton.textContent = allVisibleSelected ? 'Batalkan Pilihan Semua' : 'Pilih Semua';
+      if (selectionCount) selectionCount.textContent = selectedCount + ' dipilih';
+      if (deleteButton) {
+          deleteButton.disabled = selectedCount === 0;
+          deleteButton.textContent = selectedCount ? 'Hapus Dipilih (' + selectedCount + ')' : 'Hapus Dipilih';
+      }
+      document.querySelectorAll('.pengajuan-select-checkbox').forEach(function(checkbox) {
+          checkbox.style.display = ownerSelectionMode ? 'inline-block' : 'none';
+          checkbox.checked = selectedPengajuanKeys.has(decodeURIComponent(checkbox.getAttribute('data-selection-key')));
+      });
+  }
+
+  window.togglePengajuanSelectionMode = function() {
+      if (!canDeletePengajuan()) {
+          AppPopup.error('Akses ditolak. Anda tidak memiliki izin untuk menghapus pengajuan.');
+          return;
+      }
+      ownerSelectionMode = !ownerSelectionMode;
+      if (!ownerSelectionMode) selectedPengajuanKeys.clear();
+      updatePengajuanBulkActions();
+  };
+
+  window.togglePengajuanSelection = function(type, id, checked) {
+      const key = type + ':' + id;
+      if (checked) selectedPengajuanKeys.add(key);
+      else selectedPengajuanKeys.delete(key);
+      updatePengajuanBulkActions();
+  };
+
+  window.togglePengajuanSelectionFromCheckbox = function(checkbox) {
+      const key = decodeURIComponent(checkbox.getAttribute('data-selection-key'));
+      const sub = window._pengajuanDataMap[key];
+      if (sub) window.togglePengajuanSelection(sub.type, sub.id, checkbox.checked);
+  };
+
+  window.toggleSelectAllPengajuan = function() {
+      const visibleItems = ownerVisiblePengajuanItems[ownerActiveTab] || [];
+      const allVisibleSelected = visibleItems.length > 0 && visibleItems.every(function(item) {
+          return selectedPengajuanKeys.has(item.type + ':' + item.id);
+      });
+      visibleItems.forEach(function(item) {
+          const key = item.type + ':' + item.id;
+          if (allVisibleSelected) selectedPengajuanKeys.delete(key);
+          else selectedPengajuanKeys.add(key);
+      });
+      updatePengajuanBulkActions();
+  };
+
+  window.deleteSelectedPengajuan = function() {
+      if (!canDeletePengajuan()) {
+          AppPopup.error('Akses ditolak. Anda tidak memiliki izin untuk menghapus pengajuan.');
+          return;
+      }
+
+      const selectedKeys = Array.from(selectedPengajuanKeys);
+      if (!selectedKeys.length) {
+          AppPopup.error('Pilih minimal satu pengajuan untuk dihapus.');
+          return;
+      }
+
+      const updates = {};
+      for (const key of selectedKeys) {
+          const sub = window._pengajuanDataMap[key];
+          if (!sub) {
+              AppPopup.error('Data pengajuan pilihan tidak ditemukan. Muat ulang daftar lalu coba lagi.');
+              return;
+          }
+
+          if (sub.type === 'tf') {
+              updates['rbm_pro/pengajuan_tf/' + sub.id] = null;
+          } else if (sub.type === 'pc') {
+              updates['rbm_pro/petty_cash/pengajuan/' + sub.id] = null;
+          } else if (sub.type === 'gaji' && sub.data._outlet && sub.data._month) {
+              updates['rbm_pro/gaji_pengajuan/' + sub.data._outlet + '/' + sub.data._month + '/' + sub.id] = null;
+          } else {
+              AppPopup.error('Lokasi data pengajuan tidak lengkap. Pengajuan tidak dihapus.');
+              return;
+          }
+      }
+
+      AppPopup.confirm('Yakin ingin menghapus permanen ' + selectedKeys.length + ' pengajuan?', 'Konfirmasi Hapus', function() {
+          firebase.database().ref().update(updates).then(function() {
+              selectedPengajuanKeys.clear();
+              ownerSelectionMode = false;
+              updatePengajuanBulkActions();
+              AppPopup.success(selectedKeys.length + ' pengajuan berhasil dihapus.');
+              try {
+                  if (window.location.protocol !== 'file:' && window.self !== window.top) window.parent.postMessage({ type: 'REFRESH_NOTIFS' }, '*');
+              } catch(e) {}
+              if (typeof fetchSubmissionsForOwner === 'function') fetchSubmissionsForOwner();
+          }).catch(function(err) {
+              AppPopup.error('Gagal menghapus pengajuan: ' + (err.message || err));
+          });
+      });
   };
 
   var isOwnerOrDev = String(u.role || '').toLowerCase() === 'owner' || (u.username || '').toLowerCase() === 'burhan';
@@ -247,10 +420,13 @@
       let gajiLoaded = false;
       
       const requestedCalendarOutlet = new URLSearchParams(window.location.search).get('outlet');
+      const requestedCalendarRequestId = new URLSearchParams(window.location.search).get('calendarRequestId');
+      const requestedCalendarRequestType = new URLSearchParams(window.location.search).get('calendarRequestType');
       const outletSelect = document.getElementById('rbm-outlet-select');
       const requestedOutletAllowed = outletSelect && Array.from(outletSelect.options).some(option => option.value === requestedCalendarOutlet);
       if (requestedOutletAllowed) outletSelect.value = requestedCalendarOutlet;
       const selectedOutlet = outletSelect ? outletSelect.value : 'semua';
+      const hasCalendarLinkedRequest = !!(requestedCalendarRequestId && ['tf', 'pc', 'gaji'].includes(requestedCalendarRequestType));
 
       const renderList = () => {
           if (!tfLoaded || !pcLoaded || !gajiLoaded) return;
@@ -266,6 +442,9 @@
                       
                       const itemOutlet = item.data.outlet || item.data.outletId || item.data._outlet || '';
                       if (selectedOutlet !== 'semua' && itemOutlet && itemOutlet !== selectedOutlet) return;
+                      const isCalendarLinkedItem = hasCalendarLinkedRequest &&
+                          requestedCalendarRequestType === type && requestedCalendarRequestId === k;
+                      if (!isCalendarLinkedItem && !isInSelectedSubmissionMonth(item.data.createdAt)) return;
                       
                       let itemStatus = item.data.status || 'pending';
                       if (type === 'gaji') itemStatus = item.data.statusOwner || 'pending';
@@ -285,6 +464,7 @@
           
           pendingSubmissions.sort((a,b) => (b.data.createdAt || 0) - (a.data.createdAt || 0));
           historySubmissions.sort((a,b) => (b.data.updatedAt || b.data.createdAt || 0) - (a.data.updatedAt || a.data.createdAt || 0));
+          ownerVisiblePengajuanItems = { pending: pendingSubmissions, history: historySubmissions };
           
           const buildHtml = (list, emptyMsg) => {
               if (list.length === 0) return `<p style="text-align:center; color:#888; padding: 20px;">${emptyMsg}</p>`;
@@ -326,9 +506,13 @@
               window._pengajuanDataMap = window._pengajuanDataMap || {};
               window._pengajuanDataMap[sub.type + ':' + sub.id] = sub;
               window._pengajuanDataMap[sub.id] = sub;
+              const selectionKey = sub.type + ':' + sub.id;
+              const checkboxDisplay = ownerSelectionMode ? 'inline-block' : 'none';
+              const checkboxChecked = selectedPengajuanKeys.has(selectionKey) ? 'checked' : '';
               
           html += `
                   <div class="rbm-outlet-card" onclick="openOwnerPengajuanModal('${sub.id}', '${sub.type}')" style="cursor:pointer; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; border-left: 4px solid ${statusColor};">
+                    <input class="pengajuan-select-checkbox" type="checkbox" data-selection-key="${encodeURIComponent(selectionKey)}" aria-label="Pilih pengajuan untuk dihapus" style="display:${checkboxDisplay}; margin:0 12px 0 0; width:18px; height:18px; flex:0 0 auto;" ${checkboxChecked} onclick="event.stopPropagation()" onchange="togglePengajuanSelectionFromCheckbox(this)">
                     <div>
                       <div style="font-size:11px; font-weight:bold; color:#4C2A85; text-transform:uppercase; margin-bottom:4px; letter-spacing: 0.5px;">📍 ${outletName} | 👤 ${submittedBy}</div>
                       <strong style="display:block; margin-bottom:4px; font-size:15px; color:#1f2937;">${title}</strong>
@@ -344,15 +528,27 @@
 
           pendingListContainer.innerHTML = buildHtml(pendingSubmissions, 'Tidak ada pengajuan baru.');
           historyListContainer.innerHTML = buildHtml(historySubmissions, 'Belum ada riwayat persetujuan.');
+          selectedPengajuanKeys.forEach(function(key) {
+              if (!window._pengajuanDataMap[key]) selectedPengajuanKeys.delete(key);
+          });
+          updatePengajuanBulkActions();
           openCalendarLinkedSubmission();
           if (btnRefresh) { btnRefresh.textContent = '🔄 Refresh'; btnRefresh.disabled = false; }
       };
 
-      // [OPTIMASI] Gunakan once() alih-alih on() agar browser tidak hang karena ukuran payload yang raksasa
-      const tfRef = selectedOutlet === 'semua' ? db.ref('rbm_pro/pengajuan_tf') : db.ref('rbm_pro/pengajuan_tf').orderByChild('outlet').equalTo(selectedOutlet);
-      const pcRef = selectedOutlet === 'semua' ? db.ref('rbm_pro/petty_cash/pengajuan') : db.ref('rbm_pro/petty_cash/pengajuan').orderByChild('outlet').equalTo(selectedOutlet);
+      // Batasi unduhan TF dan Petty Cash ke tanggal pengajuan pada bulan yang dipilih.
+      const monthRange = getMonthTimestampRange(ownerSelectedMonth);
+      if (!monthRange) {
+          if (btnRefresh) { btnRefresh.textContent = '🔄 Refresh'; btnRefresh.disabled = false; }
+          pendingListContainer.innerHTML = '<p style="color:red; text-align:center;">Bulan filter tidak valid.</p>';
+          return;
+      }
+      const tfOutletRef = selectedOutlet === 'semua' ? db.ref('rbm_pro/pengajuan_tf') : db.ref('rbm_pro/pengajuan_tf').orderByChild('outlet').equalTo(selectedOutlet);
+      const pcOutletRef = selectedOutlet === 'semua' ? db.ref('rbm_pro/petty_cash/pengajuan') : db.ref('rbm_pro/petty_cash/pengajuan').orderByChild('outlet').equalTo(selectedOutlet);
+      const tfRef = hasCalendarLinkedRequest ? tfOutletRef.limitToLast(50) : db.ref('rbm_pro/pengajuan_tf').orderByChild('createdAt').startAt(monthRange.start).endAt(monthRange.end);
+      const pcRef = hasCalendarLinkedRequest ? pcOutletRef.limitToLast(50) : db.ref('rbm_pro/petty_cash/pengajuan').orderByChild('createdAt').startAt(monthRange.start).endAt(monthRange.end);
       const gajiRef = selectedOutlet === 'semua' ? db.ref('rbm_pro/gaji_pengajuan') : db.ref('rbm_pro/gaji_pengajuan/' + selectedOutlet);
-      Promise.all([ tfRef.limitToLast(50).once('value'), pcRef.limitToLast(50).once('value'), gajiRef.once('value')
+      Promise.all([ tfRef.once('value'), pcRef.once('value'), gajiRef.once('value')
       ]).then(snaps => {
           tfData = snaps[0].val();
           pcData = snaps[1].val();
@@ -563,6 +759,100 @@ function canDeletePengajuan() {
     ['manager', 'manager outlet', 'supervisor regional'].includes(role);
 }
 
+function writePengajuanReport(html) {
+  const isCalendarReport = new URLSearchParams(window.location.search).get('calendarReport') === '1';
+  const reportWindow = isCalendarReport ? window : window.open('', '_blank');
+  if (!reportWindow) {
+    alert('Preview laporan tidak dapat dibuka. Izinkan pop-up lalu coba lagi.');
+    return;
+  }
+  reportWindow.document.open();
+  reportWindow.document.write(html);
+  reportWindow.document.close();
+  reportWindow.focus();
+}
+
+function openCalendarLinkedReport(sub) {
+  const id = sub.id;
+  if (sub.type === 'tf') {
+    viewTransferRequestDetail(id);
+    return;
+  }
+  if (sub.type === 'pc') {
+    viewPettyCashDetail(id);
+    return;
+  }
+
+  const note = String(sub.data.note || '').toLowerCase();
+  if (note.indexOf('cuti') >= 0) {
+    viewCutiLemburDetail(id, 'cuti');
+  } else if (note.indexOf('lembur') >= 0) {
+    viewCutiLemburDetail(id, 'lembur');
+  } else if (note.indexOf('bonus') >= 0) {
+    viewBonusDetail(id);
+  } else {
+    viewPengajuanDetail(id);
+  }
+}
+
+function viewTransferRequestDetail(id) {
+  const sub = window._pengajuanDataMap[id];
+  if (!sub || sub.type !== 'tf') {
+    alert('Data pengajuan transfer tidak ditemukan.');
+    return;
+  }
+  const data = sub.data || {};
+  const outletNames = JSON.parse(localStorage.getItem('rbm_outlet_names') || '{}');
+  const outletId = data.outlet || data.outletId || data._outlet || '';
+  const outletName = outletId ? (outletNames[outletId] || outletId.toUpperCase()) : 'Semua Outlet';
+  const escapeHtml = function(value) {
+    return String(value == null || value === '' ? '-' : value).replace(/[&<>"']/g, function(character) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character];
+    });
+  };
+  const formatMoney = function(value) {
+    const amount = Number(value) || 0;
+    return 'Rp ' + amount.toLocaleString('id-ID');
+  };
+  const rows = [
+    ['Outlet', outletName],
+    ['Supplier', data.suplier],
+    ['Keterangan', data.keterangan],
+    ['Tanggal Nota', data.tglNota || data.tanggal],
+    ['Tanggal Jatuh Tempo', data.tglJt],
+    ['Nominal', formatMoney(data.nominal)],
+    ['Total', formatMoney(data.total || data.nominal)],
+    ['Bank Tujuan', data.bankAcc],
+    ['Atas Nama', data.atasNama],
+    ['Diajukan Oleh', data.requester || data.userName || '-'],
+    ['Status', String(data.status || 'pending') === 'approved' ? 'Disetujui' : 'Menunggu']
+  ];
+  const rowHtml = rows.map(function(row) {
+    return '<tr><th>' + escapeHtml(row[0]) + '</th><td>' + escapeHtml(row[1]) + '</td></tr>';
+  }).join('');
+  const photoHtml = [
+    ['Foto Nota', data.fotoNotaUrl],
+    ['Foto Tanda Tangan', data.fotoTtdUrl]
+  ].filter(function(photo) { return photo[1]; }).map(function(photo) {
+    return '<section><h3>' + escapeHtml(photo[0]) + '</h3><img src="' + escapeHtml(photo[1]) +
+      '" alt="' + escapeHtml(photo[0]) + '"></section>';
+  }).join('');
+  const approvedBy = data.approvedBy || '________________';
+  const reportHtml = '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>Laporan Pengajuan Transfer</title><style>' +
+    'body{font:14px Arial,sans-serif;background:#f1f5f9;color:#1e293b;margin:0;padding:24px}.page{max-width:900px;margin:0 auto 24px;padding:32px;background:#fff;box-shadow:0 2px 12px #0002}' +
+    'h1{text-align:center;border-bottom:3px double #1e293b;padding-bottom:16px;font-size:22px}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{border:1px solid #cbd5e1;padding:10px;text-align:left}th{width:30%;background:#f8fafc}' +
+    'img{max-width:100%;max-height:420px;object-fit:contain}.signatures{display:flex;justify-content:space-between;gap:24px;margin-top:48px;text-align:center}.signatures>div{width:50%}#actions{text-align:center;margin:24px}' +
+    'button{padding:10px 18px;margin:4px;border:0;border-radius:6px;color:#fff;background:#1e40af;font-weight:bold;cursor:pointer}.print{background:#059669}' +
+    '@media print{@page{margin:12mm}body{padding:0;background:#fff}.page{box-shadow:none;padding:0;max-width:none}#actions{display:none!important}img{max-height:320px}}' +
+    '</style></head><body><main class="page"><h1>LAPORAN PENGAJUAN TRANSFER</h1><table>' + rowHtml +
+    '</table>' + photoHtml + '<div class="signatures"><div><p>Diajukan oleh</p><br><br><strong>' +
+    escapeHtml(data.requester || data.userName || '________________') + '</strong></div><div><p>Disetujui oleh</p><br><br><strong>' +
+    escapeHtml(approvedBy) + '</strong></div></div></main><div id="actions"><button class="print" onclick="window.print()">Print / PDF</button>' +
+    '<button onclick="window.close()">Tutup Halaman</button></div></body></html>';
+  writePengajuanReport(reportHtml);
+}
+
 function openCalendarLinkedSubmission() {
   const params = new URLSearchParams(window.location.search);
   const requestId = params.get('calendarRequestId');
@@ -574,6 +864,10 @@ function openCalendarLinkedSubmission() {
   if (!sub) return;
   window._pengajuanDataMap[requestType + ':' + requestId] = sub;
   window._pengajuanDataMap[requestId] = sub;
+  if (params.get('calendarReport') === '1') {
+    openCalendarLinkedReport(sub);
+    return;
+  }
   params.delete('calendarRequestId');
   params.delete('calendarRequestType');
   params.delete('outlet');
@@ -1406,10 +1700,7 @@ window.viewPengajuanDetail = function(id) {
             '</div>' +
             '</body></html>';
 
-        var viewWindow = window.open('', '_blank');
-        viewWindow.document.write(finalHtml);
-        viewWindow.document.close();
-        viewWindow.focus();
+        writePengajuanReport(finalHtml);
     };
 
     // Jika ada snapshot di dalam payload (fitur baru), langsung render tanpa perlu konek database lain
@@ -1691,10 +1982,7 @@ window.viewBonusDetail = function(id) {
             '</div>' +
             '</body></html>';
 
-    var viewWindow = window.open('', '_blank');
-    viewWindow.document.write(finalHtml);
-    viewWindow.document.close();
-    viewWindow.focus();
+    writePengajuanReport(finalHtml);
 };
 
 window.viewPettyCashDetail = function(id) {
@@ -1890,10 +2178,7 @@ window.viewPettyCashDetail = function(id) {
         '</div>' +
         '</body></html>';
 
-    var viewWindow = window.open('', '_blank');
-    viewWindow.document.write(finalHtml);
-    viewWindow.document.close();
-    viewWindow.focus();
+    writePengajuanReport(finalHtml);
 };
     const parsePettyCashDate = function(value) {
         if (!value) return 0;
@@ -2373,10 +2658,7 @@ window.viewCutiLemburDetail = function(id, mode) {
             '</div>' +
             '</body></html>';
 
-    var viewWindow = window.open('', '_blank');
-    viewWindow.document.write(finalHtml);
-    viewWindow.document.close();
-    viewWindow.focus();
+    writePengajuanReport(finalHtml);
 };
 
 window.printSlipSatuanOwner = function(subId, empIdx) {
