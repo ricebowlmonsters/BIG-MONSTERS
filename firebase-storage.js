@@ -2069,6 +2069,68 @@
     return db.ref('rbm_pro/pending/' + (type || 'PETTY_CASH')).set(Array.isArray(value) ? value : []).catch(function(err) { console.warn('setPending failed', err); });
   }
 
+  function watchCalendarPengajuan(outletId, onValue, onError) {
+    if (!init()) throw new Error('Firebase tidak tersedia untuk memuat pengajuan kalender.');
+    if (typeof onValue !== 'function') throw new Error('Callback data pengajuan kalender wajib berupa fungsi.');
+
+    var allOutlets = outletId === 'semua';
+    var outlet = String(outletId || '').trim();
+    if (!allOutlets && !outlet) throw new Error('Outlet wajib dipilih untuk memuat pengajuan kalender.');
+
+    var sources = [
+      {
+        name: 'absensi',
+        ref: allOutlets ? db.ref('rbm_pro/pengajuan_absensi') : db.ref('rbm_pro/pengajuan_absensi/' + outlet)
+      },
+      {
+        name: 'transfer',
+        ref: db.ref('rbm_pro/pengajuan_tf')
+      },
+      {
+        name: 'pettyCash',
+        ref: db.ref('rbm_pro/petty_cash/pengajuan')
+      },
+      {
+        name: 'gaji',
+        ref: allOutlets ? db.ref('rbm_pro/gaji_pengajuan') : db.ref('rbm_pro/gaji_pengajuan/' + _safeOutletKey(outlet))
+      }
+    ];
+    var values = {};
+    var loaded = {};
+    var active = true;
+    var listeners = [];
+
+    function handleError(error) {
+      if (active && typeof onError === 'function') onError(error);
+    }
+
+    sources.forEach(function(source) {
+      var callback = function(snapshot) {
+        if (!active) return;
+        values[source.name] = snapshot.val();
+        loaded[source.name] = true;
+        if (sources.every(function(item) { return loaded[item.name]; })) {
+          onValue({
+            absensi: values.absensi,
+            transfer: values.transfer,
+            pettyCash: values.pettyCash,
+            gaji: values.gaji
+          });
+        }
+      };
+      source.ref.on('value', callback, handleError);
+      listeners.push({ ref: source.ref, callback: callback });
+    });
+
+    return function() {
+      active = false;
+      listeners.forEach(function(listener) {
+        listener.ref.off('value', listener.callback);
+      });
+      listeners = [];
+    };
+  }
+
   // ---------- Sync dari Firebase ke localStorage (saat load) ----------
   function syncAppStateFromFirebase() {
     if (!init()) return Promise.resolve();
@@ -2183,7 +2245,12 @@
   function _getUserRole() {
     try {
       var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
-      return u && u.role ? String(u.role).toLowerCase() : '';
+      var roles = [u && u.role, u && u.jabatan].map(function(value) {
+        return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').trim();
+      });
+      if (roles.some(function(role) { return role === 'developer' || role.indexOf('owner') >= 0; })) return 'owner';
+      if (roles.some(function(role) { return role === 'manager' || role.indexOf('manager outlet') >= 0; })) return 'manager';
+      return roles[0] || roles[1] || '';
     } catch (e) { return ''; }
   }
 
@@ -2372,6 +2439,7 @@
     getPembukuan: getPembukuan,
     deletePembukuanDay: deletePembukuanDay,
     savePengajuanTF: savePengajuanTF,
+    watchCalendarPengajuan: watchCalendarPengajuan,
     savePengajuanBuktiTF: savePengajuanBuktiTF,
     getBankBySuplier: getBankBySuplier,
     setBankList: setBankList,

@@ -246,10 +246,15 @@
       let pcLoaded = false;
       let gajiLoaded = false;
       
-      const selectedOutlet = document.getElementById('rbm-outlet-select') ? document.getElementById('rbm-outlet-select').value : 'semua';
+      const requestedCalendarOutlet = new URLSearchParams(window.location.search).get('outlet');
+      const outletSelect = document.getElementById('rbm-outlet-select');
+      const requestedOutletAllowed = outletSelect && Array.from(outletSelect.options).some(option => option.value === requestedCalendarOutlet);
+      if (requestedOutletAllowed) outletSelect.value = requestedCalendarOutlet;
+      const selectedOutlet = outletSelect ? outletSelect.value : 'semua';
 
       const renderList = () => {
           if (!tfLoaded || !pcLoaded || !gajiLoaded) return;
+          window._pengajuanDataMap = {};
           
           let pendingSubmissions = [];
           let historySubmissions = [];
@@ -319,10 +324,11 @@
               const statusText = status === 'approved' ? 'Disetujui' : (status === 'rejected' ? 'Ditolak' : 'Menunggu');
               
               window._pengajuanDataMap = window._pengajuanDataMap || {};
+              window._pengajuanDataMap[sub.type + ':' + sub.id] = sub;
               window._pengajuanDataMap[sub.id] = sub;
               
           html += `
-                  <div class="rbm-outlet-card" onclick="openOwnerPengajuanModal('${sub.id}')" style="cursor:pointer; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; border-left: 4px solid ${statusColor};">
+                  <div class="rbm-outlet-card" onclick="openOwnerPengajuanModal('${sub.id}', '${sub.type}')" style="cursor:pointer; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; border-left: 4px solid ${statusColor};">
                     <div>
                       <div style="font-size:11px; font-weight:bold; color:#4C2A85; text-transform:uppercase; margin-bottom:4px; letter-spacing: 0.5px;">📍 ${outletName} | 👤 ${submittedBy}</div>
                       <strong style="display:block; margin-bottom:4px; font-size:15px; color:#1f2937;">${title}</strong>
@@ -338,6 +344,7 @@
 
           pendingListContainer.innerHTML = buildHtml(pendingSubmissions, 'Tidak ada pengajuan baru.');
           historyListContainer.innerHTML = buildHtml(historySubmissions, 'Belum ada riwayat persetujuan.');
+          openCalendarLinkedSubmission();
           if (btnRefresh) { btnRefresh.textContent = '🔄 Refresh'; btnRefresh.disabled = false; }
       };
 
@@ -414,6 +421,11 @@
           if (tfData) Object.keys(tfData).forEach(k => allSubmissions.push({ id: k, type: 'tf', data: tfData[k] }));
           if (pcData) Object.keys(pcData).forEach(k => allSubmissions.push({ id: k, type: 'pc', data: pcData[k] }));
           if (gajiDataFlat) Object.keys(gajiDataFlat).forEach(k => allSubmissions.push({ id: k, type: 'gaji', data: gajiDataFlat[k] }));
+          window._pengajuanDataMap = {};
+          allSubmissions.forEach(sub => {
+              window._pengajuanDataMap[sub.type + ':' + sub.id] = sub;
+              window._pengajuanDataMap[sub.id] = sub;
+          });
           
           const btnRefresh = document.getElementById('btn-refresh-manager');
           if (btnRefresh) { btnRefresh.textContent = '🔄 Refresh'; btnRefresh.disabled = false; }
@@ -459,7 +471,7 @@
               const statusColor = status === 'approved' ? '#059669' : (status === 'rejected' ? '#dc2626' : '#d97706');
               const statusText = status === 'approved' ? 'Disetujui' : (status === 'rejected' ? 'Ditolak' : 'Menunggu');
               
-              const cardHtml = `<div onclick="openOwnerPengajuanModal('${sub.id}')" style="cursor:pointer; background:#f9fafb; padding:12px; border-radius:8px; border:1px solid #e5e7eb; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;"><div><strong style="display:block; margin-bottom:4px; font-size:14px;">${title}</strong><span style="font-size:12px; color:#64748b;">${dateStr}</span></div><div style="text-align:right;"><strong style="font-size:14px; display:block; margin-bottom:4px;">Rp ${parseInt(total).toLocaleString('id-ID')}</strong><span style="font-size:11px; padding:2px 8px; border-radius:12px; background-color:${statusColor}20; color:${statusColor}; font-weight:bold;">${statusText}</span></div></div>`;
+              const cardHtml = `<div onclick="openOwnerPengajuanModal('${sub.id}', '${sub.type}')" style="cursor:pointer; background:#f9fafb; padding:12px; border-radius:8px; border:1px solid #e5e7eb; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;"><div><strong style="display:block; margin-bottom:4px; font-size:14px;">${title}</strong><span style="font-size:12px; color:#64748b;">${dateStr}</span></div><div style="text-align:right;"><strong style="font-size:14px; display:block; margin-bottom:4px;">Rp ${parseInt(total).toLocaleString('id-ID')}</strong><span style="font-size:11px; padding:2px 8px; border-radius:12px; background-color:${statusColor}20; color:${statusColor}; font-weight:bold;">${statusText}</span></div></div>`;
               if (isAlreadyDone) historyHtml += cardHtml;
               else pendingHtml += cardHtml;
           });
@@ -474,6 +486,7 @@
               ${historyHtml ? historyHtml : '<p style="text-align:center; color:#888;">Belum ada pengajuan yang sudah diproses.</p>'}
             </div>
           `;
+          openCalendarLinkedSubmission();
 
           // [BARU] Tandai bahwa Manager sudah melihat update notifikasi
           let updates = {};
@@ -513,6 +526,8 @@
                       if (node.periodStart || node.totalGrand !== undefined || node.items) {
                           const reqId = path[path.length - 1];
                           gajiDataFlat[reqId] = node;
+                          gajiDataFlat[reqId]._outlet = u.outlet || 'default';
+                          gajiDataFlat[reqId]._month = path.length > 1 ? path[path.length - 2] : '';
                       } else {
                           Object.keys(node).forEach(k => traverse(node[k], path.concat(k)));
                       }
@@ -548,8 +563,28 @@ function canDeletePengajuan() {
     ['manager', 'manager outlet', 'supervisor regional'].includes(role);
 }
 
-function openOwnerPengajuanModal(id) {
-  const sub = window._pengajuanDataMap[id];
+function openCalendarLinkedSubmission() {
+  const params = new URLSearchParams(window.location.search);
+  const requestId = params.get('calendarRequestId');
+  const requestType = params.get('calendarRequestType');
+  if (!requestId || !['tf', 'pc', 'gaji'].includes(requestType)) return;
+  const sub = Object.values(window._pengajuanDataMap || {}).find(item =>
+    item && item.id === requestId && item.type === requestType
+  );
+  if (!sub) return;
+  window._pengajuanDataMap[requestType + ':' + requestId] = sub;
+  window._pengajuanDataMap[requestId] = sub;
+  params.delete('calendarRequestId');
+  params.delete('calendarRequestType');
+  params.delete('outlet');
+  const remainingQuery = params.toString();
+  window.history.replaceState({}, '', window.location.pathname + (remainingQuery ? '?' + remainingQuery : ''));
+  openOwnerPengajuanModal(requestId);
+}
+
+function openOwnerPengajuanModal(id, type) {
+  const sub = type ? window._pengajuanDataMap[type + ':' + id] || window._pengajuanDataMap[id] : window._pengajuanDataMap[id];
+  if (!sub) return;
   const d = sub.data;
   const isTf = sub.type === 'tf';
   const isGaji = sub.type === 'gaji';
@@ -561,7 +596,8 @@ function openOwnerPengajuanModal(id) {
   // [BARU] Tandai bahwa Owner sudah membaca pengajuan ini agar notifikasi hilang
   var u = JSON.parse(localStorage.getItem('rbm_user') || '{}');
   var isOwnerOrDev = String(u.role || '').toLowerCase() === 'owner' || (u.username || '').toLowerCase() === 'burhan';
-  var isManagerRole = String(u.role || '').toLowerCase() === 'manager';
+  var managerRole = String(u.role || '').toLowerCase().replace(/[_-]+/g, ' ').trim();
+  var isManagerRole = managerRole === 'manager' || managerRole === 'manager outlet';
   if (isOwnerOrDev && !d.viewedByOwner) {
       let dbPath = '';
       if (isTf) dbPath = `rbm_pro/pengajuan_tf/${sub.id}`;

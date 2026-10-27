@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1e40af">
+  <title>Kalender Nasional Indonesia 2026</title>
+  <link rel="stylesheet" href="rbm-pro.css">
+  <script defer src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script defer src="firebase-storage.js"></script>
+  <style>
+    .calendar-page {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .calendar-intro {
+      margin-bottom: 20px;
+    }
+
+    .calendar-intro h2 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      color: #1e293b;
+    }
+
+    .calendar-intro p {
+      color: #64748b;
+      font-size: 14px;
+    }
+
+    .calendar-card {
+      overflow: hidden;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, .08);
+    }
+
+    .calendar-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 18px 20px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .calendar-toolbar h3 {
+      min-width: 0;
+      margin: 0;
+      color: #1e293b;
+      font-size: 20px;
+      text-align: center;
+    }
+
+    .calendar-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .calendar-button {
+      min-height: 38px;
+      padding: 8px 12px;
+      color: #334155;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .calendar-button:hover {
+      background: #f1f5f9;
+    }
+
+    .calendar-button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .calendar-button:focus-visible,
+    .calendar-day:focus-visible {
+      outline: 3px solid #93c5fd;
+      outline-offset: 2px;
+    }
+
+    .calendar-button.today-button {
+      color: #fff;
+      background: #1e40af;
+      border-color: #1e40af;
+    }
+
+    .calendar-button.today-button:hover {
+      background: #1e3a8a;
+    }
+
+    .calendar-grid-wrap {
+      padding: 16px 20px 20px;
+    }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+
+    .calendar-weekday {
+      padding: 10px 4px;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .calendar-weekday.sunday {
+      color: #dc2626;
+    }
+
+    .calendar-day {
+      position: relative;
+      display: flex;
+      min-height: 88px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 10px;
+      color: #334155;
+      background: #fff;
+      border: 1px solid #eef2f7;
+      border-radius: 8px;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .calendar-day:hover {
+      background: #f8fafc;
+      border-color: #bfdbfe;
+    }
+
+    .calendar-day.outside-month {
+      color: #cbd5e1;
+      background: #f8fafc;
+    }
+
+    .calendar-day.is-sunday,
+    .calendar-day.is-holiday {
+      color: #b91c1c;
+      background: #fff7f7;
+    }
+
+    .calendar-day.is-holiday {
+      border-color: #fecaca;
+    }
+
+    .calendar-day.is-today .day-number {
+      display: inline-flex;
+      width: 27px;
+      height: 27px;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      background: #1e40af;
+      border-radius: 50%;
+    }
+
+    .day-number {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .day-holiday-name {
+      display: -webkit-box;
+      overflow: hidden;
+      color: #b91c1c;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1.35;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .day-request-count {
+      display: inline-flex;
+      min-width: 18px;
+      height: 18px;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+      color: #fff;
+      background: #2563eb;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .calendar-day.has-requests {
+      border-color: #93c5fd;
+    }
+
+    .calendar-day.is-selected {
+      outline: 2px solid #2563eb;
+      outline-offset: -2px;
+      background: #eff6ff;
+    }
+
+    .calendar-day.is-holiday.is-selected {
+      background: #fff1f2;
+    }
+
+    .calendar-footer {
+      display: grid;
+      grid-template-columns: minmax(180px, .8fr) minmax(0, 1.4fr);
+      gap: 20px;
+      padding: 18px 20px;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .calendar-legend {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-self: start;
+      color: #475569;
+      font-size: 13px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      flex: 0 0 12px;
+      background: #dc2626;
+      border-radius: 50%;
+    }
+
+    .legend-dot.today-dot {
+      background: #1e40af;
+    }
+
+    .holiday-list h4 {
+      margin: 0 0 10px;
+      color: #1e293b;
+      font-size: 14px;
+    }
+
+    .holiday-list ul {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 16px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .holiday-list li {
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .holiday-list time {
+      display: inline-block;
+      min-width: 48px;
+      color: #b91c1c;
+      font-weight: 700;
+    }
+
+    .holiday-note {
+      margin: 14px 0 0;
+      color: #64748b;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .request-card {
+      margin-top: 18px;
+      padding: 18px 20px;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, .06);
+    }
+
+    .request-card-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .request-card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .request-card-header h3 {
+      margin: 0;
+      color: #1e293b;
+      font-size: 17px;
+    }
+
+    .outlet-filter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #475569;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .outlet-filter select {
+      max-width: 230px;
+      min-height: 38px;
+      padding: 7px 10px;
+      color: #334155;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font: inherit;
+    }
+
+    .request-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .request-item {
+      padding: 12px 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #3b82f6;
+      border-radius: 9px;
+    }
+
+    .request-item[role="button"] {
+      cursor: pointer;
+    }
+
+    .request-item[role="button"]:hover {
+      background: #eff6ff;
+    }
+
+    .request-item[role="button"]:focus-visible {
+      outline: 3px solid #93c5fd;
+      outline-offset: 2px;
+    }
+
+    .calendar-request-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(15, 23, 42, .55);
+    }
+
+    .calendar-request-dialog {
+      width: min(520px, 100%);
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 22px;
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 20px 45px rgba(15, 23, 42, .25);
+    }
+
+    .request-item-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .request-item-title {
+      color: #1e293b;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .request-item-outlet,
+    .request-item-meta {
+      margin-top: 5px;
+      color: #64748b;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .request-status {
+      padding: 3px 8px;
+      color: #92400e;
+      background: #fef3c7;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .request-status.approved {
+      color: #065f46;
+      background: #d1fae5;
+    }
+
+    .request-status.rejected {
+      color: #991b1b;
+      background: #fee2e2;
+    }
+
+    .request-empty,
+    .request-loading,
+    .request-error {
+      padding: 18px;
+      color: #64748b;
+      background: #f8fafc;
+      border-radius: 9px;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .request-error {
+      color: #991b1b;
+      background: #fef2f2;
+    }
+
+    @media (max-width: 650px) {
+      .rbm-content-wrap {
+        padding: 14px;
+      }
+
+      .calendar-intro h2 {
+        font-size: 20px;
+      }
+
+      .calendar-toolbar {
+        flex-wrap: wrap;
+        justify-content: center;
+        padding: 14px;
+      }
+
+      .calendar-toolbar h3 {
+        order: -1;
+        width: 100%;
+        font-size: 18px;
+      }
+
+      .calendar-grid-wrap {
+        padding: 10px;
+      }
+
+      .calendar-weekday {
+        font-size: 10px;
+      }
+
+      .calendar-day {
+        min-height: 62px;
+        gap: 4px;
+        padding: 6px;
+        border-radius: 5px;
+      }
+
+      .day-number {
+        font-size: 12px;
+      }
+
+      .day-holiday-name {
+        font-size: 8px;
+      }
+
+      .calendar-footer {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        padding: 16px;
+      }
+
+      .request-card {
+        padding: 14px;
+      }
+
+      .outlet-filter {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      .outlet-filter select {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .holiday-list ul {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 380px) {
+      .calendar-day {
+        min-height: 54px;
+        padding: 4px;
+      }
+
+      .calendar-controls {
+        gap: 5px;
+      }
+
+      .calendar-button {
+        padding: 7px 9px;
+        font-size: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="rbm-page-header">
+    <h1 class="rbm-page-title">Kalender Nasional Indonesia</h1>
+  </header>
+  <main class="rbm-content-wrap">
+    <div class="calendar-page">
+      <section class="calendar-intro" aria-labelledby="calendar-heading">
+        <h2 id="calendar-heading">Kalender Nasional 2026</h2>
+        <p>Kalender hari libur nasional Indonesia. Tanggal merah ditandai pada kalender.</p>
+      </section>
+
+      <section class="calendar-card" aria-label="Kalender bulanan">
+        <div class="calendar-toolbar">
+          <div class="calendar-controls">
+            <button type="button" class="calendar-button" id="previous-month" aria-label="Bulan sebelumnya">&larr;</button>
+            <button type="button" class="calendar-button today-button" id="current-month">Hari ini</button>
+            <button type="button" class="calendar-button" id="next-month" aria-label="Bulan berikutnya">&rarr;</button>
+          </div>
+          <h3 id="month-label" aria-live="polite"></h3>
+        </div>
+
+        <div class="calendar-grid-wrap">
+          <div class="calendar-grid" id="calendar-grid" role="grid" aria-labelledby="month-label"></div>
+        </div>
+
+        <div class="calendar-footer">
+          <div class="calendar-legend" aria-label="Keterangan kalender">
+            <div class="legend-item"><span class="legend-dot" aria-hidden="true"></span><span>Minggu / libur nasional</span></div>
+            <div class="legend-item"><span class="legend-dot today-dot" aria-hidden="true"></span><span>Hari ini</span></div>
+          </div>
+          <section class="holiday-list" aria-labelledby="holiday-list-heading">
+            <h4 id="holiday-list-heading">Libur nasional bulan ini</h4>
+            <ul id="holiday-list"></ul>
+          </section>
+        </div>
+      </section>
+      <section class="request-card" aria-labelledby="request-heading">
+        <div class="request-card-header">
+          <h3 id="request-heading">Pengajuan pada tanggal terpilih</h3>
+          <div class="request-card-actions">
+            <label class="outlet-filter" for="calendar-outlet">
+              <span>Outlet</span>
+              <select id="calendar-outlet" aria-label="Filter pengajuan berdasarkan outlet"></select>
+            </label>
+            <button type="button" class="calendar-button" id="refresh-requests">Muat ulang</button>
+          </div>
+        </div>
+        <div id="request-list" class="request-list" aria-live="polite">
+          <div class="request-loading">Memuat pengajuan...</div>
+        </div>
+      </section>
+      <p class="holiday-note">Daftar libur nasional 2026 mengacu pada kalender nasional Indonesia. Cuti bersama tidak ditampilkan sebagai libur nasional.</p>
+    </div>
+  </main>
+  <div class="calendar-request-modal" id="calendar-request-modal" role="dialog" aria-modal="true" aria-labelledby="calendar-request-title">
+    <div class="calendar-request-dialog">
+      <button type="button" class="calendar-button" id="calendar-request-close" style="float:right;">Tutup</button>
+      <h3 id="calendar-request-title" style="margin:0 70px 16px 0; color:#1e293b; font-size:18px;">Detail Pengajuan</h3>
+      <div id="calendar-request-details"></div>
+      <div style="display:flex; justify-content:flex-end; margin-top:18px;">
+        <button type="button" class="calendar-button today-button" id="calendar-request-open" style="display:none;">Buka untuk tindakan</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var NATIONAL_HOLIDAYS = {
+        '2026-01-01': 'Tahun Baru 2026 Masehi',
+        '2026-01-16': 'Isra Mikraj Nabi Muhammad SAW',
+        '2026-02-17': 'Tahun Baru Imlek 2577 Kongzili',
+        '2026-03-19': 'Hari Suci Nyepi Tahun Baru Saka 1948',
+        '2026-03-21': 'Hari Raya Idul Fitri 1447 H',
+        '2026-03-22': 'Hari Raya Idul Fitri 1447 H',
+        '2026-04-03': 'Wafat Yesus Kristus',
+        '2026-05-01': 'Hari Buruh Internasional',
+        '2026-05-14': 'Kenaikan Yesus Kristus',
+        '2026-05-27': 'Hari Raya Idul Adha 1447 H',
+        '2026-05-31': 'Hari Raya Waisak 2570 BE',
+        '2026-06-01': 'Hari Lahir Pancasila',
+        '2026-06-16': 'Tahun Baru Islam 1448 H',
+        '2026-08-17': 'Proklamasi Kemerdekaan Republik Indonesia',
+        '2026-08-25': 'Maulid Nabi Muhammad SAW',
+        '2026-12-25': 'Kelahiran Yesus Kristus'
+      };
+      var MONTHS = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      var WEEKDAYS = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+      var today = new Date();
+      var calendarYear = 2026;
+      var displayedMonth = new Date(calendarYear, today.getFullYear() === calendarYear ? today.getMonth() : 0, 1);
+      var grid = document.getElementById('calendar-grid');
+      var monthLabel = document.getElementById('month-label');
+      var holidayList = document.getElementById('holiday-list');
+      var requestList = document.getElementById('request-list');
+      var outletSelect = document.getElementById('calendar-outlet');
+      var previousButton = document.getElementById('previous-month');
+      var nextButton = document.getElementById('next-month');
+      var currentMonthButton = document.getElementById('current-month');
+      var refreshRequestsButton = document.getElementById('refresh-requests');
+      var requestModal = document.getElementById('calendar-request-modal');
+      var requestModalTitle = document.getElementById('calendar-request-title');
+      var requestModalDetails = document.getElementById('calendar-request-details');
+      var requestModalOpen = document.getElementById('calendar-request-open');
+      var requestModalClose = document.getElementById('calendar-request-close');
+      var user = {};
+      var requests = [];
+      var selectedDate = dateKey(today.getFullYear() === calendarYear ? today : new Date(calendarYear, 0, 1));
+      var loadSequence = 0;
+      var stopWatchingRequests = null;
+      var canViewAllOutlets = false;
+      var outletNames = {};
+
+      function dateKey(date) {
+        var month = String(date.getMonth() + 1).padStart(2, '0');
+        var day = String(date.getDate()).padStart(2, '0');
+        return date.getFullYear() + '-' + month + '-' + day;
+      }
+
+      function safeReadStorage(key, fallback) {
+        try {
+          var value = localStorage.getItem(key);
+          return value ? JSON.parse(value) : fallback;
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      function setupOutletFilter() {
+        user = safeReadStorage('rbm_user', {});
+        outletNames = safeReadStorage('rbm_outlet_names', {});
+        var role = String(user.role || '').trim().toLowerCase();
+        var username = String(user.username || '').trim().toLowerCase();
+        canViewAllOutlets = role === 'owner' || role === 'developer' ||
+          (role.indexOf('owner') >= 0 && role.indexOf('developer') >= 0) || username === 'burhan';
+        var outletIds = []
+          .concat(safeReadStorage('rbm_outlets', []))
+          .concat(safeReadStorage('rbm_internal_outlets', []))
+          .filter(function (id, index, items) { return id && items.indexOf(id) === index; });
+
+        outletSelect.innerHTML = '';
+        if (canViewAllOutlets) {
+          var allOption = document.createElement('option');
+          allOption.value = 'semua';
+          allOption.textContent = 'Semua Outlet';
+          outletSelect.appendChild(allOption);
+          outletIds.forEach(function (id) {
+            var ownOption = document.createElement('option');
+            ownOption.value = id;
+            ownOption.textContent = outletNames[id] || String(id).toUpperCase();
+            outletSelect.appendChild(ownOption);
+          });
+        } else if (user.outlet) {
+          var ownOption = document.createElement('option');
+          ownOption.value = user.outlet;
+          ownOption.textContent = outletNames[user.outlet] || String(user.outlet).toUpperCase();
+          outletSelect.appendChild(ownOption);
+          outletSelect.value = user.outlet;
+          outletSelect.disabled = true;
+        } else {
+          requestList.className = 'request-list request-error';
+          requestList.textContent = 'Outlet belum ditetapkan pada akun ini. Hubungi administrator untuk mengatur outlet.';
+          outletSelect.disabled = true;
+          return false;
+        }
+
+        if (canViewAllOutlets) {
+          outletSelect.value = 'semua';
+        }
+
+        if (!outletSelect.value) {
+          requestList.className = 'request-list request-error';
+          requestList.textContent = 'Daftar outlet belum tersedia pada akun ini.';
+          return false;
+        }
+        return true;
+      }
+
+      function requestDateKey(value) {
+        if (typeof value === 'string') {
+          var match = value.match(/(\d{4})-(\d{2})-(\d{2})/);
+          if (match) return match[1] + '-' + match[2] + '-' + match[3];
+        }
+        if (typeof value === 'number' || (typeof value === 'string' && /^\d{10,13}$/.test(value))) {
+          var timestamp = Number(value);
+          if (timestamp < 100000000000) timestamp *= 1000;
+          var date = new Date(timestamp);
+          if (!isNaN(date.getTime())) return dateKey(date);
+        }
+        if (value) {
+          var parsed = new Date(value);
+          if (!isNaN(parsed.getTime())) return dateKey(parsed);
+        }
+        return '';
+      }
+
+      function extractRequests(data, type, outletFromPath) {
+        var found = [];
+        function walk(node, path) {
+          if (!node || typeof node !== 'object') return;
+          if (Array.isArray(node) || Object.prototype.hasOwnProperty.call(node, 'createdAt') ||
+              Object.prototype.hasOwnProperty.call(node, 'requestDate') ||
+              Object.prototype.hasOwnProperty.call(node, 'startDate') ||
+              Object.prototype.hasOwnProperty.call(node, 'periodStart') ||
+              Object.prototype.hasOwnProperty.call(node, 'tanggalPengajuan')) {
+            var outlet = node.outlet || node.outletId || node._outlet || outletFromPath ||
+              (type === 'absensi' || type === 'gaji' ? path[0] : '');
+            var start = requestDateKey(type === 'absensi'
+              ? (node.requestDate || node.startDate || node.createdAt)
+              : (node.createdAt || node.tanggalPengajuan || node.tanggal || node.periodStart));
+            var end = type === 'absensi' ? requestDateKey(node.endDate || node.startDate || node.requestDate) : start;
+            if (start) {
+              if (!end || end < start) end = start;
+              var first = new Date(start + 'T00:00:00');
+              var last = new Date(end + 'T00:00:00');
+              var date = new Date(first);
+              while (date <= last) {
+                var key = dateKey(date);
+                if (key.slice(0, 4) === String(calendarYear)) {
+                  found.push({
+                    type: type,
+                    data: node,
+                    outlet: outlet,
+                    date: key,
+                    requestId: path.length ? path[path.length - 1] : '',
+                    monthKey: type === 'gaji' && path.length > 1 ? path[path.length - 2] : ''
+                  });
+                }
+                date.setDate(date.getDate() + 1);
+              }
+            }
+            return;
+          }
+          Object.keys(node).forEach(function (key) {
+            walk(node[key], path.concat(key));
+          });
+        }
+        walk(data, []);
+        return found;
+      }
+
+      function getSubmissionTitle(item) {
+        var data = item.data;
+        if (item.type === 'absensi') return 'Pengajuan ' + (data.type || 'Absensi') + (data.name ? ' - ' + data.name : '');
+        if (item.type === 'tf') return 'Pengajuan Transfer' + (data.suplier ? ' - ' + data.suplier : '');
+        if (item.type === 'pc') return 'Pengajuan Petty Cash';
+        var note = String(data.note || '').toLowerCase();
+        if (note.indexOf('cuti') >= 0) return 'Pengajuan Pencairan Cuti';
+        if (note.indexOf('lembur') >= 0) return 'Pengajuan Pencairan Lembur';
+        if (note.indexOf('bonus') >= 0) return 'Pengajuan Bonus';
+        return 'Pengajuan Gaji';
+      }
+
+      function getRequestStatus(item) {
+        var data = item.data;
+        if (item.type === 'gaji' && String(data.statusManager || '').toLowerCase() === 'rejected') {
+          return { label: 'Ditolak Manager', className: 'rejected' };
+        }
+        var status = String(item.type === 'gaji' ? data.statusOwner || data.status || 'pending' : data.status || 'pending').toLowerCase();
+        if (status === 'approved') return { label: 'Disetujui', className: 'approved' };
+        if (status === 'rejected') return { label: 'Ditolak', className: 'rejected' };
+        if (item.type === 'gaji' && String(data.statusManager || '').toLowerCase() === 'approved') {
+          return { label: 'Menunggu Owner (Manager disetujui)', className: '' };
+        }
+        return { label: item.data.currentStep ? 'Menunggu: ' + item.data.currentStep : 'Menunggu', className: '' };
+      }
+
+      function getApprovalSummary(data) {
+        var approvals = [
+          ['Supervisor', data.approvedBy_Supervisor],
+          ['Manager Outlet', data.approvedBy_Manager_Outlet],
+          ['Supervisor Regional', data.approvedBy_Supervisor_Regional],
+          ['Manager Regional', data.approvedBy_Manager_Regional],
+          ['Owner/Developer', data.approvedBy_Owner_Developer]
+        ].filter(function (approval) { return approval[1]; });
+        return approvals.map(function (approval) { return '✓ ' + approval[0] + ': ' + approval[1]; }).join(' · ');
+      }
+
+      function getCalendarRole() {
+        var users = safeReadStorage('rbm_users', []);
+        var registeredUser = Array.isArray(users) ? users.find(function (item) {
+          return item && item.username && user.username &&
+            String(item.username).toLowerCase() === String(user.username).toLowerCase();
+        }) : null;
+        var role = String(registeredUser && registeredUser.jabatan || user.jabatan || user.role || '')
+          .toLowerCase().replace(/[_-]+/g, ' ');
+        if (role === 'owner' || role === 'developer' || role.indexOf('owner') >= 0) return 'Owner/Developer';
+        if (role.indexOf('supervisor regional') >= 0 || role === 'regional supervisor') return 'Supervisor Regional';
+        if (role.indexOf('manager regional') >= 0 || role === 'regional manager') return 'Manager Regional';
+        if (role.indexOf('manager outlet') >= 0 || role === 'manager') return 'Manager Outlet';
+        if (role === 'supervisor' || role === 'spv' || role.indexOf('supervisor') >= 0) return 'Supervisor';
+        return '';
+      }
+
+      function openRequestDetails(item) {
+        var data = item.data || {};
+        requestModalTitle.textContent = getSubmissionTitle(item);
+        requestModalDetails.innerHTML = '';
+        var rows = [
+          ['Outlet', outletNames[item.outlet] || item.outlet || 'Semua Outlet'],
+          ['Tanggal', item.date],
+          ['Status', getRequestStatus(item).label],
+          ['Pengaju', data.name || data.requester || data.userName || data.createdBy || '-'],
+          ['Alasan / keterangan', data.reason || data.keterangan || data.note || '-']
+        ];
+        if (data.startDate && data.endDate && data.startDate !== data.endDate) {
+          rows.splice(2, 0, ['Periode', data.startDate + ' s/d ' + data.endDate]);
+        }
+        var amount = Number(data.totalGrand || data.nominal || data.total || 0);
+        if (amount) rows.push(['Nominal', 'Rp ' + amount.toLocaleString('id-ID')]);
+        rows.forEach(function (row) {
+          var line = document.createElement('p');
+          line.style.cssText = 'margin:8px 0; color:#475569; line-height:1.5;';
+          var label = document.createElement('strong');
+          label.textContent = row[0] + ': ';
+          line.appendChild(label);
+          line.appendChild(document.createTextNode(row[1]));
+          requestModalDetails.appendChild(line);
+        });
+
+        var role = getCalendarRole();
+        var isPrivileged = role === 'Owner/Developer';
+        var canApproveAbsensi = item.type === 'absensi' && data.status === 'pending' && data.currentStep === role;
+        var canOpenAbsensi = item.type === 'absensi' &&
+          (canApproveAbsensi || isPrivileged || data.createdBy === user.username);
+        var canOpenFinance = ['tf', 'pc', 'gaji'].indexOf(item.type) >= 0 &&
+          ['Owner/Developer', 'Manager Outlet'].indexOf(role) >= 0;
+        requestModalOpen.style.display = canOpenAbsensi || canOpenFinance ? '' : 'none';
+        var isSalaryApproval = item.type === 'gaji' &&
+          (Object.prototype.hasOwnProperty.call(data, 'statusManager') ||
+           Object.prototype.hasOwnProperty.call(data, 'approvedManagerBy'));
+        requestModalOpen.textContent = item.type === 'absensi'
+          ? 'Buka persetujuan absensi'
+          : (isSalaryApproval ? 'Buka persetujuan gaji' : 'Buka pengajuan dana');
+        requestModalOpen.onclick = function () {
+          if (!item.requestId) return;
+          var params = new URLSearchParams();
+          params.set('calendarRequestId', item.requestId);
+          params.set('calendarRequestType', isSalaryApproval ? 'salary-approval' : item.type);
+          params.set('outlet', item.outlet);
+          if (isSalaryApproval && item.monthKey) params.set('monthKey', item.monthKey);
+          var page = item.type === 'absensi' || isSalaryApproval ? 'rbm-absensi.html' : 'rbm-pengajuan.html';
+          window.location.href = page + '?' + params.toString();
+        };
+        requestModal.style.display = 'flex';
+        requestModalClose.focus();
+      }
+
+      function selectedRequests() {
+        var outlet = outletSelect.value;
+        return requests.filter(function (item) {
+          return item.date === selectedDate && (outlet === 'semua' || item.outlet === outlet);
+        });
+      }
+
+      function appendRequestText(container, className, text) {
+        var element = document.createElement('div');
+        element.className = className;
+        element.textContent = text;
+        container.appendChild(element);
+      }
+
+      function renderRequests() {
+        requestList.innerHTML = '';
+        requestList.className = 'request-list';
+        var items = selectedRequests();
+        if (items.length === 0) {
+          appendRequestText(requestList, 'request-empty', 'Tidak ada pengajuan pada tanggal ini.');
+          return;
+        }
+
+        items.sort(function (a, b) { return getSubmissionTitle(a).localeCompare(getSubmissionTitle(b), 'id'); });
+        items.forEach(function (item) {
+          var card = document.createElement('article');
+          card.className = 'request-item';
+          card.tabIndex = 0;
+          card.setAttribute('role', 'button');
+          card.setAttribute('aria-label', 'Buka detail ' + getSubmissionTitle(item));
+          card.addEventListener('click', function () { openRequestDetails(item); });
+          card.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              openRequestDetails(item);
+            }
+          });
+          var top = document.createElement('div');
+          top.className = 'request-item-top';
+          var title = document.createElement('div');
+          title.className = 'request-item-title';
+          title.textContent = getSubmissionTitle(item);
+          var status = getRequestStatus(item);
+          var badge = document.createElement('span');
+          badge.className = 'request-status' + (status.className ? ' ' + status.className : '');
+          badge.textContent = status.label;
+          top.appendChild(title);
+          top.appendChild(badge);
+          card.appendChild(top);
+
+          var outletName = outletNames[item.outlet] || (item.outlet ? String(item.outlet).toUpperCase() : 'Semua Outlet');
+          appendRequestText(card, 'request-item-outlet', '📍 ' + outletName);
+
+          var data = item.data;
+          var requester = data.name || data.requester || data.userName || data.createdBy || '';
+          var details = [];
+          if (requester) details.push('Pengaju: ' + requester);
+          var startDate = requestDateKey(data.startDate || data.requestDate);
+          var endDate = requestDateKey(data.endDate || data.startDate || data.requestDate);
+          if (startDate && endDate && startDate !== endDate) details.push('Periode: ' + startDate + ' s/d ' + endDate);
+          if (data.reason) details.push('Alasan: ' + data.reason);
+          else if (data.keterangan) details.push(String(data.keterangan));
+          if (item.type === 'absensi' && data.type === 'Pengajuan Lembur' && Number(data.lemburHours) > 0) {
+            details.push(Number(data.lemburHours) + ' jam lembur');
+          }
+          if (item.type === 'absensi' && data.type === 'Tukar Jadwal Shift' && data.swapWithName) {
+            details.push('Tukar jadwal dengan: ' + data.swapWithName);
+          }
+          if (item.type === 'absensi' && data.attendanceDetails) {
+            var attendanceDetails = Array.isArray(data.attendanceDetails)
+              ? data.attendanceDetails
+              : Object.keys(data.attendanceDetails).map(function (key) { return data.attendanceDetails[key]; });
+            var attendanceSummary = attendanceDetails.filter(function (detail) {
+              return detail && (detail.type || detail.time);
+            }).map(function (detail) {
+              return [detail.type, detail.time].filter(Boolean).join(' ');
+            });
+            if (attendanceSummary.length) details.push(attendanceSummary.join(', '));
+          }
+          if (data.totalGrand || data.nominal || data.total) {
+            var amount = Number(data.totalGrand || data.nominal || data.total);
+            if (amount) details.push('Rp ' + amount.toLocaleString('id-ID'));
+          }
+          if (details.length) appendRequestText(card, 'request-item-meta', details.join(' · '));
+          var approvalSummary = getApprovalSummary(data);
+          if (approvalSummary) appendRequestText(card, 'request-item-meta', approvalSummary);
+          requestList.appendChild(card);
+        });
+      }
+
+      function renderRequestCounts() {
+        grid.querySelectorAll('.calendar-day').forEach(function (day) {
+          var date = day.dataset.date;
+          var count = requests.filter(function (item) {
+            return item.date === date && (outletSelect.value === 'semua' || item.outlet === outletSelect.value);
+          }).length;
+          if (!count) return;
+          day.classList.add('has-requests');
+          var badge = document.createElement('span');
+          badge.className = 'day-request-count';
+          badge.textContent = count > 99 ? '99+' : String(count);
+          badge.setAttribute('aria-label', count + ' pengajuan');
+          day.appendChild(badge);
+          day.setAttribute('aria-label', day.getAttribute('aria-label') + ', ' + count + ' pengajuan');
+        });
+      }
+
+      function loadRequests() {
+        var sequence = ++loadSequence;
+        if (stopWatchingRequests) {
+          stopWatchingRequests();
+          stopWatchingRequests = null;
+        }
+        if (typeof FirebaseStorage === 'undefined' || typeof FirebaseStorage.watchCalendarPengajuan !== 'function') {
+          requestList.className = 'request-list request-error';
+          requestList.textContent = 'Penyimpanan pengajuan kalender belum tersedia. Muat ulang halaman untuk mencoba lagi.';
+          requests = [];
+          renderCalendar();
+          return;
+        }
+
+        requestList.className = 'request-list';
+        requestList.innerHTML = '';
+        appendRequestText(requestList, 'request-loading', 'Memuat pengajuan...');
+        try {
+          stopWatchingRequests = FirebaseStorage.watchCalendarPengajuan(outletSelect.value, function (data) {
+            if (sequence !== loadSequence) return;
+            var allOutlets = outletSelect.value === 'semua';
+            var outlet = allOutlets ? '' : outletSelect.value;
+            requests = []
+              .concat(extractRequests(data.absensi, 'absensi', outlet))
+              .concat(extractRequests(data.transfer, 'tf', ''))
+              .concat(extractRequests(data.pettyCash, 'pc', ''))
+              .concat(extractRequests(data.gaji, 'gaji', outlet));
+            renderCalendar();
+            renderRequests();
+          }, function (error) {
+            if (sequence !== loadSequence) return;
+            console.error('Gagal memuat pengajuan kalender:', error);
+            requests = [];
+            renderCalendar();
+            requestList.className = 'request-list request-error';
+            requestList.textContent = 'Gagal memuat pengajuan. Periksa koneksi dan izin database, lalu muat ulang halaman.';
+          });
+        } catch (error) {
+          if (sequence !== loadSequence) return;
+          console.error('Gagal memuat pengajuan kalender:', error);
+          requests = [];
+          renderCalendar();
+          requestList.className = 'request-list request-error';
+          requestList.textContent = error.message || 'Gagal memuat pengajuan kalender.';
+        }
+      }
+
+      function renderCalendar() {
+        var year = displayedMonth.getFullYear();
+        var month = displayedMonth.getMonth();
+        monthLabel.textContent = MONTHS[month] + ' ' + year;
+        var selected = new Date(selectedDate + 'T00:00:00');
+        document.getElementById('request-heading').textContent =
+          'Pengajuan tanggal ' + selected.getDate() + ' ' + MONTHS[selected.getMonth()] + ' ' + selected.getFullYear();
+        previousButton.disabled = year === calendarYear && month === 0;
+        nextButton.disabled = year === calendarYear && month === 11;
+        currentMonthButton.disabled = today.getFullYear() !== calendarYear;
+        grid.innerHTML = '';
+        holidayList.innerHTML = '';
+
+        WEEKDAYS.forEach(function (weekday, index) {
+          var heading = document.createElement('div');
+          heading.className = 'calendar-weekday' + (index === 6 ? ' sunday' : '');
+          heading.setAttribute('role', 'columnheader');
+          heading.textContent = weekday;
+          grid.appendChild(heading);
+        });
+
+        var firstDay = new Date(year, month, 1);
+        var mondayOffset = (firstDay.getDay() + 6) % 7;
+        var gridStart = new Date(year, month, 1 - mondayOffset);
+        var holidaysThisMonth = [];
+
+        for (let index = 0; index < 42; index += 1) {
+          let date = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index);
+          let key = dateKey(date);
+          var holidayName = NATIONAL_HOLIDAYS[key];
+          var isCurrentMonth = date.getMonth() === month;
+          var isSunday = date.getDay() === 0;
+          var isToday = today.getFullYear() === calendarYear && key === dateKey(today);
+          var day = document.createElement('button');
+          day.type = 'button';
+          day.className = 'calendar-day';
+          day.setAttribute('role', 'gridcell');
+          day.dataset.date = key;
+          day.setAttribute('aria-pressed', key === selectedDate ? 'true' : 'false');
+          if (!isCurrentMonth) day.classList.add('outside-month');
+          if (isSunday) day.classList.add('is-sunday');
+          if (holidayName) {
+            day.classList.add('is-holiday');
+            if (isCurrentMonth) holidaysThisMonth.push({ date: date, name: holidayName });
+          }
+          if (isToday) day.classList.add('is-today');
+          if (key === selectedDate) day.classList.add('is-selected');
+          day.setAttribute('aria-label', date.getDate() + ' ' + MONTHS[date.getMonth()] + ' ' + date.getFullYear() + (holidayName ? ', ' + holidayName : ''));
+          day.addEventListener('click', function () {
+            selectedDate = key;
+            renderCalendar();
+            renderRequests();
+          });
+
+          var number = document.createElement('span');
+          number.className = 'day-number';
+          number.textContent = date.getDate();
+          day.appendChild(number);
+
+          if (holidayName) {
+            var holiday = document.createElement('span');
+            holiday.className = 'day-holiday-name';
+            holiday.textContent = holidayName;
+            day.appendChild(holiday);
+          }
+          grid.appendChild(day);
+        }
+
+        if (holidaysThisMonth.length === 0) {
+          var emptyMessage = document.createElement('li');
+          emptyMessage.textContent = 'Tidak ada libur nasional bulan ini.';
+          holidayList.appendChild(emptyMessage);
+        } else {
+          holidaysThisMonth.forEach(function (item) {
+            var entry = document.createElement('li');
+            var dateText = document.createElement('time');
+            dateText.dateTime = dateKey(item.date);
+            dateText.textContent = item.date.getDate() + ' ' + MONTHS[item.date.getMonth()].slice(0, 3);
+            entry.appendChild(dateText);
+            entry.appendChild(document.createTextNode(item.name));
+            holidayList.appendChild(entry);
+          });
+        }
+        renderRequestCounts();
+      }
+
+      previousButton.addEventListener('click', function () {
+        if (displayedMonth.getFullYear() === calendarYear && displayedMonth.getMonth() === 0) return;
+        displayedMonth = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth() - 1, 1);
+        selectedDate = dateKey(displayedMonth);
+        renderCalendar();
+        renderRequests();
+      });
+      nextButton.addEventListener('click', function () {
+        if (displayedMonth.getFullYear() === calendarYear && displayedMonth.getMonth() === 11) return;
+        displayedMonth = new Date(displayedMonth.getFullYear(), displayedMonth.getMonth() + 1, 1);
+        selectedDate = dateKey(displayedMonth);
+        renderCalendar();
+        renderRequests();
+      });
+      currentMonthButton.addEventListener('click', function () {
+        if (today.getFullYear() !== calendarYear) return;
+        displayedMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        selectedDate = dateKey(today);
+        renderCalendar();
+        renderRequests();
+      });
+
+      outletSelect.addEventListener('change', loadRequests);
+      refreshRequestsButton.addEventListener('click', loadRequests);
+      requestModalClose.addEventListener('click', function () { requestModal.style.display = 'none'; });
+      requestModal.addEventListener('click', function (event) {
+        if (event.target === requestModal) requestModal.style.display = 'none';
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && requestModal.style.display === 'flex') requestModal.style.display = 'none';
+      });
+      document.addEventListener('DOMContentLoaded', function () {
+        if (!setupOutletFilter()) return;
+        renderCalendar();
+        try {
+          if (typeof FirebaseStorage !== 'undefined' && typeof FirebaseStorage.init === 'function') {
+            if (!FirebaseStorage.init()) {
+              throw new Error('Firebase Storage tidak dapat diinisialisasi. Periksa koneksi Firebase yang aktif.');
+            }
+          }
+          loadRequests();
+        } catch (error) {
+          console.error('Gagal menginisialisasi penyimpanan kalender:', error);
+          requestList.className = 'request-list request-error';
+          requestList.textContent = error.message || 'Penyimpanan pengajuan tidak dapat diinisialisasi.';
+        }
+      });
+
+      renderCalendar();
+    })();
+  </script>
+</body>
+</html>

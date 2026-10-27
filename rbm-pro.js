@@ -6776,13 +6776,17 @@ async function loadRiwayatGajiPengajuan(opts) {
                 const tgl = d ? d.toLocaleDateString('id-ID') : '-';
                 const statusOwner = r.statusOwner || '-';
                 const statusManager = r.statusManager || '-';
+                const currentUser = _getCurrentUser();
+                const currentRoles = [currentUser.role, currentUser.jabatan].map(value =>
+                    String(value || '').toLowerCase().replace(/[_-]+/g, ' ').trim()
+                );
                 const canApproveOwner = (function() {
-                    const u = _getCurrentUser();
-                    return u && String(u.role || '').toLowerCase() === 'owner' && statusOwner !== 'approved';
+                    return currentRoles.some(role => role === 'owner' || role === 'developer' || role.indexOf('owner') >= 0) &&
+                        statusOwner !== 'approved';
                 })();
                 const canApproveManager = (function() {
-                    const u = _getCurrentUser();
-                    return u && String(u.role || '').toLowerCase() === 'manager' && statusManager !== 'approved';
+                    return currentRoles.some(role => role === 'manager' || role.indexOf('manager outlet') >= 0) &&
+                        statusManager !== 'approved';
                 })();
 
                 const approveBtns = [];
@@ -6791,7 +6795,7 @@ async function loadRiwayatGajiPengajuan(opts) {
                 if (canApproveManager) approveBtns.push(`<button class="btn btn-secondary" style="padding:5px 8px; background:#f59e0b; color:white; border:none;" onclick="approveGajiPengajuan('${r.requestId}','manager')">Setujui Manager</button>`);
 
                 return `
-                  <tr>
+                  <tr data-request-id="${String(r.requestId).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">
                     <td>${tgl}</td>
                     <td>${r.periodStart || '-'} s/d ${r.periodEnd || '-'}</td>
                     <td style="text-align:right; font-weight:600;">${formatRupiah(r.totalGrand || 0)}</td>
@@ -13462,8 +13466,16 @@ async function loadAbsensiRequests() {
                 : (r.type === 'Lupa Absen' && Array.isArray(r.attendanceDetails) ? '<br><span style="font-size:11px;color:#475569;">' + r.attendanceDetails.map(function(detail) { return (detail.type || '-') + ': ' + (detail.time || '-'); }).join(' | ') + '</span>' : ''));
             const action = (canApprove ? `<button class="btn btn-primary" style="padding:5px 8px;" onclick="approveAbsensiRequest('${id}')">Setujui</button>` : (r.status === 'approved' ? '<strong style="color:#15803d;">Disetujui</strong>' : '-')) + deleteButton;
             const summary = requestApprovalSummary(r);
-            return `<tr><td>${r.name || '-'}</td><td>${r.type || '-'}${detailSummary}</td><td>${r.startDate || '-'} s/d ${r.endDate || '-'}</td><td>${r.reason || '-'}</td><td>${requestStatusText(r)}${summary ? '<br><span style="font-size:11px;color:#64748b;">' + summary + '</span>' : ''}</td><td>${action}</td></tr>`;
+            return `<tr data-request-id="${String(id).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"><td>${r.name || '-'}</td><td>${r.type || '-'}${detailSummary}</td><td>${r.startDate || '-'} s/d ${r.endDate || '-'}</td><td>${r.reason || '-'}</td><td>${requestStatusText(r)}${summary ? '<br><span style="font-size:11px;color:#64748b;">' + summary + '</span>' : ''}</td><td>${action}</td></tr>`;
         }).join('') : '<tr><td colspan="6" class="table-empty">Belum ada pengajuan.</td></tr>';
+        const calendarRequestId = new URLSearchParams(window.location.search).get('calendarRequestId');
+        if (calendarRequestId) {
+            const targetRow = Array.from(tbody.rows).find(row => row.dataset.requestId === calendarRequestId);
+            if (targetRow) {
+                targetRow.style.outline = '2px solid #2563eb';
+                targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
         if (feedback) {
             feedback.textContent = entries.length
                 ? 'Berhasil memuat ' + entries.length + ' pengajuan.'
@@ -13484,6 +13496,46 @@ async function loadAbsensiRequests() {
         }
     }
 }
+
+document.addEventListener('DOMContentLoaded', async function() {
+    const params = new URLSearchParams(window.location.search);
+    const requestType = params.get('calendarRequestType');
+    const requestId = params.get('calendarRequestId');
+    if (!requestId || !['absensi', 'salary-approval'].includes(requestType)) return;
+    const requestedOutlet = params.get('outlet');
+    const outletSelect = document.getElementById('rbm-outlet-select');
+    if (requestedOutlet && outletSelect) {
+        const allowedOption = Array.from(outletSelect.options).find(option => option.value === requestedOutlet);
+        if (!allowedOption) return;
+        outletSelect.value = requestedOutlet;
+    }
+    if (requestType === 'absensi') {
+        if (typeof switchAbsensiTab === 'function') switchAbsensiTab('pengajuan-absensi');
+        return;
+    }
+
+    const monthKey = params.get('monthKey') || '';
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) return;
+    const [year, month] = monthKey.split('-').map(Number);
+    const startDate = new Date(year, month - 2, 26);
+    const endDate = new Date(year, month - 1, 25);
+    const formatDate = date => date.getFullYear() + '-' +
+        String(date.getMonth() + 1).padStart(2, '0') + '-' +
+        String(date.getDate()).padStart(2, '0');
+    const startInput = document.getElementById('absensi_tgl_awal');
+    const endInput = document.getElementById('absensi_tgl_akhir');
+    if (!startInput || !endInput) return;
+    startInput.value = formatDate(startDate);
+    endInput.value = formatDate(endDate);
+    if (typeof switchAbsensiTab === 'function') switchAbsensiTab('gaji');
+    await loadRiwayatGajiPengajuan({ reset: true });
+    const targetRow = Array.from(document.querySelectorAll('#gaji_pengajuan_tbody tr'))
+        .find(row => row.dataset.requestId === requestId);
+    if (targetRow) {
+        targetRow.style.outline = '2px solid #2563eb';
+        targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+});
 
 async function approveAbsensiRequest(requestId) {
     const role = absensiRequestRole(getAbsensiRequestUser());

@@ -9,7 +9,7 @@
       "gps_logs_partitioned": {
         "$outlet": {
           "$month": {
-            ".indexOn": ["date"]
+            ".indexOn": ["date", "id"]
           }
         }
       },
