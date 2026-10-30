@@ -13521,6 +13521,52 @@ function getAbsensiRequestEmployeeKey(employee, index) {
     return String(employee && employee.id != null && employee.id !== '' ? employee.id : index);
 }
 
+function normalizeAbsensiRequestName(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function resolveAbsensiRequestEmployee(request, employees) {
+    if (!request || !Array.isArray(employees)) return null;
+    const requestEmployeeId = request.employeeId != null && String(request.employeeId).trim() !== '' && String(request.employeeId).trim() !== 'undefined'
+        ? String(request.employeeId).trim()
+        : '';
+    const requestName = normalizeAbsensiRequestName(request.name);
+    return employees.find(function(employee, index) {
+        if (!employee) return false;
+        const employeeId = employee.id != null && employee.id !== '' ? String(employee.id) : String(index);
+        if (requestEmployeeId && employeeId === requestEmployeeId) return true;
+        if (requestName && normalizeAbsensiRequestName(employee.name) === requestName) return true;
+        return false;
+    }) || null;
+}
+
+async function loadAbsensiEmployeesForOutlet(outlet) {
+    const outletId = outlet || getAbsensiRequestOutlet() || 'default';
+    const cachedEmployees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    if (Array.isArray(cachedEmployees) && cachedEmployees.length) {
+        return cachedEmployees;
+    }
+    if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskRoster) {
+        try {
+            const roster = await FirebaseStorage.loadGpsKioskRoster(outletId);
+            if (roster && Array.isArray(roster.employees) && roster.employees.length) {
+                return roster.employees;
+            }
+        } catch (error) {}
+    }
+    try {
+        if (typeof firebase !== 'undefined' && firebase.database) {
+            const snapshot = await firebase.database().ref('rbm_pro/employees/' + outletId).once('value');
+            const value = snapshot.val();
+            if (Array.isArray(value)) return value.filter(function(employee) { return employee && employee.name; });
+            if (value && typeof value === 'object') {
+                return Object.keys(value).map(function(key) { return value[key]; }).filter(function(employee) { return employee && employee.name; });
+            }
+        }
+    } catch (error) {}
+    return Array.isArray(cachedEmployees) ? cachedEmployees : [];
+}
+
 async function populateShiftSwapEmployees() {
     var select = document.getElementById('gps_tukar_jadwal_karyawan');
     var requesterName = document.getElementById('gps_absen_name')?.value || '';
@@ -13607,6 +13653,11 @@ async function consumeLeaveBalanceForRequest(request, requestId, leaveType) {
     var outlet = request.outlet || getAbsensiRequestOutlet();
     var employeesKey = getRbmStorageKey('RBM_EMPLOYEES');
     if (typeof firebase === 'undefined' || !firebase.database) throw new Error('Koneksi Firebase diperlukan untuk mengurangi saldo ' + leaveType + '.');
+    var employeeList = await loadAbsensiEmployeesForOutlet(outlet);
+    var employee = resolveAbsensiRequestEmployee(request, employeeList);
+    if (!employee) {
+        throw new Error('Data karyawan pengaju tidak ditemukan.');
+    }
     var employeeRef = firebase.database().ref('rbm_pro/employees/' + outlet);
     var employeeFound = false;
     var alreadyConsumed = false;
@@ -13623,11 +13674,7 @@ async function consumeLeaveBalanceForRequest(request, requestId, leaveType) {
         if (!current) return;
         var isArray = Array.isArray(current);
         var employees = isArray ? current : Object.keys(current).map(function(key) { return current[key]; });
-        var employee = employees.find(function(item, index) {
-            if (!item) return false;
-            if (request.employeeId != null) return String(item.id != null && item.id !== '' ? item.id : index) === String(request.employeeId);
-            return item.name === request.name;
-        });
+        var employee = resolveAbsensiRequestEmployee(request, employees);
         if (!employee) return;
         employeeFound = true;
         if (isDeveloperEmployee(employee) && leaveType !== 'DP') {
@@ -13707,10 +13754,9 @@ async function applyApprovedAbsensiRequest(request) {
         return;
     }
     if (!request || !['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur'].includes(request.type)) return;
-    const employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
-    const employee = employees.find((e, index) => e && (request.employeeId != null
-        ? String(e.id != null && e.id !== '' ? e.id : index) === String(request.employeeId)
-        : e.name === request.name));
+    const outlet = request.outlet || getAbsensiRequestOutlet();
+    const employees = await loadAbsensiEmployeesForOutlet(outlet);
+    const employee = resolveAbsensiRequestEmployee(request, employees);
     if (!employee) throw new Error('Karyawan pengaju tidak ditemukan');
     const empId = employee.id != null ? employee.id : employees.indexOf(employee);
     if (request.type === 'Pengajuan Lembur') {
@@ -13793,11 +13839,10 @@ async function submitEmployeeAbsensiRequest() {
     const partnerIndex = requestEmployees.findIndex(function(employee, index) { return type === 'Tukar Jadwal Shift' && getAbsensiRequestEmployeeKey(employee, index) === swapWithEmployeeId; });
     if (type === 'Tukar Jadwal Shift' && (requesterIndex < 0 || partnerIndex < 0 || requesterIndex === partnerIndex)) { if (feedback) feedback.textContent = 'Nama karyawan untuk tukar jadwal tidak valid.'; return; }
     const payload = { name, outlet, type, requestDate, startDate: requestDate, endDate: requestDate, reason, lemburHours: type === 'Pengajuan Lembur' ? Number(lemburHours) : 0, attendanceDetails: type === 'Lupa Absen' ? attendanceDetails : [], currentStep: ABSENSI_REQUEST_STEPS[0], status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP, createdBy: user.username || name };
-    if (['PH', 'AL', 'DP'].includes(type) && requesterIndex >= 0) {
+    if (requesterIndex >= 0) {
         payload.employeeId = getAbsensiRequestEmployeeKey(requestEmployees[requesterIndex], requesterIndex);
     }
     if (type === 'Tukar Jadwal Shift') {
-        payload.employeeId = getAbsensiRequestEmployeeKey(requestEmployees[requesterIndex], requesterIndex);
         payload.swapWithEmployeeId = getAbsensiRequestEmployeeKey(requestEmployees[partnerIndex], partnerIndex);
         payload.swapWithName = requestEmployees[partnerIndex].name;
     }
