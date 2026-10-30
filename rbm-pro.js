@@ -13522,7 +13522,47 @@ function getAbsensiRequestEmployeeKey(employee, index) {
 }
 
 function normalizeAbsensiRequestName(value) {
-    return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    return String(value || '').trim().replace(/[.,/()\-_=+]/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+}
+
+function levenshteinDistance(a, b) {
+    const s1 = String(a || '');
+    const s2 = String(b || '');
+    if (s1 === s2) return 0;
+    if (!s1.length) return s2.length;
+    if (!s2.length) return s1.length;
+    const prev = new Array(s2.length + 1);
+    for (let i = 0; i <= s2.length; i++) prev[i] = i;
+    for (let i = 1; i <= s1.length; i++) {
+        let curr = i;
+        for (let j = 1; j <= s2.length; j++) {
+            const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+            const next = Math.min(prev[j] + 1, curr + 1, prev[j - 1] + cost);
+            prev[j - 1] = curr;
+            curr = next;
+        }
+        prev[s2.length] = curr;
+    }
+    return prev[s2.length];
+}
+
+function isLikelySameAbsensiName(a, b) {
+    const left = normalizeAbsensiRequestName(a);
+    const right = normalizeAbsensiRequestName(b);
+    if (!left || !right) return false;
+    if (left === right) return true;
+    const leftTokens = left.split(' ').filter(Boolean);
+    const rightTokens = right.split(' ').filter(Boolean);
+    if (!leftTokens.length || !rightTokens.length) return false;
+    const leftMain = leftTokens[0];
+    const rightMain = rightTokens[0];
+    if (leftMain === rightMain && leftTokens.length > 1 && rightTokens.length > 1) return true;
+    const maxAllowed = Math.max(1, Math.floor(Math.min(left.length, right.length) * 0.12));
+    if (levenshteinDistance(left, right) <= maxAllowed) return true;
+    const leftKey = leftTokens.join('');
+    const rightKey = rightTokens.join('');
+    if (levenshteinDistance(leftKey, rightKey) <= Math.max(1, Math.floor(Math.min(leftKey.length, rightKey.length) * 0.08))) return true;
+    return false;
 }
 
 function resolveAbsensiRequestEmployee(request, employees) {
@@ -13531,20 +13571,58 @@ function resolveAbsensiRequestEmployee(request, employees) {
         ? String(request.employeeId).trim()
         : '';
     const requestName = normalizeAbsensiRequestName(request.name);
-    return employees.find(function(employee, index) {
+    const match = employees.find(function(employee, index) {
         if (!employee) return false;
         const employeeId = employee.id != null && employee.id !== '' ? String(employee.id) : String(index);
         if (requestEmployeeId && employeeId === requestEmployeeId) return true;
-        if (requestName && normalizeAbsensiRequestName(employee.name) === requestName) return true;
+        if (requestName && isLikelySameAbsensiName(employee.name, request.name)) return true;
         return false;
-    }) || null;
+    });
+    if (match) return match;
+
+    const allEmployees = [];
+    try {
+        const rawAll = safeParse(localStorage.getItem('RBM_EMPLOYEES_ALL'), []);
+        if (Array.isArray(rawAll)) allEmployees.push.apply(allEmployees, rawAll);
+    } catch (e) {}
+    try {
+        Object.keys(localStorage).forEach(function(key) {
+            if (key && /^RBM_EMPLOYEES(?:_.+)?$/.test(key)) {
+                const value = safeParse(localStorage.getItem(key), []);
+                if (Array.isArray(value)) allEmployees.push.apply(allEmployees, value);
+                else if (value && typeof value === 'object') allEmployees.push.apply(allEmployees, Object.keys(value).map(function(k) { return value[k]; }));
+            }
+        });
+    } catch (e) {}
+    if (allEmployees.length) {
+        return allEmployees.find(function(employee, index) {
+            if (!employee) return false;
+            const employeeId = employee.id != null && employee.id !== '' ? String(employee.id) : String(index);
+            if (requestEmployeeId && employeeId === requestEmployeeId) return true;
+            if (requestName && isLikelySameAbsensiName(employee.name, request.name)) return true;
+            return false;
+        }) || null;
+    }
+    return null;
 }
 
 async function loadAbsensiEmployeesForOutlet(outlet) {
     const outletId = outlet || getAbsensiRequestOutlet() || 'default';
-    const cachedEmployees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    const suffix = window.RBMStorage && typeof window.RBMStorage._outletSuffix === 'function'
+        ? window.RBMStorage._outletSuffix(outletId)
+        : '_' + String(outletId || 'default').toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const employeeStorageKey = 'RBM_EMPLOYEES' + suffix;
+    const cachedEmployees = getCachedParsedStorage(employeeStorageKey, []);
     if (Array.isArray(cachedEmployees) && cachedEmployees.length) {
         return cachedEmployees;
+    }
+    const localEmployees = safeParse(localStorage.getItem(employeeStorageKey) || '[]', []);
+    if (Array.isArray(localEmployees) && localEmployees.length) {
+        return localEmployees;
+    }
+    const allEmployees = safeParse(localStorage.getItem('RBM_EMPLOYEES_ALL'), []);
+    if (Array.isArray(allEmployees) && allEmployees.length) {
+        return allEmployees;
     }
     if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskRoster) {
         try {
@@ -13564,7 +13642,7 @@ async function loadAbsensiEmployeesForOutlet(outlet) {
             }
         }
     } catch (error) {}
-    return Array.isArray(cachedEmployees) ? cachedEmployees : [];
+    return Array.isArray(localEmployees) ? localEmployees : [];
 }
 
 async function populateShiftSwapEmployees() {
