@@ -180,7 +180,7 @@
         document.querySelector('.page-title').textContent = 'Laporan Pembelian Central Kitchen per Kategori';
         modeSwitch.hidden = false;
         reportFilters.hidden = false;
-        document.getElementById('filter-info').innerHTML = `<strong>Sumber:</strong> Central Kitchen &nbsp;|&nbsp; <strong>Pengelompokan:</strong> Berdasarkan kategori &nbsp;|&nbsp; <strong>Tanggal kirim:</strong> ${dateFrom} s/d ${dateTo}`;
+        document.getElementById('filter-info').innerHTML = `<strong>Sumber:</strong> Central Kitchen &nbsp;|&nbsp; <strong>Pengelompokan:</strong> Berdasarkan kategori &nbsp;|&nbsp; <strong>Tanggal nota:</strong> ${dateFrom} s/d ${dateTo}`;
         tableHead.innerHTML = '<tr><th>Outlet Tujuan</th><th>Kategori</th><th style="text-align:center;">Dikirim (Qty / Satuan)</th><th>Nilai Barang</th><th>Nilai Nota</th></tr>';
       }
 
@@ -479,7 +479,7 @@
 
           const isCategoryMode = reportMode === 'category';
           document.querySelector('.page-title').textContent = `Laporan Pembelian Central Kitchen ${isCategoryMode ? 'per Kategori' : 'per Outlet Tujuan'}`;
-          document.getElementById('filter-info').innerHTML = `<strong>Sumber:</strong> Central Kitchen &nbsp;|&nbsp; <strong>Pengelompokan:</strong> Berdasarkan ${isCategoryMode ? 'kategori' : 'outlet tujuan'} &nbsp;|&nbsp; <strong>Tanggal kirim:</strong> ${dateFrom} s/d ${dateTo}`;
+          document.getElementById('filter-info').innerHTML = `<strong>Sumber:</strong> Central Kitchen &nbsp;|&nbsp; <strong>Pengelompokan:</strong> Berdasarkan ${isCategoryMode ? 'kategori' : 'outlet tujuan'} &nbsp;|&nbsp; <strong>Tanggal nota:</strong> ${dateFrom} s/d ${dateTo}`;
           tableHead.innerHTML = isCategoryMode
             ? '<tr><th>Outlet Tujuan</th><th>Kategori</th><th style="text-align:center;">Dikirim (Qty / Satuan)</th><th>Nilai Barang</th><th>Nilai Nota</th></tr>'
             : '<tr><th>Outlet Tujuan</th><th style="text-align:center;">Dikirim (Qty / Satuan)</th><th>Nilai Barang</th><th>Nilai Nota</th></tr>';

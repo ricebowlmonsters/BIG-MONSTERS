@@ -29,6 +29,7 @@
     var itemTotal = items.reduce(function(total, item) { return total + item.price * item.quantity; }, 0);
     var amount = fulfilled ? Number(order.actualTotal) : Number(order.requestTotal);
     if (!Number.isFinite(amount)) amount = itemTotal;
+    var noteDate = Number(order.createdAt) || Number(order.shippedAt) || 0;
     return {
       id: order.number || firebaseId,
       firebaseId: firebaseId,
@@ -36,7 +37,7 @@
       centralKitchen: true,
       outletId: order.outletId || '',
       outletName: order.outletName || '',
-      date: fulfilled ? Number(order.shippedAt || order.createdAt) : Number(order.createdAt),
+      date: noteDate,
       createdAt: Number(order.createdAt) || 0,
       shippedAt: Number(order.shippedAt) || 0,
       status: fulfilled ? 'Sudah Dibayar' : 'Menunggu',
@@ -57,7 +58,7 @@
   }
 
   async function readFulfilled(db, start, end) {
-    var snapshot = await db.ref(ORDERS_PATH).orderByChild('shippedAt').startAt(start).endAt(end).once('value');
+    var snapshot = await db.ref(ORDERS_PATH).orderByChild('createdAt').startAt(start).endAt(end).once('value');
     var values = snapshot.val() || {};
     return Object.keys(values).filter(function(key) { return values[key] && values[key].status === 'fulfilled'; })
       .map(function(key) { return normalize(key, values[key]); })
