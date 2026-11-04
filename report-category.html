@@ -32,6 +32,16 @@
     .detail-table th, .detail-table td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
     .detail-table th { background: #f3f4f6; font-weight: 700; color: #374151; }
     .detail-table td:nth-child(2), .detail-table th:nth-child(2) { text-align: right; }
+    .item-detail-row { cursor: pointer; }
+    .item-detail-row:hover { background: #f3f4f6; }
+    .transaction-modal { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+    .transaction-modal[hidden] { display: none; }
+    .transaction-modal-card { width: min(760px, 90vw); max-height: 80vh; overflow: auto; background: #fff; border-radius: 12px; box-shadow: 0 12px 32px rgba(17, 24, 39, 0.2); padding: 16px 18px; }
+    .transaction-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .transaction-modal-close { border: 0; background: #f3f4f6; color: #374151; border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+    .transaction-modal-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .transaction-modal-table th, .transaction-modal-table td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    .transaction-modal-table th { background: #f9fafb; }
   </style>
 </head>
 <body>
@@ -79,6 +89,16 @@
     </main>
   </div>
 
+  <div id="transaction-modal" class="transaction-modal" hidden>
+    <div class="transaction-modal-card">
+      <div class="transaction-modal-header">
+        <h3 id="transaction-modal-title" style="margin:0; font-size: 18px;">Detail Transaksi</h3>
+        <button type="button" id="transaction-modal-close" class="transaction-modal-close">Tutup</button>
+      </div>
+      <div id="transaction-modal-content"></div>
+    </div>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
   <script src="central-kitchen-reports.js"></script>
@@ -86,6 +106,11 @@
   <script>
     function formatRupiah(n) { return 'Rp ' + Math.round(n).toLocaleString('id-ID'); }
     function formatQuantity(value) { return Number(value || 0).toLocaleString('id-ID'); }
+    function formatDateIndonesia(dateValue) {
+      const date = new Date(dateValue);
+      if (Number.isNaN(date.getTime())) return '-';
+      return date.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
     function escapeHtml(value) { return String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])); }
     function toStartOfDay(date) { const d = new Date(date); d.setHours(0,0,0,0); return d.getTime(); }
     function toEndOfDay(date) { const d = new Date(date); d.setHours(23,59,59,999); return d.getTime(); }
@@ -200,6 +225,50 @@
           .join(', ');
       }
 
+      function openItemTransactionModal(itemName, itemUnit, transactions) {
+        const modal = document.getElementById('transaction-modal');
+        const modalTitle = document.getElementById('transaction-modal-title');
+        const modalContent = document.getElementById('transaction-modal-content');
+        if (!modal || !modalTitle || !modalContent) return;
+
+        const rows = (transactions || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date)).map(tx => `
+          <tr>
+            <td>${escapeHtml(tx.number || '-')}</td>
+            <td>${formatDateIndonesia(tx.date)}</td>
+            <td>${formatQuantity(tx.qty || 0)}${tx.unit ? ` ${escapeHtml(tx.unit)}` : ''}</td>
+            <td>${formatRupiah(tx.total || 0)}</td>
+          </tr>
+        `).join('');
+
+        modalTitle.textContent = itemName + (itemUnit ? ` (${itemUnit})` : '');
+        modalContent.innerHTML = `
+          <table class="transaction-modal-table">
+            <thead>
+              <tr>
+                <th>No. Transaksi</th>
+                <th>Tanggal</th>
+                <th>Qty</th>
+                <th>Nilai</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || '<tr><td colspan="4" class="muted">Tidak ada data transaksi untuk item ini.</td></tr>'}
+            </tbody>
+          </table>
+        `;
+        modal.hidden = false;
+      }
+
+      document.getElementById('transaction-modal-close').addEventListener('click', () => {
+        document.getElementById('transaction-modal').hidden = true;
+      });
+
+      document.getElementById('transaction-modal').addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) {
+          event.currentTarget.hidden = true;
+        }
+      });
+
       async function loadData() {
         const start = toStartOfDay(dateFrom);
         const end = toEndOfDay(dateTo);
@@ -229,6 +298,7 @@
             let orderItemGross = 0;
             items.forEach(i => { orderItemGross += parseNumber(i.price) * parseNumber(i.quantity); });
             const distributionRatio = orderItemGross > 0 ? (grandTotal / orderItemGross) : 0;
+            const seenGroupKeys = new Set();
 
             items.forEach(i => {
               const name = (i.name || 'Unknown').trim();
@@ -250,8 +320,18 @@
                   quantityByUnit: {},
                   totalBefore: 0,
                   totalAfter: 0,
-                  items: {}
+                  items: {},
+                  transactions: []
                 };
+              }
+
+              if (!seenGroupKeys.has(groupKey)) {
+                categories[groupKey].transactions.push({
+                  number: o.number || o.id || '',
+                  date: o.date || o.createdAt || o.shippedAt || Date.now(),
+                  total: grandTotal
+                });
+                seenGroupKeys.add(groupKey);
               }
 
               categories[groupKey].qty += qty;
@@ -262,10 +342,17 @@
 
               const itemKey = `${name.toLowerCase()}|${unit.toLowerCase()}`;
               if (!categories[groupKey].items[itemKey]) {
-                categories[groupKey].items[itemKey] = { name, unit, qty: 0, total: 0 };
+                categories[groupKey].items[itemKey] = { name, unit, qty: 0, total: 0, transactions: [] };
               }
               categories[groupKey].items[itemKey].qty += qty;
               categories[groupKey].items[itemKey].total += gross;
+              categories[groupKey].items[itemKey].transactions.push({
+                number: o.number || o.id || '',
+                date: o.date || o.createdAt || o.shippedAt || Date.now(),
+                qty: qty,
+                total: gross,
+                unit: unit
+              });
             });
           });
 
@@ -305,25 +392,28 @@
             totalAfter += d.totalAfter;
 
             const itemDetails = Object.values(d.items).sort((a, b) => b.qty - a.qty || b.total - a.total);
-            const detailRowsHtml = itemDetails.length ? `
+
+            const detailRowsHtml = `
               <div class="detail-box">
                 <div class="detail-box-title">Detail Barang</div>
-                <table class="detail-table">
-                  <thead>
-                    <tr><th>Barang</th><th>Qty / Satuan</th><th>Total</th></tr>
-                  </thead>
-                  <tbody>
-                    ${itemDetails.map(item => `
-                      <tr>
-                        <td>${escapeHtml(item.name)}</td>
-                        <td>${formatQuantity(item.qty)}${item.unit ? ` ${escapeHtml(item.unit)}` : ''}</td>
-                        <td>${formatRupiah(item.total)}</td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
+                ${itemDetails.length ? `
+                  <table class="detail-table">
+                    <thead>
+                      <tr><th>Barang</th><th>Qty / Satuan</th><th>Total</th></tr>
+                    </thead>
+                    <tbody>
+                      ${itemDetails.map(item => `
+                          <tr class="item-detail-row" data-item-name="${escapeHtml(item.name)}" data-item-unit="${escapeHtml(item.unit || '')}" data-transactions="${encodeURIComponent(JSON.stringify(item.transactions || []))}">
+                            <td>${escapeHtml(item.name)}</td>
+                            <td>${formatQuantity(item.qty)}${item.unit ? ` ${escapeHtml(item.unit)}` : ''}</td>
+                            <td>${formatRupiah(item.total)}</td>
+                          </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                ` : '<div class="muted">Tidak ada rincian item.</div>'}
               </div>
-            ` : '<div class="detail-box"><div class="detail-box-title">Detail Barang</div><div class="muted">Tidak ada rincian item.</div></div>';
+            `;
 
             const tr = document.createElement('tr');
             tr.className = 'summary-row';
@@ -339,6 +429,15 @@
             detailTr.style.display = 'none';
             detailTr.innerHTML = `<td colspan="${isCentralKitchen ? (reportMode === 'outlet' ? 4 : 5) : 4}">${detailRowsHtml}</td>`;
             tbody.appendChild(detailTr);
+
+            detailTr.querySelectorAll('.item-detail-row').forEach(row => {
+              row.addEventListener('click', () => {
+                const itemName = row.dataset.itemName || 'Barang';
+                const itemUnit = row.dataset.itemUnit || '';
+                const transactions = JSON.parse(decodeURIComponent(row.dataset.transactions || '[]'));
+                openItemTransactionModal(itemName, itemUnit, transactions);
+              });
+            });
 
             tr.addEventListener('click', () => {
               const isHidden = detailTr.style.display === 'none';

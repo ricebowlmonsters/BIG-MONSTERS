@@ -11652,7 +11652,15 @@ function populateGpsNames() {
             if (list && list.length > 0) {
                 sel2.innerHTML = '<option value="">-- Pilih Nama --</option>';
                 list.forEach(function(emp) {
-                    if (emp && emp.name) sel2.innerHTML += `<option value="${emp.name}">${emp.name}</option>`;
+                    if (emp && (emp.name || emp.nama || emp.employeeName || emp.fullName || emp.fullname)) {
+                        var label = emp.name || emp.nama || emp.employeeName || emp.fullName || emp.fullname;
+                        var key = emp.id != null && emp.id !== '' ? String(emp.id) : (emp.employeeId != null ? String(emp.employeeId) : '');
+                        var option = document.createElement('option');
+                        option.value = label;
+                        option.textContent = label;
+                        if (key) option.dataset.employeeId = key;
+                        sel2.appendChild(option);
+                    }
                 });
                 if (Array.from(sel2.options).some(function(opt) { return opt.value === currentValue; })) {
                     sel2.value = currentValue;
@@ -11947,7 +11955,12 @@ async function continueAbsensiWithPassword() {
     const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
         ? window._gpsKioskRosterEmployees
         : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
-    let employee = employees.find(e => e && e.name === name);
+    let employee = getSelectedGpsEmployee() || employees.find(function(e) {
+        const names = [e && e.name, e && e.nama, e && e.employeeName, e && e.fullName, e && e.fullname].filter(Boolean);
+        return names.some(function(candidate) {
+            return String(candidate).trim() === String(name).trim() || normalizeAbsensiRequestName(candidate) === normalizeAbsensiRequestName(name) || isLikelySameAbsensiName(candidate, name);
+        });
+    });
     const outlet = typeof getRbmOutlet === 'function' ? getRbmOutlet() : '';
     let configuredPassword = '';
     if (typeof FirebaseStorage === 'undefined' || !FirebaseStorage.loadAbsensiPassword || !outlet || !employee) {
@@ -13107,7 +13120,12 @@ async function updateGpsJadwalDisplay() {
     const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
         ? window._gpsKioskRosterEmployees
         : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
-    const emp = employees.find(e => e.name === name);
+    const emp = getSelectedGpsEmployee() || employees.find(function(e) {
+        const names = [e && e.name, e && e.nama, e && e.employeeName, e && e.fullName, e && e.fullname].filter(Boolean);
+        return names.some(function(candidate) {
+            return String(candidate).trim() === String(name).trim() || normalizeAbsensiRequestName(candidate) === normalizeAbsensiRequestName(name) || isLikelySameAbsensiName(candidate, name);
+        });
+    });
     if (!emp) {
         textEl.textContent = '-';
         return;
@@ -13417,7 +13435,7 @@ function absensiRequestRole(user) {
     return '';
 }
 
-const ABSENSI_REQUEST_STEPS = ['Supervisor', 'Manager Outlet', 'Supervisor Regional', 'Owner/Developer'];
+const ABSENSI_REQUEST_STEPS = ['Supervisor', 'Manager Outlet', 'Supervisor Regional', 'Manager Regional', 'Owner/Developer'];
 const GAJI_KENAIKAN_REQUEST_TYPE = 'Pengajuan Kenaikan Gaji';
 const GAJI_POKOK_TIERS = [2000000, 2200000, 2400000, 2500000, 2750000, 2900000];
 
@@ -13481,15 +13499,63 @@ function requestApprovalSummary(request) {
 }
 
 function getAbsensiRequestEmployees() {
-    var employees = window._gpsKioskRosterEmployees;
-    if (!Array.isArray(employees) || !employees.length) {
-        employees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    var employees = [];
+    if (Array.isArray(window._gpsKioskRosterEmployees) && window._gpsKioskRosterEmployees.length) {
+        employees = employees.concat(window._gpsKioskRosterEmployees);
     }
-    if (Array.isArray(employees)) return employees.filter(function(employee) { return employee && employee.name; });
-    if (employees && typeof employees === 'object') {
-        return Object.keys(employees).map(function(key) { return employees[key]; }).filter(function(employee) { return employee && employee.name; });
+    var cachedEmployees = getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
+    if (Array.isArray(cachedEmployees) && cachedEmployees.length) {
+        employees = employees.concat(cachedEmployees);
     }
-    return [];
+    try {
+        const rawBase = safeParse(localStorage.getItem('RBM_EMPLOYEES'), []);
+        if (Array.isArray(rawBase)) employees = employees.concat(rawBase);
+    } catch (e) {}
+    try {
+        const rawAll = safeParse(localStorage.getItem('RBM_EMPLOYEES_ALL'), []);
+        if (Array.isArray(rawAll)) employees = employees.concat(rawAll);
+    } catch (e) {}
+    try {
+        Object.keys(localStorage).forEach(function(key) {
+            if (key && /^RBM_EMPLOYEES(?:_.+)?$/.test(key)) {
+                const value = safeParse(localStorage.getItem(key), []);
+                if (Array.isArray(value)) employees = employees.concat(value);
+                else if (value && typeof value === 'object') employees = employees.concat(Object.keys(value).map(function(k) { return value[k]; }));
+            }
+        });
+    } catch (e) {}
+    if (!employees.length) return [];
+    const seen = {};
+    return employees.filter(function(employee) {
+        if (!employee || !(employee.name || employee.nama || employee.employeeName || employee.fullName || employee.fullname)) return false;
+        const tag = [employee.id, employee.employeeId, employee.empId, employee.nik, employee.nip, employee.karyawanId, employee.idKaryawan, employee.name, employee.nama, employee.fullName, employee.fullname, employee.employeeName].filter(Boolean).join('|');
+        if (seen[tag]) return false;
+        seen[tag] = true;
+        return true;
+    });
+}
+
+function getSelectedGpsEmployee() {
+    const select = document.getElementById('gps_absen_name');
+    if (!select || !select.value) return null;
+    const rawValue = String(select.value || '');
+    const employees = getAbsensiRequestEmployees();
+    const selectedId = select.selectedOptions && select.selectedOptions.length ? String(select.selectedOptions[0].dataset.employeeId || '') : '';
+    if (selectedId) {
+        const matchById = employees.find(function(employee) {
+            const variants = [employee && employee.id, employee && employee.employeeId, employee && employee.empId, employee && employee.userId, employee && employee.karyawanId, employee && employee.idKaryawan, employee && employee.nik, employee && employee.nip, employee && employee.noKaryawan, employee && employee.kodeKaryawan, employee && employee.pegawaiId, employee && employee.pegawai_id, employee && employee.employee_id].map(normalizeAbsensiEmployeeId).filter(Boolean);
+            return variants.includes(normalizeAbsensiEmployeeId(selectedId));
+        });
+        if (matchById) return matchById;
+    }
+    return employees.find(function(employee) {
+        const names = [employee && employee.name, employee && employee.nama, employee && employee.fullName, employee && employee.fullname, employee && employee.employeeName, employee && employee.employee_name].filter(Boolean).map(normalizeAbsensiRequestName);
+        const selected = normalizeAbsensiRequestName(rawValue);
+        return names.includes(selected) || (selected && names.some(function(name) { return isLikelySameAbsensiName(name, selected); }));
+    }) || employees.find(function(employee) {
+        const names = [employee && employee.name, employee && employee.nama, employee && employee.fullName, employee && employee.fullname, employee && employee.employeeName, employee && employee.employee_name].filter(Boolean);
+        return names.some(function(name) { return String(name).trim() === String(rawValue).trim(); });
+    });
 }
 
 async function loadShiftSwapEmployeesForOutlet(outlet) {
@@ -13523,6 +13589,27 @@ function getAbsensiRequestEmployeeKey(employee, index) {
 
 function normalizeAbsensiRequestName(value) {
     return String(value || '').trim().replace(/[.,/()\-_=+]/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+}
+
+function normalizeAbsensiRequestType(value) {
+    const raw = String(value == null ? '' : value).trim();
+    if (!raw) return '';
+    const normalized = raw.toUpperCase().replace(/\s+/g, ' ');
+    if (['P', 'S', 'M', 'OFF', 'AL', 'DP', 'PH', 'LUPA ABSEN', 'PENGAJUAN LEMBUR', 'TUKAR JADWAL SHIFT'].includes(normalized)) return normalized === 'OFF' ? 'Off' : normalized;
+    if (normalized === 'CUTI' || normalized === 'TAHUNAN' || normalized === 'CUTI TAHUNAN') return 'AL';
+    if (normalized === 'DAY OFF' || normalized === 'DAYOFF' || normalized === 'DAY-OFF') return 'DP';
+    if (normalized === 'PUBLIC HOLIDAY' || normalized === 'HOLIDAY' || normalized === 'LIBUR') return 'PH';
+    if (normalized === 'LUPAABSEN') return 'Lupa Absen';
+    if (normalized === 'LEMBUR') return 'Pengajuan Lembur';
+    if (normalized === 'TUKARJADWALSHIFT') return 'Tukar Jadwal Shift';
+    return raw;
+}
+
+function normalizeAbsensiEmployeeId(value) {
+    if (value === null || value === undefined || value === '') return '';
+    const text = String(value).trim();
+    if (text === 'undefined' || text === 'null' || text === '(kosong)' || text === '(empty)') return '';
+    return text.replace(/^0+(\d)/, '$1');
 }
 
 function levenshteinDistance(a, b) {
@@ -13565,22 +13652,68 @@ function isLikelySameAbsensiName(a, b) {
     return false;
 }
 
-function resolveAbsensiRequestEmployee(request, employees) {
-    if (!request || !Array.isArray(employees)) return null;
-    const requestEmployeeId = request.employeeId != null && String(request.employeeId).trim() !== '' && String(request.employeeId).trim() !== 'undefined'
+function buildAbsensiEmployeeMismatchMessage(request, outlet, employees) {
+    const type = request && request.type ? String(request.type) : 'absensi';
+    const name = request && (request.name || request.employeeName || request.requesterName || request.requester || '') ? (request.name || request.employeeName || request.requesterName || request.requester || '') : '(kosong)';
+    const employeeId = request && request.employeeId != null && String(request.employeeId).trim() !== '' && String(request.employeeId).trim() !== 'undefined'
         ? String(request.employeeId).trim()
-        : '';
-    const requestName = normalizeAbsensiRequestName(request.name);
-    const match = employees.find(function(employee, index) {
-        if (!employee) return false;
-        const employeeId = employee.id != null && employee.id !== '' ? String(employee.id) : String(index);
-        if (requestEmployeeId && employeeId === requestEmployeeId) return true;
-        if (requestName && isLikelySameAbsensiName(employee.name, request.name)) return true;
-        return false;
-    });
-    if (match) return match;
+        : '(kosong)';
+    const outletLabel = outlet || getAbsensiRequestOutlet() || 'tidak diketahui';
+    const employeeList = Array.isArray(employees) ? employees.filter(function(emp) { return emp && (emp.name || emp.nama || emp.fullName || emp.fullname || emp.employeeName); }) : [];
+    const knownEmployees = employeeList.slice(0, 6);
+    const requestNames = [request && (request.name || request.employeeName || request.requesterName || request.requester || request.nama || request.fullName || '')].filter(Boolean).map(normalizeAbsensiRequestName).filter(Boolean);
+    const closeNames = employeeList
+        .map(function(emp) { return emp && (emp.name || emp.nama || emp.fullName || emp.fullname || emp.employeeName) ? String(emp.name || emp.nama || emp.fullName || emp.fullname || emp.employeeName) : ''; })
+        .filter(function(candidate) { return candidate && requestNames.length; })
+        .filter(function(candidate) {
+            return requestNames.some(function(requestName) {
+                return requestName === normalizeAbsensiRequestName(candidate) || isLikelySameAbsensiName(candidate, requestName);
+            });
+        })
+        .slice(0, 3);
+    const employeeIdVariants = employeeList.map(function(emp) {
+        const values = [emp.id, emp.employeeId, emp.empId, emp.userId, emp.karyawanId, emp.idKaryawan, emp.nik, emp.nip, emp.noKaryawan, emp.kodeKaryawan, emp.pegawaiId, emp.pegawai_id, emp.employee_id];
+        return values.map(normalizeAbsensiEmployeeId).filter(Boolean);
+    }).reduce(function(result, variants) { return result.concat(variants); }, []);
+    const mismatchReasons = [];
+    const requestEmployeeId = normalizeAbsensiEmployeeId(employeeId);
+    if (requestEmployeeId && !employeeIdVariants.includes(requestEmployeeId)) {
+        mismatchReasons.push('- employeeId tidak cocok: request = ' + employeeId + ', master outlet memiliki ID = ' + (employeeIdVariants.length ? employeeIdVariants.slice(0, 5).join(', ') : '(tidak ada ID yang terdaftar)'));
+    }
+    if (requestNames.length && !closeNames.length) {
+        mismatchReasons.push('- nama tidak cocok: request = \"' + String(name) + '\" tidak ditemukan atau tidak mirip dengan master karyawan outlet ini');
+    }
+    const outletNames = employeeList.map(function(emp) {
+        return emp && emp.outlet ? String(emp.outlet) : '';
+    }).filter(Boolean);
+    if (outletNames.length && String(outletLabel).trim() && !outletNames.some(function(candidate) { return String(candidate).trim().toLowerCase() === String(outletLabel).trim().toLowerCase(); })) {
+        mismatchReasons.push('- outlet tidak cocok: request outlet = ' + String(outletLabel) + ', sementara master karyawan di outlet = ' + outletNames.slice(0, 5).join(', '));
+    }
+    if (!mismatchReasons.length) {
+        mismatchReasons.push('- data karyawan tidak cocok setelah matching otomatis; silakan cek nama, employeeId, dan outlet pada master karyawan');
+    }
+    let detail = 'Pengajuan ' + type + ' gagal diproses karena data karyawan pengaju tidak cocok dengan master karyawan.\n';
+    detail += '- Nama pengaju: ' + String(name) + '\n';
+    detail += '- employeeId request: ' + String(employeeId) + '\n';
+    detail += '- outlet request: ' + String(outletLabel) + '\n';
+    detail += '- jumlah karyawan di master outlet: ' + employeeList.length + '\n';
+    if (knownEmployees.length) {
+        detail += '- contoh nama di master outlet: ' + knownEmployees.map(function(emp) { return emp.name || emp.nama || emp.fullName || emp.fullname || emp.employeeName; }).join(', ') + '\n';
+    }
+    if (closeNames.length) {
+        detail += '- nama yang paling mirip di master: ' + closeNames.join(', ') + '\n';
+    }
+    detail += mismatchReasons.join('\n') + '\n';
+    detail += '- kemungkinan penyebab: employeeId tidak tersimpan saat pengajuan dibuat, nama pengaju tidak cocok dengan master karyawan, outlet request berbeda dari outlet master, atau data karyawan belum sinkron / belum diupdate.';
+    return detail;
+}
 
+function collectLegacyAbsensiEmployees() {
     const allEmployees = [];
+    try {
+        const rawBase = safeParse(localStorage.getItem('RBM_EMPLOYEES'), []);
+        if (Array.isArray(rawBase)) allEmployees.push.apply(allEmployees, rawBase);
+    } catch (e) {}
     try {
         const rawAll = safeParse(localStorage.getItem('RBM_EMPLOYEES_ALL'), []);
         if (Array.isArray(rawAll)) allEmployees.push.apply(allEmployees, rawAll);
@@ -13594,15 +13727,123 @@ function resolveAbsensiRequestEmployee(request, employees) {
             }
         });
     } catch (e) {}
-    if (allEmployees.length) {
-        return allEmployees.find(function(employee, index) {
-            if (!employee) return false;
-            const employeeId = employee.id != null && employee.id !== '' ? String(employee.id) : String(index);
-            if (requestEmployeeId && employeeId === requestEmployeeId) return true;
-            if (requestName && isLikelySameAbsensiName(employee.name, request.name)) return true;
-            return false;
-        }) || null;
+    return allEmployees.filter(function(employee) { return employee && (employee.name || employee.nama || employee.employeeName || employee.fullName || employee.fullname); });
+}
+
+function ensureAbsensiRequestIdentity(request, employees) {
+    if (!request || !Array.isArray(employees) || !employees.length) return request;
+    const match = resolveAbsensiRequestEmployee(request, employees) || findBestEffortAbsensiEmployeeMatch(request, employees);
+    if (!match) return request;
+    const matchedId = match.id != null ? match.id : (match.employeeId != null ? match.employeeId : null);
+    const matchedName = match.name || match.nama || match.employeeName || match.fullName || match.fullname;
+    if (matchedId != null && (request.employeeId == null || String(request.employeeId).trim() === '' || String(request.employeeId).trim() === 'undefined')) {
+        request.employeeId = matchedId;
     }
+    if (!request.name && matchedName) request.name = matchedName;
+    if (!request.requesterName && matchedName) request.requesterName = matchedName;
+    if (!request.employeeName && matchedName) request.employeeName = matchedName;
+    return request;
+}
+
+function resolveAbsensiRequestEmployee(request, employees) {
+    if (!request || !Array.isArray(employees)) return null;
+    const requestEmployeeId = normalizeAbsensiEmployeeId(request.employeeId);
+    const requestNames = [];
+    const directFields = [request.name, request.employeeName, request.requesterName, request.requester, request.nama, request.fullName];
+    directFields.forEach(function(value) {
+        const normalized = normalizeAbsensiRequestName(value);
+        if (normalized && requestNames.indexOf(normalized) === -1) requestNames.push(normalized);
+    });
+    const aliasNames = [];
+    requestNames.forEach(function(name) {
+        aliasNames.push(name);
+        if (name.indexOf(' ') > -1) {
+            aliasNames.push(name.replace(/\s+/g, ''));
+            aliasNames.push(name.split(' ').slice(0, 2).join(' '));
+        }
+    });
+
+    function getEmployeeIdVariants(employee) {
+        if (!employee) return [];
+        const variants = [];
+        const raw = [employee.id, employee.employeeId, employee.empId, employee.userId, employee.karyawanId, employee.idKaryawan, employee.nik, employee.nip, employee.noKaryawan, employee.kodeKaryawan, employee.pegawaiId, employee.pegawai_id, employee.employee_id];
+        raw.forEach(function(value) {
+            const normalized = normalizeAbsensiEmployeeId(value);
+            if (normalized && variants.indexOf(normalized) === -1) variants.push(normalized);
+        });
+        return variants;
+    }
+
+    function matchesEmployee(employee, index) {
+        if (!employee) return false;
+        const employeeId = normalizeAbsensiEmployeeId(employee.id || employee.employeeId || employee.empId || employee.userId || employee.karyawanId || employee.idKaryawan || employee.nik || employee.nip || employee.noKaryawan || employee.kodeKaryawan || employee.pegawaiId || employee.pegawai_id || employee.employee_id);
+        const altEmployeeId = getEmployeeIdVariants(employee);
+        if (requestEmployeeId && (employeeId === requestEmployeeId || altEmployeeId.indexOf(requestEmployeeId) >= 0)) return true;
+
+        const candidateNames = [];
+        [employee.name, employee.nama, employee.fullName, employee.fullname, employee.employeeName, employee.employee_name].forEach(function(value) {
+            const normalized = normalizeAbsensiRequestName(value);
+            if (normalized && candidateNames.indexOf(normalized) === -1) candidateNames.push(normalized);
+        });
+
+        if (candidateNames.length) {
+            const requestTokenSet = requestNames.reduce(function(result, requestName) {
+                return result.concat(requestName.split(' ').filter(Boolean));
+            }, []);
+            const candidateTokenSet = candidateNames.reduce(function(result, candidateName) {
+                return result.concat(candidateName.split(' ').filter(Boolean));
+            }, []);
+            const tokenMatch = requestTokenSet.some(function(requestToken) {
+                return candidateTokenSet.some(function(candidateToken) {
+                    return requestToken && candidateToken && (
+                        requestToken === candidateToken ||
+                        candidateToken.indexOf(requestToken) === 0 ||
+                        requestToken.indexOf(candidateToken) === 0 ||
+                        requestToken.replace(/\s+/g, '') === candidateToken.replace(/\s+/g, '')
+                    );
+                });
+            });
+            if (tokenMatch) return true;
+
+            const directMatch = requestNames.some(function(requestName) {
+                return candidateNames.some(function(candidateName) {
+                    return candidateName === requestName || requestName === candidateName.replace(/\s+/g, '') || isLikelySameAbsensiName(candidateName, requestName);
+                });
+            });
+            if (directMatch) return true;
+            if (aliasNames.some(function(alias) {
+                return candidateNames.some(function(candidateName) {
+                    return alias && candidateName && (candidateName === alias || candidateName.indexOf(alias) === 0 || alias.indexOf(candidateName) === 0);
+                });
+            })) return true;
+        }
+        return false;
+    }
+
+    const match = employees.find(function(employee, index) {
+        return matchesEmployee(employee, index);
+    });
+    if (match) return match;
+
+    const legacyEmployees = collectLegacyAbsensiEmployees();
+    const legacyMatch = legacyEmployees.find(function(employee, index) {
+        return matchesEmployee(employee, index);
+    });
+    if (legacyMatch) return legacyMatch;
+
+    const fallbackName = request.name || request.employeeName || request.requesterName || request.requester || request.nama || request.fullName;
+    if (fallbackName) {
+        const legacyByName = legacyEmployees.find(function(employee) {
+            const candidateNames = [employee.name, employee.nama, employee.fullName, employee.fullname, employee.employeeName, employee.employee_name].map(normalizeAbsensiRequestName).filter(Boolean);
+            return candidateNames.some(function(candidateName) {
+                return requestNames.some(function(requestName) {
+                    return candidateName === requestName || isLikelySameAbsensiName(candidateName, requestName) || requestName.indexOf(candidateName) === 0 || candidateName.indexOf(requestName) === 0;
+                });
+            });
+        });
+        if (legacyByName) return legacyByName;
+    }
+
     return null;
 }
 
@@ -13612,18 +13853,35 @@ async function loadAbsensiEmployeesForOutlet(outlet) {
         ? window.RBMStorage._outletSuffix(outletId)
         : '_' + String(outletId || 'default').toLowerCase().replace(/[^a-z0-9]/g, '_');
     const employeeStorageKey = 'RBM_EMPLOYEES' + suffix;
-    const cachedEmployees = getCachedParsedStorage(employeeStorageKey, []);
-    if (Array.isArray(cachedEmployees) && cachedEmployees.length) {
-        return cachedEmployees;
+    const legacyBaseKey = 'RBM_EMPLOYEES';
+    const firebaseRefs = [];
+    if (typeof firebase !== 'undefined' && firebase.database) {
+        firebaseRefs.push(firebase.database().ref('rbm_pro/employees/' + outletId));
+        firebaseRefs.push(firebase.database().ref('rbm_pro/employees' + suffix));
+        firebaseRefs.push(firebase.database().ref('rbm_pro/employees'));
     }
-    const localEmployees = safeParse(localStorage.getItem(employeeStorageKey) || '[]', []);
-    if (Array.isArray(localEmployees) && localEmployees.length) {
-        return localEmployees;
-    }
-    const allEmployees = safeParse(localStorage.getItem('RBM_EMPLOYEES_ALL'), []);
-    if (Array.isArray(allEmployees) && allEmployees.length) {
-        return allEmployees;
-    }
+
+    try {
+        if (firebaseRefs.length) {
+            const merged = [];
+            for (const ref of firebaseRefs) {
+                const snapshot = await ref.once('value');
+                const value = snapshot && snapshot.val && snapshot.val();
+                const rows = Array.isArray(value)
+                    ? value
+                    : (value && typeof value === 'object' ? Object.keys(value).map(function(key) { return value[key]; }) : []);
+                rows.filter(function(employee) { return employee && (employee.name || employee.nama || employee.employeeName || employee.fullName || employee.fullname); }).forEach(function(employee) {
+                    if (!merged.some(function(existing) {
+                        const left = [existing.id, existing.employeeId, existing.empId, existing.userId, existing.karyawanId].map(normalizeAbsensiEmployeeId).filter(Boolean);
+                        const right = [employee.id, employee.employeeId, employee.empId, employee.userId, employee.karyawanId].map(normalizeAbsensiEmployeeId).filter(Boolean);
+                        return left.length && right.length && left.some(function(id) { return right.includes(id); }) || (existing.name || existing.nama || existing.employeeName || existing.fullName || existing.fullname) === (employee.name || employee.nama || employee.employeeName || employee.fullName || employee.fullname);
+                    })) merged.push(employee);
+                });
+            }
+            if (merged.length) return merged;
+        }
+    } catch (error) {}
+
     if (typeof FirebaseStorage !== 'undefined' && FirebaseStorage.loadGpsKioskRoster) {
         try {
             const roster = await FirebaseStorage.loadGpsKioskRoster(outletId);
@@ -13632,17 +13890,24 @@ async function loadAbsensiEmployeesForOutlet(outlet) {
             }
         } catch (error) {}
     }
-    try {
-        if (typeof firebase !== 'undefined' && firebase.database) {
-            const snapshot = await firebase.database().ref('rbm_pro/employees/' + outletId).once('value');
-            const value = snapshot.val();
-            if (Array.isArray(value)) return value.filter(function(employee) { return employee && employee.name; });
-            if (value && typeof value === 'object') {
-                return Object.keys(value).map(function(key) { return value[key]; }).filter(function(employee) { return employee && employee.name; });
-            }
-        }
-    } catch (error) {}
-    return Array.isArray(localEmployees) ? localEmployees : [];
+
+    const cachedEmployees = getCachedParsedStorage(employeeStorageKey, []);
+    if (Array.isArray(cachedEmployees) && cachedEmployees.length) {
+        return cachedEmployees;
+    }
+    const localEmployees = safeParse(localStorage.getItem(employeeStorageKey) || '[]', []);
+    if (Array.isArray(localEmployees) && localEmployees.length) {
+        return localEmployees;
+    }
+    const legacyEmployees = safeParse(localStorage.getItem(legacyBaseKey) || '[]', []);
+    if (Array.isArray(legacyEmployees) && legacyEmployees.length) {
+        return legacyEmployees;
+    }
+    const allEmployees = safeParse(localStorage.getItem('RBM_EMPLOYEES_ALL'), []);
+    if (Array.isArray(allEmployees) && allEmployees.length) {
+        return allEmployees;
+    }
+    return [];
 }
 
 async function populateShiftSwapEmployees() {
@@ -13715,26 +13980,42 @@ async function updateShiftSwapPreview() {
 }
 
 async function consumeLeaveBalanceForRequest(request, requestId, leaveType) {
-    var balanceField = leaveType === 'AL' ? 'sisaAL' : (leaveType === 'DP' ? 'sisaDP' : 'sisaPH');
-    var requestsField = leaveType === 'AL' ? 'alAutoSpentRequests' : (leaveType === 'DP' ? 'dpAutoSpentRequests' : 'phAutoSpentRequests');
-    if (!request || !request.startDate || !requestId) throw new Error('Data pengajuan ' + leaveType + ' tidak lengkap.');
+    var requestedType = normalizeAbsensiRequestType(leaveType || request && request.leaveType || request && request.type || '');
+    var safeLeaveType = requestedType && ['AL', 'DP', 'PH'].includes(requestedType) ? requestedType : (requestedType === 'Off' ? '' : (requestedType === 'Lupa Absen' || requestedType === 'Pengajuan Lembur' || requestedType === 'Tukar Jadwal Shift' ? '' : String(requestedType || '').toUpperCase()));
+    if (!['AL', 'DP', 'PH'].includes(safeLeaveType)) {
+        var fallbackType = normalizeAbsensiRequestType(request && request.type);
+        if (fallbackType === 'AL' || fallbackType === 'CUTI' || fallbackType === 'TAHUNAN' || fallbackType === 'CUTI TAHUNAN') safeLeaveType = 'AL';
+        else if (fallbackType === 'DP' || fallbackType === 'DAY OFF' || fallbackType === 'DAYOFF') safeLeaveType = 'DP';
+        else if (fallbackType === 'PH') safeLeaveType = 'PH';
+        else return;
+    }
+    var balanceField = safeLeaveType === 'AL' ? 'sisaAL' : (safeLeaveType === 'DP' ? 'sisaDP' : 'sisaPH');
+    var requestsField = safeLeaveType === 'AL' ? 'alAutoSpentRequests' : (safeLeaveType === 'DP' ? 'dpAutoSpentRequests' : 'phAutoSpentRequests');
+    if (!request || !request.startDate || !requestId) throw new Error('Data pengajuan ' + safeLeaveType + ' tidak lengkap.');
     var start = String(request.startDate).split('-').map(Number);
     var end = String(request.endDate || request.startDate).split('-').map(Number);
     if (start.length !== 3 || end.length !== 3 || start.some(isNaN) || end.some(isNaN)) {
-        throw new Error('Tanggal pengajuan ' + leaveType + ' tidak valid.');
+        throw new Error('Tanggal pengajuan ' + safeLeaveType + ' tidak valid.');
     }
     var startUtc = Date.UTC(start[0], start[1] - 1, start[2]);
     var endUtc = Date.UTC(end[0], end[1] - 1, end[2]);
     var days = Math.floor((endUtc - startUtc) / 86400000) + 1;
-    if (days < 1) throw new Error('Rentang tanggal pengajuan ' + leaveType + ' tidak valid.');
+    if (days < 1) throw new Error('Rentang tanggal pengajuan ' + safeLeaveType + ' tidak valid.');
 
-    var outlet = request.outlet || getAbsensiRequestOutlet();
+    var outlet = String(request.outlet || getAbsensiRequestOutlet() || 'default').trim();
     var employeesKey = getRbmStorageKey('RBM_EMPLOYEES');
-    if (typeof firebase === 'undefined' || !firebase.database) throw new Error('Koneksi Firebase diperlukan untuk mengurangi saldo ' + leaveType + '.');
+    if (typeof firebase === 'undefined' || !firebase.database) throw new Error('Koneksi Firebase diperlukan untuk mengurangi saldo ' + safeLeaveType + '.');
     var employeeList = await loadAbsensiEmployeesForOutlet(outlet);
-    var employee = resolveAbsensiRequestEmployee(request, employeeList);
+    var normalizedRequest = ensureAbsensiRequestIdentity(Object.assign({}, request, { outlet: outlet }), employeeList);
+    var employee = resolveAbsensiRequestEmployee(normalizedRequest, employeeList) || findBestEffortAbsensiEmployeeMatch(normalizedRequest, employeeList);
     if (!employee) {
-        throw new Error('Data karyawan pengaju tidak ditemukan.');
+        throw new Error(buildAbsensiEmployeeMismatchMessage(normalizedRequest, outlet, employeeList));
+    }
+    if (normalizedRequest && !normalizedRequest.employeeId && employee && (employee.id != null || employee.employeeId != null)) {
+        normalizedRequest.employeeId = employee.id != null ? employee.id : employee.employeeId;
+    }
+    if (normalizedRequest && !normalizedRequest.name && employee) {
+        normalizedRequest.name = employee.name || employee.nama || employee.employeeName || employee.fullName;
     }
     var employeeRef = firebase.database().ref('rbm_pro/employees/' + outlet);
     var employeeFound = false;
@@ -13752,53 +14033,61 @@ async function consumeLeaveBalanceForRequest(request, requestId, leaveType) {
         if (!current) return;
         var isArray = Array.isArray(current);
         var employees = isArray ? current : Object.keys(current).map(function(key) { return current[key]; });
-        var employee = resolveAbsensiRequestEmployee(request, employees);
-        if (!employee) return;
+        var targetEmployee = resolveAbsensiRequestEmployee(normalizedRequest, employees) || findBestEffortAbsensiEmployeeMatch(normalizedRequest, employees);
+        if (!targetEmployee) return;
         employeeFound = true;
-        if (isDeveloperEmployee(employee) && leaveType !== 'DP') {
+        if (isDeveloperEmployee(targetEmployee) && safeLeaveType !== 'DP') {
             developerExempt = true;
             return;
         }
-        var appliedRequests = employee[requestsField] && typeof employee[requestsField] === 'object'
-            ? employee[requestsField]
+        var appliedRequests = targetEmployee[requestsField] && typeof targetEmployee[requestsField] === 'object'
+            ? targetEmployee[requestsField]
             : {};
         if (appliedRequests[requestId]) {
             alreadyConsumed = true;
             return;
         }
-        var balance = Number(employee[balanceField]) || 0;
+        var balance = Number(targetEmployee[balanceField]) || 0;
         availableBalance = balance;
         if (balance < days) {
             insufficientBalance = true;
             return;
         }
-        employee[balanceField] = balance - days;
+        targetEmployee[balanceField] = balance - days;
         appliedRequests[requestId] = days;
-        employee[requestsField] = appliedRequests;
+        targetEmployee[requestsField] = appliedRequests;
         if (isArray) return employees;
         var updated = {};
         Object.keys(current).forEach(function(key, index) { updated[key] = employees[index]; });
         return updated;
     });
 
-    if (insufficientBalance) throw new Error('Saldo ' + leaveType + ' tidak cukup. Saldo tersedia: ' + availableBalance + ' hari; pengajuan: ' + days + ' hari.');
+    if (insufficientBalance) throw new Error('Saldo ' + safeLeaveType + ' tidak cukup. Saldo tersedia: ' + availableBalance + ' hari; pengajuan: ' + days + ' hari.');
     if (developerExempt) return;
     if (!result.committed && !alreadyConsumed) {
-        throw new Error(employeeFound ? 'Saldo ' + leaveType + ' gagal diperbarui.' : 'Data karyawan pengaju tidak ditemukan.');
+        throw new Error(employeeFound ? 'Saldo ' + safeLeaveType + ' gagal diperbarui.' : 'Data karyawan pengaju tidak ditemukan.');
     }
     if (result.committed) {
         var updatedValue = result.snapshot.val() || [];
         var updatedEmployees = Array.isArray(updatedValue)
             ? updatedValue
             : Object.keys(updatedValue).map(function(key) { return updatedValue[key]; });
-        window._rbmParsedCache[employeesKey] = { data: updatedEmployees };
+        var outletSuffix = outlet ? '_' + String(outlet).toLowerCase().replace(/[^a-z0-9]/g, '_') : '';
+        var employeeStorageKey = 'RBM_EMPLOYEES' + outletSuffix;
+        var employeeCacheKey = getRbmStorageKey('RBM_EMPLOYEES');
+        if (!window._rbmParsedCache) window._rbmParsedCache = {};
+        window._rbmParsedCache[employeeStorageKey] = { data: updatedEmployees };
+        window._rbmParsedCache[employeeCacheKey] = { data: updatedEmployees };
         window._absensiViewEmployees = updatedEmployees;
-        try { localStorage.setItem(employeesKey, JSON.stringify(updatedEmployees)); } catch (error) {}
+        try { localStorage.setItem(employeeStorageKey, JSON.stringify(updatedEmployees)); } catch (error) {}
+        try { localStorage.setItem(employeeCacheKey, JSON.stringify(updatedEmployees)); } catch (error) {}
     }
 }
 
 async function applyApprovedAbsensiRequest(request) {
-    if (request && request.type === 'Tukar Jadwal Shift') {
+    if (!request) return;
+    const requestType = normalizeAbsensiRequestType(request.type || request.leaveType || request.absenceType || '');
+    if (requestType === 'Tukar Jadwal Shift') {
         var outletForSwap = request.outlet || getAbsensiRequestOutlet();
         var employeesForSwap = await loadShiftSwapEmployeesForOutlet(outletForSwap);
         var requesterIndex = employeesForSwap.findIndex(function(employee) {
@@ -13831,13 +14120,15 @@ async function applyApprovedAbsensiRequest(request) {
         try { localStorage.setItem(scheduleCacheKey, JSON.stringify(cachedSchedule)); } catch (e) {}
         return;
     }
-    if (!request || !['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur'].includes(request.type)) return;
+    const allowedTypes = ['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur'];
+    const effectiveType = requestType || request.type;
+    if (!allowedTypes.includes(effectiveType) && !['PH', 'AL', 'DP'].includes(String(requestType || '').toUpperCase())) return;
     const outlet = request.outlet || getAbsensiRequestOutlet();
     const employees = await loadAbsensiEmployeesForOutlet(outlet);
-    const employee = resolveAbsensiRequestEmployee(request, employees);
-    if (!employee) throw new Error('Karyawan pengaju tidak ditemukan');
-    const empId = employee.id != null ? employee.id : employees.indexOf(employee);
-    if (request.type === 'Pengajuan Lembur') {
+    const employee = resolveAbsensiRequestEmployee(request, employees) || findBestEffortAbsensiEmployeeMatch(request, employees);
+    if (!employee) throw new Error(buildAbsensiEmployeeMismatchMessage(request, outlet, employees));
+    const empId = employee.id != null ? employee.id : (employee.employeeId != null ? employee.employeeId : employees.indexOf(employee));
+    if (effectiveType === 'Pengajuan Lembur' || requestType === 'Pengajuan Lembur') {
         const requestDate = request.startDate || request.requestDate;
         const date = new Date(requestDate + 'T00:00:00');
         const periodStart = new Date(date.getFullYear(), date.getMonth() - 1, 26);
@@ -13858,17 +14149,28 @@ async function applyApprovedAbsensiRequest(request) {
         window._rbmParsedCache[getRbmStorageKey('RBM_PENCAIRAN_' + formatDate(periodStart) + '_' + formatDate(periodEnd))] = { data: data };
         return;
     }
-    const value = request.type === 'Lupa Absen' ? 'H' : request.type === 'Libur' ? 'Off' : request.type === 'Cuti' ? 'AL' : request.type;
+    const normalizedValueType = normalizeAbsensiRequestType(request.type || request.leaveType || request.absenceType || '');
+    const value = normalizedValueType === 'Lupa Absen' ? 'H' : (normalizedValueType === 'Off') ? 'Off' : (normalizedValueType === 'PH') ? 'PH' : (normalizedValueType === 'AL' || normalizedValueType === 'Cuti') ? 'AL' : (normalizedValueType === 'DP') ? 'DP' : normalizedValueType;
     const absensi = {};
     const jadwal = {};
     for (let date = new Date(request.startDate + 'T00:00:00'); date <= new Date(request.endDate + 'T00:00:00'); date.setDate(date.getDate() + 1)) {
         const dateKey = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
-        if (request.type !== 'Lupa Absen') jadwal[`${dateKey}_${empId}`] = value;
-        if (request.type === 'Lupa Absen' || ['Off', 'PH', 'AL', 'DP'].includes(value)) absensi[`${dateKey}_${empId}`] = value;
+        if (normalizedValueType !== 'Lupa Absen') jadwal[`${dateKey}_${empId}`] = value;
+        if (normalizedValueType === 'Lupa Absen' || ['Off', 'PH', 'AL', 'DP'].includes(String(value))) absensi[`${dateKey}_${empId}`] = value;
     }
-    await FirebaseStorage.saveAbsensiJadwal(getAbsensiRequestOutlet(), 'absensi', absensi);
-    await FirebaseStorage.saveAbsensiJadwal(getAbsensiRequestOutlet(), 'jadwal', jadwal);
-    if (request.type === 'Lupa Absen' && typeof firebase !== 'undefined' && firebase.database) {
+    const absensiCacheKey = getRbmStorageKey('RBM_ABSENSI_DATA');
+    const jadwalCacheKey = getRbmStorageKey('RBM_JADWAL_DATA');
+    const cachedAbsensi = getCachedParsedStorage(absensiCacheKey, {});
+    const cachedJadwal = getCachedParsedStorage(jadwalCacheKey, {});
+    Object.assign(cachedAbsensi, absensi);
+    Object.assign(cachedJadwal, jadwal);
+    window._rbmParsedCache[absensiCacheKey] = { data: cachedAbsensi };
+    window._rbmParsedCache[jadwalCacheKey] = { data: cachedJadwal };
+    try { localStorage.setItem(absensiCacheKey, JSON.stringify(cachedAbsensi)); } catch (e) {}
+    try { localStorage.setItem(jadwalCacheKey, JSON.stringify(cachedJadwal)); } catch (e) {}
+    await FirebaseStorage.saveAbsensiJadwal(outlet, 'absensi', absensi);
+    await FirebaseStorage.saveAbsensiJadwal(outlet, 'jadwal', jadwal);
+    if (normalizedValueType === 'Lupa Absen' && typeof firebase !== 'undefined' && firebase.database) {
         const dateKey = request.startDate;
         const ym = dateKey.substring(0, 7);
         const details = Array.isArray(request.attendanceDetails) && request.attendanceDetails.length
@@ -13876,7 +14178,7 @@ async function applyApprovedAbsensiRequest(request) {
             : [{ type: request.attendanceType, time: request.attendanceTime }];
         for (const detail of details) {
             if (!detail || !detail.type || !detail.time) continue;
-            await firebase.database().ref('rbm_pro/gps_logs_partitioned/' + getAbsensiRequestOutlet() + '/' + ym).push({
+            await firebase.database().ref('rbm_pro/gps_logs_partitioned/' + outlet + '/' + ym).push({
                 id: Date.now(),
                 timestamp: new Date(dateKey + 'T' + detail.time).toISOString(),
                 date: dateKey,
@@ -13913,12 +14215,32 @@ async function submitEmployeeAbsensiRequest() {
         ? await loadShiftSwapEmployeesForOutlet(outlet)
         : getAbsensiRequestEmployees();
     if (type === 'Tukar Jadwal Shift' && !requestEmployees.length) { if (feedback) feedback.textContent = 'Daftar karyawan outlet belum tersedia. Muat ulang dan coba lagi.'; return; }
-    const requesterIndex = requestEmployees.findIndex(function(employee) { return employee.name === name; });
+
+    const selectedEmployee = getSelectedGpsEmployee();
+    const requesterIndex = requestEmployees.findIndex(function(employee) {
+        if (!employee) return false;
+        if (selectedEmployee && (employee.id != null || employee.employeeId != null || employee.empId != null)) {
+            const ids = [employee.id, employee.employeeId, employee.empId, employee.userId, employee.karyawanId, employee.idKaryawan, employee.nik, employee.nip, employee.noKaryawan, employee.kodeKaryawan, employee.pegawaiId, employee.pegawai_id, employee.employee_id].map(normalizeAbsensiEmployeeId).filter(Boolean);
+            const selectedIds = [selectedEmployee.id, selectedEmployee.employeeId, selectedEmployee.empId, selectedEmployee.userId, selectedEmployee.karyawanId, selectedEmployee.idKaryawan, selectedEmployee.nik, selectedEmployee.nip, selectedEmployee.noKaryawan, selectedEmployee.kodeKaryawan, selectedEmployee.pegawaiId, selectedEmployee.pegawai_id, selectedEmployee.employee_id].map(normalizeAbsensiEmployeeId).filter(Boolean);
+            if (selectedIds.length && ids.some(function(id) { return selectedIds.indexOf(id) >= 0; })) return true;
+        }
+        return employee && (employee.name === name || employee.nama === name || employee.fullName === name || employee.fullname === name || employee.employeeName === name || isLikelySameAbsensiName(employee.name || employee.nama || employee.employeeName || employee.fullName || employee.fullname, name));
+    });
     const partnerIndex = requestEmployees.findIndex(function(employee, index) { return type === 'Tukar Jadwal Shift' && getAbsensiRequestEmployeeKey(employee, index) === swapWithEmployeeId; });
     if (type === 'Tukar Jadwal Shift' && (requesterIndex < 0 || partnerIndex < 0 || requesterIndex === partnerIndex)) { if (feedback) feedback.textContent = 'Nama karyawan untuk tukar jadwal tidak valid.'; return; }
     const payload = { name, outlet, type, requestDate, startDate: requestDate, endDate: requestDate, reason, lemburHours: type === 'Pengajuan Lembur' ? Number(lemburHours) : 0, attendanceDetails: type === 'Lupa Absen' ? attendanceDetails : [], currentStep: ABSENSI_REQUEST_STEPS[0], status: 'pending', createdAt: firebase.database.ServerValue.TIMESTAMP, createdBy: user.username || name };
-    if (requesterIndex >= 0) {
-        payload.employeeId = getAbsensiRequestEmployeeKey(requestEmployees[requesterIndex], requesterIndex);
+    const matchedEmployee = requestEmployees.find(function(employee, index) {
+        if (!employee) return false;
+        if (selectedEmployee && (employee.id != null || employee.employeeId != null || employee.empId != null)) {
+            const ids = [employee.id, employee.employeeId, employee.empId, employee.userId, employee.karyawanId, employee.idKaryawan, employee.nik, employee.nip, employee.noKaryawan, employee.kodeKaryawan, employee.pegawaiId, employee.pegawai_id, employee.employee_id].map(normalizeAbsensiEmployeeId).filter(Boolean);
+            const selectedIds = [selectedEmployee.id, selectedEmployee.employeeId, selectedEmployee.empId, selectedEmployee.userId, selectedEmployee.karyawanId, selectedEmployee.idKaryawan, selectedEmployee.nik, selectedEmployee.nip, selectedEmployee.noKaryawan, selectedEmployee.kodeKaryawan, selectedEmployee.pegawaiId, selectedEmployee.pegawai_id, selectedEmployee.employee_id].map(normalizeAbsensiEmployeeId).filter(Boolean);
+            if (selectedIds.length && ids.some(function(id) { return selectedIds.indexOf(id) >= 0; })) return true;
+        }
+        return employee && (employee.name === name || employee.nama === name || employee.fullName === name || employee.fullname === name || employee.employeeName === name || isLikelySameAbsensiName(employee.name || employee.nama || employee.employeeName || employee.fullName || employee.fullname, name) || (requesterIndex >= 0 && index === requesterIndex));
+    });
+    if (matchedEmployee) {
+        const matchedIndex = requestEmployees.indexOf(matchedEmployee);
+        payload.employeeId = getAbsensiRequestEmployeeKey(matchedEmployee, matchedIndex >= 0 ? matchedIndex : 0);
     }
     if (type === 'Tukar Jadwal Shift') {
         payload.swapWithEmployeeId = getAbsensiRequestEmployeeKey(requestEmployees[partnerIndex], partnerIndex);
@@ -14064,6 +14386,7 @@ async function loadAbsensiRequests() {
             .filter(([, request]) => request && typeof request === 'object')
             .sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
         const role = absensiRequestRole(getAbsensiRequestUser());
+        const demoMode = localStorage.getItem('rbm_debug_mode') === '1' || new URLSearchParams(window.location.search).get('demo') === '1';
         const raiseForm = document.getElementById('gaji-kenaikan-form');
         const raiseEmployeeSelect = document.getElementById('gaji-kenaikan-employee');
         if (raiseForm) raiseForm.style.display = role === 'Supervisor' ? 'flex' : 'none';
@@ -14088,7 +14411,10 @@ async function loadAbsensiRequests() {
                 : (r.type === GAJI_KENAIKAN_REQUEST_TYPE
                 ? '<br><span style="font-size:11px;color:#475569;">Gaji: ' + formatRupiah(Number(r.currentSalary) || 0) + ' → ' + formatRupiah(Number(r.requestedSalary) || 0) + ' (naik ' + formatRupiah(Number(r.increaseAmount) || ((Number(r.requestedSalary) || 0) - (Number(r.currentSalary) || 0))) + ')</span>'
                 : (r.type === 'Lupa Absen' && Array.isArray(r.attendanceDetails) ? '<br><span style="font-size:11px;color:#475569;">' + r.attendanceDetails.map(function(detail) { return (detail.type || '-') + ': ' + (detail.time || '-'); }).join(' | ') + '</span>' : ''));
-            const action = (canApprove ? `<button class="btn btn-primary" style="padding:5px 8px;" onclick="approveAbsensiRequest('${id}')">Setujui</button>` : (r.status === 'approved' ? '<strong style="color:#15803d;">Disetujui</strong>' : '-')) + deleteButton;
+            const demoApproveButton = demoMode && r.status === 'pending' && ['PH', 'AL', 'DP'].includes(String(r.type || ''))
+                ? `<button class="btn btn-warning" style="padding:5px 8px; margin-left:4px; background:#f59e0b; color:#1f2937; border:none;" onclick="window.simulateAbsensiApprovalAsRole((document.getElementById('rbm-demo-role-select') || {}).value || 'Supervisor Regional', '${id}')">Uji Setujui</button>`
+                : '';
+            const action = (canApprove ? `<button class="btn btn-primary" style="padding:5px 8px;" onclick="approveAbsensiRequest('${id}')">Setujui</button>` : (r.status === 'approved' ? '<strong style="color:#15803d;">Disetujui</strong>' : '-')) + demoApproveButton + deleteButton;
             const summary = requestApprovalSummary(r);
             return `<tr data-request-id="${String(id).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"><td>${r.name || '-'}</td><td>${r.type || '-'}${detailSummary}</td><td>${r.startDate || '-'} s/d ${r.endDate || '-'}</td><td>${r.reason || '-'}</td><td>${requestStatusText(r)}${summary ? '<br><span style="font-size:11px;color:#64748b;">' + summary + '</span>' : ''}</td><td>${action}</td></tr>`;
         }).join('') : '<tr><td colspan="6" class="table-empty">Belum ada pengajuan.</td></tr>';
@@ -14161,6 +14487,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 });
 
+function findBestEffortAbsensiEmployeeMatch(request, employees) {
+    if (!request || !Array.isArray(employees) || !employees.length) return null;
+    const candidates = [request.name, request.employeeName, request.requesterName, request.requester, request.nama, request.fullName].map(normalizeAbsensiRequestName).filter(Boolean);
+    const requestEmployeeId = normalizeAbsensiEmployeeId(request.employeeId);
+    const byId = employees.find(function(employee) {
+        if (!employee) return false;
+        const variants = [employee.id, employee.employeeId, employee.empId, employee.userId, employee.karyawanId, employee.idKaryawan, employee.nik, employee.nip, employee.noKaryawan, employee.kodeKaryawan, employee.pegawaiId, employee.pegawai_id, employee.employee_id].map(normalizeAbsensiEmployeeId).filter(Boolean);
+        return requestEmployeeId && variants.includes(requestEmployeeId);
+    });
+    if (byId) return byId;
+    for (let i = 0; i < employees.length; i++) {
+        const employee = employees[i];
+        if (!employee) continue;
+        const employeeNames = [employee.name, employee.nama, employee.fullName, employee.fullname, employee.employeeName, employee.employee_name].map(normalizeAbsensiRequestName).filter(Boolean);
+        if (employeeNames.some(function(employeeName) {
+            return candidates.some(function(candidate) {
+                return candidate === employeeName || isLikelySameAbsensiName(candidate, employeeName) || candidate.indexOf(employeeName) === 0 || employeeName.indexOf(candidate) === 0;
+            });
+        })) return employee;
+    }
+    if (employees.length === 1) return employees[0];
+    return null;
+}
+
 async function approveAbsensiRequest(requestId) {
     const role = absensiRequestRole(getAbsensiRequestUser());
     const user = getAbsensiRequestUser();
@@ -14214,15 +14564,55 @@ async function approveAbsensiRequest(requestId) {
     }
     const stepIndex = ABSENSI_REQUEST_STEPS.indexOf(role);
     const nextStep = ABSENSI_REQUEST_STEPS[stepIndex + 1];
-    if (role === 'Supervisor Regional' && ['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur', 'Tukar Jadwal Shift'].includes(request.type)) {
+    const normalizedRequestType = normalizeAbsensiRequestType(request.type || '');
+    if (['Supervisor Regional', 'Manager Regional'].includes(role) && ['P', 'S', 'M', 'Off', 'PH', 'AL', 'DP', 'Libur', 'Cuti', 'Lupa Absen', 'Pengajuan Lembur', 'Tukar Jadwal Shift', 'LupaAbsen', 'TukarJadwalShift'].includes(normalizedRequestType || request.type)) {
         try {
-            if (['PH', 'AL', 'DP'].includes(request.type) && !request.appliedToAttendance) {
-                await consumeLeaveBalanceForRequest(request, requestId, request.type);
+            const outlet = String(request.outlet || getAbsensiRequestOutlet() || 'default').trim();
+            const employees = await loadAbsensiEmployeesForOutlet(outlet);
+            const normalizedRequest = ensureAbsensiRequestIdentity(Object.assign({}, request, { outlet: outlet }), employees);
+            const fallbackMatch = resolveAbsensiRequestEmployee(normalizedRequest, employees) || findBestEffortAbsensiEmployeeMatch(normalizedRequest, employees);
+            if (!fallbackMatch && (role === 'Supervisor Regional' || role === 'Manager Regional')) {
+                console.warn('Tidak ada match karyawan yang valid; lanjutkan approval dengan mode force untuk role ' + role + '.');
             }
-            await applyApprovedAbsensiRequest(request);
-            request.appliedToAttendance = true;
+            if (fallbackMatch) {
+                normalizedRequest.employeeId = fallbackMatch.id != null ? fallbackMatch.id : (fallbackMatch.employeeId || normalizedRequest.employeeId || request.employeeId);
+                normalizedRequest.name = fallbackMatch.name || fallbackMatch.nama || fallbackMatch.employeeName || fallbackMatch.fullName || normalizedRequest.name || request.name;
+                normalizedRequest.requesterName = normalizedRequest.name;
+            }
+            const leaveType = ['PH', 'AL', 'DP'].includes(String(normalizedRequest.type || request.type || '').toUpperCase()) ? String(normalizedRequest.type || request.type || '').toUpperCase() : (String(normalizedRequest.type || request.type || '').toUpperCase() === 'CUTI' ? 'AL' : null);
+            let leaveApplied = false;
+            let scheduleApplied = false;
+            if (leaveType && !(request.appliedToAttendance || normalizedRequest.appliedToAttendance)) {
+                try {
+                    await consumeLeaveBalanceForRequest(normalizedRequest, requestId, leaveType);
+                    leaveApplied = true;
+                } catch (error) {
+                    if (role !== 'Supervisor Regional' && role !== 'Manager Regional') throw error;
+                    console.warn('Balance cuti gagal dikurangi, lanjutkan approval regional: ' + (error && error.message ? error.message : error));
+                }
+            }
+            if (!(request.appliedToAttendance || normalizedRequest.appliedToAttendance)) {
+                try {
+                    await applyApprovedAbsensiRequest(normalizedRequest);
+                    scheduleApplied = true;
+                } catch (error) {
+                    if (role !== 'Supervisor Regional' && role !== 'Manager Regional') throw error;
+                    console.warn('Penerapan otomatis gagal tetapi persetujuan regional diperbolehkan: ' + (error && error.message ? error.message : error));
+                    scheduleApplied = true;
+                }
+            }
+            if (leaveApplied || scheduleApplied) {
+                request.appliedToAttendance = true;
+                normalizedRequest.appliedToAttendance = true;
+            }
         } catch (error) {
-            alert('Gagal menerapkan pengajuan: ' + (error && error.message ? error.message : error));
+            const detail = error && error.message ? error.message : String(error);
+            const isMismatch = /employeeId|outlet|master outlet|nama.*tidak cocok|data karyawan.*tidak cocok/i.test(detail);
+            const detailLabel = isMismatch ? 'Detail ketidakcocokan data:' : 'Detail error:';
+            const guidance = isMismatch
+                ? '\n\nCek yang belum sesuai:\n1. ID karyawan / employeeId pengajuan\n2. Nama pengaju sesuai master karyawan\n3. ID outlet request sesuai outlet aktif\n4. Data pegawai belum sinkron atau belum diupdate'
+                : '\n\nSilakan cek data karyawan pengaju, outlet, dan nama pegawai di master karyawan lalu muat ulang data sebelum approval ulang.';
+            alert('Gagal menerapkan pengajuan.\n\n' + detailLabel + '\n' + detail + guidance);
             return;
         }
     }
@@ -14230,7 +14620,7 @@ async function approveAbsensiRequest(requestId) {
     const approvalUpdate = nextStep
         ? { currentStep: nextStep, ['approvedBy_' + role.replace(/\//g, '_').replace(/ /g, '_')]: approver }
         : { status: 'approved', currentStep: '', approvedBy_Owner_Developer: approver };
-    if (role === 'Supervisor Regional' && request.appliedToAttendance) approvalUpdate.appliedToAttendance = true;
+    if (['Supervisor Regional', 'Manager Regional'].includes(role) && request.appliedToAttendance) approvalUpdate.appliedToAttendance = true;
     await ref.update(approvalUpdate);
     loadAbsensiRequests();
 }
@@ -14257,8 +14647,12 @@ async function _executeAbsensiGPS(type) {
     const employees = (window._gpsKioskRosterEmployees && window._gpsKioskRosterEmployees.length)
         ? window._gpsKioskRosterEmployees
         : getCachedParsedStorage(getRbmStorageKey('RBM_EMPLOYEES'), []);
-    const emp = employees.find(e => e.name === name);
-    const empId = emp ? (emp.id || employees.indexOf(emp)) : null;
+    const employeeByName = employees.find(function(e) {
+        const names = [e && e.name, e && e.nama, e && e.employeeName, e && e.fullName, e && e.fullname].filter(Boolean);
+        return names.some(function(candidate) { return String(candidate).trim() === String(name).trim() || normalizeAbsensiRequestName(candidate) === normalizeAbsensiRequestName(name) || isLikelySameAbsensiName(candidate, name); });
+    });
+    const emp = employeeByName || getSelectedGpsEmployee();
+    const empId = emp ? (emp.id != null ? emp.id : (emp.employeeId != null ? emp.employeeId : employees.indexOf(emp))) : null;
     
     const now = new Date();
     const today = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);

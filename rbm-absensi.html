@@ -18,6 +18,301 @@
   } 
 })();
 </script>
+<script>
+(function(){
+  try {
+    var demoEnabled = new URLSearchParams(window.location.search).get('demo') === '1' || localStorage.getItem('rbm_debug_mode') === '1';
+    if (!demoEnabled) return;
+    function getUser() {
+      try { return JSON.parse(localStorage.getItem('rbm_user') || '{}'); } catch (e) { return {}; }
+    }
+    function setUserRole(roleName) {
+      var user = getUser();
+      var next = Object.assign({}, user, {
+        role: roleName,
+        jabatan: roleName,
+        username: user.username || 'demo_' + String(roleName).toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+        nama: user.nama || 'Demo ' + roleName
+      });
+      localStorage.setItem('rbm_user', JSON.stringify(next));
+      localStorage.setItem('rbm_debug_role', roleName);
+      return next;
+    }
+    window.setAbsensiDemoRole = function(roleName) {
+      setUserRole(roleName);
+      if (typeof loadAbsensiRequests === 'function') loadAbsensiRequests();
+      alert('Mode uji aktif: ' + roleName + '. Silakan pilih pengajuan dan klik tombol Setujui.');
+    };
+    window.simulateAbsensiApprovalAsRole = async function(roleName, requestId) {
+      if (!requestId) return alert('Request ID belum dipilih.');
+      setUserRole(roleName);
+      if (typeof approveAbsensiRequest === 'function') {
+        await approveAbsensiRequest(requestId);
+      } else {
+        alert('approveAbsensiRequest belum tersedia di halaman ini.');
+      }
+    };
+    window.refreshAbsensiDemoRequestOptions = function() {
+      var select = document.getElementById('rbm-demo-request-select');
+      var input = document.getElementById('rbm-demo-request-id');
+      if (!select || !input) return;
+      var rows = Array.prototype.slice.call(document.querySelectorAll('#absensi-requests-tbody tr[data-request-id]'));
+      var options = [];
+      rows.forEach(function(row) {
+        var id = row.dataset && row.dataset.requestId ? row.dataset.requestId : '';
+        var text = (row.innerText || '').trim();
+        if (!id || !/[A-Z]{1,3}/i.test(text)) return;
+        if (!/(PH|AL|DP)/i.test(text)) return;
+        if (/(Disetujui|Ditolak|approved|rejected)/i.test(text)) return;
+        var jenis = (row.children && row.children[1] ? row.children[1].innerText : '').trim() || 'PH/AL/DP';
+        var tanggal = (row.children && row.children[2] ? row.children[2].innerText : '').trim() || '';
+        var status = (row.children && row.children[4] ? row.children[4].innerText : '').trim() || 'Pending';
+        options.push({ id: id, label: jenis + (tanggal ? ' · ' + tanggal : '') + ' · ' + status });
+      });
+      if (!options.length) {
+        select.innerHTML = '<option value="">Tidak ada request PH/AL/DP aktif</option>';
+        input.value = '';
+        return;
+      }
+      select.innerHTML = options.map(function(item) {
+        return '<option value="' + item.id + '">' + item.label + '</option>';
+      }).join('');
+      input.value = options[0].id;
+      select.onchange = function() {
+        input.value = select.value;
+      };
+    };
+    window.refreshAbsensiDemoEmployeeOptions = function() {
+      var select = document.getElementById('rbm-demo-test-employee');
+      if (!select) return;
+      var outlet = typeof getAbsensiRequestOutlet === 'function' ? getAbsensiRequestOutlet() : '';
+      var storageKey = outlet ? 'RBM_EMPLOYEES_' + outlet.toLowerCase().replace(/[^a-z0-9]+/g, '_') : 'RBM_EMPLOYEES';
+      var cached = [];
+      try {
+        cached = JSON.parse(localStorage.getItem(storageKey) || localStorage.getItem('RBM_EMPLOYEES') || '[]');
+      } catch (e) {
+        cached = [];
+      }
+      if (!Array.isArray(cached) || !cached.length) {
+        select.innerHTML = '<option value="">Data karyawan belum tersedia</option>';
+        return;
+      }
+      var options = cached.filter(function(emp) { return emp && (emp.name || emp.nama || emp.employeeName || emp.fullName || emp.fullname); }).map(function(emp) {
+        var name = emp.name || emp.nama || emp.employeeName || emp.fullName || emp.fullname;
+        return '<option value="' + encodeURIComponent(String(emp.id != null ? emp.id : (emp.employeeId != null ? emp.employeeId : name))) + '">' + name + '</option>';
+      });
+      if (!options.length) {
+        select.innerHTML = '<option value="">Tidak ada karyawan</option>';
+        return;
+      }
+      select.innerHTML = options.join('');
+    };
+    window.runAbsensiLeaveBalanceTrial = async function() {
+      if (typeof consumeLeaveBalanceForRequest !== 'function' || typeof applyApprovedAbsensiRequest !== 'function') {
+        alert('Fungsi uji saldo cuti belum tersedia di halaman ini.');
+        return;
+      }
+      var employeeSelect = document.getElementById('rbm-demo-test-employee');
+      var typeSelect = document.getElementById('rbm-demo-test-type');
+      var resultEl = document.getElementById('rbm-demo-test-result');
+      if (!employeeSelect || !typeSelect || !resultEl) return;
+      var outlet = typeof getAbsensiRequestOutlet === 'function' ? getAbsensiRequestOutlet() : '';
+      var storageKey = outlet ? 'RBM_EMPLOYEES_' + outlet.toLowerCase().replace(/[^a-z0-9]+/g, '_') : 'RBM_EMPLOYEES';
+      var employees = [];
+      try {
+        employees = JSON.parse(localStorage.getItem(storageKey) || localStorage.getItem('RBM_EMPLOYEES') || '[]');
+      } catch (e) {
+        employees = [];
+      }
+      var employeeKey = decodeURIComponent(employeeSelect.value || '');
+      var employee = employees.find(function(emp) {
+        if (!emp) return false;
+        var ids = [emp.id, emp.employeeId, emp.empId, emp.userId, emp.karyawanId, emp.idKaryawan, emp.nik, emp.nip, emp.noda, emp.noKaryawan, emp.kodeKaryawan, emp.pegawaiId, emp.pegawai_id, emp.employee_id].map(function(v) { return String(v == null ? '' : v).trim(); }).filter(Boolean);
+        var name = emp.name || emp.nama || emp.employeeName || emp.fullName || emp.fullname || '';
+        return ids.indexOf(employeeKey) >= 0 || name === employeeKey || ('-' + name + '-') === ('-' + employeeKey + '-');
+      });
+      if (!employee) {
+        resultEl.innerHTML = '<span style="color:#fca5a5;">Karyawan yang dipilih tidak ditemukan di data lokal outlet.</span>';
+        return;
+      }
+      var leaveType = typeSelect.value || 'PH';
+      var balanceField = leaveType === 'AL' ? 'sisaAL' : (leaveType === 'DP' ? 'sisaDP' : 'sisaPH');
+      var employeeName = employee.name || employee.nama || employee.employeeName || employee.fullName || employee.fullname || 'Karyawan';
+      var employeeId = employee.id != null ? employee.id : (employee.employeeId != null ? employee.employeeId : employeeKey);
+      var today = new Date();
+      var dateKey = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+      var beforeBalance = Number(employee[balanceField]) || 0;
+      var requestId = 'TRIAL_' + leaveType + '_' + Date.now();
+      var request = {
+        name: employeeName,
+        employeeId: employeeId,
+        outlet: outlet,
+        type: leaveType,
+        leaveType: leaveType,
+        startDate: dateKey,
+        endDate: dateKey,
+        reason: 'Uji coba otomatis saldo ' + leaveType,
+        approvedBy: 'Demo Uji',
+        status: 'approved',
+        createdAt: Date.now()
+      };
+      try {
+        resultEl.innerHTML = '<span style="color:#cbd5e1;">Menguji pengurangan saldo ' + leaveType + '...</span>';
+        await consumeLeaveBalanceForRequest(request, requestId, leaveType);
+        await applyApprovedAbsensiRequest(request);
+        var refreshedEmployees = [];
+        try {
+          refreshedEmployees = JSON.parse(localStorage.getItem(storageKey) || localStorage.getItem('RBM_EMPLOYEES') || '[]');
+        } catch (e) {}
+        var updatedEmployee = refreshedEmployees.find(function(emp) {
+          if (!emp) return false;
+          var names = [emp.name, emp.nama, emp.employeeName, emp.fullName, emp.fullname].filter(Boolean);
+          var ids = [emp.id, emp.employeeId, emp.empId, emp.userId, emp.karyawanId, emp.idKaryawan, emp.nik, emp.nip, emp.noKaryawan, emp.kodeKaryawan, emp.pegawaiId, emp.pegawai_id, emp.employee_id].map(function(v) { return String(v == null ? '' : v).trim(); }).filter(Boolean);
+          return ids.indexOf(String(employeeId)) >= 0 || names.indexOf(employeeName) >= 0 || (emp.id === employee.id && emp.name === employee.name);
+        }) || refreshedEmployees[0] || employee;
+        var afterBalance = Number(updatedEmployee[balanceField]) || 0;
+        resultEl.innerHTML = '<div style="display:flex; flex-direction:column; gap:6px; color:#e2e8f0;">' +
+          '<strong>Hasil uji: ' + leaveType + '</strong>' +
+          '<span>Nama: ' + employeeName + '</span>' +
+          '<span>Saldo sebelum: <b>' + beforeBalance + '</b> → saldo sesudah: <b>' + afterBalance + '</b></span>' +
+          '<span>Absensi/Jadwal: <b>' + (leaveType === 'PH' ? 'PH' : leaveType === 'AL' ? 'AL' : 'DP') + '</b> akan ditulis untuk tanggal ' + dateKey + '</span>' +
+          '<span style="color:#86efac;">Status: pengurangan saldo dan penerapan jadwal berhasil dijalankan.</span>' +
+          '</div>';
+      } catch (error) {
+        resultEl.innerHTML = '<span style="color:#fca5a5;">Gagal: ' + (error && error.message ? error.message : error) + '</span>';
+      }
+    };
+    window.createAndApproveAbsensiDemoRequest = async function() {
+      if (typeof firebase === 'undefined' || !firebase.database) {
+        alert('Firebase belum siap. Silakan tunggu sampai halaman absensi selesai memuat.');
+        return;
+      }
+      var employeeSelect = document.getElementById('rbm-demo-test-employee');
+      var typeSelect = document.getElementById('rbm-demo-test-type');
+      var resultEl = document.getElementById('rbm-demo-test-result');
+      if (!employeeSelect || !typeSelect || !resultEl) return;
+      var outlet = typeof getAbsensiRequestOutlet === 'function' ? getAbsensiRequestOutlet() : '';
+      var storageKey = outlet ? 'RBM_EMPLOYEES_' + outlet.toLowerCase().replace(/[^a-z0-9]+/g, '_') : 'RBM_EMPLOYEES';
+      var employees = [];
+      try {
+        employees = JSON.parse(localStorage.getItem(storageKey) || localStorage.getItem('RBM_EMPLOYEES') || '[]');
+      } catch (e) {
+        employees = [];
+      }
+      var employeeKey = decodeURIComponent(employeeSelect.value || '');
+      var employee = employees.find(function(emp) {
+        if (!emp) return false;
+        var ids = [emp.id, emp.employeeId, emp.empId, emp.userId, emp.karyawanId, emp.idKaryawan, emp.nik, emp.nip, emp.noda, emp.noKaryawan, emp.kodeKaryawan, emp.pegawaiId, emp.pegawai_id, emp.employee_id].map(function(v) { return String(v == null ? '' : v).trim(); }).filter(Boolean);
+        var name = emp.name || emp.nama || emp.employeeName || emp.fullName || emp.fullname || '';
+        return ids.indexOf(employeeKey) >= 0 || name === employeeKey || ('-' + name + '-') === ('-' + employeeKey + '-');
+      });
+      if (!employee) {
+        resultEl.innerHTML = '<span style="color:#fca5a5;">Pilih karyawan yang ada di outlet ini dulu.</span>';
+        return;
+      }
+      var leaveType = typeSelect.value || 'PH';
+      var employeeName = employee.name || employee.nama || employee.employeeName || employee.fullName || employee.fullname || 'Karyawan';
+      var employeeId = employee.id != null ? employee.id : (employee.employeeId != null ? employee.employeeId : employeeKey);
+      var now = new Date();
+      var dateKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+      var payload = {
+        name: employeeName,
+        employeeId: String(employeeId),
+        outlet: outlet,
+        type: leaveType,
+        leaveType: leaveType,
+        startDate: dateKey,
+        endDate: dateKey,
+        requestDate: dateKey,
+        reason: 'Demo: pengajuan ' + leaveType + ' dibuat otomatis untuk uji approval',
+        currentStep: 'Supervisor Regional',
+        status: 'pending',
+        createdAt: firebase.database.ServerValue.TIMESTAMP,
+        createdBy: 'demo_approval'
+      };
+      try {
+        resultEl.innerHTML = '<span style="color:#cbd5e1;">Membuat pengajuan ' + leaveType + ' untuk ' + employeeName + '...</span>';
+        var ref = firebase.database().ref('rbm_pro/pengajuan_absensi/' + outlet).push(payload);
+        var requestId = ref.key;
+        window.setAbsensiDemoRole('Supervisor Regional');
+        if (typeof approveAbsensiRequest === 'function') {
+          await approveAbsensiRequest(requestId);
+          resultEl.innerHTML = '<div style="display:flex; flex-direction:column; gap:6px; color:#e2e8f0;">' +
+            '<strong>Berhasil dibuat dan disetujui</strong>' +
+            '<span>Request ID: <b>' + requestId + '</b></span>' +
+            '<span>Karyawan: ' + employeeName + '</span>' +
+            '<span>Jenis: ' + leaveType + '</span>' +
+            '<span style="color:#86efac;">Status: request dibuat lalu langsung disetujui oleh Supervisor Regional.</span>' +
+            '</div>';
+        } else {
+          resultEl.innerHTML = '<span style="color:#fca5a5;">Request berhasil dibuat, tapi approveAbsensiRequest belum tersedia di halaman ini.</span>';
+        }
+      } catch (error) {
+        resultEl.innerHTML = '<span style="color:#fca5a5;">Gagal membuat dan menyetujui request: ' + (error && error.message ? error.message : error) + '</span>';
+      }
+    };
+    if (typeof window.loadAbsensiRequests === 'function') {
+      var originalLoadAbsensiRequests = window.loadAbsensiRequests;
+      window.loadAbsensiRequests = function() {
+        var result = originalLoadAbsensiRequests.apply(this, arguments);
+        setTimeout(function() { window.refreshAbsensiDemoRequestOptions(); }, 300);
+        return result;
+      };
+    }
+    var panel = document.createElement('div');
+    panel.style.position = 'fixed';
+    panel.style.right = '18px';
+    panel.style.top = '74px';
+    panel.style.zIndex = '2000';
+    panel.style.background = '#0f172a';
+    panel.style.color = '#e2e8f0';
+    panel.style.border = '1px solid rgba(148,163,184,0.4)';
+    panel.style.borderRadius = '12px';
+    panel.style.padding = '12px';
+    panel.style.boxShadow = '0 18px 35px rgba(15,23,42,0.32)';
+    panel.style.minWidth = '260px';
+    panel.innerHTML = [
+      '<div style="font-size:11px; font-weight:700; letter-spacing:0.08em; color:#cbd5e1; text-transform:uppercase; margin-bottom:8px;">Mode Uji Persetujuan</div>',
+      '<div style="display:flex; gap:8px; flex-direction:column;">',
+      '<select id="rbm-demo-role-select" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #475569; background:#111827; color:#f8fafc;">',
+      '<option value="Supervisor Regional">Supervisor Regional</option>',
+      '<option value="Manager Regional">Manager Regional</option>',
+      '<option value="Owner/Developer">Owner/Developer</option>',
+      '</select>',
+      '<select id="rbm-demo-request-select" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #475569; background:#111827; color:#f8fafc;">',
+      '<option value="">Memuat request PH/AL/DP aktif...</option>',
+      '</select>',
+      '<input id="rbm-demo-request-id" placeholder="Masukkan requestId" style="width:100%; box-sizing:border-box; padding:8px 10px; border-radius:8px; border:1px solid #475569; background:#111827; color:#f8fafc;" />',
+      '<button onclick="window.setAbsensiDemoRole(document.getElementById(\'rbm-demo-role-select\').value)" style="padding:8px 10px; border:none; border-radius:8px; background:#10b981; color:#052e16; font-weight:700; cursor:pointer;">Aktifkan Role</button>',
+      '<button onclick="window.simulateAbsensiApprovalAsRole(document.getElementById(\'rbm-demo-role-select\').value, document.getElementById(\'rbm-demo-request-id\').value)" style="padding:8px 10px; border:none; border-radius:8px; background:#f59e0b; color:#1f2937; font-weight:700; cursor:pointer;">Uji Setujui Sekarang</button>',
+      '<div style="margin-top:4px; border-top:1px solid rgba(148,163,184,0.35); padding-top:8px;">',
+      '<div style="font-size:10px; color:#cbd5e1; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:6px;">Uji Otomatis Saldo Cuti</div>',
+      '<select id="rbm-demo-test-employee" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #475569; background:#111827; color:#f8fafc; margin-bottom:6px;">',
+      '<option value="">Pilih karyawan</option>',
+      '</select>',
+      '<select id="rbm-demo-test-type" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #475569; background:#111827; color:#f8fafc; margin-bottom:6px;">',
+      '<option value="PH">PH</option>',
+      '<option value="AL">AL</option>',
+      '<option value="DP">DP</option>',
+      '</select>',
+      '<button onclick="window.runAbsensiLeaveBalanceTrial()" style="padding:8px 10px; border:none; border-radius:8px; background:#8b5cf6; color:#f5f3ff; font-weight:700; cursor:pointer; width:100%;">Coba Kurangi Saldo</button>',
+      '<button onclick="window.createAndApproveAbsensiDemoRequest()" style="padding:8px 10px; border:none; border-radius:8px; background:#22c55e; color:#052e16; font-weight:700; cursor:pointer; width:100%; margin-top:6px;">Buat & Setujui Request</button>',
+      '<div id="rbm-demo-test-result" style="margin-top:8px; font-size:12px; line-height:1.45; color:#e2e8f0; min-height:24px;"></div>',
+      '</div>',
+      '</div>'
+    ].join('');
+    document.body.appendChild(panel);
+    setTimeout(function() {
+      window.refreshAbsensiDemoRequestOptions();
+      window.refreshAbsensiDemoEmployeeOptions();
+    }, 500);
+    window.__rbmDemoRequestRefreshTimer = setInterval(function() {
+      try { window.refreshAbsensiDemoRequestOptions(); } catch (e) {}
+      try { window.refreshAbsensiDemoEmployeeOptions(); } catch (e) {}
+    }, 1500);
+  } catch (e) {}
+})();
+</script>
 <header class="rbm-page-header">
   <a href="index.html" class="rbm-back-btn">&#8249;</a>
   <h1 class="rbm-page-title">Absensi & Jadwal</h1>
