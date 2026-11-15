@@ -1090,7 +1090,7 @@
 <script defer src="rbm-pro-storage.js"></script>
 <script defer src="firebase-storage.js"></script>
 <script defer src="national-holidays.js"></script>
-<script defer src="rbm-pro.js?v=20261027-dp-auto-accrual-1"></script>
+<script defer src="rbm-pro.js?v=20261113-leave-balance-lookup-8"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -1592,7 +1592,10 @@ window.addEventListener('load', function() {
             if (!db) return originalSave();
 
             // Ambil data karyawan di database SEBELUM disave
-            var snap = await db.ref('rbm_pro/employees/' + outlet).once('value');
+            var outletSuffix = window.RBMStorage && typeof window.RBMStorage._outletSuffix === 'function'
+                ? window.RBMStorage._outletSuffix(outlet)
+                : '_' + String(outlet).toLowerCase().replace(/[^a-z0-9]/g, '_');
+            var snap = await db.ref('rbm_pro/employees' + outletSuffix).once('value');
             var oldEmpsVal = snap.val() || [];
             var oldEmps = Array.isArray(oldEmpsVal) ? oldEmpsVal : Object.values(oldEmpsVal);
 
