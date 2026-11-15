@@ -108,6 +108,61 @@
             color: var(--primary, #4C2A85);
             border-color: var(--primary, #4C2A85);
         }
+        .order-edit-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(15, 23, 42, 0.55);
+        }
+        .order-edit-dialog {
+            width: min(100%, 560px);
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 20px;
+            border-radius: 12px;
+            background: #fff;
+        }
+        .order-edit-dialog h2 {
+            margin: 0 0 16px;
+            font-size: 20px;
+        }
+        .order-edit-line {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 90px;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .order-edit-line label,
+        .order-edit-field label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .order-edit-line input,
+        .order-edit-field input {
+            box-sizing: border-box;
+            width: 100%;
+            min-height: 40px;
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+        }
+        .order-edit-field {
+            margin-top: 12px;
+        }
+        .order-edit-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 18px;
+        }
+        .order-edit-actions .btn {
+            flex: 1;
+        }
 
         /* [BARU] Mode Cetak Khusus Tablet Android & Aplikasi Pihak ke-3 */
         @media print {
@@ -151,6 +206,17 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <div class="order-edit-overlay" id="order-edit-overlay">
+        <form class="order-edit-dialog" id="order-edit-form">
+            <h2>Edit Pesanan</h2>
+            <div id="order-edit-lines"></div>
+            <div class="order-edit-actions">
+                <button class="btn btn-secondary" type="button" id="order-edit-cancel">Batal</button>
+                <button class="btn btn-primary" type="submit" id="order-edit-save">Simpan Perubahan</button>
+            </div>
+        </form>
     </div>
 
     <!-- Audio untuk notifikasi -->
@@ -220,6 +286,7 @@
             let currentOutletId = null;
             let ordersRef = null;
             let outletButtons = [];
+            let editingOrderId = null;
 
             // [BARU] Kunci untuk menyimpan outlet terakhir
             const LAST_OUTLET_KEY = 'rbm_last_selected_outlet'; 
@@ -491,6 +558,8 @@
                 const orderTime = new Date(order.date || Date.now()).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
                 const paymentMethod = order.payment?.method || 'N/A';
                 const orderType = (order.details && order.details.type === 'Dine-in') ? `Meja ${order.details.tableNumber}` : 'Bawa Pulang';
+                const sentByCentralKitchen = isOrderSentByCentralKitchen(order);
+                const canDeleteThisOrder = !sentByCentralKitchen || isDeveloper();
 
                 let itemsHtml = '<ul>';
                 (order.items || []).forEach(item => {
@@ -516,11 +585,12 @@
                         ${itemsHtml}
                     </div>
                     <div class="order-actions">
+                        ${!sentByCentralKitchen ? `<button class="btn btn-secondary" onclick="editOrder('${order.id}')">Edit Pesanan</button>` : ''}
+                        ${canDeleteThisOrder ? `<button class="btn" style="background-color: #ef4444; color: white;" onclick="deleteOrder('${order.id}')">🗑️ Hapus Pesanan</button>` : ''}
                         ${order.status === 'Baru' ? `<button class="btn btn-primary" onclick="updateStatus('${order.id}', 'Sudah Dibayar')">Konfirmasi Bayar</button>` : ''}
                         ${order.status === 'Sudah Dibayar' ? `<button class="btn btn-primary" onclick="updateStatus('${order.id}', 'Diproses')">Proses di Dapur</button>` : ''}
                         ${order.status === 'Diproses' ? `<button class="btn" style="background-color: #8b5cf6; color: white;" onclick="updateStatus('${order.id}', 'Siap Diambil')">Siap Diambil</button>` : ''}
                         ${order.status === 'Siap Diambil' ? `<button class="btn" style="background-color: #10b981; color: white;" onclick="updateStatus('${order.id}', 'Selesai')">Selesaikan</button>` : ''}
-                        ${order.status === 'Selesai' ? `<button class="btn" style="background-color: #ef4444; color: white;" onclick="hideOrder('${order.id}')">🗑️ Hapus dari Layar</button>` : ''}
                         ${order.status === 'Siap Diambil' ? `<button class="btn" style="background-color: #f59e0b; color: white;" onclick="repeatVoiceNotification('${order.id}')" title="Putar ulang panggilan suara">🔊 Panggil Ulang</button>` : ''}
                         <button class="btn btn-secondary" onclick="manualPrint('${order.id}')">Cetak Struk</button>
                     </div>
@@ -529,19 +599,201 @@
                 orderListEl.prepend(card); // Tambahkan pesanan baru di paling atas
             }
 
+            function isDeveloper() {
+                const currentUser = JSON.parse(localStorage.getItem('rbm_user') || '{}');
+                const role = String(currentUser.role || '').toLowerCase().replace(/[_-]+/g, ' ').trim();
+                const username = String(currentUser.username || '').toLowerCase().trim();
+                return role === 'developer' || username === 'burhan';
+            }
+
+            function isOrderSentByCentralKitchen(order) {
+                const status = String(order.status || '').toLowerCase().trim();
+                return Number(order.shippedAt) > 0 ||
+                    order.centralKitchenSent === true ||
+                    order.sentByCentralKitchen === true ||
+                    status === 'fulfilled' ||
+                    status === 'dikirim' ||
+                    status === 'sent' ||
+                    status === 'siap diambil' ||
+                    status === 'selesai';
+            }
+
+            function getItemUnitPrice(item) {
+                const quantity = Number(item.quantity) || 0;
+                const directPrice = Number(item.price ?? item.unitPrice);
+                if (Number.isFinite(directPrice) && directPrice >= 0) return directPrice;
+                const lineTotal = Number(item.subtotal);
+                if (quantity > 0 && Number.isFinite(lineTotal) && lineTotal >= 0) return lineTotal / quantity;
+                return null;
+            }
+
+            window.editOrder = function(orderId) {
+                if (!currentOutletId || !orderId) return;
+                const order = document.getElementById(orderId);
+                if (!order) return;
+                database.ref(`orders/${currentOutletId}/${orderId}`).once('value').then(snapshot => {
+                    const latestOrder = snapshot.val();
+                    if (!latestOrder) {
+                        CustomUI.error('Pesanan tidak ditemukan.');
+                        return;
+                    }
+                    if (isOrderSentByCentralKitchen(latestOrder)) {
+                        CustomUI.error('Pesanan yang sudah dikirim Central Kitchen tidak dapat diedit.');
+                        return;
+                    }
+                    if (!(latestOrder.items || []).length) {
+                        CustomUI.error('Pesanan tidak memiliki item yang dapat diedit.');
+                        return;
+                    }
+
+                    editingOrderId = orderId;
+                    const lines = document.getElementById('order-edit-lines');
+                    lines.innerHTML = '';
+                    const hasItemPrices = latestOrder.items.every(item => getItemUnitPrice(item) !== null);
+                    latestOrder.items.forEach((item, index) => {
+                        const line = document.createElement('div');
+                        line.className = 'order-edit-line';
+                        const itemField = document.createElement('div');
+                        const itemLabel = document.createElement('label');
+                        itemLabel.textContent = item.name || `Item ${index + 1}`;
+                        itemField.appendChild(itemLabel);
+                        const noteInput = document.createElement('input');
+                        noteInput.type = 'text';
+                        noteInput.value = item.note || '';
+                        noteInput.placeholder = 'Catatan item';
+                        noteInput.dataset.itemNote = String(index);
+                        itemField.appendChild(noteInput);
+                        const quantityField = document.createElement('div');
+                        const quantityLabel = document.createElement('label');
+                        quantityLabel.textContent = 'Jumlah';
+                        quantityField.appendChild(quantityLabel);
+                        const quantityInput = document.createElement('input');
+                        quantityInput.type = 'number';
+                        quantityInput.min = '0';
+                        quantityInput.step = '1';
+                        quantityInput.required = true;
+                        quantityInput.value = String(Number(item.quantity) || 0);
+                        quantityInput.dataset.itemQuantity = String(index);
+                        quantityInput.disabled = !hasItemPrices;
+                        quantityField.appendChild(quantityInput);
+                        line.append(itemField, quantityField);
+                        lines.appendChild(line);
+                    });
+                    if (!hasItemPrices) {
+                        const message = document.createElement('p');
+                        message.className = 'order-edit-field';
+                        message.textContent = 'Kuantitas tidak dapat diubah karena harga item tidak tersedia. Catatan item tetap dapat diedit.';
+                        lines.appendChild(message);
+                    }
+                    document.getElementById('order-edit-overlay').style.display = 'flex';
+                }).catch(error => {
+                    console.error('Gagal mengambil pesanan untuk diedit:', error);
+                    CustomUI.error('Gagal mengambil data pesanan.');
+                });
+            };
+
+            window.deleteOrder = function(orderId) {
+                if (!currentOutletId || !orderId) return;
+                if (!window.confirm('Hapus pesanan ini secara permanen?')) return;
+
+                const orderRef = database.ref(`orders/${currentOutletId}/${orderId}`);
+                orderRef.transaction(currentOrder => {
+                    if (!currentOrder) return;
+                    if (isOrderSentByCentralKitchen(currentOrder) && !isDeveloper()) return;
+                    return null;
+                }, (error, committed) => {
+                    if (error) {
+                        console.error('Gagal menghapus pesanan:', error);
+                        CustomUI.error('Gagal menghapus pesanan.');
+                        return;
+                    }
+                    if (!committed) {
+                        CustomUI.error(isDeveloper()
+                            ? 'Pesanan tidak ditemukan atau sudah berubah.'
+                            : 'Pesanan yang sudah dikirim Central Kitchen hanya dapat dihapus oleh developer.');
+                    }
+                }, false);
+            };
+
+            document.getElementById('order-edit-cancel').addEventListener('click', () => {
+                document.getElementById('order-edit-overlay').style.display = 'none';
+                editingOrderId = null;
+            });
+
+            document.getElementById('order-edit-form').addEventListener('submit', event => {
+                event.preventDefault();
+                if (!currentOutletId || !editingOrderId) return;
+
+                const orderId = editingOrderId;
+                const itemInputs = Array.from(document.querySelectorAll('#order-edit-lines [data-item-quantity]'));
+                const noteInputs = Array.from(document.querySelectorAll('#order-edit-lines [data-item-note]'));
+                const quantities = itemInputs.map(input => Number(input.value));
+                if (quantities.some(quantity => !Number.isInteger(quantity) || quantity < 0) ||
+                    quantities.every(quantity => quantity === 0)) {
+                    CustomUI.error('Jumlah item harus bilangan bulat dan minimal satu item harus lebih dari 0.');
+                    return;
+                }
+
+                const orderRef = database.ref(`orders/${currentOutletId}/${orderId}`);
+                orderRef.transaction(currentOrder => {
+                    if (!currentOrder || isOrderSentByCentralKitchen(currentOrder)) return;
+                    const originalItems = currentOrder.items || [];
+                    if (quantities.length !== originalItems.length) return;
+                    const quantitiesChanged = quantities.some((quantity, index) =>
+                        quantity !== Number(originalItems[index].quantity)
+                    );
+                    const hasOriginalItemPrices = originalItems.every(item => getItemUnitPrice(item) !== null);
+                    const items = originalItems.map((item, index) => {
+                        const unitPrice = getItemUnitPrice(item);
+                        const updatedItem = {
+                            ...item,
+                            quantity: quantities[index],
+                            note: noteInputs[index]?.value.trim() || ''
+                        };
+                        if (unitPrice !== null && item.price == null && item.unitPrice == null) {
+                            updatedItem.subtotal = unitPrice * quantities[index];
+                        }
+                        return updatedItem;
+                    }).filter(item => item.quantity > 0);
+                    if (!items.length) return;
+
+                    const payment = { ...(currentOrder.payment || {}) };
+                    if (!hasOriginalItemPrices && quantitiesChanged) return;
+                    if (hasOriginalItemPrices) {
+                        const subtotal = items.reduce((sum, item) => sum + getItemUnitPrice(item) * item.quantity, 0);
+                        const discount = Math.min(Number(payment.discount) || 0, subtotal);
+                        const oldTaxable = Number(payment.taxable);
+                        const taxRate = oldTaxable > 0 ? (Number(payment.tax) || 0) / oldTaxable : 0;
+                        const taxable = Math.max(0, subtotal - discount);
+                        const tax = taxable * taxRate;
+                        payment.subtotal = subtotal;
+                        payment.taxable = taxable;
+                        payment.tax = tax;
+                        payment.total = taxable + tax;
+                        if (String(payment.method || '').toLowerCase() === 'cash' && payment.cashReceived !== undefined) {
+                            payment.change = Math.max(0, Number(payment.cashReceived) - payment.total);
+                        }
+                    }
+                    return { ...currentOrder, items, payment };
+                }, (error, committed) => {
+                    if (error) {
+                        console.error('Gagal menyimpan perubahan pesanan:', error);
+                        CustomUI.error('Gagal menyimpan perubahan pesanan.');
+                        return;
+                    }
+                    if (!committed) {
+                        CustomUI.error('Perubahan tidak tersimpan. Pesanan mungkin sudah dikirim atau kuantitas tidak dapat dihitung tanpa harga item.');
+                        return;
+                    }
+                    document.getElementById('order-edit-overlay').style.display = 'none';
+                    editingOrderId = null;
+                }, false);
+            });
+
             window.updateStatus = function(orderId, newStatus) {
                 const updates = {};
                 updates[`/orders/${currentOutletId}/${orderId}/status`] = newStatus;
                 updates[`/orders/${currentOutletId}/${orderId}/date`] = firebase.database.ServerValue.TIMESTAMP; // [DIPERBAIKI] Selalu perbarui timestamp saat status berubah
-                database.ref().update(updates);
-            }
-
-            // [BARU] Fungsi untuk menyembunyikan pesanan dari layar (tetap ada di database)
-            window.hideOrder = function(orderId) {
-                if (!currentOutletId) return;
-                // Kita hanya update flag 'hidden' menjadi true, TIDAK menghapus data (remove)
-                const updates = {};
-                updates[`/orders/${currentOutletId}/${orderId}/hidden`] = true;
                 database.ref().update(updates);
             }
 

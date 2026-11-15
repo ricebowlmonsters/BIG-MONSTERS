@@ -153,6 +153,9 @@
     .ck-edit-item-row { grid-template-columns: minmax(150px, 1.4fr) minmax(75px, .6fr) minmax(110px, .8fr) minmax(125px, .8fr) 38px; }
     .ck-edit-item-row input { width: 100%; min-height: 34px; padding: 5px 7px; border: 1px solid #cbd7d2; border-radius: 4px; box-sizing: border-box; }
     .ck-edit-item-row .ck-item-value { min-width: 0; }
+    .ck-pending-edit-row { grid-template-columns: minmax(180px, 1fr) minmax(110px, 160px) 38px; }
+    .ck-pending-edit-row input { width: 100%; min-height: 38px; padding: 6px 8px; border: 1px solid #cbd7d2; border-radius: 4px; box-sizing: border-box; }
+    .ck-pending-edit-note { width: 100%; min-height: 76px; margin-top: 12px; padding: 8px 10px; border: 1px solid #cbd7d2; border-radius: 5px; box-sizing: border-box; font: inherit; }
     .ck-edit-price-sources { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
     .ck-edit-price-sources .ck-button[aria-pressed="true"] { background: var(--ck-green); color: #fff; }
     .ck-edit-item-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-top: 12px; }
@@ -242,6 +245,7 @@
       .ck-item-head { display: none; }
       .ck-item-row, .ck-requested-row, .ck-fulfill-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 2px; }
       .ck-edit-item-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 2px; }
+      .ck-pending-edit-row { grid-template-columns: minmax(0, 1fr) 92px 32px; gap: 8px; padding: 10px 2px; }
       .ck-item-name { grid-column: 1 / -1; }
       .ck-item-value { text-align: left; white-space: normal; }
       .ck-item-value::before { content: attr(data-label); display: block; margin-bottom: 3px; color: #75857e; font-size: 10px; font-weight: 700; }
@@ -329,7 +333,7 @@ var user = {};
       <p id="ck-order-message" class="ck-message" role="status"></p>
     </section>
     <section class="ck-view" id="history-view" hidden>
-      <div class="ck-title-row"><div><h2>Riwayat Purchase Order</h2><p>Jumlah terkirim dan nilai nota memakai kuantitas aktual Central Kitchen. Owner dan Developer dapat mengedit PO yang sudah dikirim.</p></div><div class="ck-actions"><label class="ck-muted" for="ck-paper-width" style="align-self:center">Thermal</label><select id="ck-paper-width" aria-label="Lebar kertas thermal" style="min-height:38px;padding:6px;border:1px solid #cbd7d2;border-radius:5px"><option value="80">80 mm</option><option value="58">58 mm</option></select><button type="button" class="ck-button secondary" id="ck-refresh">Refresh</button></div></div>
+      <div class="ck-title-row"><div><h2>Riwayat Purchase Order</h2><p>Supervisor Outlet, Manager Outlet, dan Supervisor Regional dapat mengedit atau menghapus PO yang masih Menunggu pada outletnya. Owner/Developer dapat mengedit PO yang sudah Dikirim, tetapi penghapusan PO terkirim hanya untuk Developer.</p></div><div class="ck-actions"><label class="ck-muted" for="ck-paper-width" style="align-self:center">Thermal</label><select id="ck-paper-width" aria-label="Lebar kertas thermal" style="min-height:38px;padding:6px;border:1px solid #cbd7d2;border-radius:5px"><option value="80">80 mm</option><option value="58">58 mm</option></select><button type="button" class="ck-button secondary" id="ck-refresh">Refresh</button></div></div>
       <div class="ck-history-tools">
         <div class="ck-field" id="ck-history-outlet-wrap" hidden><label for="ck-history-outlet">Filter outlet</label><select id="ck-history-outlet"><option value="">Semua outlet</option></select></div>
         <div class="ck-field"><label for="ck-order-search">Cari seluruh riwayat</label><input id="ck-order-search" type="search" placeholder="Nomor PO, outlet, atau catatan" autocomplete="off"></div>
@@ -821,6 +825,20 @@ var user = {};
       return '<div class="ck-item-row ck-requested-row"><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO">' + Number(item.quantity || 0).toLocaleString('id-ID') + ' ' + safe(item.unit) + '</span></div>';
     }).join('') + (order.note ? '<div class="ck-muted" style="padding-top:8px">Catatan outlet: ' + safe(order.note) + '</div>' : '') + '</div>';
   }
+  function renderEditablePendingOrder(order) {
+    var items = normalizeOrderItems(order.items);
+    var rows = items.map(function(item, index) {
+      return '<div class="ck-item-row ck-pending-edit-row" data-pending-edit-item data-existing-index="' + index + '"><strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO"><input type="number" min="0" step="any" value="' + safe(Number(item.quantity) || 0) + '" data-pending-quantity aria-label="Jumlah PO ' + safe(item.name) + '"></span><button type="button" class="ck-button secondary" data-remove-pending-item aria-label="Hapus ' + safe(item.name) + '">×</button></div>';
+    }).join('');
+    var options = Object.keys(catalog).filter(function(id) {
+      return catalog[id].active !== false && catalog[id].showInPo === true;
+    }).sort(function(a, b) {
+      return (catalog[a].name || '').localeCompare(catalog[b].name || '');
+    }).map(function(id) {
+      return '<option value="' + safe(id) + '">' + safe(catalog[id].name) + ' (' + safe(catalog[id].unit) + ')</option>';
+    }).join('');
+    return '<div class="ck-fulfill-help">Ubah jumlah atau daftar barang. Jumlah dan nilai PO akan dihitung ulang saat disimpan.</div><div class="ck-item-list ck-pending-edit-list"><div class="ck-item-row ck-item-head ck-pending-edit-row"><span>Barang</span><span class="ck-item-value">Jumlah PO</span><span></span></div>' + rows + '</div><div class="ck-field" style="margin-top:12px"><label>Catatan outlet</label><textarea class="ck-pending-edit-note" data-pending-note>' + safe(order.note || '') + '</textarea></div><div class="ck-edit-item-add"><div class="ck-field"><label>Tambah barang dari katalog</label><select data-pending-item-select><option value="">Pilih barang</option>' + options + '</select></div><button type="button" class="ck-button secondary" data-add-pending-item="' + safe(order.id) + '">Tambah Barang</button></div>';
+  }
   function historyOrderTimestamp(order) {
     return Number(order.invoiceAt || order.createdAt) || 0;
   }
@@ -903,7 +921,7 @@ var user = {};
       button.addEventListener('click', function() { copyOrderLink(button.dataset.copyOrder, button); });
     });
     document.querySelectorAll('#ck-order-list [data-delete-order]').forEach(function(button) {
-      button.addEventListener('click', function() { deleteOrder(button.dataset.deleteOrder, button); });
+      button.addEventListener('click', function() { deleteOrder(button.dataset.deleteOrder, button, button.dataset.deleteContext === 'incoming'); });
     });
     document.querySelectorAll('#ck-order-list [data-edit-order]').forEach(function(button) {
       button.addEventListener('click', function() {
@@ -920,6 +938,9 @@ var user = {};
     document.querySelectorAll('#ck-order-list [data-save-edit-order]').forEach(function(button) {
       button.addEventListener('click', function() { saveEditedOrder(button.dataset.saveEditOrder, button); });
     });
+    document.querySelectorAll('#ck-order-list [data-save-pending-order]').forEach(function(button) {
+      button.addEventListener('click', function() { savePendingOrder(button.dataset.savePendingOrder, button); });
+    });
     document.querySelectorAll('#ck-order-list [data-add-edit-item]').forEach(function(button) {
       button.addEventListener('click', function() { addEditedOrderItem(button.dataset.addEditItem); });
     });
@@ -933,6 +954,14 @@ var user = {};
         button.closest('.ck-edit-item-row').remove();
       });
     });
+    document.querySelectorAll('#ck-order-list [data-add-pending-item]').forEach(function(button) {
+      button.addEventListener('click', function() { addPendingOrderItem(button.dataset.addPendingItem); });
+    });
+    document.querySelectorAll('#ck-order-list [data-remove-pending-item]').forEach(function(button) {
+      button.addEventListener('click', function() {
+        button.closest('[data-pending-edit-item]').remove();
+      });
+    });
   }
   function renderIncomingOrders() {
     incomingOrders = {};
@@ -943,7 +972,7 @@ var user = {};
       button.addEventListener('click', function() { fulfillOrder(button.dataset.fulfillOrder); });
     });
     document.querySelectorAll('#ck-incoming-list [data-delete-order]').forEach(function(button) {
-      button.addEventListener('click', function() { deleteOrder(button.dataset.deleteOrder, button); });
+      button.addEventListener('click', function() { deleteOrder(button.dataset.deleteOrder, button, true); });
     });
     document.querySelectorAll('#ck-incoming-list .ck-actual-price').forEach(function(input) {
       input.addEventListener('blur', function() {
@@ -1028,20 +1057,60 @@ var user = {};
     if (!list.length) return '<div class="ck-empty">' + (kitchenQueue ? 'Belum ada PO yang menunggu diproses.' : 'Belum ada PO.') + '</div>';
     return makeCashierTable(list, kitchenQueue);
   }
+  function normalizedUserRoles() {
+    return [user.role, user.jabatan].map(function(value) {
+      return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').trim();
+    }).filter(Boolean);
+  }
+  function isDeveloperAccount() {
+    var roles = normalizedUserRoles();
+    var username = String(user.username || '').toLowerCase().trim();
+    return username === 'burhan' || roles.indexOf('developer') >= 0;
+  }
+  function isOwnerOrDeveloperAccount() {
+    var roles = normalizedUserRoles();
+    return isDeveloperAccount() || roles.indexOf('owner') >= 0;
+  }
+  function canManagePendingOrder(order) {
+    if (!order || order.status !== 'pending') return false;
+    if (canEditHistoryOrders) return true;
+    var roles = normalizedUserRoles();
+    var allowedRole = roles.some(function(role) {
+      return role === 'manager' ||
+        role === 'manager outlet' ||
+        role === 'supervisor' ||
+        role === 'supervisor outlet' ||
+        role === 'supervisor regional' ||
+        role === 'regional supervisor';
+    });
+    return allowedRole && !isKitchen && String(order.outletId || '') === String(selectedOutlet || '');
+  }
+  function canEditOrder(order) {
+    return order && (order.status === 'fulfilled' ? canEditHistoryOrders : canManagePendingOrder(order));
+  }
+  function canDeleteOrder(order, kitchenQueue) {
+    if (!order) return false;
+    if (order.status === 'fulfilled') return isDeveloperAccount();
+    return kitchenQueue ? canDeleteOrders : canManagePendingOrder(order) || canDeleteOrders;
+  }
   function makeCashierTable(list, kitchenQueue) {
     var rows = list.map(function(order) {
       var fulfilled = order.status === 'fulfilled';
-      var editing = !kitchenQueue && fulfilled && canEditHistoryOrders && editingOrderIds[order.id];
+      var editing = !kitchenQueue && canEditOrder(order) && editingOrderIds[order.id];
       var status = fulfilled ? '<span class="ck-badge done">Dikirim</span>' : '<span class="ck-badge">Menunggu</span>';
       var total = fulfilled ? order.actualTotal : order.requestTotal;
       var displayOrder = Object.assign({}, order, {
         items: normalizeOrderItems(order.items)
       });
-      var items = kitchenQueue && !fulfilled ? renderFulfillInputs(displayOrder) : (editing ? renderEditableFulfilledItems(displayOrder) : (fulfilled ? renderItems(displayOrder.items, true) : renderRequestedItems(displayOrder)));
-      var deleteButton = canDeleteOrders ? '<button type="button" class="ck-button danger" data-delete-order="' + safe(order.id) + '">Hapus PO</button>' : '';
+      var items = kitchenQueue && !fulfilled
+        ? renderFulfillInputs(displayOrder)
+        : (editing ? (fulfilled ? renderEditableFulfilledItems(displayOrder) : renderEditablePendingOrder(displayOrder)) : (fulfilled ? renderItems(displayOrder.items, true) : renderRequestedItems(displayOrder)));
+      var deleteButton = canDeleteOrder(order, kitchenQueue)
+        ? '<button type="button" class="ck-button danger" data-delete-order="' + safe(order.id) + '" data-delete-context="' + (kitchenQueue ? 'incoming' : 'history') + '">Hapus PO</button>'
+        : '';
       var reprintButton = fulfilled ? '<button type="button" class="ck-button secondary" data-print-fulfilled-order="' + safe(order.id) + '">Cetak Ulang 3 SJ + 3 Nota</button>' : '';
-      var editButton = canEditHistoryOrders && fulfilled ? (editing
-        ? '<div class="ck-actions"><button type="button" class="ck-button" data-save-edit-order="' + safe(order.id) + '">Simpan Perubahan</button><button type="button" class="ck-button secondary" data-cancel-edit-order="' + safe(order.id) + '">Batal</button></div>'
+      var editButton = canEditOrder(order) ? (editing
+        ? '<div class="ck-actions"><button type="button" class="ck-button" ' + (fulfilled ? 'data-save-edit-order' : 'data-save-pending-order') + '="' + safe(order.id) + '">Simpan Perubahan</button><button type="button" class="ck-button secondary" data-cancel-edit-order="' + safe(order.id) + '">Batal</button></div>'
         : '<button type="button" class="ck-button secondary" data-edit-order="' + safe(order.id) + '">Edit PO</button>') : '';
       var actions = kitchenQueue && !fulfilled
         ? '<div class="ck-actions"><button type="button" class="ck-button" data-fulfill-order="' + safe(order.id) + '">Simpan &amp; Proses</button>' + deleteButton + '</div>'
@@ -1096,6 +1165,119 @@ var user = {};
     row.querySelector('[data-remove-edit-item]').addEventListener('click', function() { row.remove(); });
     details.querySelector('.ck-fulfilled-list').appendChild(row);
     select.value = '';
+  }
+  function addPendingOrderItem(orderId) {
+    var order = orders[orderId];
+    var details = document.querySelector('[data-edit-order-details="' + CSS.escape(orderId) + '"]');
+    var select = details && details.querySelector('[data-pending-item-select]');
+    var itemId = select && select.value;
+    var item = itemId && catalog[itemId];
+    if (!order || !item || !canManagePendingOrder(order)) return;
+    var existingItems = normalizeOrderItems(order.items);
+    var duplicate = Array.from(details.querySelectorAll('[data-pending-edit-item]')).some(function(row) {
+      var index = row.dataset.existingIndex;
+      var existing = index !== undefined ? existingItems[Number(index)] : null;
+      return String(row.dataset.catalogId || existing && existing.itemId || '') === String(itemId);
+    });
+    if (duplicate) {
+      window.alert('Barang tersebut sudah ada di rincian PO.');
+      return;
+    }
+    var row = document.createElement('div');
+    row.className = 'ck-item-row ck-pending-edit-row';
+    row.setAttribute('data-pending-edit-item', '');
+    row.setAttribute('data-catalog-id', itemId);
+    row.innerHTML = '<strong class="ck-item-name">' + safe(item.name) + ' <span class="ck-muted">(' + safe(item.unit) + ')</span></strong><span class="ck-item-value" data-label="Jumlah PO"><input type="number" min="0" step="any" value="1" data-pending-quantity aria-label="Jumlah PO ' + safe(item.name) + '"></span><button type="button" class="ck-button secondary" data-remove-pending-item aria-label="Hapus ' + safe(item.name) + '">×</button>';
+    row.querySelector('[data-remove-pending-item]').addEventListener('click', function() { row.remove(); });
+    details.querySelector('.ck-pending-edit-list').appendChild(row);
+    select.value = '';
+  }
+  function pendingItemsSignature(items) {
+    return JSON.stringify(normalizeOrderItems(items).map(function(item) {
+      return [String(item.itemId || ''), String(item.name || ''), String(item.unit || ''), Number(item.quantity) || 0, Number(item.unitPrice) || 0];
+    }));
+  }
+  function savePendingOrder(orderId, button) {
+    var order = orders[orderId];
+    var details = document.querySelector('[data-edit-order-details="' + CSS.escape(orderId) + '"]');
+    if (!order || !details || !canManagePendingOrder(order)) return;
+    var originalItems = normalizeOrderItems(order.items);
+    var rows = Array.from(details.querySelectorAll('[data-pending-edit-item]'));
+    var items = [];
+    var invalid = false;
+    rows.forEach(function(row) {
+      var quantity = Number(row.querySelector('[data-pending-quantity]').value);
+      if (!Number.isFinite(quantity) || quantity < 0) {
+        invalid = true;
+        return;
+      }
+      if (quantity === 0) return;
+      var existingIndex = row.dataset.existingIndex;
+      var original = existingIndex !== undefined ? originalItems[Number(existingIndex)] : null;
+      var itemId = row.dataset.catalogId || (original && original.itemId) || '';
+      var product = itemId && catalog[itemId];
+      var item = original || product;
+      if (!item) {
+        invalid = true;
+        return;
+      }
+      var unitPrice = parseCatalogPrice(original ? original.unitPrice : product.price);
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        invalid = true;
+        return;
+      }
+      items.push(Object.assign({}, original || {}, {
+        itemId: itemId,
+        name: original ? original.name : product.name,
+        unit: original ? original.unit : product.unit,
+        quantity: quantity,
+        unitPrice: unitPrice
+      }));
+    });
+    if (invalid) {
+      window.alert('Jumlah dan harga barang harus berupa angka valid dan tidak boleh negatif.');
+      return;
+    }
+    if (!items.length) {
+      window.alert('PO harus memiliki minimal satu barang dengan jumlah lebih dari 0.');
+      return;
+    }
+    var itemKeys = items.map(function(item) { return item.itemId || item.name + '|' + item.unit; });
+    if (itemKeys.some(function(key, index) { return itemKeys.indexOf(key) !== index; })) {
+      window.alert('Barang yang sama hanya boleh dicantumkan satu kali.');
+      return;
+    }
+    var note = details.querySelector('[data-pending-note]').value.trim();
+    var requestTotal = items.reduce(function(sum, item) { return sum + item.quantity * item.unitPrice; }, 0);
+    var expectedSignature = pendingItemsSignature(order.items);
+    var orderRecordRef = orderRef.child(orderId);
+    button.disabled = true;
+    orderRecordRef.transaction(function(currentOrder) {
+      if (!currentOrder || currentOrder.status !== 'pending' ||
+          !canManagePendingOrder(currentOrder) ||
+          pendingItemsSignature(currentOrder.items) !== expectedSignature) return;
+      return Object.assign({}, currentOrder, {
+        items: items,
+        requestTotal: requestTotal,
+        note: note,
+        editedAt: Date.now(),
+        editedBy: user.nama || user.username || ''
+      });
+    }, function(error, committed) {
+      if (error) {
+        window.alert('PO gagal diperbarui: ' + error.message);
+        button.disabled = false;
+        return;
+      }
+      if (!committed) {
+        window.alert('PO sudah dikirim, berubah, atau bukan milik outlet akun ini. Perubahan tidak disimpan.');
+        button.disabled = false;
+        return;
+      }
+      delete editingOrderIds[orderId];
+      message('ck-order-message', 'PO ' + order.number + ' berhasil diperbarui.');
+      loadOrderPage('history', 'first');
+    }, false);
   }
   function applyEditedOrderPriceSource(orderId, source) {
     var details = document.querySelector('[data-edit-order-details="' + CSS.escape(orderId) + '"]');
@@ -1420,21 +1602,32 @@ var user = {};
       window.alert('Gagal menyimpan pemenuhan PO: ' + error.message);
     });
   }
-  function deleteOrder(id, button) {
-    if (!canDeleteOrders) return;
+  function deleteOrder(id, button, kitchenQueue) {
     var order = incomingOrders[id] || orders[id];
-    if (!order) return;
+    if (!order || !canDeleteOrder(order, kitchenQueue)) return;
     if (!window.confirm('Hapus transaksi ' + order.number + '? Data PO ini akan dihapus permanen dari Firebase.')) return;
     button.disabled = true;
-    orderRef.child(id).remove().then(function() {
+    orderRef.child(id).transaction(function(currentOrder) {
+      if (!currentOrder || !canDeleteOrder(currentOrder, kitchenQueue)) return;
+      return null;
+    }, function(error, committed) {
+      if (error) {
+        window.alert('Transaksi gagal dihapus: ' + error.message);
+        button.disabled = false;
+        return;
+      }
+      if (!committed) {
+        window.alert('PO sudah dikirim atau akun ini tidak memiliki izin untuk menghapusnya.');
+        button.disabled = false;
+        return;
+      }
       window.alert('Transaksi ' + order.number + ' berhasil dihapus.');
-      return Promise.all([
+      Promise.all([
         loadOrderPage('history', 'first'),
         isKitchen ? loadOrderPage('incoming', 'first') : Promise.resolve()
-      ]);
-    }).catch(function(error) {
-      window.alert('Transaksi gagal dihapus: ' + error.message);
-      button.disabled = false;
+      ]).catch(function(loadError) {
+        window.alert('PO berhasil dihapus, tetapi daftar gagal diperbarui: ' + loadError.message);
+      });
     });
   }
   function printOrder(order, documentType, printWindow) {
@@ -1521,17 +1714,16 @@ var user = {};
   }
   function setupOutletSelect(publicOutlets, locationOutlets) {
     var select = document.getElementById('ck-outlet');
-    var role = String(user.role || '').toLowerCase();
-    var normalizedRole = role.replace(/[_-]+/g, ' ').trim();
-    var username = String(user.username || '').toLowerCase();
+    var roles = normalizedUserRoles();
     var userOutlet = String(user.outlet || '');
-    canEditPoDate = normalizedRole === 'owner' || normalizedRole === 'developer' || normalizedRole === 'manager regional';
+    var isOwnerOrDeveloper = isOwnerOrDeveloperAccount();
+    canEditPoDate = isOwnerOrDeveloper || roles.indexOf('manager regional') >= 0;
     document.getElementById('ck-po-date-field').hidden = !canEditPoDate;
     document.getElementById('ck-po-date').value = formatDateTimeLocal(Date.now());
-    canChooseOutlet = role === 'owner' || role === 'developer' || username === 'burhan';
-    canDeleteOrders = role === 'owner' || role === 'developer' || username === 'burhan';
-    canEditOrderPrices = role === 'owner' || role === 'developer' || username === 'burhan' || userOutlet === KITCHEN_ID;
-    canEditHistoryOrders = role === 'owner' || role === 'developer' || username === 'burhan';
+    canChooseOutlet = isOwnerOrDeveloper;
+    canDeleteOrders = isOwnerOrDeveloper;
+    canEditOrderPrices = isOwnerOrDeveloper || userOutlet === KITCHEN_ID;
+    canEditHistoryOrders = isOwnerOrDeveloper;
     publicOutlets = publicOutlets.filter(function(id) { return !isTestOutlet(id); });
     if (!publicOutlets.length) publicOutlets = locationOutlets.filter(function(id) { return !isTestOutlet(id); });
     if (!canChooseOutlet && (!userOutlet || userOutlet === 'all' || userOutlet === '*' || isTestOutlet(userOutlet))) {
