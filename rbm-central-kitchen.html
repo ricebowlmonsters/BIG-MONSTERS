@@ -1252,32 +1252,32 @@ var user = {};
     var expectedSignature = pendingItemsSignature(order.items);
     var orderRecordRef = orderRef.child(orderId);
     button.disabled = true;
-    orderRecordRef.transaction(function(currentOrder) {
-      if (!currentOrder || currentOrder.status !== 'pending' ||
-          !canManagePendingOrder(currentOrder) ||
-          pendingItemsSignature(currentOrder.items) !== expectedSignature) return;
-      return Object.assign({}, currentOrder, {
+    orderRecordRef.once('value').then(function(snapshot) {
+      var latestOrder = snapshot.val();
+      if (!latestOrder || latestOrder.status !== 'pending' ||
+          !canManagePendingOrder(latestOrder) ||
+          pendingItemsSignature(latestOrder.items) !== expectedSignature) {
+        window.alert('PO sudah dikirim, berubah, atau bukan milik outlet akun ini. Perubahan tidak disimpan.');
+        button.disabled = false;
+        return;
+      }
+      return orderRecordRef.update({
         items: items,
         requestTotal: requestTotal,
         note: note,
         editedAt: Date.now(),
         editedBy: user.nama || user.username || ''
+      }).then(function() {
+        delete editingOrderIds[orderId];
+        message('ck-order-message', 'PO ' + order.number + ' berhasil diperbarui.');
+        return loadOrderPage('history', 'first').catch(function(loadError) {
+          window.alert('PO berhasil diperbarui, tetapi daftar gagal dimuat ulang: ' + loadError.message);
+        });
       });
-    }, function(error, committed) {
-      if (error) {
-        window.alert('PO gagal diperbarui: ' + error.message);
-        button.disabled = false;
-        return;
-      }
-      if (!committed) {
-        window.alert('PO sudah dikirim, berubah, atau bukan milik outlet akun ini. Perubahan tidak disimpan.');
-        button.disabled = false;
-        return;
-      }
-      delete editingOrderIds[orderId];
-      message('ck-order-message', 'PO ' + order.number + ' berhasil diperbarui.');
-      loadOrderPage('history', 'first');
-    }, false);
+    }).catch(function(error) {
+      window.alert('PO gagal diperbarui: ' + error.message);
+      button.disabled = false;
+    });
   }
   function applyEditedOrderPriceSource(orderId, source) {
     var details = document.querySelector('[data-edit-order-details="' + CSS.escape(orderId) + '"]');
@@ -1607,27 +1607,26 @@ var user = {};
     if (!order || !canDeleteOrder(order, kitchenQueue)) return;
     if (!window.confirm('Hapus transaksi ' + order.number + '? Data PO ini akan dihapus permanen dari Firebase.')) return;
     button.disabled = true;
-    orderRef.child(id).transaction(function(currentOrder) {
-      if (!currentOrder || !canDeleteOrder(currentOrder, kitchenQueue)) return;
-      return null;
-    }, function(error, committed) {
-      if (error) {
-        window.alert('Transaksi gagal dihapus: ' + error.message);
+    var orderRecordRef = orderRef.child(id);
+    orderRecordRef.once('value').then(function(snapshot) {
+      var latestOrder = snapshot.val();
+      if (!latestOrder || !canDeleteOrder(latestOrder, kitchenQueue)) {
+        window.alert('PO Menunggu hanya dapat dihapus oleh Supervisor Outlet, Manager Outlet, atau Supervisor Regional pada outletnya. PO terkirim hanya dapat dihapus oleh Developer.');
         button.disabled = false;
         return;
       }
-      if (!committed) {
-        window.alert('PO sudah dikirim atau akun ini tidak memiliki izin untuk menghapusnya.');
-        button.disabled = false;
-        return;
-      }
-      window.alert('Transaksi ' + order.number + ' berhasil dihapus.');
-      Promise.all([
-        loadOrderPage('history', 'first'),
-        isKitchen ? loadOrderPage('incoming', 'first') : Promise.resolve()
-      ]).catch(function(loadError) {
-        window.alert('PO berhasil dihapus, tetapi daftar gagal diperbarui: ' + loadError.message);
+      return orderRecordRef.remove().then(function() {
+        window.alert('Transaksi ' + order.number + ' berhasil dihapus.');
+        return Promise.all([
+          loadOrderPage('history', 'first'),
+          isKitchen ? loadOrderPage('incoming', 'first') : Promise.resolve()
+        ]).catch(function(loadError) {
+          window.alert('PO berhasil dihapus, tetapi daftar gagal diperbarui: ' + loadError.message);
+        });
       });
+    }).catch(function(error) {
+      window.alert('Transaksi gagal dihapus: ' + error.message);
+      button.disabled = false;
     });
   }
   function printOrder(order, documentType, printWindow) {

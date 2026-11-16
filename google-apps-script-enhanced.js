@@ -107,6 +107,330 @@ function findUserRowByPhone(phone) {
   return { row: -1, data: null, headerMap, sheet: sh };
 }
 
+function handleGetCustomers() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName(SHEET_USERS) ||
+    spreadsheet.getSheets().find(function (item) {
+      return item.getName().toLowerCase() === SHEET_USERS.toLowerCase();
+    });
+
+  if (!sheet) {
+    return createJsonResponse({ status: 'error', message: 'Sheet users tidak ditemukan.' });
+  }
+
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+  if (lastRow < 2 || lastColumn < 1) {
+    return createJsonResponse({ status: 'success', data: [] });
+  }
+
+  const rows = sheet.getRange(1, 1, lastRow, lastColumn).getDisplayValues();
+  const headers = rows[0].map(function (header) {
+    return String(header).trim().toLowerCase();
+  });
+  const findColumn = function (aliases, fallback) {
+    for (let i = 0; i < aliases.length; i++) {
+      const index = headers.indexOf(aliases[i]);
+      if (index !== -1) return index;
+    }
+    return fallback;
+  };
+  const nameColumn = findColumn(['nama', 'name', 'customer'], 0);
+  const phoneColumn = findColumn(['phone', 'no hp', 'no telepon', 'nomor telepon'], 1);
+  const usernameColumn = findColumn(['username', 'user name'], -1);
+  const pointsColumn = findColumn(['points sisa', 'points', 'point', 'jumlah point'], 3);
+  const birthDateColumn = findColumn(['tanggal_lahir', 'tanggal lahir', 'tgl lahir', 'birthday', 'birth date', 'date of birth', 'dob'], -1);
+  const birthdayOptInColumn = findColumn(['birthday_wa_opt_in', 'wa ulang tahun', 'birthday whatsapp opt in'], -1);
+
+  const customers = rows.slice(1).reduce(function (result, row) {
+    const nama = String(row[nameColumn] || '').trim();
+    const phone = String(row[phoneColumn] || '').trim();
+    const username = usernameColumn < 0 ? '' : String(row[usernameColumn] || '').trim();
+    const birthDate = birthDateColumn < 0 ? '' : String(row[birthDateColumn] || '').trim();
+    const birthdayWaOptIn = birthdayOptInColumn < 0 ? '' : String(row[birthdayOptInColumn] || '').trim();
+    if (!nama && !phone && !username && !birthDate) return result;
+
+    result.push({
+      nama: nama || '-',
+      phone: phone || '-',
+      username: username || '-',
+      points: String(row[pointsColumn] || '0').trim() || '0',
+      birthDate: birthDate,
+      birthdayWaOptIn: birthdayWaOptIn
+    });
+    return result;
+  }, []);
+
+  return createJsonResponse({ status: 'success', data: customers });
+}
+
+function setupBirthdayAutomation() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const usersSheet = getBirthdayUsersSheet_(spreadsheet);
+  const headers = usersSheet.getLastColumn() > 0
+    ? usersSheet.getRange(1, 1, 1, usersSheet.getLastColumn()).getDisplayValues()[0].map(function (value) {
+      return String(value).trim().toLowerCase();
+    })
+    : [];
+
+  if (!headers.some(function (header) { return ['tanggal_lahir', 'tanggal lahir', 'tgl lahir', 'birthday', 'birth date', 'date of birth', 'dob'].includes(header); })) {
+    usersSheet.getRange(1, usersSheet.getLastColumn() + 1).setValue('tanggal_lahir');
+    headers.push('tanggal_lahir');
+  }
+  if (!headers.some(function (header) { return ['birthday_wa_opt_in', 'wa ulang tahun', 'birthday whatsapp opt in'].includes(header); })) {
+    usersSheet.getRange(1, usersSheet.getLastColumn() + 1).setValue('birthday_wa_opt_in');
+  }
+
+  ensureBirthdaySettingsSheet_(spreadsheet);
+  ensureBirthdayLogSheet_(spreadsheet);
+
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (trigger.getHandlerFunction() === 'processCustomerBirthdays') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+  ScriptApp.newTrigger('processCustomerBirthdays')
+    .timeBased()
+    .everyDays(1)
+    .atHour(9)
+    .inTimezone('Asia/Jakarta')
+    .create();
+
+  return 'Otomatisasi ulang tahun disiapkan. Isi tanggal_lahir dan birthday_wa_opt_in di tab users, lalu atur birthday_settings.';
+}
+
+function processCustomerBirthdays() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('Proses ulang tahun lain sedang berjalan.');
+
+  try {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const usersSheet = getBirthdayUsersSheet_(spreadsheet);
+    const settings = getBirthdaySettings_(spreadsheet);
+    if (String(settings.enabled || '').trim().toLowerCase() !== 'true') {
+      Logger.log('Pengiriman ulang tahun nonaktif. Ubah enabled menjadi TRUE di tab birthday_settings setelah konfigurasi selesai.');
+      return;
+    }
+
+    const templateName = String(settings.template_name || '').trim();
+    const templateLanguage = String(settings.template_language || '').trim();
+    const greeting = String(settings.greeting_message || '').trim();
+    const gift = String(settings.gift_message || '').trim();
+    if (!templateName || !templateLanguage || !greeting || !gift) {
+      throw new Error('template_name, template_language, greeting_message, dan gift_message wajib diisi di birthday_settings.');
+    }
+
+    const lastRow = usersSheet.getLastRow();
+    const lastColumn = usersSheet.getLastColumn();
+    if (lastRow < 2 || lastColumn < 1) return;
+
+    const displayRows = usersSheet.getRange(1, 1, lastRow, lastColumn).getDisplayValues();
+    const valueRows = usersSheet.getRange(1, 1, lastRow, lastColumn).getValues();
+    const headers = displayRows[0].map(function (value) {
+      return String(value).trim().toLowerCase();
+    });
+    const nameColumn = findBirthdayColumn_(headers, ['nama', 'name', 'customer'], 0);
+    const phoneColumn = findBirthdayColumn_(headers, ['phone', 'no hp', 'no telepon', 'nomor telepon'], 1);
+    const birthDateColumn = findBirthdayColumn_(headers, ['tanggal_lahir', 'tanggal lahir', 'tgl lahir', 'birthday', 'birth date', 'date of birth', 'dob'], -1);
+    const optInColumn = findBirthdayColumn_(headers, ['birthday_wa_opt_in', 'wa ulang tahun', 'birthday whatsapp opt in'], -1);
+    if (birthDateColumn < 0 || optInColumn < 0) {
+      throw new Error('Kolom tanggal_lahir dan birthday_wa_opt_in belum tersedia. Jalankan setupBirthdayAutomation().');
+    }
+
+    const logSheet = ensureBirthdayLogSheet_(spreadsheet);
+    const sentKeys = getSentBirthdayKeys_(logSheet);
+    const attemptedKeys = {};
+    const timezone = 'Asia/Jakarta';
+    const today = Utilities.formatDate(new Date(), timezone, 'MM-dd');
+    const year = Number(Utilities.formatDate(new Date(), timezone, 'yyyy'));
+
+    for (let i = 1; i < displayRows.length; i++) {
+      const row = displayRows[i];
+      if (!isBirthdayWhatsAppOptedIn_(row[optInColumn])) continue;
+      if (birthdayMonthDay_(valueRows[i][birthDateColumn], row[birthDateColumn], timezone) !== today) continue;
+
+      const nama = String(row[nameColumn] || '').trim();
+      const phone = normalizeBirthdayPhone_(row[phoneColumn]);
+      if (!phone) {
+        logSheet.appendRow([new Date(), year, String(row[phoneColumn] || ''), nama, 'ERROR', 'Nomor WhatsApp tidak valid.']);
+        continue;
+      }
+
+      const sentKey = year + ':' + phone;
+      if (sentKeys[sentKey] || attemptedKeys[sentKey]) continue;
+      attemptedKeys[sentKey] = true;
+
+      try {
+        const response = sendBirthdayWhatsApp_(phone, nama || 'Customer', greeting, gift, templateName, templateLanguage);
+        logSheet.appendRow([new Date(), year, phone, nama, 'SENT', response]);
+        sentKeys[sentKey] = true;
+      } catch (error) {
+        logSheet.appendRow([new Date(), year, phone, nama, 'ERROR', error.message]);
+        Logger.log('Gagal mengirim ucapan ulang tahun ke ' + phone + ': ' + error.message);
+      }
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function sendBirthdayWhatsApp_(phone, nama, greeting, gift, templateName, templateLanguage) {
+  const properties = PropertiesService.getScriptProperties();
+  const token = String(properties.getProperty('WHATSAPP_ACCESS_TOKEN') || '').trim();
+  const phoneNumberId = String(properties.getProperty('WHATSAPP_PHONE_NUMBER_ID') || '').trim();
+  const apiVersion = String(properties.getProperty('WHATSAPP_API_VERSION') || '').trim();
+  if (!token || !phoneNumberId || !/^v\d+\.\d+$/.test(apiVersion)) {
+    throw new Error('Atur WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, dan WHATSAPP_API_VERSION di Script Properties.');
+  }
+
+  const response = UrlFetchApp.fetch('https://graph.facebook.com/' + apiVersion + '/' + encodeURIComponent(phoneNumberId) + '/messages', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + token },
+    payload: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phone,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: templateLanguage },
+        components: [{
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nama },
+            { type: 'text', text: greeting },
+            { type: 'text', text: gift }
+          ]
+        }]
+      }
+    }),
+    muteHttpExceptions: true
+  });
+
+  const status = response.getResponseCode();
+  const body = response.getContentText();
+  if (status < 200 || status >= 300) {
+    throw new Error('WhatsApp Cloud API HTTP ' + status + ': ' + body);
+  }
+  return body;
+}
+
+function getBirthdayUsersSheet_(spreadsheet) {
+  const sheet = spreadsheet.getSheetByName(SHEET_USERS) ||
+    spreadsheet.getSheets().find(function (item) {
+      return item.getName().toLowerCase() === SHEET_USERS.toLowerCase();
+    });
+  if (!sheet) throw new Error('Sheet users tidak ditemukan.');
+  return sheet;
+}
+
+function ensureBirthdaySettingsSheet_(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName('birthday_settings');
+  if (!sheet) sheet = spreadsheet.insertSheet('birthday_settings');
+
+  const defaults = {
+    enabled: 'FALSE',
+    template_name: 'rbm_ulang_tahun',
+    template_language: 'id',
+    greeting_message: 'Semoga sehat selalu, panjang umur, dan bahagia! Terima kasih sudah menjadi bagian dari keluarga Rice Bowl Monster.',
+    gift_message: ''
+  };
+  if (sheet.getLastRow() === 0) {
+    const rows = [['setting', 'value']];
+    Object.keys(defaults).forEach(function (key) { rows.push([key, defaults[key]]); });
+    sheet.getRange(1, 1, rows.length, 2).setValues(rows);
+    return sheet;
+  }
+
+  const values = sheet.getRange(1, 1, sheet.getLastRow(), Math.max(sheet.getLastColumn(), 2)).getDisplayValues();
+  const existing = {};
+  values.slice(1).forEach(function (row) {
+    existing[String(row[0] || '').trim()] = true;
+  });
+  Object.keys(defaults).forEach(function (key) {
+    if (!existing[key]) sheet.appendRow([key, defaults[key]]);
+  });
+  return sheet;
+}
+
+function getBirthdaySettings_(spreadsheet) {
+  const sheet = spreadsheet.getSheetByName('birthday_settings');
+  if (!sheet || sheet.getLastRow() < 2) {
+    throw new Error('Tab birthday_settings belum tersedia. Jalankan setupBirthdayAutomation().');
+  }
+  const rows = sheet.getRange(1, 1, sheet.getLastRow(), Math.max(sheet.getLastColumn(), 2)).getDisplayValues();
+  const settings = {};
+  rows.slice(1).forEach(function (row) {
+    const key = String(row[0] || '').trim();
+    if (key) settings[key] = String(row[1] || '').trim();
+  });
+  return settings;
+}
+
+function ensureBirthdayLogSheet_(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName('birthday_log');
+  if (!sheet) sheet = spreadsheet.insertSheet('birthday_log');
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['timestamp', 'year', 'phone', 'nama', 'status', 'response']);
+  }
+  return sheet;
+}
+
+function getSentBirthdayKeys_(sheet) {
+  const sent = {};
+  if (sheet.getLastRow() < 2) return sent;
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues().forEach(function (row) {
+    if (String(row[4] || '').toUpperCase() === 'SENT') {
+      sent[Number(row[1]) + ':' + normalizeBirthdayPhone_(row[2])] = true;
+    }
+  });
+  return sent;
+}
+
+function findBirthdayColumn_(headers, aliases, fallback) {
+  for (let i = 0; i < aliases.length; i++) {
+    const index = headers.indexOf(aliases[i]);
+    if (index !== -1) return index;
+  }
+  return fallback;
+}
+
+function birthdayMonthDay_(dateValue, displayValue, timezone) {
+  if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+    return Utilities.formatDate(dateValue, timezone, 'MM-dd');
+  }
+  const value = String(displayValue || dateValue || '').trim();
+  let match = value.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  let year, month, day;
+  if (match) {
+    year = Number(match[1]);
+    month = Number(match[2]);
+    day = Number(match[3]);
+  } else {
+    match = value.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    if (!match) return '';
+    day = Number(match[1]);
+    month = Number(match[2]);
+    year = Number(match[3]);
+  }
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) return '';
+  return ('0' + month).slice(-2) + '-' + ('0' + day).slice(-2);
+}
+
+function normalizeBirthdayPhone_(value) {
+  const digits = String(value || '').replace(/\D+/g, '');
+  if (digits.indexOf('62') === 0) return digits;
+  if (digits.indexOf('0') === 0) return '62' + digits.slice(1);
+  if (digits.indexOf('8') === 0) return '62' + digits;
+  return '';
+}
+
+function isBirthdayWhatsAppOptedIn_(value) {
+  return ['true', '1', 'yes', 'ya', 'setuju'].includes(String(value || '').trim().toLowerCase());
+}
+
 function ensureRedemptionLogHeaders(sheet) {
   const headers = ['TIMESTAMP', 'PHONE', 'NAMA', 'REWARD', 'COST', 'CODE'];
   if (sheet.getLastRow() === 0 || sheet.getLastColumn() === 0) {
@@ -179,6 +503,7 @@ function writePointHistory({ phone, nama, amount, source, operator }) {
 function doGet(e) {
   try {
     const action = e.parameter.action;
+    if (action === 'getCustomers') return handleGetCustomers();
     if (action === 'getLocations') return handleGetLocations();
     if (action === 'getMenuData') return handleGetMenuData();
     if (action === 'getGoogleReviews') return handleGetGoogleReviews();

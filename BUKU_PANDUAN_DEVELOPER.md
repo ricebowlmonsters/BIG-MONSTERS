@@ -50,7 +50,7 @@
 | **Server Node** | `server.js` | Express port 3001: GET/POST `/db` baca/tulis file JSON (database.json). |
 | | `print-bridge.js` | Express port 3000: endpoint `/print` untuk cetak ke printer thermal via LAN. |
 | **Backend GAS** | `Code.gs` | Google Apps Script: doGet (Input Data), Petty Cash / Inventaris / Pembukuan / Pengajuan ke Google Sheet. |
-| | `google-apps-script-enhanced.js` | Referensi API Web App GAS: doGet/doPost, action addPoints, claimVoucher, getMenu, dll. |
+| | `google-apps-script-enhanced.js` | Referensi API Web App GAS: doGet/doPost, daftar customer, lookup customer, addPoints, claimVoucher, getMenu, dll. |
 | **RBM Pro** | `rbm-pro.js` | Logika RBM Pro (outlet, absensi, petty cash, inventaris, pembukuan, dll.). |
 | | `rbm-pro-storage.js` | Lapisan storage: Firebase atau fallback localStorage untuk key `RBM_*`. |
 | | `rbm-laba-rugi.js` | Logika untuk modul Keuangan (Laba Rugi, Neraca, Stok). |
@@ -168,7 +168,7 @@
 ### 4.6 Integrasi Google Apps Script
 
 - **Code.gs (repo):** doGet keluarkan HTML "Input Data". Fungsi yang menulis ke Sheet (ID spreadsheet tertentu): Petty Cash, Database barang, Inventaris, Rekonsiliasi/Pembukuan, Pengajuan, Bank.
-- **google-apps-script-enhanced.js:** Spesifikasi Web App lain (URL di app.js). doGet: `action=getLocations`, `getMenuData`, atau `phone` untuk cari user. doPost: action `register`, `getUserData`, `addPoints`, `validateClaimCode`, `generateClaimCode`/`redeemReward`, `getMenuData`, `getMenuItems`, `getVoucherData`, `getMerchandiseData`. Sheet: users, menu, vouchers, merchandise, locations, Log Tukar Poin, POINT_HISTORY, claims.
+- **google-apps-script-enhanced.js:** Spesifikasi Web App lain (URL di app.js). doGet: `action=getLocations`, `getMenuData`, `getCustomers` (daftar customer termasuk tanggal lahir/izin WA), atau parameter `phone` untuk mencari satu user. Birthday: jalankan `setupBirthdayAutomation()` satu kali; trigger harian Asia/Jakarta hanya mengirim kepada customer yang menandai `birthday_wa_opt_in` dan mencatat hasil di `birthday_log`. doPost: action `register`, `getUserData`, `addPoints`, `validateClaimCode`, `generateClaimCode`/`redeemReward`, `getMenuData`, `getMenuItems`, `getVoucherData`, `getMerchandiseData`. Sheet: users, birthday_settings, birthday_log, menu, vouchers, merchandise, locations, Log Tukar Poin, POINT_HISTORY, claims.
 
 ---
 
@@ -187,6 +187,7 @@
 | **revenue-report.html** | Laporan pendapatan | Firebase: orders/{outlet} (filter date, status) | Query orders → total, per metode bayar, chart → link ke report-transactions. |
 | **report-transactions.html** | Detail transaksi | Firebase: orders; localStorage: rbm_payment_methods | Filter tanggal/outlet/kasir, tabel transaksi, export/print. |
 | **customer-settings.html** | Pengaturan web customer & outlet | Firebase: customer_app_settings, outlets; localStorage: outlet, names | Atur nama, logo, lokasi, radius; simpan ke Firebase & localStorage. |
+| **customer-users.html** | Data & ulang tahun customer | Google Sheets melalui GAS: `action=getCustomers` pada tab `users` | Tampilkan/cari data customer dan tanggal lahir; pesan ulang tahun memakai template WhatsApp yang disetujui Meta. |
 | **customer-account-settings.html** | Pengaturan akun customer | Firebase / koneksi aktif; localStorage: rbm_user, rbm_db_connections | Kelola akun customer. |
 | **settings.html** | Pengaturan umum | localStorage: rbm_settings, rbm_outlets, rbm_printer_groups, dll. | Simpan toko, outlet, printer, metode bayar. |
 | **storage-viewer.html** | Lihat/backup/restore/hapus data | Firebase atau ServerDB (GET /db); localStorage: rbm_db_connections | Pilih koneksi, analisis node, backup/restore/hapus. |

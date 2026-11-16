@@ -87,12 +87,12 @@
       <tr><td>Server Node</td><td>server.js</td><td>Express port 3001: GET/POST /db baca/tulis file JSON.</td></tr>
       <tr><td>Server Node</td><td>print-bridge.js</td><td>Express port 3000: endpoint /print untuk cetak printer thermal via LAN.</td></tr>
       <tr><td>Backend GAS</td><td>Code.gs</td><td>Google Apps Script: Petty Cash / Inventaris / Pembukuan / Pengajuan ke Google Sheet.</td></tr>
-      <tr><td>Backend GAS</td><td>google-apps-script-enhanced.js</td><td>Referensi API Web App GAS: addPoints, claimVoucher, getMenu, dll.</td></tr>
+      <tr><td>Backend GAS</td><td>google-apps-script-enhanced.js</td><td>Referensi API Web App GAS: daftar dan pencarian user, addPoints, claimVoucher, getMenu, dll.</td></tr>
       <tr><td>RBM Pro</td><td>rbm-pro.js, rbm-pro-storage.js, temp.js</td><td>Logika & storage RBM Pro; pending sync ke GAS.</td></tr>
     </tbody>
   </table>
   <h3>2.3 File HTML utama</h3>
-  <p><strong>Utama:</strong> index.html, login.html, kasir.html, orders.html, manage-menu.html, input-point.html, claim-vcr.html, revenue-report.html, report-transactions.html, manage-rewards.html, customer-settings.html, settings.html, storage-viewer.html, promo-settings.html, qr_generator.html, admin-menu.html, report-category.html, report-menu.html.</p>
+  <p><strong>Utama:</strong> index.html, login.html, kasir.html, orders.html, manage-menu.html, input-point.html, claim-vcr.html, revenue-report.html, report-transactions.html, manage-rewards.html, customer-settings.html, customer-users.html, settings.html, storage-viewer.html, promo-settings.html, qr_generator.html, admin-menu.html, report-category.html, report-menu.html.</p>
   <p><strong>RBM Pro:</strong> rbm-absensi.html, rbm-absensi-gps.html, rbm-stok-barang.html, rbm-input-petty-cash.html, rbm-lihat-petty-cash.html, rbm-input-keuangan.html, rbm-lihat-pembukuan.html, rbm-input-inventaris.html, rbm-lihat-inventaris.html, rbm-pengajuan.html, dll.</p>
   <p><strong>Lain:</strong> global-chat-manager.html, ai-settings.html, print-bridge-simple.html.</p>
 
@@ -187,7 +187,7 @@
   <h3>4.5 Laporan</h3>
   <p>revenue-report.html: Query orders/{outlet} filter date/status; hitung total, per metode bayar, chart; link ke report-transactions. report-transactions.html: List transaksi dari Firebase; filter tanggal/outlet/kasir; rbm_payment_methods dari localStorage.</p>
   <h3>4.6 Integrasi GAS</h3>
-  <p>Code.gs: doGet + fungsi ke Sheet (Petty Cash, Database, Inventaris, Pembukuan, Pengajuan, Bank). google-apps-script-enhanced.js: doGet/doPost untuk users, poin, voucher, claim, menu (action: register, getUserData, addPoints, validateClaimCode, generateClaimCode, getMenuData, dll.).</p>
+  <p>Code.gs: doGet + fungsi ke Sheet (Petty Cash, Database, Inventaris, Pembukuan, Pengajuan, Bank). google-apps-script-enhanced.js: doGet/doPost untuk users, poin, voucher, claim, menu; action getCustomers mengembalikan daftar dan data ulang tahun. Otomatisasi birthday memakai setupBirthdayAutomation(), tab birthday_settings/birthday_log, opt-in birthday_wa_opt_in, dan template WhatsApp yang disetujui.</p>
 
   <hr>
 
@@ -206,6 +206,7 @@
       <tr><td>revenue-report.html</td><td>Laporan pendapatan</td><td>Firebase orders (filter date, status)</td><td>Query → total, chart → link report-transactions.</td></tr>
       <tr><td>report-transactions.html</td><td>Detail transaksi</td><td>Firebase orders; rbm_payment_methods</td><td>Filter, tabel, export/print.</td></tr>
       <tr><td>customer-settings.html</td><td>Pengaturan customer & outlet</td><td>Firebase customer_app_settings, outlets; localStorage</td><td>Nama, logo, lokasi, radius.</td></tr>
+      <tr><td>customer-users.html</td><td>Data & ulang tahun customer</td><td>GAS action getCustomers, tab users</td><td>Tampilkan/cari customer, tanggal lahir, dan izin WA; pesan ulang tahun via template Cloud API.</td></tr>
       <tr><td>settings.html</td><td>Pengaturan umum</td><td>localStorage rbm_settings, outlets, printer, dll.</td><td>Simpan toko, outlet, printer, metode bayar.</td></tr>
       <tr><td>storage-viewer.html</td><td>Lihat/backup/restore/hapus</td><td>Firebase atau ServerDB; rbm_db_connections</td><td>Pilih koneksi, analisis node, backup/restore.</td></tr>
       <tr><td>promo-settings.html</td><td>Promo & diskon</td><td>Firebase promos (per outlet)</td><td>CRUD promo, listener.</td></tr>

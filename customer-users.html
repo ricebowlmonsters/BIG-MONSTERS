@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Customer - RBM</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    .customer-toolbar { display: flex; gap: 10px; align-items: center; margin: 16px 0; }
+    .customer-toolbar .form-input { flex: 1 1 0; min-width: 0; width: auto; }
+    .customer-toolbar .btn { flex: 0 0 auto; width: auto; }
+    .customer-status { color: #6b7280; font-size: 13px; margin: 0; }
+    .birthday-note { color: #4b5563; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; font-size: 12px; line-height: 1.6; margin-bottom: 16px; }
+    .customer-table-wrap { overflow-x: auto; }
+    .customer-table { width: 100%; border-collapse: collapse; min-width: 820px; }
+    .customer-table th, .customer-table td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+    .customer-table th { color: #6b7280; font-size: 12px; font-weight: 600; }
+    .customer-table td { color: #374151; font-size: 14px; }
+    .customer-empty { padding: 28px 12px; text-align: center; color: #6b7280; }
+    .customer-error { padding: 12px; border-radius: 8px; background: #fef2f2; color: #b91c1c; }
+    @media (max-width: 520px) {
+      .customer-toolbar { align-items: stretch; flex-direction: column; }
+      .customer-toolbar .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <a href="customer-settings.html" class="back-btn" aria-label="Kembali ke Pengaturan Web Customer">‹</a>
+      <h1 class="page-title">Data Customer</h1>
+    </header>
+    <main class="content">
+      <section class="card">
+        <h2 class="card-title">Daftar Semua Customer</h2>
+        <p class="card-subtitle">Data customer dari tab <strong>users</strong> Google Sheets.</p>
+        <div class="birthday-note">
+          Otomatisasi ulang tahun: jalankan <code>setupBirthdayAutomation()</code> satu kali dari Apps Script. Isi kolom
+          <code>tanggal_lahir</code> dan <code>birthday_wa_opt_in</code> di tab <code>users</code>; setuju kirim WA ditandai
+          <code>TRUE</code>. Ucapan dan hadiah dapat diedit pada tab <code>birthday_settings</code>. Pengiriman hanya aktif
+          setelah template <code>rbm_ulang_tahun</code> bahasa <code>id</code> disetujui (body <code>{{1}}</code> nama,
+          <code>{{2}}</code> ucapan, <code>{{3}}</code> hadiah) dan <code>enabled</code> diatur ke <code>TRUE</code>.
+          Hadiah berupa keterangan di pesan WA dan tidak menambah poin. Simpan kredensial Cloud API sebagai Script
+          Properties: <code>WHATSAPP_ACCESS_TOKEN</code>, <code>WHATSAPP_PHONE_NUMBER_ID</code>, dan
+          <code>WHATSAPP_API_VERSION</code>.
+          <a href="https://docs.google.com/spreadsheets/d/1LCtVFEpN9lT5LYCqbxo-RXF94YZPwuKm_TQbc6rxm68/edit" target="_blank" rel="noopener noreferrer">Buka Google Sheets</a>
+        </div>
+        <div class="customer-toolbar">
+          <input id="customer-search" class="form-input" type="search" placeholder="Cari nama, nomor telepon, atau username..." aria-label="Cari customer">
+          <button id="customer-refresh" class="btn btn-secondary" type="button">Muat Ulang</button>
+        </div>
+        <p id="customer-status" class="customer-status" aria-live="polite">Memuat data customer...</p>
+        <div class="customer-table-wrap" style="margin-top: 12px;">
+          <table class="customer-table">
+            <thead>
+              <tr><th>Nama</th><th>Nomor Telepon</th><th>Username</th><th>Poin</th><th>Tanggal Lahir</th><th>Izin WA</th></tr>
+            </thead>
+            <tbody id="customer-list"></tbody>
+          </table>
+        </div>
+        <p id="customer-error" class="customer-error" role="alert" hidden></p>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const CUSTOMER_SHEETS_API = 'https://script.google.com/macros/s/AKfycbwfVSYRE_0sOjfaGi4JPGV6qWff7B2dvsejPTBi-GJfDwemfGukOFF7I12K1VnCzHuL9Q/exec';
+    const customerSearch = document.getElementById('customer-search');
+    const customerList = document.getElementById('customer-list');
+    const customerStatus = document.getElementById('customer-status');
+    const customerError = document.getElementById('customer-error');
+    const refreshButton = document.getElementById('customer-refresh');
+    let customers = [];
+
+    function renderCustomers() {
+      const query = customerSearch.value.trim().toLowerCase();
+      const filtered = customers.filter(function (customer) {
+        return [customer.nama, customer.phone, customer.username, customer.birthDate].some(function (value) {
+          return value.toLowerCase().includes(query);
+        });
+      });
+
+      customerList.replaceChildren();
+      if (!filtered.length) {
+        const row = customerList.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 6;
+        cell.className = 'customer-empty';
+        cell.textContent = customers.length ? 'Tidak ada customer yang cocok.' : 'Belum ada data customer di Google Sheets.';
+      } else {
+        filtered.forEach(function (customer) {
+          const row = customerList.insertRow();
+          [customer.nama, customer.phone, customer.username, customer.points, customer.birthDate || '-', customer.birthdayWaOptIn ? 'Ya' : 'Tidak'].forEach(function (value) {
+            row.insertCell().textContent = value;
+          });
+        });
+      }
+
+      customerStatus.textContent = query
+        ? filtered.length + ' dari ' + customers.length + ' customer'
+        : customers.length + ' customer';
+    }
+
+    async function loadCustomers() {
+      refreshButton.disabled = true;
+      customerError.hidden = true;
+      customerStatus.textContent = 'Memuat data customer dari Google Sheets...';
+      customerList.replaceChildren();
+
+      try {
+        const response = await fetch(CUSTOMER_SHEETS_API + '?action=getCustomers', { cache: 'no-store' });
+        if (!response.ok) throw new Error('Server merespons dengan status ' + response.status + '.');
+        const result = await response.json();
+        if (result.status !== 'success' || !Array.isArray(result.data)) {
+          throw new Error(result.message || 'Respons data customer tidak valid.');
+        }
+
+        customers = result.data.map(function (customer) {
+          return {
+            nama: String(customer.nama || '-'),
+            phone: String(customer.phone || '-'),
+            username: String(customer.username || '-'),
+            points: String(customer.points == null || customer.points === '' ? '0' : customer.points),
+            birthDate: String(customer.birthDate || ''),
+            birthdayWaOptIn: ['true', '1', 'yes', 'ya', 'setuju'].includes(String(customer.birthdayWaOptIn || '').trim().toLowerCase())
+          };
+        });
+        renderCustomers();
+      } catch (error) {
+        customers = [];
+        customerList.replaceChildren();
+        customerStatus.textContent = 'Data customer gagal dimuat.';
+        customerError.textContent = 'Gagal memuat data dari Google Sheets: ' + error.message +
+          ' Pastikan Apps Script sudah diperbarui dan di-deploy ulang.';
+        customerError.hidden = false;
+      } finally {
+        refreshButton.disabled = false;
+      }
+    }
+
+    customerSearch.addEventListener('input', renderCustomers);
+    refreshButton.addEventListener('click', loadCustomers);
+    loadCustomers();
+  </script>
+</body>
+</html>
